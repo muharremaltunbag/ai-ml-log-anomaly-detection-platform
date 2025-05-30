@@ -1,0 +1,6 @@
+langchain==0.3.14
+langchain-openai==0.2.14
+langchain-mongodb==0.3.0
+pymongo==4.10.1
+python-dotenv==1.0.1
+pydantic==2.10.4
