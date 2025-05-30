@@ -141,7 +141,7 @@ ENVIRONMENT=development
   - `price`: Number veya string (test amaçlı)
   - `stock`: Beden-bazlı adet objesi veya undefined
   - `createdAt`: Date veya null
-  - `manufacturer`: Object (örneğin `{ name: "LCW" }`) veya null
+  - `manufacturer`: Object (örneğin `{ name: "besttextile" }`) veya null
   - `description`: Uzun string (bazıları >1000 karakter)
   - `tags`, `variants`, `ratings`, `reviews`, `seo`, `campaign`: nested veya array alanlar
 
