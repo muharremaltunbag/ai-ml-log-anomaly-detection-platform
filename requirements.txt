@@ -1,6 +1,13 @@
+# Web UI için ek bağımlılıklar
+fastapi==0.115.5
+uvicorn==0.32.1
+websockets==14.1
+python-multipart==0.0.17
+
 langchain==0.3.14
 langchain-openai==0.2.14
 langchain-mongodb==0.3.0
 pymongo==4.10.1
 python-dotenv==1.0.1
 pydantic==2.10.4
+paramiko==3.5.0

@@ -1,0 +1,119 @@
+{
+    "environments": {
+      "test": {
+        "description": "Vagrant Test Environment",
+        "ssh_config": {
+          "default_user": "vagrant",
+          "default_timeout": 10,
+          "key_base_path": "C:/Users/muharrem.altunbag/3_node_mongo_vm/.vagrant/machines"
+        },
+        "servers": {
+          "mongodb-node1": {
+            "host": "127.0.0.1",
+            "port": 2200,
+            "user": "vagrant",
+            "key_file": "{key_base_path}/mongodb-node1/virtualbox/private_key",
+            "tags": ["mongodb", "primary", "test"],
+            "description": "MongoDB Primary Node"
+          },
+          "mongodb-node2": {
+            "host": "127.0.0.1",
+            "port": 2201,
+            "user": "vagrant",
+            "key_file": "{key_base_path}/mongodb-node2/virtualbox/private_key",
+            "tags": ["mongodb", "secondary", "test"],
+            "description": "MongoDB Secondary Node 1"
+          },
+          "mongodb-node3": {
+            "host": "127.0.0.1",
+            "port": 2202,
+            "user": "vagrant",
+            "key_file": "{key_base_path}/mongodb-node3/virtualbox/private_key",
+            "tags": ["mongodb", "secondary", "test"],
+            "description": "MongoDB Secondary Node 2"
+          }
+        }
+      },
+      "production": {
+        "description": "Production Environment",
+        "ssh_config": {
+          "default_user": "lcwadmin",
+          "default_timeout": 30,
+          "key_base_path": "/etc/ssh/keys"
+        },
+        "servers": {
+          "prod-mongo-01": {
+            "host": "10.0.1.10",
+            "port": 22,
+            "user": "lcwadmin",
+            "key_file": "{key_base_path}/prod_key.pem",
+            "password_auth": false,
+            "tags": ["mongodb", "primary", "production"],
+            "description": "Production MongoDB Primary"
+          },
+          "prod-mongo-02": {
+            "host": "10.0.1.11",
+            "port": 22,
+            "user": "lcwadmin",
+            "key_file": "{key_base_path}/prod_key.pem",
+            "password_auth": false,
+            "tags": ["mongodb", "secondary", "production"],
+            "description": "Production MongoDB Secondary"
+          },
+          "prod-app-01": {
+            "host": "10.0.2.20",
+            "port": 22,
+            "user": "lcwadmin",
+            "key_file": "{key_base_path}/prod_key.pem",
+            "password_auth": false,
+            "tags": ["application", "web", "production"],
+            "description": "Production Application Server"
+          }
+        }
+      },
+      "staging": {
+        "description": "Staging Environment",
+        "ssh_config": {
+          "default_user": "deploy",
+          "default_timeout": 20,
+          "key_base_path": "~/.ssh"
+        },
+        "servers": {
+          "stg-mongo-01": {
+            "host": "staging.lcwaikiki.local",
+            "port": 22,
+            "user": "deploy",
+            "key_file": "{key_base_path}/staging_key",
+            "tags": ["mongodb", "staging"],
+            "description": "Staging MongoDB Server"
+          }
+        }
+      }
+    },
+    "monitoring_commands": {
+      "cpu": {
+        "usage": "top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\\([0-9.]*\\)%* id.*/\\1/' | awk '{print 100 - $1}'",
+        "count": "nproc",
+        "load": "uptime | awk -F'load average:' '{print $2}'"
+      },
+      "memory": {
+        "info": "free -b | grep Mem"
+      },
+      "disk": {
+        "usage": "df -B1 {path} | tail -1"
+      },
+      "network": {
+        "interfaces": "ls /sys/class/net | grep -v lo",
+        "ip_addresses": "ip -4 addr show | grep inet | grep -v 127.0.0.1"
+      },
+      "process": {
+        "top_cpu": "ps aux --sort=-%cpu,-%mem | head -11 | tail -10",
+        "find_process": "ps aux | grep {process_name} | grep -v grep"
+      },
+      "mongodb": {
+        "status": "ps aux | grep mongod | grep -v grep",
+        "version": "mongod --version | head -1",
+        "port": "netstat -tlnp 2>/dev/null | grep mongod || ss -tlnp | grep mongod"
+      }
+    }
+  }

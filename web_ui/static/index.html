@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MongoDB Asistanı | LC Waikiki</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230047BA'/><text x='16' y='24' font-family='Arial' font-size='20' fill='white' text-anchor='middle'>LC</text></svg>">
+</head>
+<body>
+    <!-- Logo Section -->
+    <div class="logo-section">
+        <div class="logo-container">
+            <div class="logo">
+                <!-- LC Waikiki Logo SVG -->
+                <svg width="150" height="50" viewBox="0 0 150 50" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="0" y="10" width="40" height="30" fill="#0047BA" rx="5"/>
+                    <text x="20" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white" text-anchor="middle">LC</text>
+                    <text x="60" y="30" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#0047BA">WAIKIKI</text>
+                </svg>
+                <span class="logo-text">MongoDB Asistanı</span>
+            </div>
+            <span class="environment-badge">TEST ORTAMI</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>MongoDB Doğal Dil Sorgu Asistanı</h1>
+            <p class="subtitle">Veritabanı Yönetimi Test Platformu</p>
+            <div id="status" class="status">
+                <span class="status-indicator"></span>
+                <span class="status-text">Bağlantı kontrol ediliyor...</span>
+            </div>
+        </header>
+
+        <!-- API Key Girişi -->
+        <section class="api-section">
+            <div class="input-group">
+                <label for="apiKey">API Anahtarı:</label>
+                <input type="password" id="apiKey" placeholder="API anahtarınızı girin" value="lcw-test-2024">
+                <button id="connectBtn" class="btn btn-primary">BAĞLAN</button>
+            </div>
+        </section>
+
+        <!-- Ana İçerik -->
+        <main id="mainContent" style="display: none;">
+            <!-- Hızlı İşlemler -->
+            <section class="quick-actions">
+                <button id="collectionsBtn" class="btn btn-secondary">KOLEKSİYONLAR</button>
+                <button id="statusBtn" class="btn btn-secondary">SİSTEM DURUMU</button>
+                <button id="clearBtn" class="btn btn-secondary">TEMİZLE</button>
+            </section>
+
+            <!-- Sorgu Alanı -->
+            <section class="query-section">
+                <div class="query-input-wrapper">
+                    <textarea 
+                        id="queryInput" 
+                        placeholder="Sorgunuzu doğal dilde yazın... Örnek: users koleksiyonunda yaşı 30'dan büyük olan kullanıcıları listele"
+                        rows="3"
+                    ></textarea>
+                    <button id="queryBtn" class="btn btn-primary">
+                        <span>SORGUYU ÇALIŞTIR</span>
+                    </button>
+                </div>
+                
+                <!-- Örnek Sorgular -->
+                <div class="examples">
+                    <p>Hızlı erişim için örnek sorgular:</p>
+                    <div class="example-chips">
+                        <span class="chip" data-query="Mevcut koleksiyonları listele">Koleksiyon Listesi</span>
+                        <span class="chip" data-query="users koleksiyonunun şemasını göster">Şema Görüntüleme</span>
+                        <span class="chip" data-query="products koleksiyonunda stok sayısı 10'dan az olan ürünleri bul">Stok Kontrolü</span>
+                        <span class="chip" data-query="orders koleksiyonunda bugünkü siparişlerin toplam sayısını getir">Sipariş Sayımı</span>
+                        <span class="chip" data-query="customers koleksiyonunda city alanına göre gruplama yap">Müşteri Analizi</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sonuç Alanı -->
+            <section id="resultSection" class="result-section" style="display: none;">
+                <h3>Sorgu Sonucu</h3>
+                <div id="resultContent" class="result-content"></div>
+            </section>
+
+            <!-- Yükleme Göstergesi -->
+            <div id="loader" class="loader" style="display: none;">
+                <div class="spinner"></div>
+                <p>Sorgu işleniyor, lütfen bekleyin...</p>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer>
+            <p>&copy; 2024 LC Waikiki | MongoDB LangChain Assistant v1.0 | Test Ortamı</p>
+            <p style="font-size: 12px; margin-top: 5px;">Bu platform test amaçlıdır. Üretim ortamında kullanmayın.</p>
+        </footer>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Başlık</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
