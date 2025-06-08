@@ -12,7 +12,6 @@ from decimal import Decimal
 import json
 import logging
 from ..monitoring.monitoring_tools import create_monitoring_tools
-from ..performance.performance_tools import create_performance_tools
 
 logger = logging.getLogger(__name__)
 
@@ -413,9 +412,5 @@ def get_all_tools(
     # Monitoring tools ekle
     monitoring_tools = create_monitoring_tools()
     tools.extend(monitoring_tools)
-    
-    # Performance tools ekle
-    performance_tools = create_performance_tools(db_connector)
-    tools.extend(performance_tools)
     
     return tools
