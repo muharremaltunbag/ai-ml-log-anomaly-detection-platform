@@ -1,5 +1,8 @@
+# src\agents\schema_analyzer.py
+
 from typing import Dict, List, Any, Optional
 from pymongo.database import Database
+from bson import ObjectId
 import logging
 
 class SchemaAnalyzer:
@@ -193,7 +196,11 @@ class SchemaAnalyzer:
             # Örnek değer ekle (max 3)
             if len(field_info[field_path]["examples"]) < 3:
                 if not isinstance(value, (dict, list)):
-                    field_info[field_path]["examples"].append(value)
+                    # ObjectId kontrolü ekleyin
+                    if isinstance(value, ObjectId):
+                        field_info[field_path]["examples"].append(str(value))
+                    else:
+                        field_info[field_path]["examples"].append(value)
             
             # Nested objeler için recursive çağrı
             if isinstance(value, dict):

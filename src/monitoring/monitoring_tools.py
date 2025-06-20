@@ -1,10 +1,32 @@
+﻿# -*- coding: utf-8 -*-
+
+# src\monitoring\monitoring_tools.py
+
 from typing import Dict, Any, List, Optional
-from langchain.tools import Tool
+from langchain.tools import Tool, StructuredTool
+from pydantic import BaseModel, Field
 import json
 import logging
 from .linux_monitor import LinuxMonitor
 
 logger = logging.getLogger(__name__)
+
+# Tool için input schema
+class ServerMetricsInput(BaseModel):
+    node_name: str = Field(description="Sunucu adı")
+    metric_type: str = Field(default="all", description="Metrik tipi: all|cpu|memory|disk|network|mongodb")
+
+def handle_tool_args(func):
+    """Tool argümanlarını handle eden wrapper"""
+    def wrapper(*args, **kwargs):
+        if len(args) > 1:
+            # Birden fazla argüman varsa dict'e çevir
+            return func({"node_name": args[0], "metric_type": args[1] if len(args) > 1 else "all"})
+        elif len(args) == 1:
+            return func(args[0])
+        else:
+            return func(kwargs)
+    return wrapper
 
 class MonitoringTools:
     """Linux Monitoring için LangChain Tool'ları"""
@@ -128,9 +150,50 @@ class MonitoringTools:
             logger.error(f"Server status hatası: {e}")
             return self._format_result({"error": str(e)}, "server_status")
     
-    def get_server_metrics(self, args_input) -> str:
+    def _generate_summary(self, all_metrics: Dict, metric_type: str) -> Dict:
+        """Tüm sunucular için özet bilgi oluştur"""
+        summary = {
+            "total_servers": len(all_metrics),
+            "online_servers": 0,
+            "offline_servers": 0
+        }
+        
+        if metric_type in ["cpu", "all"]:
+            cpu_usages = []
+            for node, metrics in all_metrics.items():
+                if "error" not in metrics:
+                    summary["online_servers"] += 1
+                    if "cpu_percent" in metrics:
+                        cpu_usages.append(metrics["cpu_percent"])
+                else:
+                    summary["offline_servers"] += 1
+            
+            if cpu_usages:
+                summary["average_cpu"] = round(sum(cpu_usages) / len(cpu_usages), 2)
+                summary["max_cpu"] = max(cpu_usages)
+                summary["min_cpu"] = min(cpu_usages)
+        
+        return summary
+    
+    def get_server_metrics(self, *args, **kwargs) -> str:
         """Sunucu metriklerini al"""
         try:
+            # Argümanları normalize et
+            if len(args) == 1 and not kwargs:
+                args_input = args[0]
+            elif len(args) == 2:
+                args_input = {
+                    "node_name": args[0],
+                    "metric_type": args[1]
+                }
+            elif kwargs:
+                args_input = kwargs
+            else:
+                args_input = {}
+
+            # Debug log
+            logger.info(f"get_server_metrics received: args={args}, kwargs={kwargs}, normalized={args_input}")
+
             # Argümanları parse et
             if isinstance(args_input, str):
                 try:
@@ -139,16 +202,43 @@ class MonitoringTools:
                     args_dict = {"node_name": args_input.strip()}
             else:
                 args_dict = args_input
-            
+
             node_name = args_dict.get("node_name", "")
-            metric_type = args_dict.get("metric_type", "all")  # all, cpu, memory, disk, network
+            metric_type = args_dict.get("metric_type", "all")
+
+            # YENI: Eğer node_name boş veya "all" ise tüm sunucuları tara
+            if not node_name or node_name.lower() in ["", "all", "tüm", "hepsi"]:
+                # Tüm sunucuların metriklerini topla
+                all_nodes = self.monitor.get_available_nodes()
+                all_metrics = {}
+                
+                for node in all_nodes:
+                    try:
+                        if metric_type == "all":
+                            all_metrics[node] = self.monitor.get_all_metrics(node)
+                        elif metric_type == "cpu":
+                            all_metrics[node] = self.monitor.get_cpu_usage(node)
+                        elif metric_type == "memory":
+                            all_metrics[node] = self.monitor.get_memory_usage(node)
+                        elif metric_type == "disk":
+                            all_metrics[node] = self.monitor.get_disk_usage(node)
+                        elif metric_type == "network":
+                            all_metrics[node] = self.monitor.get_network_info(node)
+                        elif metric_type == "mongodb":
+                            all_metrics[node] = self.monitor.get_mongodb_status(node)
+                    except Exception as e:
+                        all_metrics[node] = {"error": str(e)}
+                
+                result = {
+                    "metric_type": metric_type,
+                    "server_count": len(all_nodes),
+                    "servers": all_metrics,
+                    "summary": self._generate_summary(all_metrics, metric_type)
+                }
+                
+                return self._format_result(result, "all_servers_metrics")
             
-            if not node_name:
-                return self._format_result(
-                    {"error": "Sunucu adı belirtilmeli"},
-                    "server_metrics"
-                )
-            
+            # Tek sunucu için normal işlem
             if node_name not in self.monitor.get_available_nodes():
                 return self._format_result(
                     {"error": f"'{node_name}' sunucusu bulunamadı"},
@@ -339,7 +429,7 @@ class MonitoringTools:
 
 def create_monitoring_tools(monitor: Optional[LinuxMonitor] = None) -> List[Tool]:
     """Monitoring tool'larını oluştur"""
-    
+    print("Creating monitoring tools with StructuredTool...")
     monitoring = MonitoringTools(monitor)
     
     tools = [
@@ -351,12 +441,11 @@ def create_monitoring_tools(monitor: Optional[LinuxMonitor] = None) -> List[Tool
             func=monitoring.check_server_status
         ),
         
-        Tool(
+        StructuredTool.from_function(
+            func=monitoring.get_server_metrics,
             name="get_server_metrics",
-            description="""Sunucu metriklerini al (CPU, Memory, Disk, Network).
-            Argüman: {"node_name": "sunucu_adı", "metric_type": "all|cpu|memory|disk|network|mongodb"}
-            Örnek: {"node_name": "mongodb-node1", "metric_type": "cpu"}""",
-            func=monitoring.get_server_metrics
+            description="Sunucu metriklerini al (CPU, Memory, Disk, Network)",
+            args_schema=ServerMetricsInput
         ),
         
         Tool(

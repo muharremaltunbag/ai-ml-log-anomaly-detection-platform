@@ -1,3 +1,5 @@
+# web_ui\api.py
+
 """MongoDB Assistant Web API"""
 import sys
 import os

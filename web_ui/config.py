@@ -1,3 +1,5 @@
+# web_ui\config.py
+
 """Web UI Konfigürasyon Dosyası"""
 import os
 from dotenv import load_dotenv

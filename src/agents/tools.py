@@ -138,8 +138,8 @@ def view_schema(
                 schemas[coll] = {
                     "document_count": db_connector.database[coll].count_documents({}),
                     "sample_fields": list(
-                        db_connector.database[coll].find_one() or {}
-                    ).keys()[:10]
+                        (db_connector.database[coll].find_one() or {}).keys()
+                    )[:10]
                 }
             
             return json.dumps({

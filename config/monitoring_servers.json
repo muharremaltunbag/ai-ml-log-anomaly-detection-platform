@@ -18,7 +18,7 @@
           },
           "mongodb-node2": {
             "host": "127.0.0.1",
-            "port": 2201,
+            "port": 2222,
             "user": "vagrant",
             "key_file": "{key_base_path}/mongodb-node2/virtualbox/private_key",
             "tags": ["mongodb", "secondary", "test"],
@@ -26,7 +26,7 @@
           },
           "mongodb-node3": {
             "host": "127.0.0.1",
-            "port": 2202,
+            "port": 2201,
             "user": "vagrant",
             "key_file": "{key_base_path}/mongodb-node3/virtualbox/private_key",
             "tags": ["mongodb", "secondary", "test"],

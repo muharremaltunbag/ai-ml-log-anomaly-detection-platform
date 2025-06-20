@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+# C:\Users\muharrem.altunbag\MongoDB-LLM-assistant\MongoDB-LLM-assistant\main.py
+
 """MongoDB LangChain Assistant - Ana Giriş Noktası"""
 
 import os

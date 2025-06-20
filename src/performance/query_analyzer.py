@@ -1,3 +1,4 @@
+#src/performance/query_analyzer.py
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
@@ -76,36 +77,77 @@ class QueryPerformanceAnalyzer:
         return cursor.explain()
     
     def _explain_aggregate(self, collection, pipeline: List[Dict]) -> Dict:
-        """Aggregate pipeline için explain çalıştır"""
-        return collection.aggregate(pipeline, explain=True)
+        """Aggregate pipeline için explain çalıştır - GÜNCELLENMİŞ"""
+        try:
+            # Yeni MongoDB sürümlerinde explain parametresi yerine command kullan
+            explain_result = collection.database.command(
+                'explain',
+                {
+                    'aggregate': collection.name,
+                    'pipeline': pipeline,
+                    'cursor': {}
+                },
+                verbosity='executionStats'
+            )
+            return explain_result
+        except Exception as e:
+            # Fallback: eski yöntem
+            try:
+                return collection.aggregate(pipeline, explain=True)
+            except:
+                logger.error(f"Aggregate explain hatası: {e}")
+                # En azından temel bilgileri dön
+                return {
+                    "executionStats": {
+                        "executionTimeMillis": 0,
+                        "totalDocsExamined": 0,
+                        "totalKeysExamined": 0,
+                        "nReturned": 0,
+                        "executionSuccess": False
+                    },
+                    "error": f"Explain desteklenmiyor: {str(e)}"
+                }
     
     def _analyze_explain_result(self, explain_result: Dict, collection_name: str, 
                                query: Dict) -> Dict[str, Any]:
-        """Explain sonucunu analiz et ve öneriler üret"""
+        """Explain sonucunu analiz et ve öneriler üret - GELİŞTİRİLMİŞ"""
         analysis = {
             "collection": collection_name,
             "query": query,
             "timestamp": datetime.now().isoformat()
         }
         
-        # executionStats varsa analiz et
+        # executionStats varsa detaylı analiz et
         if "executionStats" in explain_result:
             stats = explain_result["executionStats"]
             
+            # Temel metrikler
+            exec_time = stats.get("executionTimeMillis", 0)
+            docs_examined = stats.get("totalDocsExamined", 0)
+            docs_returned = stats.get("nReturned", 0)
+            keys_examined = stats.get("totalKeysExamined", 0)
+            
+            # Verimlilik hesapla - YENİ
+            efficiency = self._calculate_efficiency(docs_examined, docs_returned, keys_examined)
+            
             analysis["execution_stats"] = {
-                "execution_time_ms": stats.get("executionTimeMillis", 0),
-                "total_docs_examined": stats.get("totalDocsExamined", 0),
-                "total_keys_examined": stats.get("totalKeysExamined", 0),
-                "docs_returned": stats.get("nReturned", 0),
-                "execution_success": stats.get("executionSuccess", False)
+                "execution_time_ms": exec_time,
+                "total_docs_examined": docs_examined,
+                "total_keys_examined": keys_examined,
+                "docs_returned": docs_returned,
+                "execution_success": stats.get("executionSuccess", False),
+                "efficiency_percent": efficiency  # YENİ
             }
             
-            # Performans skoru hesapla
-            analysis["performance_score"] = self._calculate_performance_score(stats)
+            # Geliştirilmiş performans skoru
+            analysis["performance_score"] = self._calculate_enhanced_performance_score(
+                stats, efficiency
+            )
             
-            # Stage analizi
+            # Stage analizi - execution tree olarak - YENİ
             if "executionStages" in stats:
                 analysis["stages"] = self._analyze_stages(stats["executionStages"])
+                analysis["execution_tree"] = self._build_execution_tree(stats["executionStages"])
                 
         # Winning plan analizi
         if "queryPlanner" in explain_result and "winningPlan" in explain_result["queryPlanner"]:
@@ -115,48 +157,93 @@ class QueryPerformanceAnalyzer:
         # Öneriler üret
         analysis["recommendations"] = self._generate_recommendations(analysis)
         
+        # İyileştirme tahmini - YENİ
+        if analysis["recommendations"]:
+            analysis["improvement_estimate"] = self._estimate_improvement(analysis)
+        
         # Genel değerlendirme
         analysis["overall_assessment"] = self._generate_assessment(analysis)
         
         return analysis
     
-    def _calculate_performance_score(self, stats: Dict) -> Dict[str, Any]:
-        """Performans skoru hesapla (0-100)"""
+    def _calculate_efficiency(self, docs_examined: int, docs_returned: int, keys_examined: int) -> float:
+        """Sorgu verimliliğini hesapla - YENİ"""
+        if docs_examined == 0:
+            return 100.0
+            
+        # Temel verimlilik: dönen/taranan oranı
+        basic_efficiency = (docs_returned / docs_examined) * 100 if docs_returned > 0 else 0
+        
+        # Index kullanımı bonusu
+        if keys_examined > 0:
+            # Index kullanılıyor, bonus ekle
+            index_bonus = min(20, (keys_examined / docs_examined) * 20)
+            efficiency = min(100, basic_efficiency + index_bonus)
+        else:
+            # Index kullanılmıyor, ceza
+            efficiency = basic_efficiency * 0.7
+            
+        return round(efficiency, 2)
+    
+    def _calculate_enhanced_performance_score(self, stats: Dict, efficiency: float) -> Dict[str, Any]:
+        """Geliştirilmiş performans skoru hesapla - GELİŞTİRİLMİŞ"""
         score = 100
         reasons = []
+        detailed_scores = {}
         
-        # Execution time kontrolü
+        # 1. Execution Time Skoru (30 puan)
         exec_time = stats.get("executionTimeMillis", 0)
+        time_score = 30
         if exec_time > 1000:
-            score -= 30
-            reasons.append(f"Yüksek çalışma süresi: {exec_time}ms")
+            time_score = 0
+            reasons.append(f"Çok yüksek çalışma süresi: {exec_time}ms")
         elif exec_time > 500:
-            score -= 15
+            time_score = 10
+            reasons.append(f"Yüksek çalışma süresi: {exec_time}ms")
+        elif exec_time > 100:
+            time_score = 20
             reasons.append(f"Orta seviye çalışma süresi: {exec_time}ms")
-            
-        # Doküman tarama oranı
-        docs_examined = stats.get("totalDocsExamined", 0)
-        docs_returned = stats.get("nReturned", 0)
+        detailed_scores["time"] = time_score
         
-        if docs_returned > 0:
-            scan_ratio = docs_examined / docs_returned
-            if scan_ratio > 100:
-                score -= 30
-                reasons.append(f"Çok yüksek tarama oranı: {scan_ratio:.1f}:1")
-            elif scan_ratio > 10:
-                score -= 15
-                reasons.append(f"Yüksek tarama oranı: {scan_ratio:.1f}:1")
-                
-        # Index kullanımı
+        # 2. Verimlilik Skoru (30 puan)
+        efficiency_score = min(30, efficiency * 0.3)
+        if efficiency < 10:
+            reasons.append(f"Çok düşük verimlilik: %{efficiency}")
+        elif efficiency < 50:
+            reasons.append(f"Düşük verimlilik: %{efficiency}")
+        detailed_scores["efficiency"] = round(efficiency_score)
+        
+        # 3. Index Kullanım Skoru (25 puan)
         keys_examined = stats.get("totalKeysExamined", 0)
+        docs_examined = stats.get("totalDocsExamined", 0)
+        index_score = 25
         if docs_examined > 0 and keys_examined == 0:
-            score -= 25
+            index_score = 0
             reasons.append("Index kullanılmıyor (COLLSCAN)")
-            
+        elif keys_examined > docs_examined * 2:
+            index_score = 15
+            reasons.append("Index verimsiz kullanılıyor")
+        detailed_scores["index"] = index_score
+        
+        # 4. Sonuç Boyutu Skoru (15 puan)
+        docs_returned = stats.get("nReturned", 0)
+        result_score = 15
+        if docs_returned > 10000:
+            result_score = 5
+            reasons.append(f"Çok fazla sonuç döndürülüyor: {docs_returned}")
+        elif docs_returned > 1000:
+            result_score = 10
+            reasons.append(f"Fazla sonuç döndürülüyor: {docs_returned}")
+        detailed_scores["result_size"] = result_score
+        
+        # Toplam skor
+        total_score = sum(detailed_scores.values())
+        
         return {
-            "score": max(0, score),
+            "score": max(0, min(100, total_score)),
             "reasons": reasons,
-            "level": self._get_performance_level(score)
+            "level": self._get_performance_level(total_score),
+            "detailed_scores": detailed_scores  # YENİ
         }
     
     def _get_performance_level(self, score: int) -> str:
@@ -171,6 +258,56 @@ class QueryPerformanceAnalyzer:
             return "Düşük"
         else:
             return "Kritik"
+    
+    def _build_execution_tree(self, stage: Dict, depth: int = 0) -> Dict:
+        """Execution tree oluştur - YENİ"""
+        tree = {
+            "stage": stage.get("stage", "UNKNOWN"),
+            "depth": depth,
+            "docs_examined": stage.get("docsExamined", 0),
+            "keys_examined": stage.get("keysExamined", 0),
+            "execution_time": stage.get("executionTimeMillisEstimate", 0),
+            "works": stage.get("works", 0),
+            "children": []
+        }
+        
+        # Stage'e özel bilgiler
+        stage_type = tree["stage"]
+        
+        if stage_type == "IXSCAN":
+            tree["index_name"] = stage.get("indexName", "")
+            tree["index_bounds"] = stage.get("indexBounds", {})
+            tree["direction"] = stage.get("direction", "forward")
+            tree["stage_info"] = "Index Scan - Performanslı"
+            
+        elif stage_type == "COLLSCAN":
+            tree["stage_info"] = "Collection Scan - Verimsiz!"
+            tree["filter"] = stage.get("filter", {})
+            
+        elif stage_type == "SORT":
+            tree["sort_pattern"] = stage.get("sortPattern", {})
+            tree["memory_used"] = stage.get("memUsage", 0)
+            tree["stage_info"] = "In-memory sort"
+            
+        elif stage_type == "FETCH":
+            tree["stage_info"] = "Document fetch"
+            tree["filter"] = stage.get("filter", {})
+            
+        elif stage_type == "COUNT":
+            tree["stage_info"] = "Count operation"
+            
+        # Alt stage'leri işle
+        if "inputStage" in stage:
+            child_tree = self._build_execution_tree(stage["inputStage"], depth + 1)
+            tree["children"].append(child_tree)
+            
+        # Birden fazla input stage varsa (örn: $or)
+        if "inputStages" in stage:
+            for input_stage in stage["inputStages"]:
+                child_tree = self._build_execution_tree(input_stage, depth + 1)
+                tree["children"].append(child_tree)
+        
+        return tree
     
     def _analyze_stages(self, stage: Dict, depth: int = 0) -> List[Dict]:
         """Execution stage'lerini analiz et"""
@@ -196,6 +333,11 @@ class QueryPerformanceAnalyzer:
         # Alt stage'leri analiz et
         if "inputStage" in stage:
             stages.extend(self._analyze_stages(stage["inputStage"], depth + 1))
+            
+        # Birden fazla input stage varsa
+        if "inputStages" in stage:
+            for input_stage in stage["inputStages"]:
+                stages.extend(self._analyze_stages(input_stage, depth + 1))
         
         return stages
     
@@ -217,8 +359,45 @@ class QueryPerformanceAnalyzer:
             
         return analysis
     
+    def _estimate_improvement(self, analysis: Dict) -> Dict[str, Any]:
+        """İyileştirme tahmini yap - YENİ"""
+        if "execution_stats" not in analysis:
+            return {}
+            
+        current_time = analysis["execution_stats"]["execution_time_ms"]
+        current_docs_examined = analysis["execution_stats"]["total_docs_examined"]
+        docs_returned = analysis["execution_stats"]["docs_returned"]
+        
+        improvement = {
+            "current_time_ms": current_time,
+            "estimated_time_ms": current_time,
+            "improvement_percent": 0,
+            "docs_examined_reduction": 0
+        }
+        
+        # COLLSCAN varsa ve index önerisi varsa
+        has_collscan = any(stage["stage"] == "COLLSCAN" for stage in analysis.get("stages", []))
+        has_index_recommendation = any(rec["type"] == "index" for rec in analysis.get("recommendations", []))
+        
+        if has_collscan and has_index_recommendation:
+            # Index ile yaklaşık %95 iyileşme
+            improvement["estimated_time_ms"] = max(1, current_time * 0.05)
+            improvement["improvement_percent"] = 95
+            
+            # Taranacak doküman sayısı da azalacak
+            if docs_returned > 0:
+                improvement["estimated_docs_examined"] = docs_returned
+                improvement["docs_examined_reduction"] = current_docs_examined - docs_returned
+        
+        elif current_time > 100:
+            # Genel optimizasyon ile %30 iyileşme
+            improvement["estimated_time_ms"] = current_time * 0.7
+            improvement["improvement_percent"] = 30
+            
+        return improvement
+    
     def _generate_recommendations(self, analysis: Dict) -> List[Dict[str, str]]:
-        """Performans önerileri üret"""
+        """Performans önerileri üret - GELİŞTİRİLMİŞ"""
         recommendations = []
         
         # Execution stats varsa
@@ -232,6 +411,15 @@ class QueryPerformanceAnalyzer:
                     "priority": "high",
                     "message": "Sorgu yavaş çalışıyor. Index eklemeyi düşünün.",
                     "detail": f"Mevcut süre: {stats['execution_time_ms']}ms, Hedef: <100ms"
+                })
+            
+            # Düşük verimlilik kontrolü - YENİ
+            if stats.get("efficiency_percent", 100) < 10:
+                recommendations.append({
+                    "type": "efficiency",
+                    "priority": "high",
+                    "message": f"Çok düşük sorgu verimliliği: %{stats['efficiency_percent']}",
+                    "detail": "Sorgu çok fazla gereksiz doküman tarıyor."
                 })
                 
             # Collection scan kontrolü
@@ -289,7 +477,7 @@ class QueryPerformanceAnalyzer:
         return None
     
     def _generate_assessment(self, analysis: Dict) -> str:
-        """Genel değerlendirme metni oluştur"""
+        """Genel değerlendirme metni oluştur - GELİŞTİRİLMİŞ"""
         if "performance_score" not in analysis:
             return "Performans analizi yapılamadı."
             
@@ -298,11 +486,21 @@ class QueryPerformanceAnalyzer:
         
         assessment = f"Sorgu performansı: {level} ({score}/100)\n"
         
+        # Detaylı skorlar - YENİ
+        if "detailed_scores" in analysis["performance_score"]:
+            scores = analysis["performance_score"]["detailed_scores"]
+            assessment += f"\nDetaylı Skorlar:\n"
+            assessment += f"- Zaman: {scores.get('time', 0)}/30\n"
+            assessment += f"- Verimlilik: {scores.get('efficiency', 0)}/30\n"
+            assessment += f"- Index Kullanımı: {scores.get('index', 0)}/25\n"
+            assessment += f"- Sonuç Boyutu: {scores.get('result_size', 0)}/15\n"
+        
         if "execution_stats" in analysis:
             stats = analysis["execution_stats"]
-            assessment += f"Çalışma süresi: {stats['execution_time_ms']}ms\n"
+            assessment += f"\nÇalışma süresi: {stats['execution_time_ms']}ms\n"
             assessment += f"Taranan doküman: {stats['total_docs_examined']}\n"
-            assessment += f"Dönen doküman: {stats['docs_returned']}"
+            assessment += f"Dönen doküman: {stats['docs_returned']}\n"
+            assessment += f"Verimlilik: %{stats.get('efficiency_percent', 0)}"
             
         return assessment
     

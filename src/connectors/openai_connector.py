@@ -1,3 +1,6 @@
+# C:\Users\muharrem.altunbag\MongoDB-LLM-assistant\MongoDB-LLM-assistant\src\connectors\openai_connector.py
+
+
 import os
 from typing import Optional
 from langchain_openai import ChatOpenAI
