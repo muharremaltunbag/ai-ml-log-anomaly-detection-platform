@@ -170,15 +170,17 @@ async function handleQuery() {
     elements.resultSection.style.display = 'none';
     
     try {
+        const queryBody = {
+            query: query,
+            api_key: apiKey
+        };
+        
         const response = await fetch(API_ENDPOINTS.query, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                query: query,
-                api_key: apiKey
-            })
+            body: JSON.stringify(queryBody)
         });
         
         const result = await response.json();

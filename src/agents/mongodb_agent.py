@@ -175,6 +175,69 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 "öneriler": ["Sorgunuzu basitleştirmeyi deneyin", "Koleksiyon adını kontrol edin"]
             }
     
+    def process_query_with_args(self, user_input: str, additional_args: Dict[str, Any]) -> Dict[str, Any]:
+        """SSH config gibi ek parametrelerle sorgu işle"""
+        try:
+            # Boş sorgu kontrolü
+            if not user_input or not user_input.strip():
+                return {
+                    "durum": "hata",
+                    "işlem": "sorgu_işleme",
+                    "açıklama": "Lütfen bir sorgu girin",
+                    "sonuç": None
+                }
+            
+            # Bağlantı kontrolü
+            if not self._check_connections():
+                return {
+                    "durum": "hata",
+                    "işlem": "bağlantı_kontrolü",
+                    "açıklama": "Veritabanı bağlantısı kurulamadı",
+                    "sonuç": None
+                }
+            
+            # Anomaly detection sorgularını tespit et
+            is_anomaly_query = any(keyword in user_input.lower() for keyword in [
+                'anomali', 'anomaly', 'log', 'analiz', 'train', 'model'
+            ])
+            
+            # SSH config varsa ve anomaly query ise
+            if is_anomaly_query and additional_args.get('use_ssh') and additional_args.get('ssh_config'):
+                # Anomaly tools için özel format
+                enhanced_input = user_input
+                
+                # SSH config'i JSON string olarak ekle
+                import json
+                ssh_config_str = json.dumps(additional_args['ssh_config'])
+                
+                # Tool'a özel argüman formatında gönder
+                if 'train' in user_input.lower() or 'model' in user_input.lower():
+                    enhanced_input = f"{user_input} {{'sample_size': 10000}}"
+                else:
+                    enhanced_input = f"{user_input} {{'time_range': 'last_day', 'use_ssh': true, 'ssh_config': {ssh_config_str}}}"
+            else:
+                enhanced_input = user_input
+            
+            # Agent'ı çalıştır
+            self.logger.info(f"Sorgu işleniyor (SSH destekli): {enhanced_input[:100]}...")
+            
+            result = self.agent_executor.invoke({
+                "input": enhanced_input
+            })
+            
+            # Sonucu formatla
+            return self._format_response(result)
+            
+        except Exception as e:
+            self.logger.error(f"SSH destekli sorgu işleme hatası: {e}")
+            return {
+                "durum": "hata",
+                "işlem": "sorgu_işleme",
+                "açıklama": f"İşlem sırasında hata oluştu: {str(e)}",
+                "sonuç": None,
+                "öneriler": ["SSH bağlantı bilgilerini kontrol edin", "Sorgunuzu basitleştirmeyi deneyin"]
+            }
+    
     def _check_connections(self) -> bool:
         """Bağlantıları kontrol et ve gerekirse yenile"""
         try:
@@ -335,7 +398,17 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
             "available_tools": [
                 "mongodb_query",
                 "view_schema", 
-                "manage_indexes"
+                "manage_indexes",
+                "check_server_status",
+                "get_server_metrics",
+                "find_resource_intensive_processes",
+                "execute_monitoring_command",
+                "get_servers_by_tag",
+                "analyze_query_performance",
+                "get_slow_queries",
+                "analyze_mongodb_logs",
+                "get_anomaly_summary",
+                "train_anomaly_model"
             ]
         }
 

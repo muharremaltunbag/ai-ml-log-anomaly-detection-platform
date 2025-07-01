@@ -10,7 +10,7 @@
         "servers": {
           "mongodb-node1": {
             "host": "127.0.0.1",
-            "port": 2200,
+            "port": 2222,
             "user": "vagrant",
             "key_file": "{key_base_path}/mongodb-node1/virtualbox/private_key",
             "tags": ["mongodb", "primary", "test"],
@@ -18,7 +18,7 @@
           },
           "mongodb-node2": {
             "host": "127.0.0.1",
-            "port": 2222,
+            "port": 2200,
             "user": "vagrant",
             "key_file": "{key_base_path}/mongodb-node2/virtualbox/private_key",
             "tags": ["mongodb", "secondary", "test"],
@@ -42,32 +42,76 @@
           "key_base_path": "/etc/ssh/keys"
         },
         "servers": {
-          "prod-mongo-01": {
-            "host": "10.0.1.10",
+          "mongodbtest1": {
+            "host": "10.29.6.108",
             "port": 22,
-            "user": "lcwadmin",
-            "key_file": "{key_base_path}/prod_key.pem",
-            "password_auth": false,
-            "tags": ["mongodb", "primary", "production"],
-            "description": "Production MongoDB Primary"
+            "user": "dba",
+            "password_auth": true,
+            "tags": ["mongodb", "test", "production", "filebeat-enabled"],
+            "description": "MongoDB Test Server - Production Network",
+            "mongodb_config": {
+              "version": "4.2.5-5",
+              "port": 27017,
+              "log_path": "/var/log/mongodb/mongod.log",
+              "log_format": "text"
+            },
+            "filebeat_config": {
+              "installed": true,
+              "version": "7.12.0",
+              "output": "logstash",
+              "logstash_host": "10.29.21.32:9661",
+              "mongodb_module": "enabled"
+            }
           },
-          "prod-mongo-02": {
-            "host": "10.0.1.11",
+          "lcwmongodb01n1": {
+            "host": "10.29.20.163",
             "port": 22,
-            "user": "lcwadmin",
-            "key_file": "{key_base_path}/prod_key.pem",
-            "password_auth": false,
-            "tags": ["mongodb", "secondary", "production"],
-            "description": "Production MongoDB Secondary"
+            "user": "dba",
+            "password_auth": true,
+            "tags": ["mongodb", "primary", "production", "cluster"],
+            "description": "MongoDB Production Cluster Node 1",
+            "mongodb_config": {
+              "version": "4.2",
+              "port": 27017,
+              "log_path": "/var/log/mongodb/mongod.log",
+              "log_format": "text"
+            }
           },
-          "prod-app-01": {
-            "host": "10.0.2.20",
+          "lcwmongodb01n2": {
+            "host": "10.29.20.172",
+            "port": 22,
+            "user": "dba",
+            "password_auth": true,
+            "tags": ["mongodb", "secondary", "production", "cluster"],
+            "description": "MongoDB Production Cluster Node 2",
+            "mongodb_config": {
+              "version": "4.2",
+              "port": 27017,
+              "log_path": "/var/log/mongodb/mongod.log",
+              "log_format": "text"
+            }
+          },
+          "lcwmongodb01n3": {
+            "host": "10.29.20.171",
+            "port": 22,
+            "user": "dba",
+            "password_auth": true,
+            "tags": ["mongodb", "secondary", "production", "cluster"],
+            "description": "MongoDB Production Cluster Node 3",
+            "mongodb_config": {
+              "version": "4.2",
+              "port": 27017,
+              "log_path": "/var/log/mongodb/mongod.log",
+              "log_format": "text"
+            }
+          },
+          "RAGNAROK": {
+            "host": "10.29.1.229",
             "port": 22,
             "user": "lcwadmin",
-            "key_file": "{key_base_path}/prod_key.pem",
-            "password_auth": false,
-            "tags": ["application", "web", "production"],
-            "description": "Production Application Server"
+            "password_auth": true,
+            "tags": ["jump-server", "production"],
+            "description": "Jump Server - RAGNAROK"
           }
         }
       },
@@ -78,16 +122,7 @@
           "default_timeout": 20,
           "key_base_path": "~/.ssh"
         },
-        "servers": {
-          "stg-mongo-01": {
-            "host": "staging.lcwaikiki.local",
-            "port": 22,
-            "user": "deploy",
-            "key_file": "{key_base_path}/staging_key",
-            "tags": ["mongodb", "staging"],
-            "description": "Staging MongoDB Server"
-          }
-        }
+        "servers": {}
       }
     },
     "monitoring_commands": {

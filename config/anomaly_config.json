@@ -1,0 +1,140 @@
+{
+    "environments": {
+      "test": {
+        "description": "Test/Development Environment",
+        "data_sources": {
+          "file": {
+            "enabled": true,
+            "path": "C:/Users/muharrem.altunbag/Desktop/Anomaly_Detection/Latest/log dosya/mongod.log",
+            "format": "json",
+            "encoding": "utf-8",
+            "buffer_size": 8192
+          },
+          "opensearch": {
+            "enabled": false,
+            "host": "10.29.21.32",
+            "port": 9200,
+            "protocol": "https",
+            "index_pattern": "db-mongodb-test-*",
+            "verify_ssl": false,
+            "auth": {
+              "username": "",
+              "password": ""
+            },
+            "query": {
+              "size": 10000,
+              "scroll": "5m"
+            }
+          }
+        }
+      },
+      "production": {
+        "description": "Production Environment - LC Waikiki",
+        "data_sources": {
+          "file": {
+            "enabled": false,
+            "path": "/var/log/mongodb/mongod.log",
+            "format": "text",
+            "encoding": "utf-8",
+            "buffer_size": 16384
+          },
+          "opensearch": {
+            "enabled": true,
+            "host": "10.29.21.32",
+            "port": 9200,
+            "protocol": "https",
+            "index_pattern": "db-mongodb-*",
+            "verify_ssl": true,
+            "auth": {
+              "username": "",
+              "password": ""
+            },
+            "query": {
+              "size": 10000,
+              "scroll": "5m",
+              "time_range": {
+                "field": "@timestamp",
+                "gte": "now-1h"
+              }
+            }
+          },
+          "filebeat": {
+            "enabled": false,
+            "config_path": "/etc/filebeat/filebeat.yml",
+            "output": {
+              "logstash": {
+                "hosts": ["10.29.21.32:5044"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "anomaly_detection": {
+      "model": {
+        "type": "IsolationForest",
+        "parameters": {
+          "contamination": 0.03,
+          "n_estimators": 300,
+          "max_samples": 512,
+          "max_features": 0.9,
+          "bootstrap": true,
+          "random_state": 42,
+          "n_jobs": -1
+        }
+      },
+      "features": {
+        "enabled_features": [
+          "severity_W",
+          "component_encoded",
+          "is_rare_component",
+          "is_rare_combo",
+          "has_error_key",
+          "is_auth_failure",
+          "is_drop_operation",
+          "is_rare_message",
+          "extreme_burst_flag",
+          "burst_density",
+          "component_changed",
+          "hour_of_day",
+          "is_weekend",
+          "attr_key_count",
+          "has_many_attrs"
+        ],
+        "filters": {
+          "exclude_auth_success": true,
+          "exclude_reauthenticate": true,
+          "rare_threshold": 100,
+          "burst_threshold_ms": 100
+        }
+      },
+      "output": {
+        "save_model": true,
+        "model_path": "models/isolation_forest.pkl",
+        "export_anomalies": true,
+        "anomaly_path": "output/anomalies_{timestamp}.csv",
+        "notification": {
+          "enabled": false,
+          "webhook_url": "",
+          "email": ""
+        }
+      }
+    },
+    "processing": {
+      "batch_size": 10000,
+      "max_workers": 4,
+      "memory_limit_gb": 8,
+      "cache_enabled": true,
+      "cache_path": "cache/anomaly_cache"
+    },
+    "logging": {
+      "level": "INFO",
+      "file": "logs/anomaly_detection.log",
+      "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    },
+    "monitoring": {
+      "performance_tracking": true,
+      "metrics_export": false,
+      "metrics_path": "metrics/anomaly_metrics.json"
+    }
+  }

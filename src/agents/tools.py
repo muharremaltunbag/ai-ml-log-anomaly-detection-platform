@@ -13,6 +13,8 @@ import json
 import logging
 from ..monitoring.monitoring_tools import create_monitoring_tools
 from ..performance.performance_tools import create_performance_tools
+from ..anomaly.anomaly_tools import create_anomaly_tools
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -402,20 +404,25 @@ def get_all_tools(
     validator: QueryValidator,
     analyzer: SchemaAnalyzer
 ) -> List[Tool]:
-    """Tüm tool'ları döndür"""
-    # Mevcut MongoDB tools
+    """Get all available tools"""
+    # MongoDB tools
     tools = [
         create_query_tool(db_connector, validator),
         create_schema_tool(db_connector, analyzer),
         create_index_tool(db_connector)
     ]
     
-    # Monitoring tools ekle
+    # Add monitoring tools
     monitoring_tools = create_monitoring_tools()
     tools.extend(monitoring_tools)
     
-    # Performance tools ekle
+    # Add performance tools
     performance_tools = create_performance_tools(db_connector)
     tools.extend(performance_tools)
+    
+    # Add anomaly tools
+    environment = os.getenv('ENVIRONMENT', 'test')
+    anomaly_tools = create_anomaly_tools(environment=environment)
+    tools.extend(anomaly_tools)
     
     return tools

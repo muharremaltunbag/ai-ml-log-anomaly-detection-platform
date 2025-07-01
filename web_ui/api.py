@@ -100,7 +100,7 @@ async def process_query(request: QueryRequest):
         # Agent'ı al
         mongodb_agent = await get_agent()
         
-        # Sorguyu işle
+        # Normal sorgu işleme
         logger.info(f"Sorgu alındı: {request.query[:50]}...")
         result = mongodb_agent.process_query(request.query)
         
