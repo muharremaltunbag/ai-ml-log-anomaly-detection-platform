@@ -59,14 +59,18 @@ class MongoDBLogReader:
     def _detect_log_format(self) -> str:
         """Log formatını otomatik tespit et"""
         try:
+            logger.debug(f"Detecting log format for file: {self.log_path}")
             with open(self.log_path, 'r', encoding=self.encoding) as f:
                 first_line = f.readline().strip()
+                logger.debug(f"First line sample: {first_line[:100]}...")
                 
                 # JSON formatı kontrolü
                 if first_line.startswith('{') and '"t":' in first_line:
+                    logger.debug("Detected JSON format")
                     return "json"
                 # Legacy text format kontrolü (timestamp ile başlar)
                 elif re.match(r'^\d{4}-\d{2}-\d{2}T', first_line):
+                    logger.debug("Detected text format")
                     return "text"
                 else:
                     logger.warning("Log format could not be detected, defaulting to text")
@@ -74,6 +78,7 @@ class MongoDBLogReader:
                     
         except Exception as e:
             logger.error(f"Format detection error: {e}")
+            logger.debug(f"Format detection failed for: {self.log_path}", exc_info=True)
             return "text"
     
     def read_logs(self, limit: int = None, last_hours: int = None) -> pd.DataFrame:
@@ -96,10 +101,13 @@ class MongoDBLogReader:
         """JSON formatındaki logları oku"""
         logs = []
         count = 0
+        parse_errors = 0
+        
+        logger.debug(f"Starting JSON log reading - limit: {limit}, last_hours: {last_hours}")
         
         try:
             with open(self.log_path, 'r', encoding=self.encoding) as f:
-                for line in f:
+                for line_num, line in enumerate(f, 1):
                     if limit and count >= limit:
                         break
                         
@@ -116,23 +124,35 @@ class MongoDBLogReader:
                         logs.append(log_entry)
                         count += 1
                         
+                        if count % 10000 == 0:
+                            logger.debug(f"Processed {count} JSON log entries")
+                        
                     except json.JSONDecodeError:
+                        parse_errors += 1
+                        if parse_errors <= 5:  # Log only first 5 errors
+                            logger.debug(f"JSON parse error at line {line_num}: {line[:100]}...")
                         continue
                     except Exception as e:
-                        logger.warning(f"Error parsing log line: {e}")
+                        logger.warning(f"Error parsing log line {line_num}: {e}")
                         continue
             
             logger.info(f"Read {len(logs)} JSON log entries")
+            if parse_errors > 0:
+                logger.debug(f"Total JSON parse errors: {parse_errors}")
             return pd.DataFrame(logs)
             
         except Exception as e:
             logger.error(f"Error reading JSON logs: {e}")
+            logger.debug("JSON log reading failed", exc_info=True)
             return pd.DataFrame()
     
     def _read_text_logs(self, limit: int = None, last_hours: int = None) -> pd.DataFrame:
         """Legacy text formatındaki logları oku ve JSON benzeri formata dönüştür"""
         logs = []
         count = 0
+        parse_errors = 0
+        
+        logger.debug(f"Starting text log reading - limit: {limit}, last_hours: {last_hours}")
         
         # Text log pattern
         # Format: 2025-06-22T06:25:06.125+0300 I  ACCESS   [conn1661946] message...
@@ -146,7 +166,7 @@ class MongoDBLogReader:
         
         try:
             with open(self.log_path, 'r', encoding=self.encoding) as f:
-                for line in f:
+                for line_num, line in enumerate(f, 1):
                     if limit and count >= limit:
                         break
                     
@@ -176,56 +196,38 @@ class MongoDBLogReader:
                         
                         logs.append(log_entry)
                         count += 1
+                        
+                        if count % 10000 == 0:
+                            logger.debug(f"Processed {count} text log entries")
+                    else:
+                        parse_errors += 1
+                        if parse_errors <= 5:  # Log only first 5 errors
+                            logger.debug(f"Text pattern mismatch at line {line_num}: {line[:100]}...")
             
             logger.info(f"Read {len(logs)} text log entries")
+            if parse_errors > 0:
+                logger.debug(f"Total text parse errors: {parse_errors}")
             return pd.DataFrame(logs)
             
         except Exception as e:
             logger.error(f"Error reading text logs: {e}")
+            logger.debug("Text log reading failed", exc_info=True)
             return pd.DataFrame()
-    
-    def _parse_text_message_attributes(self, log_entry: Dict[str, Any]):
-        """Text formatındaki mesajdan attribute'ları çıkar"""
-        msg = log_entry['msg']
-        attr = {}
-        
-        # IP adresi tespiti
-        ip_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
-        ips = re.findall(ip_pattern, msg)
-        if ips:
-            attr['remote'] = ips[0]
-        
-        # Port tespiti
-        port_pattern = r':(\d{4,5})'
-        ports = re.findall(port_pattern, msg)
-        if ports:
-            attr['port'] = int(ports[0])
-        
-        # Database/collection tespiti
-        db_pattern = r'(\w+)\.(\w+)'
-        db_match = re.search(db_pattern, msg)
-        if db_match:
-            attr['ns'] = f"{db_match.group(1)}.{db_match.group(2)}"
-        
-        # Command tespiti
-        if 'command:' in msg:
-            cmd_start = msg.find('command:') + 8
-            cmd_part = msg[cmd_start:].strip()
-            if cmd_part.startswith('{'):
-                attr['command'] = cmd_part
-        
-        log_entry['attr'] = attr
     
     def read_logs_parallel(self, limit: int = None, max_workers: int = 4) -> pd.DataFrame:
         """Büyük log dosyalarını paralel oku"""
         # Dosya boyutunu kontrol et
         file_size = os.path.getsize(self.log_path)
         
+        logger.debug(f"Starting parallel read - file_size: {file_size/1024/1024:.2f}MB, max_workers: {max_workers}")
+        
         if file_size < 50 * 1024 * 1024:  # 50MB'dan küçükse normal oku
+            logger.debug("File size < 50MB, using normal read instead of parallel")
             return self.read_logs(limit)
         
         # Satır sayısını hesapla
         total_lines = self._count_lines()
+        logger.debug(f"Total lines in file: {total_lines}")
         
         if limit and limit < total_lines:
             total_lines = limit
@@ -235,13 +237,16 @@ class MongoDBLogReader:
         ranges = [(i * chunk_size, (i + 1) * chunk_size if i != max_workers - 1 else total_lines) 
                   for i in range(max_workers)]
         
+        logger.debug(f"Split into {len(ranges)} chunks of ~{chunk_size} lines each")
+        
         # Paralel okuma
         all_logs = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(self._read_chunk, start, end) for start, end in ranges]
             
-            for future in futures:
+            for i, future in enumerate(futures):
                 result = future.result()
+                logger.debug(f"Chunk {i+1} completed: {len(result)} logs")
                 all_logs.extend(result)
                 gc.collect()
         
@@ -264,6 +269,8 @@ class MongoDBLogReader:
         """Belirli bir aralıktaki logları oku"""
         logs = []
         
+        logger.debug(f"Reading chunk: lines {start}-{end}")
+        
         with open(self.log_path, 'r', encoding=self.encoding) as f:
             for i, line in enumerate(f):
                 if i < start:
@@ -280,10 +287,13 @@ class MongoDBLogReader:
                     # Text format parse (yukarıdaki pattern kullanılacak)
                     pass
         
+        logger.debug(f"Chunk {start}-{end} completed: {len(logs)} logs")
         return logs
     
     def get_log_stats(self) -> Dict[str, Any]:
         """Log dosyası istatistiklerini döndür"""
+        logger.debug(f"Calculating log stats for: {self.log_path}")
+        
         stats = {
             "path": self.log_path,
             "format": self.format,
@@ -292,6 +302,8 @@ class MongoDBLogReader:
             "readable": os.access(self.log_path, os.R_OK),
             "line_count": self._count_lines()
         }
+        
+        logger.debug(f"Basic stats: size={stats['size_mb']:.2f}MB, lines={stats['line_count']}")
         
         # İlk ve son log zamanı
         try:
@@ -312,5 +324,7 @@ class MongoDBLogReader:
                         
         except Exception as e:
             logger.error(f"Error getting log stats: {e}")
+            logger.debug("Log stats calculation failed", exc_info=True)
         
+        logger.debug(f"Log stats completed: {stats}")
         return stats

@@ -51,6 +51,8 @@
                 <button id="collectionsBtn" class="btn btn-secondary">KOLEKSİYONLAR</button>
                 <button id="statusBtn" class="btn btn-secondary">SİSTEM DURUMU</button>
                 <button id="clearBtn" class="btn btn-secondary">TEMİZLE</button>
+                <button id="logUploadBtn" class="btn btn-secondary">📁 LOG YÜKLE</button>
+                <button id="anomalyAnalysisBtn" class="btn btn-primary">🔍 ANOMALİ ANALİZİ</button>
             </section>
 
             <!-- Sorgu Alanı -->
@@ -79,6 +81,37 @@
                 </div>
             </section>
 
+            <!-- Log Yükleme Bölümü -->
+            <section class="log-upload-section">
+                <h3>📁 Manuel Log Yükleme (OpenSearch Öncesi Test)</h3>
+                <div class="upload-container">
+                    <div class="upload-area">
+                        <input type="file" id="logFileInput" accept=".log,.txt,.json" style="display: none;">
+                        <div class="upload-dropzone" id="uploadDropzone">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#0047BA" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            <p>Log dosyasını buraya sürükleyin veya <span class="upload-link">seçmek için tıklayın</span></p>
+                            <small>Desteklenen formatlar: .log, .txt, .json (Max 100MB)</small>
+                        </div>
+                    </div>
+                    
+                    <!-- Yüklenen Dosyalar Listesi -->
+                    <div id="uploadedFiles" class="uploaded-files" style="display: none;">
+                        <h4>Yüklenen Log Dosyaları</h4>
+                        <div id="filesList" class="files-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Anomali Analiz Sonuçları -->
+            <section id="anomalyResults" class="anomaly-results" style="display: none;">
+                <h3>🎯 Anomali Analiz Sonuçları</h3>
+                <div id="anomalyContent" class="anomaly-content"></div>
+            </section>
+
             <!-- Sonuç Alanı -->
             <section id="resultSection" class="result-section" style="display: none;">
                 <h3>Sorgu Sonucu</h3>
@@ -91,6 +124,107 @@
                 <p>Sorgu işleniyor, lütfen bekleyin...</p>
             </div>
         </main>
+
+        <!-- Anomali Analiz Modal -->
+        <div id="anomalyModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>🔍 Anomali Analizi</h3>
+                    <span class="close">&times;</span>
+                </div>
+                <div class="modal-body">
+                    <div id="anomalyModalContent">
+                        <!-- Veri Kaynağı Seçimi -->
+                        <div class="anomaly-source-selection" style="margin-bottom: 20px;">
+                            <h4>Veri Kaynağı Seçin</h4>
+                            <div class="source-selection-grid">
+                                <label class="source-option">
+                                    <input type="radio" name="dataSource" value="file">
+                                    <span>📁 Config Dosyası</span>
+                                </label>
+                                
+                                <label class="source-option">
+                                    <input type="radio" name="dataSource" value="upload" checked>
+                                    <span>📤 Yüklenen Dosya</span>
+                                    <small> (Manuel yüklenen loglar) </small>
+                                </label>
+                                
+                                <label class="source-option">
+                                    <input type="radio" name="dataSource" value="mongodb_direct">
+                                    <span>MongoDB Direct</span>
+                                </label>
+                                
+                                <label class="source-option">
+                                    <input type="radio" name="dataSource" value="test_servers">
+                                    <span>Test Linux Sunucuları</span>
+                                </label>
+                                
+                                <label class="source-option disabled">
+                                    <input type="radio" name="dataSource" value="opensearch" disabled>
+                                    <span> OpenSearch </span>
+                                    <small>Yakında...</small>
+                                </label>
+                            </div>
+                            
+                            <!-- Dinamik input alanları -->
+                            <div id="sourceSpecificInputs" style="margin-top: 15px;">
+                                <!-- Upload için dosya listesi (varsayılan) -->
+                                <div id="uploadSourceInputs" style="display: none;">
+                                    <!-- Mevcut modalFilesList buraya taşınacak -->
+                                </div>
+                                
+                                <!-- MongoDB Direct için -->
+                                <div id="mongoSourceInputs" style="display: none;">
+                                    <label>Connection String:</label>
+                                    <input type="text" id="mongoConnectionString" class="form-input" 
+                                           value="mongodb://lcw_test_user:lcw_test_pass@192.168.56.101:27017,192.168.56.102:27017,192.168.56.103:27017/test_lcw?authSource=admin&replicaSet=rs0"
+                                           placeholder="mongodb://...">
+                                </div>
+                                
+                                <!-- Test Servers için -->
+                                <div id="serverSourceInputs" style="display: none;">
+                                    <label>Test Sunucusu:</label>
+                                    <select id="testServerSelect" class="form-select">
+                                        <option value="">Sunucu seçin...</option>
+                                        <option value="mongodb-node1">MongoDB Node 1 (Primary)</option>
+                                        <option value="mongodb-node2">MongoDB Node 2 (Secondary)</option>
+                                        <option value="mongodb-node3">MongoDB Node 3 (Secondary)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Dosya seçimi -->
+                        <div class="anomaly-file-selection" id="fileSelectionSection">
+                            <h4>Log Dosyası Seçin</h4>
+                            <div id="modalFilesList" class="files-list"></div>
+                        </div>
+                        
+                        <!-- Analiz seçenekleri -->
+                        <div class="analysis-options" style="margin-top: 20px;">
+                            <h4>Analiz Seçenekleri</h4>
+                            <div class="options-grid">
+                                <label>
+                                    <input type="radio" name="modalTimeRange" value="last_24h" checked>
+                                    Son 24 Saat
+                                </label>
+                                <label>
+                                    <input type="radio" name="modalTimeRange" value="last_7d">
+                                    Son 7 Gün
+                                </label>
+                                <label>
+                                    <input type="radio" name="modalTimeRange" value="all">
+                                    Tüm Loglar
+                                </label>
+                            </div>
+                            <button id="startAnalysisBtn" class="btn btn-primary" style="margin-top: 15px; width: 100%;">
+                                <span>🚀 ANALİZİ BAŞLAT</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Footer -->
         <footer>

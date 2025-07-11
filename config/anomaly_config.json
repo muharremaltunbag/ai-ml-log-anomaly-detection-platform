@@ -25,6 +25,25 @@
               "size": 10000,
               "scroll": "5m"
             }
+          },
+          "upload": {
+            "enabled": true,
+            "temp_dir": "temp_logs/",
+            "max_size_mb": 100,
+            "allowed_formats": ["log", "txt", "json"]
+          },
+          "mongodb_direct": {
+            "enabled": true,
+            "default_connection": "mongodb://lcw_test_user:lcw_test_pass@192.168.56.101:27017,192.168.56.102:27017,192.168.56.103:27017/test_lcw?authSource=admin&replicaSet=rs0",
+            "default_database": "test_lcw",
+            "default_collection": "system.profile",
+            "query_limit": 10000
+          },
+          "test_servers": {
+            "enabled": true,
+            "config_path": "config/monitoring_servers.json",
+            "servers": ["mongodb-node1", "mongodb-node2", "mongodb-node3"],
+            "default_log_path": "/home/vagrant/mongod.log"
           }
         }
       },
@@ -66,6 +85,25 @@
                 "hosts": ["10.29.21.32:5044"]
               }
             }
+          },
+          "upload": {
+            "enabled": true,
+            "temp_dir": "/tmp/anomaly_logs/",
+            "max_size_mb": 500,
+            "allowed_formats": ["log", "txt", "json"]
+          },
+          "mongodb_direct": {
+            "enabled": true,
+            "default_connection": "mongodb://lcw_prod_user:lcw_prod_pass@10.29.21.32:27017/chatbot_prod?authSource=admin",
+            "default_database": "local",
+            "default_collection": "startup_log",
+            "query_limit": 50000
+          },
+          "test_servers": {
+            "enabled": false,
+            "config_path": "config/monitoring_servers.json",
+            "servers": ["mongodb-prod1", "mongodb-prod2", "mongodb-prod3"],
+            "default_log_path": "/var/log/mongodb/mongod.log"
           }
         }
       }

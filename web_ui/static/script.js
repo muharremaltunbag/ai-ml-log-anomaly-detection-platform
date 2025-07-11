@@ -1,3 +1,5 @@
+// web_ui\static\script.js
+
 /**
  * LC Waikiki MongoDB Assistant - Frontend JavaScript
  * 
@@ -11,6 +13,7 @@
 // Global değişkenler
 let apiKey = '';
 let isConnected = false;
+let selectedDataSource = 'upload';  // Varsayılan veri kaynağı
 
 // API endpoints
 const API_BASE = window.location.origin;
@@ -18,7 +21,11 @@ const API_ENDPOINTS = {
     query: '/api/query',
     status: '/api/status',
     collections: '/api/collections',
-    schema: '/api/schema'
+    schema: '/api/schema',
+    analyzeLog: '/api/analyze-uploaded-log',  // analyzeLog yerine analyze-uploaded-log
+    uploadLog: '/api/upload-log',              // YENİ
+    uploadedLogs: '/api/uploaded-logs',        // YENİ
+    deleteUploadedLog: '/api/uploaded-log'     // YENİ
 };
 
 // DOM elementleri
@@ -48,6 +55,8 @@ document.addEventListener('DOMContentLoaded', () => {
  * Event listener'ları başlat
  */
 function initializeEventListeners() {
+    console.log('Initializing event listeners...'); // DEBUG LOG
+    
     // Bağlan butonu
     elements.connectBtn.addEventListener('click', handleConnect);
     
@@ -69,35 +78,103 @@ function initializeEventListeners() {
     document.getElementById('statusBtn').addEventListener('click', handleStatus);
     document.getElementById('clearBtn').addEventListener('click', handleClear);
     
+    // Log Yükle butonu
+    document.getElementById('logUploadBtn').addEventListener('click', () => {
+        console.log('Log upload button clicked'); // DEBUG LOG
+        document.getElementById('logFileInput').click();
+    });
+
+    // Anomali Analizi butonu  
+    document.getElementById('anomalyAnalysisBtn').addEventListener('click', () => {
+        console.log('Anomaly Analysis Button clicked!');
+        
+        // Modal'ı göster
+        document.getElementById('anomalyModal').style.display = 'block';
+        
+        // Dosyaları güncelle ama data source'u resetleme
+        updateUploadedFilesList();
+        
+        // Eğer önceden upload seçiliyse, tekrar seç
+        if (selectedDataSource === 'upload') {
+            document.querySelector('input[name="dataSource"][value="upload"]').checked = true;
+            updateSourceInputs('upload');
+        }
+    });
+    
+    // Anomaly Modal içindeki Analizi Başlat butonu  
+    document.getElementById('startAnalysisBtn').addEventListener('click', handleAnalyzeLog);
+    
     // Örnek sorgu chip'leri
     document.querySelectorAll('.chip').forEach(chip => {
         chip.addEventListener('click', (e) => {
+            console.log('Chip clicked:', e.target.dataset.query); // DEBUG LOG
             elements.queryInput.value = e.target.dataset.query;
             elements.queryInput.focus();
         });
     });
     
     // Modal kapatma
-    document.querySelector('.close').addEventListener('click', closeModal);
+    document.querySelector('#modal .close').addEventListener('click', closeModal);
     window.addEventListener('click', (e) => {
         if (e.target === elements.modal) closeModal();
     });
+    
+    // Anomaly Modal kapatma butonu için event listener ekle
+    document.querySelector('#anomalyModal .close').addEventListener('click', closeAnomalyModal);
+    
+    // Anomaly modal dışına tıklama ile kapatma
+    window.addEventListener('click', (e) => {
+        const anomalyModal = document.getElementById('anomalyModal');
+        if (e.target === anomalyModal) {
+            closeAnomalyModal();
+        }
+    });
+    
+    // Veri kaynağı seçimi değiştiğinde
+    document.querySelectorAll('input[name="dataSource"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            console.log('Data source changed from', selectedDataSource, 'to', e.target.value); // DEBUG LOG
+            selectedDataSource = e.target.value;
+            updateSourceInputs(selectedDataSource);
+        });
+    });
+    
+    // Dosya radio button'larına event listener ekle (Event delegation)
+    document.addEventListener('change', function(e) {
+        if (e.target.matches('input[name="logFile"]')) {
+            e.stopPropagation(); // Event bubbling'i durdur
+            console.log('File selected:', e.target.value);
+            // Upload kaynağı seçiliyse validation'ı tetikle
+            if (selectedDataSource === 'upload') {
+                validateAnalysisButton();
+            }
+        }
+    });
+    
+    console.log('Event listeners initialized successfully'); // DEBUG LOG
 }
 
 /**
  * İlk durum kontrolü
  */
 async function checkInitialStatus() {
+    console.log('Checking initial status...'); // DEBUG LOG
+    
     try {
         const response = await fetch(API_ENDPOINTS.status);
         const data = await response.json();
         
+        console.log('Initial status response:', data); // DEBUG LOG
+        
         if (data.status === 'online') {
+            console.log('System is online'); // DEBUG LOG
             updateStatus('online', 'Sistem hazır - API anahtarı ile bağlanın');
         } else {
+            console.log('System is offline'); // DEBUG LOG
             updateStatus('offline', 'Sistem çevrimdışı');
         }
     } catch (error) {
+        console.error('Initial status check failed:', error); // DEBUG LOG
         updateStatus('offline', 'Bağlantı hatası');
     }
 }
@@ -108,7 +185,10 @@ async function checkInitialStatus() {
 async function handleConnect() {
     const key = elements.apiKeyInput.value.trim();
     
+    console.log('handleConnect called with API key length:', key.length); // DEBUG LOG
+    
     if (!key) {
+        console.log('API key is empty'); // DEBUG LOG
         showNotification('Lütfen API anahtarını girin', 'error');
         return;
     }
@@ -117,12 +197,17 @@ async function handleConnect() {
     elements.connectBtn.textContent = 'BAĞLANIYOR...';
     
     try {
+        console.log('Attempting to connect to API...'); // DEBUG LOG
         // Test için collections endpoint'ini kullan
         const response = await fetch(`${API_ENDPOINTS.collections}?api_key=${key}`);
+        
+        console.log('API response status:', response.status); // DEBUG LOG
         
         if (response.ok) {
             apiKey = key;
             isConnected = true;
+            
+            console.log('Connection successful, updating UI...'); // DEBUG LOG
             
             // UI'yi güncelle
             elements.mainContent.style.display = 'block';
@@ -139,9 +224,11 @@ async function handleConnect() {
                 console.log(`${data.collections.length} koleksiyon bulundu`);
             }
         } else {
+            console.log('API connection failed with status:', response.status); // DEBUG LOG
             throw new Error('Geçersiz API anahtarı');
         }
     } catch (error) {
+        console.error('Connection error:', error); // DEBUG LOG
         showNotification(error.message || 'Bağlantı hatası', 'error');
         elements.connectBtn.disabled = false;
         elements.connectBtn.textContent = 'BAĞLAN';
@@ -154,12 +241,16 @@ async function handleConnect() {
 async function handleQuery() {
     const query = elements.queryInput.value.trim();
     
+    console.log('handleQuery called with query:', query); // DEBUG LOG
+    
     if (!query) {
+        console.log('Query is empty'); // DEBUG LOG
         showNotification('Lütfen bir sorgu girin', 'warning');
         return;
     }
     
     if (!isConnected) {
+        console.log('Not connected to API'); // DEBUG LOG
         showNotification('Önce bağlantı kurmalısınız', 'error');
         return;
     }
@@ -175,6 +266,8 @@ async function handleQuery() {
             api_key: apiKey
         };
         
+        console.log('Sending query to API...'); // DEBUG LOG
+        
         const response = await fetch(API_ENDPOINTS.query, {
             method: 'POST',
             headers: {
@@ -183,10 +276,15 @@ async function handleQuery() {
             body: JSON.stringify(queryBody)
         });
         
+        console.log('Query response status:', response.status); // DEBUG LOG
+        
         const result = await response.json();
+        console.log('Query result:', result); // DEBUG LOG
+        
         displayResult(result);
         
     } catch (error) {
+        console.error('Query error:', error); // DEBUG LOG
         showNotification('Sorgu işlenirken hata oluştu', 'error');
         console.error('Query error:', error);
     } finally {
@@ -199,10 +297,13 @@ async function handleQuery() {
  * Sonucu görüntüle - GELİŞTİRİLMİŞ VERSİYON
  */
 function displayResult(result) {
+    console.log('displayResult called with result type:', result.işlem || 'unknown'); // DEBUG LOG
+    
     elements.resultSection.style.display = 'block';
 
     // Performance analiz kontrolü - YENİ
     if (result.işlem === 'query_performance_analysis') {
+        console.log('Displaying performance analysis result'); // DEBUG LOG
         displayPerformanceAnalysis(result);
         return;
     }
@@ -384,7 +485,7 @@ function renderPerformanceScore(scoreData) {
     html += '<h3>⚡ Performans Skoru</h3>';
     
     // Ana skor
-    html += '<div class="main-score-container">';
+    html += '<div class="main-score">';
     html += `<div class="score-circle" style="--score-color: ${scoreColor}">`;
     html += `<svg viewBox="0 0 200 200">`;
     html += `<circle cx="100" cy="100" r="90" class="score-bg"/>`;
@@ -999,6 +1100,444 @@ window.viewSchema = async function(collectionName) {
     }
 };
 
+/**
+ * Veri kaynağı input alanlarını güncelle
+ */
+function updateSourceInputs(source) {
+    console.log('updateSourceInputs called with source:', source); // DEBUG LOG
+    
+    // Tüm input alanlarını gizle
+    document.getElementById('uploadSourceInputs').style.display = 'none';
+    document.getElementById('mongoSourceInputs').style.display = 'none';
+    document.getElementById('serverSourceInputs').style.display = 'none';
+    document.getElementById('fileSelectionSection').style.display = 'none';
+    
+    // Seçilen kaynağa göre göster
+    switch(source) {
+        case 'file':
+            console.log('Showing file source inputs'); // DEBUG LOG
+            // Config dosyası seçildi, ekstra input gerekmez
+            break;
+        case 'upload':
+            console.log('Showing upload source inputs'); // DEBUG LOG
+            document.getElementById('uploadSourceInputs').style.display = 'block';
+            document.getElementById('fileSelectionSection').style.display = 'block';
+            break;
+        case 'mongodb_direct':
+            console.log('Showing MongoDB direct source inputs'); // DEBUG LOG
+            document.getElementById('mongoSourceInputs').style.display = 'block';
+            break;
+        case 'test_servers':
+            console.log('Showing test servers source inputs'); // DEBUG LOG
+            document.getElementById('serverSourceInputs').style.display = 'block';
+            break;
+        default:
+            console.log('Unknown source type:', source); // DEBUG LOG
+    }
+    
+    // Analiz butonunu güncelle
+    validateAnalysisButton();
+}
+
+/**
+ * Analiz butonu validasyonu
+ */
+function validateAnalysisButton() {
+    console.log('validateAnalysisButton called for source:', selectedDataSource); // DEBUG LOG
+    
+    const startBtn = document.getElementById('startAnalysisBtn');
+    if (!startBtn) {
+        console.log('startAnalysisBtn element not found!'); // DEBUG LOG
+        return;
+    }
+    
+    let isValid = false;
+    
+    switch(selectedDataSource) {
+        case 'file':
+            isValid = true;
+            console.log('File source - always valid'); // DEBUG LOG
+            break;
+        case 'upload':
+            const selectedFile = document.querySelector('input[name="logFile"]:checked');
+            isValid = selectedFile !== null;
+            console.log('Upload source - selected file:', selectedFile?.value, 'isValid:', isValid); // DEBUG LOG
+            break;
+        case 'mongodb_direct':
+            const connString = document.getElementById('mongoConnectionString').value;
+            isValid = connString && connString.trim().length > 0;
+            console.log('MongoDB direct source - connection string length:', connString?.length, 'isValid:', isValid); // DEBUG LOG
+            break;
+        case 'test_servers':
+            const selectedServer = document.getElementById('testServerSelect').value;
+            isValid = selectedServer && selectedServer.length > 0;
+            console.log('Test servers source - selected server:', selectedServer, 'isValid:', isValid); // DEBUG LOG
+            break;
+        default:
+            console.log('Unknown data source for validation:', selectedDataSource); // DEBUG LOG
+    }
+    
+    startBtn.disabled = !isValid;
+    console.log('Analysis button disabled:', !isValid); // DEBUG LOG
+}
+
+/**
+ * Anomali analiz işlemini başlat
+ */
+async function handleAnalyzeLog() {
+    console.log('handleAnalyzeLog çağrıldı!'); // DEBUG LOG
+    
+    const timeRange = document.querySelector('input[name="modalTimeRange"]:checked').value;
+    console.log('Time Range:', timeRange); // DEBUG LOG
+    console.log('Selected Data Source:', selectedDataSource); // DEBUG LOG
+    
+    // Veri kaynağına göre parametreleri hazırla
+    let requestData = {
+        api_key: apiKey,
+        time_range: timeRange,
+        source_type: selectedDataSource
+    };
+    
+    // Kaynağa özel parametreler
+    switch(selectedDataSource) {
+        case 'file':
+            requestData.file_path = 'config';  // Backend config'den okuyacak
+            console.log('Using config file source'); // DEBUG LOG
+            break;
+            
+        case 'upload':
+            const selectedFile = document.querySelector('input[name="logFile"]:checked');
+            if (!selectedFile) {
+                console.log('No file selected for upload source'); // DEBUG LOG
+                alert('Lütfen bir dosya seçin!');
+                return;
+            }
+            requestData.file_path = selectedFile.value;
+            console.log('Using uploaded file:', selectedFile.value); // DEBUG LOG
+            break;
+            
+        case 'mongodb_direct':
+            requestData.connection_string = document.getElementById('mongoConnectionString').value;
+            requestData.file_path = 'mongodb';  // Dummy değer
+            console.log('Using MongoDB direct connection'); // DEBUG LOG
+            break;
+            
+        case 'test_servers':
+            requestData.server_name = document.getElementById('testServerSelect').value;
+            requestData.file_path = 'server';  // Dummy değer
+            console.log('Using test server:', requestData.server_name); // DEBUG LOG
+            break;
+        default:
+            console.log('Unknown data source for analysis:', selectedDataSource); // DEBUG LOG
+    }
+    
+    console.log('Request Data:', requestData); // DEBUG LOG
+
+    closeAnomalyModal();
+    showLoader();
+    
+    try {
+        console.log('Sending analysis request to API...'); // DEBUG LOG
+        const response = await fetch(API_ENDPOINTS.analyzeLog, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData)
+        });
+        
+        console.log('Analysis response status:', response.status); // DEBUG LOG
+        
+        const result = await response.json();
+        console.log('Analysis result received:', result); // DEBUG LOG
+        
+        displayAnomalyResults(result);
+    } catch (error) {
+        console.error('Analiz hatası:', error);
+        console.error('Analysis request failed:', error); // DEBUG LOG
+        alert('Analiz sırasında bir hata oluştu!');
+    } finally {
+        showLoader(false);  // hideLoader() yerine
+    }
+}
+
+/**
+ * Anomaly Modal'ı kapat
+ */
+function closeAnomalyModal() {
+    console.log('closeAnomalyModal called'); // DEBUG LOG
+    const anomalyModal = document.getElementById('anomalyModal');
+    if (anomalyModal) {
+        anomalyModal.style.display = 'none';
+        console.log('Anomaly modal closed'); // DEBUG LOG
+        
+        // Data source'u upload'da tut
+        if (selectedDataSource === 'upload') {
+            // Bir sonraki açılış için hazırla
+            setTimeout(() => {
+                const uploadRadio = document.querySelector('input[name="dataSource"][value="upload"]');
+                if (uploadRadio) uploadRadio.checked = true;
+            }, 100);
+        }
+    } else {
+        console.log('Anomaly modal element not found!'); // DEBUG LOG
+    }
+}
+
+/**
+ * Anomaly analiz sonuçlarını görüntüle
+ */
+function displayAnomalyResults(result) {
+    console.log('displayAnomalyResults called with result:', result); // DEBUG LOG
+    
+    // Eğer açıklama varsa ve summary yoksa, text formatında göster
+    if (result.açıklama && !result.summary) {
+        const formattedText = result.açıklama
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // Bold text
+            .replace(/### (.*?)$/gm, '<h3>$1</h3>')           // Headers
+            .replace(/- /g, '• ')                              // List items
+            .replace(/\n/g, '<br>');                          // Line breaks
+            
+        showModal('Anomaly Analiz Sonuçları', 
+            `<div class="anomaly-text-results">
+                <div class="formatted-anomaly-text">${formattedText}</div>
+            </div>`
+        );
+        return;
+    }
+    
+    // Ana sonuç container'ı oluştur
+    let html = '<div class="anomaly-results">';
+    
+    // Başlık ve özet bilgi
+    html += '<div class="anomaly-header">';
+    html += '<h2>🔍 Anomaly Analiz Sonuçları</h2>';
+    
+    if (result.summary) {
+        console.log('Result summary found:', result.summary); // DEBUG LOG
+        html += '<div class="anomaly-summary">';
+        html += `<p><strong>Toplam Log:</strong> ${result.summary.total_logs || 0}</p>`;
+        html += `<p><strong>Anomali Sayısı:</strong> ${result.summary.anomaly_count || 0}</p>`;
+        html += `<p><strong>Anomali Oranı:</strong> %${((result.summary.anomaly_count / result.summary.total_logs) * 100).toFixed(2)}</p>`;
+        html += '</div>';
+    } else {
+        console.log('No summary found in result'); // DEBUG LOG
+    }
+    
+    // Kritik anomaliler
+    if (result.critical_anomalies && result.critical_anomalies.length > 0) {
+        html += '<div class="critical-anomalies-section">';
+        html += '<h3>⚠️ Kritik Anomaliler</h3>';
+        html += '<div class="anomaly-list">';
+        
+        result.critical_anomalies.forEach(anomaly => {
+            html += `
+                <div class="anomaly-item critical">
+                    <div class="anomaly-score">${anomaly.anomaly_score.toFixed(3)}</div>
+                    <div class="anomaly-details">
+                        <div class="anomaly-time">${new Date(anomaly.timestamp).toLocaleString('tr-TR')}</div>
+                        <div class="anomaly-message">${escapeHtml(anomaly.message)}</div>
+                        <div class="anomaly-component">Component: ${escapeHtml(anomaly.component || 'N/A')}</div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        html += '</div>';
+    }
+    
+    // Tüm anomaliler
+    if (result.anomalies && result.anomalies.length > 0) {
+        html += '<div class="all-anomalies-section">';
+        html += '<h3>📊 Tüm Anomaliler</h3>';
+        html += '<div class="anomaly-list">';
+        
+        result.anomalies.slice(0, 50).forEach(anomaly => {
+            const severityClass = anomaly.anomaly_score > 0.8 ? 'high' : 
+                                 anomaly.anomaly_score > 0.6 ? 'medium' : 'low';
+            
+            html += `
+                <div class="anomaly-item ${severityClass}">
+                    <div class="anomaly-score">${anomaly.anomaly_score.toFixed(3)}</div>
+                    <div class="anomaly-details">
+                        <div class="anomaly-time">${new Date(anomaly.timestamp).toLocaleString('tr-TR')}</div>
+                        <div class="anomaly-message">${escapeHtml(anomaly.message)}</div>
+                        ${anomaly.component ? `<div class="anomaly-component">Component: ${escapeHtml(anomaly.component)}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        });
+        
+        if (result.anomalies.length > 50) {
+            html += `<p class="more-anomalies">... ve ${result.anomalies.length - 50} anomali daha</p>`;
+        }
+        
+        html += '</div>';
+        html += '</div>';
+    }
+    
+    // Component dağılımı
+    if (result.component_stats) {
+        html += '<div class="component-stats-section">';
+        html += '<h3>📈 Component Dağılımı</h3>';
+        html += '<div class="component-grid">';
+        
+        Object.entries(result.component_stats).forEach(([component, count]) => {
+            const percentage = ((count / result.summary.anomaly_count) * 100).toFixed(1);
+            html += `
+                <div class="component-stat">
+                    <div class="component-name">${escapeHtml(component)}</div>
+                    <div class="component-count">${count} anomali</div>
+                    <div class="component-bar" style="width: ${percentage}%"></div>
+                    <div class="component-percentage">${percentage}%</div>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        html += '</div>';
+    }
+    
+    // Hata durumu
+    if (result.durum === "hata") {
+        console.log('Error result detected:', result.açıklama); // DEBUG LOG
+        html = '<div class="anomaly-error">';
+        html += '<h3>❌ Hata</h3>';
+        html += `<p>${escapeHtml(result.açıklama || "Bilinmeyen hata")}</p>`;
+        html += '</div>';
+    }
+    
+    html += '</div>';
+    
+    // Sonuçları göster
+    console.log('Showing modal with anomaly results'); // DEBUG LOG
+    showModal('Anomaly Analiz Sonuçları', html);
+}
+
+/**
+ * Upload edilmiş dosyaları listele ve güncelle
+ */
+async function updateUploadedFilesList() {
+    console.log('updateUploadedFilesList called'); // DEBUG LOG
+    
+    // Mevcut seçimi sakla
+    const currentSelection = document.querySelector('input[name="logFile"]:checked')?.value;
+    
+    try {
+        console.log('Fetching uploaded files from API...'); // DEBUG LOG
+        const response = await fetch(`${API_ENDPOINTS.uploadedLogs}?api_key=${apiKey}`);
+        const data = await response.json();
+        
+        console.log('Uploaded files response:', data); // DEBUG LOG
+        
+        const fileList = document.getElementById('modalFilesList');
+        if (!fileList) {
+            console.log('modalFilesList element not found!'); // DEBUG LOG
+            return;
+        }
+        
+        fileList.innerHTML = '';
+        
+        if (data.logs && data.logs.length > 0) {
+            console.log('Found', data.logs.length, 'uploaded files'); // DEBUG LOG
+            data.logs.forEach(log => {
+                console.log('Processing file:', log.filename, 'path:', log.path); // DEBUG LOG
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <input type="radio" name="logFile" value="${log.path}" id="file_${log.filename}">
+                    <label for="file_${log.filename}">
+                        <span class="file-name">${log.filename}</span>
+                        <span class="file-size">${log.size_mb} MB</span>
+                    </label>
+                    <button class="delete-file-btn" onclick="deleteUploadedFile('${log.filename}')">🗑️</button>
+                `;
+                fileList.appendChild(fileItem);
+            });
+            
+            // Seçimi geri yükle
+            if (currentSelection) {
+                const radio = document.querySelector(`input[name="logFile"][value="${currentSelection}"]`);
+                if (radio) {
+                    radio.checked = true;
+                    // Upload source ise validation'ı tetikle
+                    if (selectedDataSource === 'upload') {
+                        validateAnalysisButton();
+                    }
+                } else if (selectedDataSource === 'upload' && data.logs.length > 0) {
+                    // İlk açılışta ve dosya varsa, ilk dosyayı otomatik seç
+                    const firstRadio = document.querySelector('input[name="logFile"]');
+                    if (firstRadio) {
+                        firstRadio.checked = true;
+                        console.log('Auto-selected first file:', firstRadio.value);
+                        validateAnalysisButton();
+                    }
+                }
+            } else if (selectedDataSource === 'upload' && data.logs.length > 0) {
+                // İlk açılışta ve dosya varsa, ilk dosyayı otomatik seç
+                const firstRadio = document.querySelector('input[name="logFile"]');
+                if (firstRadio) {
+                    firstRadio.checked = true;
+                    console.log('Auto-selected first file:', firstRadio.value);
+                    validateAnalysisButton();
+                }
+            }
+        } else {
+            console.log('No uploaded files found'); // DEBUG LOG
+            fileList.innerHTML = '<p class="no-files">Henüz dosya yüklenmemiş</p>';
+        }
+    } catch (error) {
+        console.error('Error updating uploaded files list:', error); // DEBUG LOG
+        console.error('Dosya listesi alınamadı:', error);
+    }
+}
+
+/**
+ * Dosya boyutunu formatla
+ */
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+/**
+ * Upload edilmiş dosyayı sil
+ */
+async function deleteUploadedFile(filename) {
+    console.log('deleteUploadedFile called for:', filename); // DEBUG LOG
+    
+    if (!confirm(`${filename} dosyasını silmek istediğinizden emin misiniz?`)) {
+        console.log('File deletion cancelled by user'); // DEBUG LOG
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_ENDPOINTS.deleteUploadedLog}/${filename}?api_key=${apiKey}`, {
+            method: 'DELETE'
+        });
+        
+        console.log('Delete response status:', response.status); // DEBUG LOG
+        
+        if (response.ok) {
+            console.log('File deleted successfully:', filename); // DEBUG LOG
+            showNotification('Dosya başarıyla silindi', 'success');
+            updateUploadedFilesList();
+        } else {
+            throw new Error('Dosya silinemedi');
+        }
+    } catch (error) {
+        console.error('Error deleting file:', filename, error); // DEBUG LOG
+        showNotification('Dosya silinirken hata oluştu', 'error');
+    }
+}
+
+// Global fonksiyon olarak tanımla
+window.deleteUploadedFile = deleteUploadedFile;
+
 // Yardımcı fonksiyonlar
 
 /**
@@ -1030,7 +1569,7 @@ function showNotification(message, type = 'info') {
 }
 
 /**
- * Loader göster/gizle
+ * Loader göster/gizle - PARAMETRELİ VERSİYON
  */
 function showLoader(show) {
     elements.loader.style.display = show ? 'block' : 'none';
@@ -1053,7 +1592,7 @@ function closeModal() {
 }
 
 /**
- * HTML escape - GELİŞTİRİLMİŞ
+ * HTML escape
  */
 function escapeHtml(text) {
     const map = {
