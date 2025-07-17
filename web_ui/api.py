@@ -54,6 +54,9 @@ app.add_middleware(
 agent: Optional[MongoDBAgent] = None
 agent_lock = asyncio.Lock()
 
+# Onay bekleyen parametreleri saklamak için
+pending_confirmations: Dict[str, Dict[str, Any]] = {}
+
 # Request/Response modelleri
 class QueryRequest(BaseModel):
     query: str = Field(..., description="MongoDB sorgusu", max_length=MAX_QUERY_LENGTH)
@@ -138,10 +141,73 @@ async def process_query(request: QueryRequest):
         logger.info("Agent alınıyor...")
         mongodb_agent = await get_agent()
         
-        # Normal sorgu işleme
-        logger.info(f"Sorgu alındı: {request.query[:50]}...")
-        logger.info("Agent process_query() çağrılıyor...")
-        result = mongodb_agent.process_query(request.query)
+        # YENİ: Anomali sorgusu tespiti
+        is_anomaly_query = any(keyword in request.query.lower() for keyword in [
+            'anomali', 'anomaly', 'log', 'analiz'
+        ])
+        
+        # YENİ: Onay yanıtı kontrolü
+        user_response = request.query.lower().strip()
+        session_key = request.api_key  # Basit session key olarak API key kullan
+        
+        if user_response in ['evet', 'onay', 'başlat', 'yes'] and session_key in pending_confirmations:
+            # Onaylanmış parametreleri al
+            logger.info("Kullanıcı onayı alındı, anomali analizi başlatılıyor")
+            saved_params = pending_confirmations.pop(session_key)
+            
+            # Anomali analizi başlat
+            result = mongodb_agent.process_query_with_args(
+                "MongoDB loglarında anomali analizi yap",
+                {
+                    'source_type': 'opensearch',
+                    'detected_server': saved_params['server'],
+                    'detected_time_range': saved_params['time_range'],
+                    'host_filter': saved_params['server'],
+                    'confirmation_required': False,
+                    'params_extracted': True
+                }
+            )
+            
+        elif user_response in ['hayır', 'iptal', 'dur', 'no'] and session_key in pending_confirmations:
+            # İptal edildi
+            logger.info("Kullanıcı analizi iptal etti")
+            pending_confirmations.pop(session_key, None)
+            result = {
+                "durum": "iptal",
+                "işlem": "anomali_analizi",
+                "açıklama": "Anomali analizi iptal edildi. Yeni bir sorgu girebilirsiniz.",
+                "sonuç": None
+            }
+            
+        elif is_anomaly_query:
+            # YENİ: Anomali sorgusu için özel işlem
+            logger.info("Anomali sorgusu tespit edildi, parametreler çıkarılıyor...")
+            
+            # Agent'a parametreleri çıkarması için gönder
+            result = mongodb_agent.process_query_with_args(
+                request.query,
+                {
+                    'source_type': 'opensearch',
+                    'confirmation_required': False,
+                    'params_extracted': False
+                }
+            )
+            
+            # Onay bekliyorsa parametreleri sakla
+            if result.get('durum') == 'onay_bekliyor':
+                session_key = request.api_key
+                pending_confirmations[session_key] = {
+                    'server': result['sonuç']['server'],
+                    'time_range': result['sonuç']['time_range'],
+                    'timestamp': datetime.now().isoformat()
+                }
+                logger.info(f"Onay için parametreler saklandı: {pending_confirmations[session_key]}")
+            
+        else:
+            # Normal sorgu işleme
+            logger.info(f"Normal sorgu işleniyor: {request.query[:50]}...")
+            result = mongodb_agent.process_query(request.query)
+        
         logger.info(f"Query işlendi - Sonuç durumu: {result.get('durum', 'unknown')}")
         
         # Response oluştur
@@ -435,6 +501,38 @@ async def delete_uploaded_log(filename: str, api_key: str):
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# Arka plan görevi - eski onay bekleyen parametreleri temizle
+async def cleanup_pending_confirmations():
+    """30 dakikadan eski onay bekleyen parametreleri temizle"""
+    while True:
+        try:
+            current_time = datetime.now()
+            expired_keys = []
+            
+            for key, data in pending_confirmations.items():
+                if 'timestamp' in data:
+                    created_time = datetime.fromisoformat(data['timestamp'])
+                    if (current_time - created_time).total_seconds() > 1800:  # 30 dakika
+                        expired_keys.append(key)
+            
+            for key in expired_keys:
+                pending_confirmations.pop(key, None)
+                logger.debug(f"Expired confirmation cleared: {key}")
+            
+            await asyncio.sleep(300)  # 5 dakikada bir kontrol et
+            
+        except Exception as e:
+            logger.error(f"Cleanup error: {e}")
+            await asyncio.sleep(300)
+
+# Startup event'e ekle
+@app.on_event("startup")
+async def startup_event():
+    """Uygulama başlatıldığında"""
+    # Cleanup task'ı başlat
+    asyncio.create_task(cleanup_pending_confirmations())
+    logger.info("Cleanup task başlatıldı")
 
 # Shutdown
 @app.on_event("shutdown")

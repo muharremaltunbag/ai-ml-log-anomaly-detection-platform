@@ -93,6 +93,43 @@ class AnomalyDetectionTools:
                 "sonuç": str(result)
             }, ensure_ascii=False, indent=2)
     
+    def _fix_mongodb_hostname_fqdn(self, hostname: str) -> str:
+        """MongoDB hostname'ine gerekirse FQDN ekle"""
+        import re
+        
+        if not hostname:
+            return hostname
+            
+        # Zaten FQDN varsa dokunma
+        if hostname.endswith('.lcwaikiki.local'):
+            logger.debug(f"Hostname already has FQDN: {hostname}")
+            return hostname
+        
+        # ÖNEMLI: Case-insensitive kontrol yap ama orijinal case'i koru!
+        hostname_lower = hostname.lower()
+        
+        # FQDN eklenmesi gereken pattern'ler (whitelist)
+        fqdn_required_patterns = [
+            r'^lcwmongodb\d+n\d+$',           # lcwmongodb01n2
+            r'^testmongodb\d+$',               # testmongodb01
+            r'^devmongodb\d+$',                # devmongodb02
+            r'^pplmongodbn\d+$',               # pplmongodbn1 (az'sız!)
+            r'^kznmongodbn\d+$',               # kznmongodbn1, KZNMONGODBN2
+            r'^ntfcmongodb\d+$',               # NTFCMONGODB01
+        ]
+        
+        # Pattern kontrolü - küçük harfle kontrol et
+        for pattern in fqdn_required_patterns:
+            if re.match(pattern, hostname_lower):
+                # ORİJİNAL CASE'İ KORUYARAK FQDN EKLE!
+                fixed_hostname = f"{hostname}.lcwaikiki.local"
+                logger.debug(f"FQDN added: {hostname} -> {fixed_hostname}")
+                return fixed_hostname
+        
+        # Whitelist'te değilse olduğu gibi döndür
+        logger.debug(f"FQDN not required for: {hostname}")
+        return hostname
+    
     def analyze_mongodb_logs(self, args_input) -> str:
         """MongoDB loglarında anomali analizi yap"""
         logger.debug(f"Starting MongoDB log analysis with input: {args_input}")
@@ -190,10 +227,19 @@ class AnomalyDetectionTools:
                     
                     # OpenSearch'ten logları oku
                     logger.info(f"Reading logs from OpenSearch for last {last_hours} hours...")
+                    
+                    # YENİ: Host filter'a FQDN düzeltmesi uygula
+                    host_filter = args_dict.get("host_filter", None)
+                    if host_filter:
+                        original_host = host_filter
+                        host_filter = self._fix_mongodb_hostname_fqdn(host_filter)
+                        if original_host != host_filter:
+                            logger.info(f"Host filter FQDN correction: {original_host} -> {host_filter}")
+                
                     df = opensearch_reader.read_logs(
                         limit=None,  # Tüm logları al
                         last_hours=last_hours,
-                        host_filter=args_dict.get("host_filter", None)  # YENİ
+                        host_filter=host_filter  # Düzeltilmiş host filter
                     )
                     
                     if df.empty:

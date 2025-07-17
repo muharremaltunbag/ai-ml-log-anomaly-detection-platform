@@ -293,7 +293,13 @@ async function handleQuery() {
         const result = await response.json();
         console.log('Query result:', result); // DEBUG LOG
         
-        displayResult(result);
+        // YENİ: Onay bekleyen durum kontrolü
+        if (result.durum === 'onay_bekliyor') {
+            console.log('Confirmation required for anomaly analysis');
+            displayConfirmationDialog(result);
+        } else {
+            displayResult(result);
+        }
         
     } catch (error) {
         console.error('Query error:', error); // DEBUG LOG
@@ -306,10 +312,145 @@ async function handleQuery() {
 }
 
 /**
+ * Anomali analizi için onay dialogu göster
+ */
+function displayConfirmationDialog(result) {
+    console.log('Displaying confirmation dialog for anomaly analysis');
+    
+    const confirmationHtml = `
+        <div class="confirmation-dialog">
+            <div class="confirmation-header">
+                <h3>🔍 Anomali Analizi Onayı</h3>
+            </div>
+            <div class="confirmation-body">
+                ${result.açıklama}
+            </div>
+            <div class="confirmation-actions">
+                <button class="btn btn-primary" onclick="confirmAnomalyAnalysis()">
+                    ✅ Onayla ve Başlat
+                </button>
+                <button class="btn btn-secondary" onclick="cancelAnomalyAnalysis()">
+                    ❌ İptal Et
+                </button>
+                <button class="btn btn-info" onclick="modifyAnomalyParameters()">
+                    ✏️ Parametreleri Değiştir
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Sonuç bölümünde göster
+    elements.resultSection.style.display = 'block';
+    elements.resultContent.innerHTML = confirmationHtml;
+    
+    // Parametreleri sakla
+    window.pendingAnomalyParams = result.sonuç;
+}
+
+/**
+ * Anomali analizini onayla
+ */
+async function confirmAnomalyAnalysis() {
+    console.log('User confirmed anomaly analysis');
+    
+    // Query input'a onay yazısı koy
+    elements.queryInput.value = 'evet';
+    
+    // Tekrar sorgu gönder
+    await handleQuery();
+}
+
+/**
+ * Anomali analizini iptal et
+ */
+async function cancelAnomalyAnalysis() {
+    console.log('User cancelled anomaly analysis');
+    
+    // Query input'a iptal yazısı koy
+    elements.queryInput.value = 'hayır';
+    
+    // Tekrar sorgu gönder
+    await handleQuery();
+}
+
+/**
+ * Anomali parametrelerini değiştir
+ */
+function modifyAnomalyParameters() {
+    console.log('User wants to modify parameters');
+    
+    // Modal'ı aç ve parametreleri doldur
+    const anomalyModal = document.getElementById('anomalyModal');
+    if (anomalyModal) {
+        // OpenSearch veri kaynağını seç
+        document.querySelector('input[name="dataSource"][value="opensearch"]').checked = true;
+        updateSourceInputs('opensearch');
+        
+        // Eğer sunucu tespit edildiyse, dropdown'da seç
+        if (window.pendingAnomalyParams && window.pendingAnomalyParams.server) {
+            setTimeout(() => {
+                const hostSelect = document.getElementById('mongodbHostSelect');
+                if (hostSelect) {
+                    // Önce host listesini yükle
+                    loadMongoDBHosts().then(() => {
+                        // Sonra seçimi yap
+                        hostSelect.value = window.pendingAnomalyParams.server;
+                    });
+                }
+            }, 500);
+        }
+        
+        // Zaman aralığını seç
+        if (window.pendingAnomalyParams && window.pendingAnomalyParams.time_range) {
+            const timeMapping = {
+                'last_hour': 'last_24h',
+                'last_day': 'last_24h',
+                'last_week': 'last_7d',
+                'last_month': 'last_30d'
+            };
+            const radioValue = timeMapping[window.pendingAnomalyParams.time_range] || 'last_24h';
+            const timeRadio = document.querySelector(`input[name="modalTimeRange"][value="${radioValue}"]`);
+            if (timeRadio) timeRadio.checked = true;
+        }
+        
+        // Modal'ı göster
+        anomalyModal.style.display = 'block';
+    }
+    
+    // Sonuç bölümünü temizle
+    elements.resultSection.style.display = 'none';
+}
+
+// Global fonksiyonlar olarak tanımla
+window.confirmAnomalyAnalysis = confirmAnomalyAnalysis;
+window.cancelAnomalyAnalysis = cancelAnomalyAnalysis;
+window.modifyAnomalyParameters = modifyAnomalyParameters;
+
+/**
  * Sonucu görüntüle - GELİŞTİRİLMİŞ VERSİYON
  */
 function displayResult(result) {
     console.log('displayResult called with result type:', result.işlem || 'unknown'); // DEBUG LOG
+    
+    // YENİ: İptal durumu kontrolü
+    if (result.durum === 'iptal') {
+        elements.resultSection.style.display = 'block';
+        elements.resultContent.innerHTML = `
+            <div class="result-status info">
+                <strong>ℹ️ ${result.açıklama}</strong>
+            </div>
+            <div class="user-guidance">
+                <p>Yeni bir sorgu girebilir veya parametreleri değiştirebilirsiniz.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // YENİ: Anomali analizi sonuçları için özel görüntüleme
+    if (result.işlem === 'anomaly_analysis' && result.sonuç && result.sonuç.summary) {
+        displayAnomalyAnalysisResult(result);
+        return;
+    }
     
     elements.resultSection.style.display = 'block';
 
@@ -401,6 +542,141 @@ function displayResult(result) {
     // Sonuç alanına scroll
     elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
+
+/**
+ * Doğal dil anomali analizi sonuçlarını göster
+ */
+function displayAnomalyAnalysisResult(result) {
+    console.log('Displaying natural language anomaly analysis result');
+    
+    let html = '<div class="anomaly-analysis-result">';
+    
+    // Durum göstergesi
+    html += `<div class="result-status success">`;
+    html += `<strong>✅ Anomali Analizi Tamamlandı</strong>`;
+    html += `</div>`;
+    
+    // Ana içerik
+    html += '<div class="result-details">';
+    
+    // Açıklama
+    if (result.açıklama) {
+        html += '<div class="result-field">';
+        html += parseAndFormatDescription(result.açıklama);
+        html += '</div>';
+    }
+    
+    // Özet bilgiler
+    if (result.sonuç && result.sonuç.summary) {
+        const summary = result.sonuç.summary;
+        html += '<div class="anomaly-summary-grid">';
+        
+        html += `
+            <div class="summary-card">
+                <div class="summary-icon">📊</div>
+                <div class="summary-content">
+                    <div class="summary-value">${summary.total_logs.toLocaleString('tr-TR')}</div>
+                    <div class="summary-label">Toplam Log</div>
+                </div>
+            </div>
+            <div class="summary-card ${summary.n_anomalies > 0 ? 'warning' : 'success'}">
+                <div class="summary-icon">⚠️</div>
+                <div class="summary-content">
+                    <div class="summary-value">${summary.n_anomalies.toLocaleString('tr-TR')}</div>
+                    <div class="summary-label">Anomali</div>
+                </div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-icon">📈</div>
+                <div class="summary-content">
+                    <div class="summary-value">%${summary.anomaly_rate.toFixed(1)}</div>
+                    <div class="summary-label">Anomali Oranı</div>
+                </div>
+            </div>
+        `;
+        
+        html += '</div>';
+    }
+    
+    // Kritik anomaliler
+    if (result.sonuç && result.sonuç.critical_anomalies && result.sonuç.critical_anomalies.length > 0) {
+        html += '<div class="critical-anomalies-preview">';
+        html += '<h4>⚠️ En Kritik Anomaliler</h4>';
+        html += '<div class="anomaly-list-preview">';
+        
+        result.sonuç.critical_anomalies.slice(0, 5).forEach(anomaly => {
+            html += `
+                <div class="anomaly-item-preview">
+                    <span class="anomaly-time">${new Date(anomaly.timestamp).toLocaleString('tr-TR')}</span>
+                    <span class="anomaly-component">${anomaly.component || 'N/A'}</span>
+                    <span class="anomaly-score">Skor: ${anomaly.score.toFixed(3)}</span>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        html += '</div>';
+    }
+    
+    // Güvenlik uyarıları
+    if (result.sonuç && result.sonuç.security_alerts) {
+        html += '<div class="security-alerts">';
+        html += '<h4>🚨 Güvenlik Uyarıları</h4>';
+        html += '<ul>';
+        
+        if (result.sonuç.security_alerts.drop_operations) {
+            html += `<li>DROP operasyonları tespit edildi: ${result.sonuç.security_alerts.drop_operations.count} adet</li>`;
+        }
+        
+        html += '</ul>';
+        html += '</div>';
+    }
+    
+    // Öneriler
+    if (result.öneriler && result.öneriler.length > 0) {
+        html += '<div class="result-field">';
+        html += '<strong>💡 Öneriler:</strong>';
+        html += '<div class="suggestion-list">';
+        result.öneriler.forEach(öneri => {
+            html += `<div class="suggestion-item">✓ ${escapeHtml(öneri)}</div>`;
+        });
+        html += '</div></div>';
+    }
+    
+    html += '</div>';
+    
+    // Detaylı görüntüleme butonu
+    html += '<div class="anomaly-actions">';
+    html += '<button class="btn btn-primary" onclick="showDetailedAnomalyModal()">📊 Detaylı Sonuçları Görüntüle</button>';
+    html += '</div>';
+    
+    // Timestamp
+    if (result.timestamp) {
+        const date = new Date(result.timestamp);
+        html += `<div class="result-timestamp">🕐 İşlem zamanı: ${date.toLocaleString('tr-TR')}</div>`;
+    }
+    
+    html += '</div>';
+    
+    elements.resultContent.innerHTML = html;
+    elements.resultSection.style.display = 'block';
+    elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    
+    // Detaylı sonuçları sakla
+    window.lastAnomalyResult = result;
+}
+
+/**
+ * Detaylı anomali sonuçlarını modal'da göster
+ */
+function showDetailedAnomalyModal() {
+    if (window.lastAnomalyResult) {
+        displayAnomalyResults(window.lastAnomalyResult);
+    }
+}
+
+// Global fonksiyon olarak tanımla
+window.showDetailedAnomalyModal = showDetailedAnomalyModal;
 
 /**
  * Performance Analiz Sonuçlarını Görselleştir - YENİ
@@ -1387,7 +1663,7 @@ function closeAnomalyModal() {
 }
 
 /**
- * Anomaly analiz sonuçlarını görüntüle
+ * Anomali analiz sonuçlarını görüntüle
  */
 function displayAnomalyResults(result) {
     console.log('displayAnomalyResults called with result:', result); // DEBUG LOG
@@ -1413,7 +1689,7 @@ function displayAnomalyResults(result) {
     
     // Başlık ve özet bilgi
     html += '<div class="anomaly-header">';
-    html += '<h2>🔍 Anomaly Analiz Sonuçları</h2>';
+    html += '<h2>🔍 Anomali Analiz Sonuçları</h2>';
     
     if (result.summary) {
         console.log('Result summary found:', result.summary); // DEBUG LOG

@@ -797,6 +797,9 @@ class OpenSearchProxyReader:
                     print(f"[DEBUG] Added host filter: {host_filter}")
                     logger.debug(f"Added host filter to query: {host_filter}")
                 
+                # Debug: Log the query
+                logger.info(f"OpenSearch Query: {json.dumps(query, indent=2)}")
+                
                 # Normal search endpoint (scroll YOK)
                 search_path = f"{self.index_pattern}/_search"
                 print(f"[DEBUG] Making batch request to: {search_path} with offset: {from_offset}")
@@ -807,6 +810,10 @@ class OpenSearchProxyReader:
                     logger.error("No results from query")
                     print("[DEBUG] No results from query - breaking loop")
                     break
+                
+                # Debug: Log the response hits
+                if 'hits' in result:
+                    logger.info(f"Total hits in OpenSearch: {result['hits']['total']['value']}")
                 
                 hits = result['hits']['hits']
                 if not hits:
@@ -891,6 +898,154 @@ class OpenSearchProxyReader:
                 print(f"[DEBUG] Fallback to regular search also failed: {fallback_error}")
                 return pd.DataFrame()
 
+    def get_available_hosts(self, last_hours: int = 24) -> List[str]:
+        """
+        OpenSearch'ten belirli bir zaman aralığındaki MongoDB sunucularını listele
+        
+        Args:
+            last_hours: Son N saatteki aktif sunucular
+            
+        Returns:
+            List[str]: MongoDB sunucu listesi
+        """
+        try:
+            logger.info(f"Getting available MongoDB hosts from last {last_hours} hours")
+            print(f"[DEBUG] Getting available MongoDB hosts from last {last_hours} hours")
+            
+            # Aggregation query - unique host'ları al
+            query = {
+                "size": 0,  # Sadece aggregation sonuçları
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "range": {
+                                    "@timestamp": {
+                                        "gte": f"now-{last_hours}h"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                "aggs": {
+                    "unique_hosts": {
+                        "terms": {
+                            "field": "host.name",
+                            "size": 100,  # Maksimum 100 host
+                            "order": {
+                                "_count": "desc"  # En çok log üretenden başla
+                            }
+                        }
+                    }
+                }
+            }
+            
+            # Request yap
+            search_path = f"{self.index_pattern}/_search"
+            result = self._make_request(search_path, "GET", query)
+            
+            if not result or 'aggregations' not in result:
+                logger.error("No aggregation results from OpenSearch")
+                print("[DEBUG] No aggregation results from OpenSearch")
+                return []
+            
+            # Host listesini çıkar
+            hosts = []
+            for bucket in result['aggregations']['unique_hosts']['buckets']:
+                host_name = bucket['key']
+                doc_count = bucket['doc_count']
+                hosts.append(host_name)
+                logger.debug(f"Host: {host_name} - Log count: {doc_count}")
+            
+            logger.info(f"Found {len(hosts)} unique MongoDB hosts")
+            print(f"[DEBUG] Found {len(hosts)} unique MongoDB hosts")
+            
+            # MongoDB sunucularını filtrele (opsiyonel)
+            mongodb_hosts = []
+            for host in hosts:
+                # MongoDB sunucu pattern'leri
+                if any(pattern in host.lower() for pattern in ['mongodb', 'mongod', 'mongo']):
+                    mongodb_hosts.append(host)
+            
+            if len(mongodb_hosts) != len(hosts):
+                logger.info(f"Filtered to {len(mongodb_hosts)} MongoDB-specific hosts")
+                print(f"[DEBUG] Filtered to {len(mongodb_hosts)} MongoDB-specific hosts")
+                return sorted(mongodb_hosts)
+            
+            return sorted(hosts)
+            
+        except Exception as e:
+            logger.error(f"Error getting available hosts: {e}")
+            print(f"[DEBUG] Error getting available hosts: {e}")
+            return []
+
+    def get_host_log_stats(self, host_name: str, last_hours: int = 24) -> Dict[str, Any]:
+        """
+        Belirli bir sunucunun log istatistiklerini al
+        
+        Args:
+            host_name: Sunucu adı
+            last_hours: Son N saat
+            
+        Returns:
+            Dict: Log istatistikleri
+        """
+        try:
+            logger.debug(f"Getting log stats for host: {host_name}")
+            print(f"[DEBUG] Getting log stats for host: {host_name}")
+            
+            query = {
+                "size": 0,
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"host.name": host_name}},
+                            {"range": {"@timestamp": {"gte": f"now-{last_hours}h"}}}
+                        ]
+                    }
+                },
+                "aggs": {
+                    "log_count": {
+                        "value_count": {"field": "@timestamp"}
+                    },
+                    "severity_breakdown": {
+                        "terms": {
+                            "field": "message",
+                            "size": 5
+                        }
+                    },
+                    "time_histogram": {
+                        "date_histogram": {
+                            "field": "@timestamp",
+                            "interval": "1h"
+                        }
+                    }
+                }
+            }
+            
+            result = self._make_request(f"{self.index_pattern}/_search", "GET", query)
+            
+            if result and 'aggregations' in result:
+                stats = {
+                    "host_name": host_name,
+                    "total_logs": result['aggregations']['log_count']['value'],
+                    "time_range": f"last_{last_hours}h",
+                    "status": "active"
+                }
+                
+                logger.debug(f"Host {host_name} has {stats['total_logs']} logs")
+                print(f"[DEBUG] Host {host_name} has {stats['total_logs']} logs")
+                
+                return stats
+            
+            return {"host_name": host_name, "total_logs": 0, "status": "not_found"}
+            
+        except Exception as e:
+            logger.error(f"Error getting host stats: {e}")
+            print(f"[DEBUG] Error getting host stats: {e}")
+            return {"host_name": host_name, "error": str(e)}
+
     def _parse_text_message_attributes(self, log_entry: Dict[str, Any]):
         """Text formatındaki log mesajından ek attribute'ları çıkar"""
         msg = log_entry.get('msg', '')
@@ -904,41 +1059,26 @@ class OpenSearchProxyReader:
                 log_entry['attr'][key] = value
 
 
-def get_available_mongodb_hosts() -> List[str]:
+def get_available_mongodb_hosts(last_hours: int = 24) -> List[str]:
     """
     OpenSearch'teki mevcut MongoDB sunucularını listele
+    
+    Args:
+        last_hours: Son N saatteki aktif sunucular (varsayılan: 24)
     
     Returns:
         List[str]: MongoDB sunucu listesi
     """
     try:
-        logger.debug("Getting available MongoDB hosts from OpenSearch")
+        logger.debug(f"Getting available MongoDB hosts from OpenSearch (last {last_hours} hours)")
         reader = OpenSearchProxyReader()
         if not reader.connect():
             logger.error("Failed to connect to OpenSearch for host listing")
             return []
-            
-        # Aggregation query
-        query = {
-            "size": 0,
-            "aggs": {
-                "hosts": {
-                    "terms": {
-                        "field": "host.name",
-                        "size": 100
-                    }
-                }
-            }
-        }
         
-        result = reader._make_request(f"{reader.index_pattern}/_search", "GET", query)
+        # Yeni metodu kullan
+        return reader.get_available_hosts(last_hours=last_hours)
         
-        if result and 'aggregations' in result:
-            hosts = [bucket['key'] for bucket in result['aggregations']['hosts']['buckets']]
-            logger.debug(f"Found {len(hosts)} MongoDB hosts")
-            return sorted(hosts)
-        
-        return []
     except Exception as e:
         logger.error(f"Error getting MongoDB hosts: {e}")
         return []

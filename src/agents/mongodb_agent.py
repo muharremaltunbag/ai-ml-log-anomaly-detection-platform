@@ -1,6 +1,6 @@
 # src\agents\mongodb_agent.py
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain.memory import ConversationBufferMemory
 from langchain_core.messages import SystemMessage
@@ -212,6 +212,29 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                     "sonuç": None
                 }
             
+            # YENİ: Onay kontrolü
+            if additional_args.get('confirmation_required'):
+                # Onay yanıtını kontrol et
+                user_response = user_input.lower().strip()
+                if user_response in ['evet', 'onay', 'başlat', 'yes']:
+                    self.logger.info("Kullanıcı onayı alındı, anomali analizi başlatılıyor")
+                    # Onaylanmış parametrelerle devam et
+                    user_input = "MongoDB loglarında anomali analizi yap"
+                    additional_args['confirmation_required'] = False
+                elif user_response in ['hayır', 'iptal', 'dur', 'no']:
+                    self.logger.info("Kullanıcı analizi iptal etti")
+                    return {
+                        "durum": "iptal",
+                        "işlem": "anomali_analizi",
+                        "açıklama": "Anomali analizi iptal edildi. Yeni bir sorgu girebilirsiniz.",
+                        "sonuç": None
+                    }
+                else:
+                    # Yeni parametre girişi
+                    self.logger.info("Kullanıcı yeni parametreler giriyor")
+                    additional_args['confirmation_required'] = False
+                    # Normal akışa devam et
+            
             # Bağlantı kontrolü
             self.logger.debug("Bağlantı durumu kontrol ediliyor (with args)...")
             if not self._check_connections():
@@ -229,18 +252,63 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
             ])
             self.logger.debug(f"Anomaly sorgusu tespit edildi: {is_anomaly_query}")
             
+            # YENİ: Doğal dilden parametre çıkarımı
+            if is_anomaly_query and not additional_args.get('params_extracted'):
+                self.logger.info("Doğal dilden parametre çıkarımı başlatılıyor")
+                
+                # Sunucu ve zaman çıkar
+                detected_server = self._extract_server_from_query(user_input)
+                time_range, readable_time = self._extract_time_range_from_query(user_input)
+                
+                # Onay mesajı oluştur ve döndür
+                confirmation_msg = self._create_confirmation_message(
+                    detected_server, time_range, readable_time
+                )
+                
+                # Parametreleri sakla
+                additional_args['detected_server'] = detected_server
+                additional_args['detected_time_range'] = time_range
+                additional_args['confirmation_required'] = True
+                additional_args['params_extracted'] = True
+                
+                return {
+                    "durum": "onay_bekliyor",
+                    "işlem": "parametre_tespiti",
+                    "açıklama": confirmation_msg,
+                    "sonuç": {
+                        "server": detected_server,
+                        "time_range": time_range,
+                        "readable_time": readable_time
+                    },
+                    "öneriler": [
+                        "Parametreler doğruysa 'evet' yazın",
+                        "Farklı parametreler için yeni sorgu girin"
+                    ]
+                }
+            
             # YENİ: Veri kaynağı parametrelerini ekle
             if is_anomaly_query:
                 self.logger.debug("Anomaly parametreleri hazırlanıyor...")
                 enhanced_input = user_input
                 
+                # YENİ: Tespit edilen parametreleri kullan
+                if additional_args.get('detected_server') is not None:
+                    # Onaylanmış parametreler mevcut
+                    self.logger.info("Tespit edilen parametreler kullanılıyor")
+                    time_range = additional_args.get('detected_time_range', 'last_day')
+                    host_filter = additional_args.get('detected_server')  # None olabilir (tüm sunucular)
+                else:
+                    # Eski yöntem - manuel parametreler
+                    time_range = additional_args.get('time_range', 'last_day')
+                    host_filter = additional_args.get('host_filter')
+                
                 # Anomaly tool'a gönderilecek parametreleri hazırla
                 anomaly_params = {
-                    "time_range": additional_args.get('time_range', 'last_day')
+                    "time_range": time_range
                 }
                 
-                # Veri kaynağına göre parametreleri ekle
-                source_type = additional_args.get('source_type', 'file')
+                # YENİ: OpenSearch varsayılan veri kaynağı olarak ayarla
+                source_type = additional_args.get('source_type', 'opensearch')  # 'file' yerine 'opensearch'
                 anomaly_params['source_type'] = source_type
                 self.logger.debug(f"Veri kaynağı türü: {source_type}")
                 
@@ -253,12 +321,16 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 elif source_type == 'test_servers':
                     anomaly_params['server_name'] = additional_args.get('server_name')
                 elif source_type == 'opensearch':
-                    anomaly_params['host_filter'] = additional_args.get('host_filter')
-                    self.logger.debug(f"OpenSearch host_filter: {anomaly_params['host_filter']}")
+                    # YENİ: Host filter'ı ekle
+                    if host_filter:
+                        anomaly_params['host_filter'] = host_filter
+                        self.logger.info(f"OpenSearch host filter ayarlandı: {host_filter}")
+                    else:
+                        self.logger.info("Tüm MongoDB sunucuları için analiz yapılacak")
                 
-                # Host filter varsa ekle (tüm kaynaklar için)
-                if 'host_filter' in additional_args and additional_args['host_filter']:
-                    anomaly_params['host_filter'] = additional_args['host_filter']
+                # Host filter varsa ekle (tüm kaynaklar için) - GÜNCELLEME
+                if host_filter and source_type != 'opensearch':  # OpenSearch için zaten eklendi
+                    anomaly_params['host_filter'] = host_filter
                     self.logger.debug(f"Host filter eklendi: {anomaly_params['host_filter']}")
                 
                 # Train komutları için özel
@@ -270,7 +342,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 import json
                 params_str = json.dumps(anomaly_params)
                 enhanced_input = f"{user_input} {params_str}"
-                self.logger.debug(f"Parametrelerle genişletilmiş sorgu hazırlandı")
+                self.logger.debug(f"Parametrelerle genişletilmiş sorgu: {enhanced_input[:200]}...")
                 
             else:
                 enhanced_input = user_input
@@ -346,6 +418,11 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 # Zaten doğru formatta
                 if all(key in response for key in ["durum", "işlem", "açıklama"]):
                     self.logger.debug("Çıktı zaten doğru JSON formatında")
+                    
+                    # YENİ: Anomali analizi sonuçlarını formatla
+                    if response.get('işlem') == 'anomaly_analysis':
+                        return self._format_anomaly_response(response)
+                    
                     return response
             except:
                 self.logger.debug("Çıktı JSON formatında değil, standart formatlama yapılacak")
@@ -377,6 +454,54 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 "açıklama": str(agent_result),
                 "sonuç": None
             }
+
+    def _format_anomaly_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
+        """Anomali analizi sonuçlarını kullanıcı dostu formata dönüştür"""
+        try:
+            # Eğer zaten formatlanmışsa direkt döndür
+            if response.get('işlem') == 'anomaly_analysis':
+                return response
+            
+            # Açıklama metnini parse et
+            description = response.get('açıklama', '')
+            result_data = response.get('sonuç', {})
+            
+            # Kullanıcı dostu özet oluştur
+            if isinstance(result_data, dict) and 'summary' in result_data:
+                summary = result_data['summary']
+                anomaly_count = summary.get('n_anomalies', 0)
+                anomaly_rate = summary.get('anomaly_rate', 0)
+                total_logs = summary.get('total_logs', 0)
+                
+                # Kritik anomaliler varsa vurgula
+                critical_count = len(result_data.get('critical_anomalies', []))
+                security_alerts = result_data.get('security_alerts', {})
+                
+                user_friendly_text = f"""
+🔍 **Anomali Analizi Tamamlandı**
+
+📊 **Analiz Özeti:**
+- Toplam Log Sayısı: {total_logs:,}
+- Tespit Edilen Anomali: {anomaly_count:,} (%{anomaly_rate:.1f})
+- Kritik Anomali: {critical_count}
+"""
+                
+                if security_alerts:
+                    user_friendly_text += "\n⚠️ **GÜVENLİK UYARISI:** DROP operasyonları tespit edildi!\n"
+                
+                # Önerileri ekle
+                if response.get('öneriler'):
+                    user_friendly_text += "\n💡 **Öneriler:**\n"
+                    for öneri in response['öneriler']:
+                        user_friendly_text += f"- {öneri}\n"
+                
+                response['açıklama'] = user_friendly_text
+            
+            return response
+            
+        except Exception as e:
+            self.logger.error(f"Anomaly response formatlama hatası: {e}")
+            return response
 
     def get_available_collections(self) -> List[str]:
         """Mevcut koleksiyonları döndür"""
@@ -500,5 +625,132 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 "train_anomaly_model"
             ]
         }
+
+    def _extract_server_from_query(self, query: str) -> Optional[str]:
+        """Doğal dil sorgusundan MongoDB sunucu adını çıkar"""
+        import re
+        
+        # Sunucu isim kalıpları
+        server_patterns = [
+            r'(lcwmongodb\d+n\d+)',  # lcwmongodb01n2 formatı
+            r'(ECOMLOGMNG\d+)',       # ECOMLOGMNG01 formatı
+            r'(testmongodb\d+)',      # testmongodb01 formatı
+            r'(NTFCMONGODB\d+)',      # NTFCMONGODB01 formatı
+            r'([A-Z]+MONGODB\d+)',    # Genel MongoDB sunucu formatı
+            r'(pplazmongodbn\d+)',    # pplazmongodbn2 formatı (FQDN'siz)
+            r'(pplmongodbn\d+)',      # pplmongodbn1 formatı (FQDN'li)
+            r'(ecfavmngdbn\d+)',      # ecfavmngdbn3 formatı
+            r'(hqsectwrapmdbn\d+)',   # hqsectwrapmdbn1 formatı
+            r'(kznmongodbn\d+)',      # kznmongodbn1 formatı
+            r'([a-z]+mongo\d+)',      # kzmongo02, rumongo02 formatı
+        ]
+        
+        query_lower = query.lower()
+        query_original = query
+        
+        # Pattern matching
+        for pattern in server_patterns:
+            # Case-insensitive arama
+            match = re.search(pattern, query_original, re.IGNORECASE)
+            if match:
+                server_name = match.group(1)
+                self.logger.debug(f"Sunucu tespit edildi: {server_name}")
+                
+                # FQDN kontrolü ve ekleme mantığı
+                # Whitelist yaklaşımı - belirli pattern'lere .lcwaikiki.local ekle
+                server_lower = server_name.lower()
+                
+                # Zaten FQDN varsa ekleme
+                if not server_name.endswith('.lcwaikiki.local'):
+                    # FQDN eklenmesi gereken pattern'ler (whitelist)
+                    fqdn_required_patterns = [
+                        r'^lcwmongodb\d+n\d+$',           # lcwmongodb01n2
+                        r'^testmongodb\d+$',               # testmongodb01
+                        r'^devmongodb\d+$',                # devmongodb02
+                        r'^pplmongodbn\d+$',               # pplmongodbn1 (az'sız olanlar!)
+                        r'^kznmongodbn\d+$',               # kznmongodbn1, KZNMONGODBN2
+                        r'^ntfcmongodb\d+$',               # NTFCMONGODB01 (karışık durum)
+                    ]
+                    
+                    # Pattern kontrolü
+                    for fqdn_pattern in fqdn_required_patterns:
+                        if re.match(fqdn_pattern, server_lower):
+                            server_name = f"{server_name}.lcwaikiki.local"
+                            self.logger.debug(f"FQDN eklendi: {server_name}")
+                            break
+                    else:
+                        # Whitelist'te değilse FQDN ekleme
+                        self.logger.debug(f"FQDN eklenmedi (whitelist dışı): {server_name}")
+                
+                return server_name
+        
+        # Özel durumlar
+        if "tüm sunucular" in query_lower or "bütün sunucular" in query_lower:
+            self.logger.debug("Tüm sunucular seçildi")
+            return None  # None = tüm sunucular
+        
+        self.logger.debug("Sorguda sunucu adı bulunamadı")
+        return None
+
+    def _extract_time_range_from_query(self, query: str) -> Tuple[str, str]:
+        """
+        Doğal dil sorgusundan zaman aralığını çıkar
+        Returns: (time_range, human_readable_time)
+        """
+        query_lower = query.lower()
+        
+        # Zaman kalıpları ve karşılıkları
+        time_patterns = {
+            # Saat bazlı
+            "son 1 saat": ("last_hour", "son 1 saat"),
+            "son bir saat": ("last_hour", "son 1 saat"),
+            "son saat": ("last_hour", "son 1 saat"),
+            
+            # Gün bazlı
+            "son 24 saat": ("last_day", "son 24 saat"),
+            "son gün": ("last_day", "son 24 saat"),
+            "bugün": ("last_day", "bugün"),
+            "dün": ("last_day", "dün"),
+            
+            # Hafta bazlı
+            "son 7 gün": ("last_week", "son 7 gün"),
+            "son hafta": ("last_week", "son 1 hafta"),
+            "bu hafta": ("last_week", "bu hafta"),
+            "geçen hafta": ("last_week", "geçen hafta"),
+            
+            # Ay bazlı
+            "son 30 gün": ("last_month", "son 30 gün"),
+            "son ay": ("last_month", "son 1 ay"),
+            "bu ay": ("last_month", "bu ay"),
+        }
+        
+        # Pattern matching
+        for pattern, (time_range, readable) in time_patterns.items():
+            if pattern in query_lower:
+                self.logger.debug(f"Zaman aralığı tespit edildi: {time_range} ({readable})")
+                return time_range, readable
+        
+        # Varsayılan: son 24 saat
+        self.logger.debug("Zaman aralığı belirtilmemiş, varsayılan: son 24 saat")
+        return "last_day", "son 24 saat"
+
+    def _create_confirmation_message(self, server: Optional[str], time_range: str, readable_time: str) -> str:
+        """Kullanıcı onayı için mesaj oluştur"""
+        server_text = f"`{server}`" if server else "**Tüm MongoDB sunucuları**"
+        
+        message = f"""
+🔍 **Anomali Analizi Parametreleri Tespit Edildi:**
+
+📊 **Sunucu:** {server_text}
+⏰ **Zaman Aralığı:** {readable_time}
+🔧 **Veri Kaynağı:** OpenSearch
+
+Bu parametrelerle anomali analizi başlatılsın mı?
+
+✅ **Onaylıyorsanız:** "evet", "onay", "başlat" yazın
+❌ **İptal etmek için:** "hayır", "iptal", "dur" yazın
+✏️ **Düzeltmek için:** Yeni parametrelerle sorgunuzu tekrar yazın
+"""
+        return message
 
 
