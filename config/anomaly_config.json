@@ -11,11 +11,11 @@
             "buffer_size": 8192
           },
           "opensearch": {
-            "enabled": false,
-            "host": "10.29.21.32",
-            "port": 9200,
+            "enabled": true,
+            "host": "opslog.lcwaikiki.com",
+            "port": 443,
             "protocol": "https",
-            "index_pattern": "db-mongodb-test-*",
+            "index_pattern": "db-mongodb-*",
             "verify_ssl": false,
             "auth": {
               "username": "",
@@ -24,7 +24,13 @@
             "query": {
               "size": 10000,
               "scroll": "5m"
-            }
+            },
+            "alternate_hosts": [
+              "https://10.29.21.30:443",
+              "https://hqopnsrcmstr01.lcwaikiki.local:9200",
+              "https://hqopnsrcmstr02.lcwaikiki.local:9200",
+              "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+            ]
           },
           "upload": {
             "enabled": true,
@@ -59,8 +65,8 @@
           },
           "opensearch": {
             "enabled": true,
-            "host": "10.29.21.32",
-            "port": 9200,
+            "host": "opslog.lcwaikiki.com",
+            "port": 443,
             "protocol": "https",
             "index_pattern": "db-mongodb-*",
             "verify_ssl": true,
@@ -75,7 +81,13 @@
                 "field": "@timestamp",
                 "gte": "now-1h"
               }
-            }
+            },
+            "alternate_hosts": [
+              "https://10.29.21.30:443",
+              "https://hqopnsrcmstr01.lcwaikiki.local:9200",
+              "https://hqopnsrcmstr02.lcwaikiki.local:9200",
+              "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+            ]
           },
           "filebeat": {
             "enabled": false,

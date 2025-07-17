@@ -25,7 +25,8 @@ const API_ENDPOINTS = {
     analyzeLog: '/api/analyze-uploaded-log',  // analyzeLog yerine analyze-uploaded-log
     uploadLog: '/api/upload-log',              // YENİ
     uploadedLogs: '/api/uploaded-logs',        // YENİ
-    deleteUploadedLog: '/api/uploaded-log'     // YENİ
+    deleteUploadedLog: '/api/uploaded-log',    // YENİ
+    mongodbHosts: '/api/mongodb/hosts'         // YENİ
 };
 
 // DOM elementleri
@@ -104,6 +105,9 @@ function initializeEventListeners() {
     // Anomaly Modal içindeki Analizi Başlat butonu  
     document.getElementById('startAnalysisBtn').addEventListener('click', handleAnalyzeLog);
     
+    // Refresh hosts button
+    document.getElementById('refreshHostsBtn')?.addEventListener('click', loadMongoDBHosts);
+    
     // Örnek sorgu chip'leri
     document.querySelectorAll('.chip').forEach(chip => {
         chip.addEventListener('click', (e) => {
@@ -137,6 +141,14 @@ function initializeEventListeners() {
             selectedDataSource = e.target.value;
             updateSourceInputs(selectedDataSource);
         });
+    });
+    
+    // MongoDB host seçimi değiştiğinde
+    document.getElementById('mongodbHostSelect')?.addEventListener('change', (e) => {
+        console.log('MongoDB host selected:', e.target.value);
+        if (selectedDataSource === 'opensearch') {
+            validateAnalysisButton();
+        }
     });
     
     // Dosya radio button'larına event listener ekle (Event delegation)
@@ -1111,6 +1123,7 @@ function updateSourceInputs(source) {
     document.getElementById('mongoSourceInputs').style.display = 'none';
     document.getElementById('serverSourceInputs').style.display = 'none';
     document.getElementById('fileSelectionSection').style.display = 'none';
+    document.getElementById('opensearchSourceInputs').style.display = 'none'; // YENİ
     
     // Seçilen kaynağa göre göster
     switch(source) {
@@ -1131,12 +1144,53 @@ function updateSourceInputs(source) {
             console.log('Showing test servers source inputs'); // DEBUG LOG
             document.getElementById('serverSourceInputs').style.display = 'block';
             break;
+        case 'opensearch':
+            console.log('Showing OpenSearch source inputs');
+            document.getElementById('opensearchSourceInputs').style.display = 'block';
+            loadMongoDBHosts(); // MongoDB sunucularını yükle
+            break;
         default:
             console.log('Unknown source type:', source); // DEBUG LOG
     }
     
     // Analiz butonunu güncelle
     validateAnalysisButton();
+}
+
+/**
+ * MongoDB sunucularını yükle
+ */
+async function loadMongoDBHosts() {
+    console.log('Loading MongoDB hosts from OpenSearch...');
+    
+    try {
+        const response = await fetch(`${API_ENDPOINTS.mongodbHosts}?api_key=${apiKey}`);
+        const data = await response.json();
+        
+        console.log('MongoDB hosts response:', data);
+        
+        const hostSelect = document.getElementById('mongodbHostSelect');
+        if (!hostSelect) return;
+        
+        // Mevcut seçenekleri temizle
+        hostSelect.innerHTML = '<option value="" disabled selected>Lütfen bir sunucu seçin</option>';
+        
+        if (data.hosts && data.hosts.length > 0) {
+            data.hosts.forEach(host => {
+                const option = document.createElement('option');
+                option.value = host;
+                option.textContent = host;
+                hostSelect.appendChild(option);
+            });
+            
+            console.log(`Loaded ${data.hosts.length} MongoDB hosts`);
+        } else {
+            console.log('No MongoDB hosts found');
+        }
+    } catch (error) {
+        console.error('Error loading MongoDB hosts:', error);
+        showNotification('MongoDB sunucuları yüklenemedi', 'error');
+    }
 }
 
 /**
@@ -1173,6 +1227,11 @@ function validateAnalysisButton() {
             isValid = selectedServer && selectedServer.length > 0;
             console.log('Test servers source - selected server:', selectedServer, 'isValid:', isValid); // DEBUG LOG
             break;
+        case 'opensearch':
+            const selectedHost = document.getElementById('mongodbHostSelect').value;
+            isValid = selectedHost && selectedHost.length > 0;
+            console.log('OpenSearch source - selected host:', selectedHost, 'isValid:', isValid); // DEBUG LOG
+            break;
         default:
             console.log('Unknown data source for validation:', selectedDataSource); // DEBUG LOG
     }
@@ -1191,10 +1250,20 @@ async function handleAnalyzeLog() {
     console.log('Time Range:', timeRange); // DEBUG LOG
     console.log('Selected Data Source:', selectedDataSource); // DEBUG LOG
     
+    // Zaman aralığını backend formatına çevir
+    let backendTimeRange = timeRange;
+    if (timeRange === 'last_24h') {
+        backendTimeRange = 'last_day';
+    } else if (timeRange === 'last_7d') {
+        backendTimeRange = 'last_week';
+    } else if (timeRange === 'last_30d') {
+        backendTimeRange = 'last_month';
+    }
+    
     // Veri kaynağına göre parametreleri hazırla
     let requestData = {
         api_key: apiKey,
-        time_range: timeRange,
+        time_range: backendTimeRange,
         source_type: selectedDataSource
     };
     
@@ -1227,17 +1296,45 @@ async function handleAnalyzeLog() {
             requestData.file_path = 'server';  // Dummy değer
             console.log('Using test server:', requestData.server_name); // DEBUG LOG
             break;
+            
+        case 'opensearch':
+            const selectedHost = document.getElementById('mongodbHostSelect').value;
+            console.log('SELECTED HOST VALUE:', selectedHost);
+            console.log('OpenSearch Analysis - Selected Host Debug:', selectedHost);
+            console.log('Host Select Element:', document.getElementById('mongodbHostSelect'));
+            console.log('Host Select Element Value:', document.getElementById('mongodbHostSelect')?.value);
+            console.log('Host Select Element Selected Index:', document.getElementById('mongodbHostSelect')?.selectedIndex);
+            
+            requestData.file_path = 'opensearch';  // Dummy değer
+            if (selectedHost) {
+                requestData.host_filter = selectedHost;
+                console.log('Using OpenSearch with host filter:', selectedHost);
+                console.log('Request data with host filter:', JSON.stringify(requestData, null, 2));
+            } else {
+                console.log('WARNING: No host selected for OpenSearch analysis!');
+                console.log('This should not happen - validation should prevent this');
+                console.log('Available options in select:', Array.from(document.getElementById('mongodbHostSelect').options).map(opt => opt.value));
+            }
+            break;
+            
         default:
             console.log('Unknown data source for analysis:', selectedDataSource); // DEBUG LOG
     }
     
-    console.log('Request Data:', requestData); // DEBUG LOG
+    console.log('Final Request Data for Analysis:', JSON.stringify(requestData, null, 2));
+    console.log('Request Data - Source Type:', requestData.source_type);
+    console.log('Request Data - Host Filter:', requestData.host_filter);
 
     closeAnomalyModal();
     showLoader();
     
     try {
         console.log('Sending analysis request to API...'); // DEBUG LOG
+        console.log('API Endpoint:', API_ENDPOINTS.analyzeLog);
+        console.log('Request Method: POST');
+        console.log('Request Headers: Content-Type: application/json');
+        console.log('Request Body:', JSON.stringify(requestData, null, 2));
+        
         const response = await fetch(API_ENDPOINTS.analyzeLog, {
             method: 'POST',
             headers: {
@@ -1247,14 +1344,19 @@ async function handleAnalyzeLog() {
         });
         
         console.log('Analysis response status:', response.status); // DEBUG LOG
+        console.log('Analysis response headers:', response.headers);
         
         const result = await response.json();
         console.log('Analysis result received:', result); // DEBUG LOG
+        console.log('Analysis result type:', typeof result);
+        console.log('Analysis result keys:', Object.keys(result));
         
         displayAnomalyResults(result);
     } catch (error) {
         console.error('Analiz hatası:', error);
         console.error('Analysis request failed:', error); // DEBUG LOG
+        console.error('Error details:', error.message);
+        console.error('Error stack:', error.stack);
         alert('Analiz sırasında bir hata oluştu!');
     } finally {
         showLoader(false);  // hideLoader() yerine

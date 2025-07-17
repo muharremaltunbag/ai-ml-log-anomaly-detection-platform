@@ -23,9 +23,16 @@ import tempfile
 from src.agents.mongodb_agent import MongoDBAgent
 from web_ui.config import *
 
-# Logging
+# Logging - Console handler eklendi
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Console handler ekle
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 # FastAPI app
 app = FastAPI(
@@ -74,10 +81,10 @@ class AnalyzeLogsRequest(BaseModel):
     file_path: str = Field(..., description="Analiz edilecek log dosyası yolu")
     api_key: str = Field(..., description="API anahtarı")
     time_range: Optional[str] = Field("last_24h", description="Zaman aralığı")
-    # YENİ EKLENECEK:
     source_type: Optional[str] = Field("upload", description="Veri kaynağı: file/upload/mongodb_direct/test_servers/opensearch")
     connection_string: Optional[str] = Field(None, description="MongoDB connection string (mongodb_direct için)")
     server_name: Optional[str] = Field(None, description="Test sunucu adı (test_servers için)")
+    host_filter: Optional[str] = Field(None, description="Belirli bir MongoDB sunucusu (OpenSearch için)")
 
 # Basit API key kontrolü
 async def verify_api_key(api_key: str) -> bool:
@@ -209,6 +216,20 @@ async def get_schema(collection_name: str, api_key: str, detailed: bool = False)
         logger.error(f"Schema analizi hatası - Collection: {collection_name}, Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/mongodb/hosts")
+async def get_mongodb_hosts(api_key: str):
+    """OpenSearch'teki MongoDB sunucularını listele"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        from src.anomaly.log_reader import get_available_mongodb_hosts
+        hosts = get_available_mongodb_hosts()
+        return {"hosts": hosts, "count": len(hosts)}
+    except Exception as e:
+        logger.error(f"MongoDB hosts alınırken hata: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/upload-log", response_model=LogUploadResponse)
 async def upload_log_file(
     file: UploadFile = File(...),
@@ -304,6 +325,20 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
         elif request.source_type == "test_servers" and not request.server_name:
             logger.error("Test servers modu - Sunucu adı belirtilmedi")
             raise HTTPException(status_code=400, detail="Test sunucu adı belirtilmeli")
+        elif request.source_type == "opensearch" and not request.host_filter:
+            logger.error("OpenSearch modu - Host filter belirtilmedi")
+            raise HTTPException(status_code=400, detail="OpenSearch için host filter belirtilmeli")
+        
+        # Seçilen sunucu bilgilerini logla
+        if request.source_type == "test_servers":
+            logger.info(f"SEÇİLEN SUNUCU - Test Server: {request.server_name}")
+            print(f"DEBUG: Test sunucu seçildi - {request.server_name}")
+        elif request.source_type == "opensearch":
+            logger.info(f"SEÇİLEN SUNUCU - OpenSearch Host: {request.host_filter}")
+            print(f"DEBUG: OpenSearch host seçildi - {request.host_filter}")
+        elif request.source_type == "mongodb_direct":
+            logger.info(f"SEÇİLEN SUNUCU - MongoDB Direct: {request.connection_string[:50]}...")
+            print(f"DEBUG: MongoDB direct bağlantı - {request.connection_string[:50]}...")
         
         # Agent'ı al
         logger.info("MongoDB Agent alınıyor...")
@@ -314,26 +349,47 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
         query = f"Log analizi yap"
         
         logger.info(f"Agent'a sorgu gönderiliyor - Query: {query}")
+        
+        # Agent'a gönderilecek parametreleri hazırla
+        analysis_params = {
+            "uploaded_file_path": request.file_path if request.source_type == "upload" else None,
+            "file_path": request.file_path, 
+            "time_range": request.time_range,
+            "source_type": request.source_type,
+            "connection_string": request.connection_string,
+            "server_name": request.server_name,
+            "host_filter": request.host_filter
+        }
+        
+        # Parametreleri detaylı logla
+        logger.info("AGENT PARAMETRELERI:")
+        for key, value in analysis_params.items():
+            if value is not None:
+                if key == "connection_string" and value:
+                    logger.info(f"  {key}: {str(value)[:50]}...")
+                else:
+                    logger.info(f"  {key}: {value}")
+        
+        print(f"DEBUG: Agent'a gönderilen parametreler - {analysis_params}")
+        
         # MongoDB agent'a özel argümanlarla gönder
-        result = mongodb_agent.process_query_with_args(
-            query,
-            {
-                "uploaded_file_path": request.file_path if request.source_type == "upload" else None,
-                "file_path": request.file_path, 
-                "time_range": request.time_range,
-                "source_type": request.source_type,
-                "connection_string": request.connection_string,
-                "server_name": request.server_name
-            }
-        )
+        result = mongodb_agent.process_query_with_args(query, analysis_params)
         
         logger.info(f"Log analizi tamamlandı - Durum: {result.get('durum', 'unknown')}")
+        
+        # Sonuçları da logla
+        if result.get('koleksiyon'):
+            logger.info(f"ANALİZ SONUCU - Kullanılan koleksiyon: {result.get('koleksiyon')}")
+        if result.get('sonuç'):
+            logger.info(f"ANALİZ SONUCU - Bulunan kayıt sayısı: {len(result.get('sonuç', []))}")
+        
         return result
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Log analiz hatası: {e}")
+        print(f"DEBUG ERROR: Log analiz hatası - {e}")
         return {
             "durum": "hata",
             "işlem": "log_analysis",

@@ -14,7 +14,7 @@ from pathlib import Path
 import os
 from pymongo import MongoClient
 
-from .log_reader import MongoDBLogReader
+from .log_reader import MongoDBLogReader, OpenSearchProxyReader
 from .feature_engineer import MongoDBFeatureEngineer
 from .anomaly_detector import MongoDBAnomalyDetector
 
@@ -113,6 +113,15 @@ class AnomalyDetectionTools:
             
             time_range = args_dict.get("time_range", "last_hour")
             threshold = args_dict.get("threshold", 0.03)
+            
+            # Frontend'den gelen değerleri dönüştür
+            if args_dict.get("time_range") == "last_24h":
+                time_range = "last_day"
+            elif args_dict.get("time_range") == "last_7d":
+                time_range = "last_week"
+            elif args_dict.get("time_range") == "last_30d":  # YENİ
+                time_range = "last_month"
+            
             logger.debug(f"Analysis parameters: time_range={time_range}, threshold={threshold}")
             
             # YENİ: Veri kaynağı seçimi
@@ -154,11 +163,103 @@ class AnomalyDetectionTools:
                 self.log_reader = MongoDBLogReader(log_path, 'auto')
                 
             elif source_type == "opensearch":
-                logger.warning("OpenSearch integration requested but not implemented")
-                return self._format_result(
-                    {"error": "OpenSearch entegrasyonu henüz hazır değil"},
-                    "anomaly_analysis"
-                )
+                logger.info("Using OpenSearch data source")
+                try:
+                    # OpenSearch reader'ı başlat
+                    opensearch_reader = OpenSearchProxyReader()
+                    
+                    # Bağlantıyı kontrol et
+                    if not opensearch_reader.connect():
+                        logger.error("Failed to connect to OpenSearch")
+                        return self._format_result(
+                            {"error": "OpenSearch'e bağlanılamadı. Lütfen bağlantı bilgilerini kontrol edin."},
+                            "anomaly_analysis"
+                        )
+                    
+                    # Zaman aralığını saat cinsine çevir
+                    if time_range == "last_hour":
+                        last_hours = 1
+                    elif time_range == "last_day":
+                        last_hours = 24
+                    elif time_range == "last_week":
+                        last_hours = 168
+                    elif time_range == "last_month":  # YENİ
+                        last_hours = 720
+                    else:
+                        last_hours = args_dict.get("last_hours", 24)
+                    
+                    # OpenSearch'ten logları oku
+                    logger.info(f"Reading logs from OpenSearch for last {last_hours} hours...")
+                    df = opensearch_reader.read_logs(
+                        limit=None,  # Tüm logları al
+                        last_hours=last_hours,
+                        host_filter=args_dict.get("host_filter", None)  # YENİ
+                    )
+                    
+                    if df.empty:
+                        logger.error("No logs retrieved from OpenSearch")
+                        return self._format_result(
+                            {"error": "OpenSearch'ten log alınamadı"},
+                            "anomaly_analysis"
+                        )
+                    
+                    logger.info(f"Retrieved {len(df)} logs from OpenSearch")
+                    
+                    # Normal analiz akışına devam et
+                    # Feature engineering
+                    logger.info("Creating features...")
+                    X, df_enriched = self.feature_engineer.create_features(df)
+                    
+                    # Filtreleri uygula
+                    df_filtered, X_filtered = self.feature_engineer.apply_filters(df_enriched, X)
+                    logger.info(f"After filtering: {len(df_filtered)} logs, {X_filtered.shape[1]} features")
+                    
+                    # Model kontrolü ve tahmin
+                    if not self.detector.is_trained:
+                        logger.info("Training new model...")
+                        self.detector.train(X_filtered)
+                    
+                    predictions, anomaly_scores = self.detector.predict(X_filtered)
+                    anomaly_count = sum(predictions == -1)
+                    logger.info(f"Found {anomaly_count} anomalies in OpenSearch logs")
+                    
+                    # Analiz
+                    analysis = self.detector.analyze_anomalies(df_filtered, X_filtered, predictions, anomaly_scores)
+                    
+                    # Sonuçları sakla
+                    self.last_analysis = {
+                        "df": df_filtered,
+                        "predictions": predictions,
+                        "anomaly_scores": anomaly_scores,
+                        "analysis": analysis
+                    }
+                    
+                    # Açıklama ve öneriler
+                    description = f"OpenSearch'ten son {last_hours} saatteki {len(df)} log analiz edildi. " + \
+                                 self._create_analysis_description(analysis, time_range)
+                    suggestions = self._create_suggestions(analysis)
+                    
+                    result = {
+                        "description": description,
+                        "data": {
+                            "source": "OpenSearch",
+                            "logs_analyzed": len(df),
+                            "summary": analysis["summary"],
+                            "critical_anomalies": analysis["critical_anomalies"][:10],
+                            "security_alerts": analysis.get("security_alerts", {}),
+                            "temporal_analysis": analysis.get("temporal_analysis", {})
+                        },
+                        "suggestions": suggestions
+                    }
+                    
+                    return self._format_result(result, "anomaly_analysis")
+                    
+                except Exception as e:
+                    logger.error(f"OpenSearch analysis error: {e}", exc_info=True)
+                    return self._format_result(
+                        {"error": f"OpenSearch analiz hatası: {str(e)}"},
+                        "anomaly_analysis"
+                    )
                 
             else:  # default: file
                 if self.log_reader is None:
@@ -178,7 +279,8 @@ class AnomalyDetectionTools:
                 last_hours = 24
             elif time_range == "last_week":
                 last_hours = 168
-            logger.debug(f"Time range converted to hours: {last_hours}")
+            elif time_range == "last_month":  # YENİ
+                last_hours = 720
             
             # Log reader'ı başlat
             if self.log_reader is None:
@@ -647,13 +749,15 @@ class AnomalyDetectionTools:
 
 # Pydantic modelleri - Tool argümanları için
 class AnalyzeLogsArgs(BaseModel):
-    time_range: str = Field(default="last_hour", description="Zaman aralığı: last_hour, last_day, last_week, all")
+    time_range: str = Field(default="last_hour", description="Zaman aralığı: last_hour, last_day, last_week, last_month")
     threshold: float = Field(default=0.03, description="Anomali eşik değeri")
     uploaded_file_path: Optional[str] = Field(default=None, description="Upload edilen dosya yolu")
     source_type: Optional[str] = Field(default="file", description="Veri kaynağı: file, upload, mongodb_direct, test_servers, opensearch")
     file_path: Optional[str] = Field(default=None, description="Log dosya yolu")
     connection_string: Optional[str] = Field(default=None, description="MongoDB connection string")
     server_name: Optional[str] = Field(default=None, description="Test sunucu adı")
+    last_hours: Optional[int] = Field(default=None, description="Kaç saatlik log okunacak (OpenSearch için)")
+    host_filter: Optional[str] = Field(default=None, description="Belirli bir MongoDB sunucusundan logları filtrele")
 
 
 class SummaryArgs(BaseModel):

@@ -159,10 +159,10 @@
                                     <span>Test Linux Sunucuları</span>
                                 </label>
                                 
-                                <label class="source-option disabled">
-                                    <input type="radio" name="dataSource" value="opensearch" disabled>
-                                    <span> OpenSearch </span>
-                                    <small>Yakında...</small>
+                                <label class="source-option">
+                                    <input type="radio" name="dataSource" value="opensearch">
+                                    <span>🔍 OpenSearch</span>
+                                    <small>(Production MongoDB Logları)</small>
                                 </label>
                             </div>
                             
@@ -191,6 +191,18 @@
                                         <option value="mongodb-node3">MongoDB Node 3 (Secondary)</option>
                                     </select>
                                 </div>
+                                
+                                <!-- OpenSearch için -->
+                                <div id="opensearchSourceInputs" style="display: none;">
+                                    <label>MongoDB Sunucusu:</label>
+                                    <select id="mongodbHostSelect" class="form-select">
+                                        <option value="" disabled selected>Lütfen bir sunucu seçin</option>
+                                        <!-- Dinamik olarak doldurulacak -->
+                                    </select>
+                                    <button id="refreshHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
+                                        🔄 Sunucu Listesini Yenile
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -213,8 +225,8 @@
                                     Son 7 Gün
                                 </label>
                                 <label>
-                                    <input type="radio" name="modalTimeRange" value="all">
-                                    Tüm Loglar
+                                    <input type="radio" name="modalTimeRange" value="last_30d">
+                                    Son 30 Gün
                                 </label>
                             </div>
                             <button id="startAnalysisBtn" class="btn btn-primary" style="margin-top: 15px; width: 100%;">

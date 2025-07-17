@@ -252,6 +252,14 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                     anomaly_params['connection_string'] = additional_args.get('connection_string')
                 elif source_type == 'test_servers':
                     anomaly_params['server_name'] = additional_args.get('server_name')
+                elif source_type == 'opensearch':
+                    anomaly_params['host_filter'] = additional_args.get('host_filter')
+                    self.logger.debug(f"OpenSearch host_filter: {anomaly_params['host_filter']}")
+                
+                # Host filter varsa ekle (tüm kaynaklar için)
+                if 'host_filter' in additional_args and additional_args['host_filter']:
+                    anomaly_params['host_filter'] = additional_args['host_filter']
+                    self.logger.debug(f"Host filter eklendi: {anomaly_params['host_filter']}")
                 
                 # Train komutları için özel
                 if 'train' in user_input.lower() or 'model' in user_input.lower():
