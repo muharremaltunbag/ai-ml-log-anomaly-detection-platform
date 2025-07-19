@@ -15,6 +15,11 @@ let apiKey = '';
 let isConnected = false;
 let selectedDataSource = 'upload';  // Varsayılan veri kaynağı
 
+// Konuşma geçmişi için sabitler
+const HISTORY_KEY = 'mongodb_query_history';
+const MAX_HISTORY_ITEMS = 50;
+let queryHistory = [];
+
 // API endpoints
 const API_BASE = window.location.origin;
 const API_ENDPOINTS = {
@@ -50,6 +55,7 @@ const elements = {
 document.addEventListener('DOMContentLoaded', () => {
     initializeEventListeners();
     checkInitialStatus();
+    loadHistory(); // Geçmişi yükle
 });
 
 /**
@@ -84,6 +90,40 @@ function initializeEventListeners() {
         console.log('Log upload button clicked'); // DEBUG LOG
         document.getElementById('logFileInput').click();
     });
+
+    // Dosya yükleme için event listener'lar
+    const logFileInput = document.getElementById('logFileInput');
+    const uploadDropzone = document.getElementById('uploadDropzone');
+    
+    if (logFileInput) {
+        logFileInput.addEventListener('change', handleFileUpload);
+    }
+    
+    if (uploadDropzone) {
+        uploadDropzone.addEventListener('click', () => {
+            logFileInput.click();
+        });
+        
+        // Drag and Drop
+        uploadDropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadDropzone.classList.add('drag-over');
+        });
+        
+        uploadDropzone.addEventListener('dragleave', () => {
+            uploadDropzone.classList.remove('drag-over');
+        });
+        
+        uploadDropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadDropzone.classList.remove('drag-over');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileUpload({ target: { files: files } });
+            }
+        });
+    }
 
     // Anomali Analizi butonu  
     document.getElementById('anomalyAnalysisBtn').addEventListener('click', () => {
@@ -161,6 +201,24 @@ function initializeEventListeners() {
                 validateAnalysisButton();
             }
         }
+    });
+    
+    // Geçmiş tab'ları
+    document.querySelectorAll('.history-tab').forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            document.querySelectorAll('.history-tab').forEach(t => t.classList.remove('active'));
+            e.target.classList.add('active');
+            updateHistoryDisplay(e.target.dataset.tab);
+        });
+    });
+
+    // Geçmiş butonları
+    document.getElementById('clearHistoryBtn').addEventListener('click', clearHistory);
+    document.getElementById('exportHistoryBtn').addEventListener('click', exportHistory);
+    
+    // console.log ile hata ayıklama
+    window.addEventListener('error', (e) => {
+        console.error('Global error caught:', e.message);
     });
     
     console.log('Event listeners initialized successfully'); // DEBUG LOG
@@ -254,6 +312,11 @@ async function handleQuery() {
     const query = elements.queryInput.value.trim();
     
     console.log('handleQuery called with query:', query); // DEBUG LOG
+        
+    // Onay sorgusu kontrolü
+    const isConfirmation = window.isConfirmationQuery || false;
+    window.isConfirmationQuery = false; // Flag'i resetle
+    console.log('handleQuery called with query:', query, 'isConfirmation:', isConfirmation);
     
     if (!query) {
         console.log('Query is empty'); // DEBUG LOG
@@ -273,6 +336,8 @@ async function handleQuery() {
     elements.resultSection.style.display = 'none';
     
     try {
+        // Onay sorgusu flag'ini global olarak sakla
+        window.lastQueryWasConfirmation = isConfirmation;
         const queryBody = {
             query: query,
             api_key: apiKey
@@ -317,6 +382,31 @@ async function handleQuery() {
 function displayConfirmationDialog(result) {
     console.log('Displaying confirmation dialog for anomaly analysis');
     
+    // İlk sorguyu geçmişe ekle ve ID'sini sakla
+    const parentId = Date.now();
+    window.pendingAnomalyQueryId = parentId;
+
+    // Onay bekleyen sorguyu geçmişe ekle
+    const historyItem = {
+        id: parentId,
+        timestamp: new Date().toISOString(),
+        query: elements.queryInput.value,
+        type: 'anomaly',  // 'chatbot' yerine 'anomaly' olarak değiştir
+        result: result,
+        durum: result.durum,
+        işlem: result.işlem,
+        isAnomalyParent: true,
+        childResultId: null,
+        hasResult: false  // Yeni alan ekle
+    };
+    
+    queryHistory.unshift(historyItem);
+    if (queryHistory.length > MAX_HISTORY_ITEMS) {
+        queryHistory = queryHistory.slice(0, MAX_HISTORY_ITEMS);
+    }
+    saveHistory();
+    updateHistoryDisplay();
+
     const confirmationHtml = `
         <div class="confirmation-dialog">
             <div class="confirmation-header">
@@ -356,6 +446,9 @@ async function confirmAnomalyAnalysis() {
     // Query input'a onay yazısı koy
     elements.queryInput.value = 'evet';
     
+    // Onay sorgusu olduğunu işaretle
+    window.isConfirmationQuery = true;
+    
     // Tekrar sorgu gönder
     await handleQuery();
 }
@@ -369,6 +462,9 @@ async function cancelAnomalyAnalysis() {
     // Query input'a iptal yazısı koy
     elements.queryInput.value = 'hayır';
     
+    // İptal de bir onay sorgusu olduğunu işaretle
+    window.isConfirmationQuery = true;
+
     // Tekrar sorgu gönder
     await handleQuery();
 }
@@ -430,6 +526,14 @@ window.modifyAnomalyParameters = modifyAnomalyParameters;
  * Sonucu görüntüle - GELİŞTİRİLMİŞ VERSİYON
  */
 function displayResult(result) {
+    // DEBUG LOGS - Geçici
+    console.log('=== displayResult DEBUG ===');
+    console.log('result object:', result);
+    console.log('result.işlem:', result.işlem);
+    console.log('result.durum:', result.durum);
+    console.log('window.pendingAnomalyQueryId:', window.pendingAnomalyQueryId);
+    console.log('queryHistory length:', queryHistory.length);
+    // DEBUG LOGS SON
     console.log('displayResult called with result type:', result.işlem || 'unknown'); // DEBUG LOG
     
     // YENİ: İptal durumu kontrolü
@@ -541,6 +645,92 @@ function displayResult(result) {
 
     // Sonuç alanına scroll
     elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    
+
+    // Geçmişe ekle mantığı - DÜZELTİLMİŞ VERSİYON
+    const queryText = elements.queryInput.value.toLowerCase().trim();
+    const isConfirmationResponse = ['evet', 'hayır', 'yes', 'no', 'onay', 'iptal'].includes(queryText);
+
+    // Anomali analiz sonucu mu kontrol et
+    const isAnomalyResult = result.işlem === 'anomaly_analysis' || 
+                           (result.işlem === 'sorgu_tamamlandı' && 
+                            result.sonuç?.tools_used?.includes('analyze_mongodb_logs'));
+
+    // DEBUG LOG
+    console.log('History update check:', {
+        isConfirmationResponse,
+        isAnomalyResult,
+        pendingQueryId: window.pendingAnomalyQueryId,
+        lastQueryWasConfirmation: window.lastQueryWasConfirmation
+    });
+
+    // ÖNCE ANOMALİ SONUCU KONTROLÜ - confirmation olsa bile parent güncellenmeli!
+    if (isAnomalyResult && window.pendingAnomalyQueryId) {
+        console.log('Anomaly result detected - updating parent query');
+        
+        // Parent sorguyu bul ve güncelle
+        const parentIndex = queryHistory.findIndex(h => h.id === window.pendingAnomalyQueryId);
+        console.log('Parent index found:', parentIndex);
+        
+        if (parentIndex !== -1) {
+            // Parent'ı güncelle
+            queryHistory[parentIndex].childResult = result;
+            queryHistory[parentIndex].hasResult = true;
+            queryHistory[parentIndex].type = 'anomaly';
+            queryHistory[parentIndex].durum = 'başarılı'; // Parent durumunu da güncelle
+            
+            console.log('Parent updated successfully:', queryHistory[parentIndex]);
+            
+            saveHistory();
+            updateHistoryDisplay();
+            
+            // Parent ID'yi temizle
+            window.pendingAnomalyQueryId = null;
+        } else {
+            console.error('Parent query not found in history!');
+        }
+    }
+    // Normal sorgular için history ekleme (anomali sonucu değilse)
+    else if (!isAnomalyResult && !isConfirmationResponse && !window.lastQueryWasConfirmation) {
+        // Normal sorgu - işlem tipine göre kategori belirle
+        let queryType = 'chatbot';
+        
+        // Tool kullanımına bakarak da kontrol et
+        const hasAnomalyTool = result.sonuç?.tools_used?.includes('analyze_mongodb_logs');
+        
+        if (result.işlem && (
+            result.işlem.includes('anomaly') || 
+            result.işlem.includes('anomali') ||
+            result.işlem === 'log_analysis' ||
+            result.işlem === 'anomaly_analysis' ||
+            result.işlem === 'parametre_tespiti' || // Onay bekleyen sorguları da anomaly'e ekle
+            hasAnomalyTool
+        )) {
+            queryType = 'anomaly';
+        }
+        else if (result.işlem && (
+            result.işlem.includes('performance') ||
+            result.işlem === 'query_performance_analysis' ||
+            result.sonuç?.tools_used?.includes('analyze_query_performance')
+        )) {
+            queryType = 'chatbot';
+        }
+        else if (result.işlem && (
+            result.işlem === 'mongodb_query' ||
+            result.işlem === 'schema_analysis' ||
+            result.işlem === 'index_management' ||
+            result.sonuç?.tools_used?.includes('mongodb_query')
+        )) {
+            queryType = 'chatbot';
+        }
+        
+        addToHistory(elements.queryInput.value, result, queryType);
+    } else {
+        console.log('Skipping history addition - confirmation response or already handled');
+    }
+
+    // lastQueryWasConfirmation flag'ini resetle
+    window.lastQueryWasConfirmation = false;
 }
 
 /**
@@ -1791,6 +1981,8 @@ function displayAnomalyResults(result) {
     // Sonuçları göster
     console.log('Showing modal with anomaly results'); // DEBUG LOG
     showModal('Anomaly Analiz Sonuçları', html);
+    
+
 }
 
 /**
@@ -1876,7 +2068,7 @@ async function updateUploadedFilesList() {
  */
 function formatFileSize(bytes) {
     if (bytes === 0) return '0 Bytes';
-    const k = 1024;
+    const k =  1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
@@ -2007,4 +2199,276 @@ function formatJSON(obj) {
             }
             return '<span class="' + cls + '">' + match + '</span>';
         });
+}
+
+// ===== KONUŞMA GEÇMİŞİ YÖNETİMİ =====
+
+/**
+ * Geçmişi localStorage'dan yükle
+ */
+function loadHistory() {
+    try {
+        const saved = localStorage.getItem(HISTORY_KEY);
+        if (saved) {
+            queryHistory = JSON.parse(saved);
+            updateHistoryDisplay();
+        }
+    } catch (e) {
+        console.error('Geçmiş yüklenemedi:', e);
+        queryHistory = [];
+    }
+}
+
+/**
+ * Geçmişe yeni sorgu ekle
+ */
+function addToHistory(query, result, type = 'chatbot') {
+    const historyItem = {
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+        query: query,
+        type: type, // 'chatbot' veya 'anomaly'
+        result: result,
+        durum: result.durum,
+        işlem: result.işlem
+    };
+    
+    // En başa ekle
+    queryHistory.unshift(historyItem);
+    
+    // Maksimum sayıyı aş
+    if (queryHistory.length > MAX_HISTORY_ITEMS) {
+        queryHistory = queryHistory.slice(0, MAX_HISTORY_ITEMS);
+    }
+    
+    // localStorage'a kaydet
+    saveHistory();
+    
+    // Görüntüyü güncelle
+    updateHistoryDisplay();
+}
+
+/**
+ * Geçmişi localStorage'a kaydet
+ */
+function saveHistory() {
+    try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(queryHistory));
+    } catch (e) {
+        console.error('Geçmiş kaydedilemedi:', e);
+    }
+}
+
+/**
+ * Geçmiş görüntüsünü güncelle
+ */
+function updateHistoryDisplay(filter = 'all') {
+    const historyContent = document.getElementById('historyContent');
+    if (!historyContent) return;
+    
+    // Filtreleme
+    let filteredHistory = queryHistory;
+    if (filter === 'chatbot') {
+        filteredHistory = queryHistory.filter(item => item.type === 'chatbot');
+    } else if (filter === 'anomaly') {
+        filteredHistory = queryHistory.filter(item => item.type === 'anomaly');
+    }
+    
+    if (filteredHistory.length === 0) {
+        historyContent.innerHTML = `
+            <div class="history-empty">
+                <p>Bu kategoride geçmiş bulunmuyor.</p>
+                <small>Yaptığınız sorgular burada görüntülenecek.</small>
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '<div class="history-list">';
+    
+    filteredHistory.forEach(item => {
+        const date = new Date(item.timestamp);
+        const typeIcon = item.type === 'anomaly' ? '🔍' : '💬';
+        const statusClass = item.durum === 'başarılı' ? 'success' : 
+                           item.durum === 'hata' ? 'error' :
+                           item.durum === 'onay_bekliyor' ? 'pending' : 'warning';
+        
+        // Parent sorgu için özel stil
+        const itemClass = item.isAnomalyParent ? 'history-item has-child' : 
+                 item.parentId ? 'history-item child-item hidden' : 'history-item';
+
+        html += `
+            <div class="${itemClass}" data-id="${item.id}">
+                <div class="history-item-header">
+                    <span class="history-type">${typeIcon}</span>
+                    <span class="history-time">${date.toLocaleString('tr-TR')}</span>
+                    <span class="history-status ${statusClass}">${item.durum}</span>
+                    ${item.hasResult ? '<span class="has-result-badge">📊 Sonuçlu</span>' : ''}
+                </div>
+                <div class="history-query">${escapeHtml(item.query)}</div>
+                <div class="history-actions">
+                ${!item.parentId ? `
+                    <button class="btn-small" onclick="replayQuery(${item.id})">
+                        🔄 Tekrar Çalıştır
+                    </button>
+                ` : ''}
+                <button class="btn-small" onclick="showHistoryDetail(${item.id})">
+                    👁️ Detay
+                </button>
+            </div>
+        </div>
+    `;
+});
+    
+    html += '</div>';
+    historyContent.innerHTML = html;
+}
+
+/**
+ * Geçmiş detayını göster
+ */
+function showHistoryDetail(id) {
+    const item = queryHistory.find(h => h.id === id);
+    if (!item) return;
+    
+    let content = '<div class="history-detail">';
+    content += `<h4>Sorgu Detayları</h4>`;
+    content += `<p><strong>Tarih:</strong> ${new Date(item.timestamp).toLocaleString('tr-TR')}</p>`;
+    content += `<p><strong>Tip:</strong> ${item.type === 'anomaly' ? 'Anomali Analizi' : 'Chatbot Sorgusu'}</p>`;
+    content += `<p><strong>Sorgu:</strong> ${escapeHtml(item.query)}</p>`;
+    content += `<p><strong>Durum:</strong> ${item.durum}</p>`;
+    
+    if (item.result.açıklama) {
+        content += `<div class="history-result">`;
+        content += `<strong>Sonuç:</strong><br>`;
+        content += parseAndFormatDescription(item.result.açıklama);
+        content += `</div>`;
+    }
+
+    // Eğer child result varsa onu da göster
+    if (item.hasResult && item.childResult) {
+        content += '<hr>';
+        content += '<h4>📊 Anomali Analiz Sonuçları</h4>';
+        
+        if (item.childResult.sonuç && item.childResult.sonuç.summary) {
+            const summary = item.childResult.sonuç.summary;
+            content += `
+                <div class="anomaly-summary-in-history">
+                    <p><strong>Toplam Log:</strong> ${summary.total_logs.toLocaleString('tr-TR')}</p>
+                    <p><strong>Anomali Sayısı:</strong> ${summary.n_anomalies}</p>
+                    <p><strong>Anomali Oranı:</strong> %${summary.anomaly_rate.toFixed(1)}</p>
+                </div>
+            `;
+        }
+        
+        if (item.childResult.açıklama) {
+            content += '<div class="child-result-description">';
+            content += parseAndFormatDescription(item.childResult.açıklama);
+            content += '</div>';
+        }
+    }
+    
+    content += '</div>';
+    
+    showModal('Sorgu Detayları', content);
+}
+
+/**
+ * Sorguyu tekrar çalıştır
+ */
+function replayQuery(id) {
+    const item = queryHistory.find(h => h.id === id);
+    if (!item) return;
+    
+    elements.queryInput.value = item.query;
+    elements.queryInput.focus();
+    
+    // Otomatik çalıştır
+    if (confirm('Bu sorguyu tekrar çalıştırmak istiyor musunuz?')) {
+        handleQuery();
+    }
+}
+
+/**
+ * Geçmişı temizle
+ */
+function clearHistory() {
+    if (confirm('Tüm sorgu geçmişini silmek istediğinizden emin misiniz?')) {
+        queryHistory = [];
+        saveHistory();
+        updateHistoryDisplay();
+        showNotification('Geçmiş temizlendi', 'success');
+    }
+}
+
+/**
+ * Geçmişi dışa aktar
+ */
+function exportHistory() {
+    const dataStr = JSON.stringify(queryHistory, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `mongodb_history_${new Date().toISOString().split('T')[0]}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+    
+    showNotification('Geçmiş dışa aktarıldı', 'success');
+}
+
+// Global fonksiyonlar olarak tanımla
+window.replayQuery = replayQuery;
+window.showHistoryDetail = showHistoryDetail;
+
+/**
+ * Dosya yükleme işlemi
+ */
+async function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Dosya tipi kontrolü
+    if (!file.name.match(/\.(log|txt|json)$/i)) {
+        showNotification('Sadece .log, .txt veya .json dosyaları kabul edilir', 'error');
+        return;
+    }
+    
+    // Dosya boyutu kontrolü (100MB)
+    if (file.size > 100 * 1024 * 1024) {
+        showNotification('Dosya boyutu 100MB\'dan büyük olamaz', 'error');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    showLoader(true);
+    
+    try {
+        const response = await fetch(`${API_ENDPOINTS.uploadLog}?api_key=${apiKey}`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            showNotification(`Dosya başarıyla yüklendi: ${result.filename}`, 'success');
+            
+            // Yüklenen dosyalar listesini güncelle
+            updateUploadedFilesList();
+            
+            // Uploaded files bölümünü göster
+            document.getElementById('uploadedFiles').style.display = 'block';
+        } else {
+            throw new Error('Dosya yüklenemedi');
+        }
+    } catch (error) {
+        showNotification('Dosya yükleme hatası: ' + error.message, 'error');
+    } finally {
+        showLoader(false);
+        // Input'u temizle
+        event.target.value = '';
+    }
 }

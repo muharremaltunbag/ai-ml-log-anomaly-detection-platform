@@ -2011,3 +2011,276 @@ footer {
     color: #1976D2;
     border: 1px solid #1976D2;
 }
+
+/* ========== Konuşma Geçmişi Stilleri ========== */
+.history-section {
+    background-color: var(--card-bg);
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+    border-left: 4px solid var(--lcw-info);
+}
+
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.history-header h3 {
+    color: var(--lcw-blue);
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.history-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-small {
+    padding: 8px 16px;
+    font-size: 13px;
+}
+
+/* History Tabs */
+.history-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 10px;
+}
+
+.history-tab {
+    padding: 8px 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+    position: relative;
+    top: 13px;
+}
+
+.history-tab:hover {
+    color: var(--lcw-blue);
+}
+
+.history-tab.active {
+    color: var(--lcw-blue);
+    border-bottom-color: var(--lcw-blue);
+    background-color: var(--lcw-light-gray);
+    border-radius: 6px 6px 0 0;
+}
+
+/* History Content */
+.history-content {
+    min-height: 200px;
+}
+
+.history-empty {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-secondary);
+}
+
+.history-empty p {
+    font-size: 16px;
+    margin-bottom: 8px;
+}
+
+.history-empty small {
+    font-size: 14px;
+    color: var(--lcw-gray);
+}
+
+/* History List */
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.history-item {
+    background-color: var(--lcw-light-gray);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 15px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.history-item:hover {
+    border-color: var(--lcw-blue);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    transform: translateX(3px);
+}
+
+.history-item-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.history-type {
+    font-size: 20px;
+}
+
+.history-time {
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex: 1;
+}
+
+.history-status {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.history-status.success { 
+    background-color: var(--lcw-success);
+    color: white;
+}
+.history-status.error { 
+    background-color: var(--lcw-error);
+    color: white;
+}
+.history-status.warning { 
+    background-color: var(--lcw-warning);
+    color: white;
+}
+
+.history-query {
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.history-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.history-actions .btn-small {
+    padding: 5px 12px;
+    font-size: 12px;
+}
+
+/* History Detail Modal */
+.history-detail {
+    padding: 10px;
+}
+
+.history-detail h4 {
+    color: var(--lcw-blue);
+    margin-bottom: 15px;
+}
+
+.history-detail p {
+    margin-bottom: 10px;
+    line-height: 1.6;
+}
+
+.history-detail strong {
+    color: var(--text-primary);
+}
+
+.history-result {
+    background-color: var(--lcw-light-gray);
+    padding: 15px;
+    border-radius: 6px;
+    margin-top: 15px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* İlişkili geçmiş öğeleri için stiller */
+.history-item.has-child {
+    border-left: 3px solid #0047BA;
+}
+
+.history-item.child-item {
+    margin-left: 20px;
+    opacity: 0.9;
+    border-left: 3px solid #4CAF50;
+}
+
+.has-result-badge {
+    background: #4CAF50;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    margin-left: 8px;
+}
+
+.history-status.pending {
+    color: #FF9800;
+}
+
+.anomaly-summary-in-history {
+    background: #f5f5f5;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+.child-result-description {
+    margin-top: 15px;
+    padding: 15px;
+    background: #f9f9f9;
+    border-radius: 8px;
+}
+.history-item.child-item.hidden {
+    display: none;
+}
+
+.history-item.has-child .has-result-badge {
+    background-color: #4CAF50;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    margin-left: 8px;
+}
+
+/* Geçmiş - Child item gizleme */
+.history-item.child-item.hidden {
+    display: none;
+}
+
+/* Sonuçlu badge stili */
+.history-item.has-child .has-result-badge {
+    background-color: #4CAF50;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    margin-left: 8px;
+    display: inline-block;
+}
+
+/* Parent item için hover efekti */
+.history-item.has-child {
+    border-left: 3px solid #4CAF50;
+}
+
+.history-item.has-child:hover {
+    background-color: rgba(76, 175, 80, 0.05);
+}

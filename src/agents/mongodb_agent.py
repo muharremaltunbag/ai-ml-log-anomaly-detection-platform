@@ -22,6 +22,9 @@ class MongoDBAgent:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         
+        # MongoDB bağlantı durumu için flag ekle
+        self.mongodb_connected = False
+        
         # Bileşenleri başlat
         self.db_connector = MongoDBConnector()
         self.openai_connector = OpenAIConnector()
@@ -67,14 +70,18 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
     def initialize(self) -> bool:
         """Agent'ı başlat"""
         try:
-            # Bağlantıları kur
+            # MongoDB bağlantısını dene (opsiyonel)
             self.logger.info("MongoDB bağlantısı kuruluyor...")
             self.logger.debug("MongoDB connector durumu kontrol ediliyor...")
-            if not self.db_connector.connect():
-                self.logger.error("MongoDB bağlantısı başarısız")
-                return False
-            self.logger.debug("MongoDB bağlantısı başarılı")
+            if self.db_connector.connect():
+                self.logger.info("MongoDB bağlantısı başarılı")
+                self.mongodb_connected = True
+            else:
+                self.logger.warning("MongoDB bağlantısı başarısız - Sistem MongoDB olmadan devam edecek")
+                self.mongodb_connected = False
+                # MongoDB bağlantısı başarısız olsa bile devam et
             
+            # OpenAI bağlantısı (zorunlu)
             self.logger.info("OpenAI bağlantısı kuruluyor...")
             self.logger.debug("OpenAI connector durumu kontrol ediliyor...")
             if not self.openai_connector.connect():
@@ -377,15 +384,18 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
     def _check_connections(self) -> bool:
         """Bağlantıları kontrol et ve gerekirse yenile"""
         try:
-            # MongoDB bağlantısı
-            mongodb_status = self.db_connector.is_connected()
-            self.logger.debug(f"MongoDB bağlantı durumu: {mongodb_status}")
-            if not mongodb_status:
-                self.logger.warning("MongoDB bağlantısı kopuk, yenileniyor...")
-                if not self.db_connector.connect():
-                    self.logger.debug("MongoDB yeniden bağlantı başarısız")
-                    return False
-                self.logger.debug("MongoDB yeniden bağlantı başarılı")
+            # MongoDB bağlantısı (opsiyonel)
+            if self.mongodb_connected:
+                mongodb_status = self.db_connector.is_connected()
+                self.logger.debug(f"MongoDB bağlantı durumu: {mongodb_status}")
+                if not mongodb_status:
+                    self.logger.warning("MongoDB bağlantısı kopuk, yenileniyor...")
+                    if not self.db_connector.connect():
+                        self.logger.warning("MongoDB yeniden bağlantı başarısız - Devam ediliyor")
+                        self.mongodb_connected = False
+                    else:
+                        self.logger.debug("MongoDB yeniden bağlantı başarılı")
+                        self.mongodb_connected = True
             
             # OpenAI bağlantısı
             openai_status = self.openai_connector.is_connected()
@@ -435,15 +445,22 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
             ]
             self.logger.debug(f"Standart format oluşturuluyor: {intermediate_steps_count} adım, {len(tools_used)} araç kullanıldı")
             
+            # Tool'lardan anomaly tool kullanıldı mı kontrol et
+            is_anomaly_result = any('analyze_mongodb_logs' in tool for tool in tools_used)
+
+            # İşlem tipini belirle
+            operation_type = "anomaly_analysis" if is_anomaly_result else "sorgu_tamamlandı"
+            
             return {
                 "durum": "başarılı",
-                "işlem": "sorgu_tamamlandı",
+                "işlem": operation_type,
                 "açıklama": output,
                 "sonuç": {
                     "intermediate_steps": intermediate_steps_count,
                     "tools_used": tools_used
                 }
             }
+        
             
         except Exception as e:
             self.logger.error(f"Response formatlama hatası: {e}")
@@ -605,7 +622,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
     def get_status(self) -> Dict[str, Any]:
         """Agent durumunu döndür"""
         return {
-            "mongodb_connected": self.db_connector.is_connected() if self.db_connector else False,
+            "mongodb_connected": self.mongodb_connected,
             "openai_connected": self.openai_connector.is_connected() if self.openai_connector else False,
             "agent_ready": self.agent_executor is not None,
             "conversation_length": len(self.memory.chat_memory.messages) if self.memory else 0,

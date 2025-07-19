@@ -81,6 +81,42 @@
                 </div>
             </section>
 
+            <!-- Sonuç Alanı -->
+            <section id="resultSection" class="result-section" style="display: none;">
+                <h3>Sorgu Sonucu</h3>
+                <div id="resultContent" class="result-content"></div>
+            </section>
+
+            <!-- YENİ: Konuşma Geçmişi & Anomali Geçmişi -->
+            <section class="history-section">
+                <div class="history-header">
+                    <h3>📋 Konuşma Geçmişi & Anomali Geçmişi</h3>
+                    <div class="history-actions">
+                        <button id="clearHistoryBtn" class="btn btn-secondary btn-small">🗑️ Geçmişi Temizle</button>
+                        <button id="exportHistoryBtn" class="btn btn-secondary btn-small">📥 Dışa Aktar</button>
+                    </div>
+                </div>
+                
+                <div class="history-tabs">
+                    <button class="history-tab active" data-tab="all">Tümü</button>
+                    <button class="history-tab" data-tab="chatbot">Chatbot Sorguları</button>
+                    <button class="history-tab" data-tab="anomaly">Anomali Analizleri</button>
+                </div>
+                
+                <div id="historyContent" class="history-content">
+                    <div class="history-empty">
+                        <p>Henüz sorgu geçmişi bulunmuyor.</p>
+                        <small>Yaptığınız sorgular burada görüntülenecek.</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Anomali Analiz Sonuçları -->
+            <section id="anomalyResults" class="anomaly-results" style="display: none;">
+                <h3>🎯 Anomali Analiz Sonuçları</h3>
+                <div id="anomalyContent" class="anomaly-content"></div>
+            </section>
+
             <!-- Log Yükleme Bölümü -->
             <section class="log-upload-section">
                 <h3>📁 Manuel Log Yükleme (OpenSearch Öncesi Test)</h3>
@@ -104,18 +140,6 @@
                         <div id="filesList" class="files-list"></div>
                     </div>
                 </div>
-            </section>
-
-            <!-- Anomali Analiz Sonuçları -->
-            <section id="anomalyResults" class="anomaly-results" style="display: none;">
-                <h3>🎯 Anomali Analiz Sonuçları</h3>
-                <div id="anomalyContent" class="anomaly-content"></div>
-            </section>
-
-            <!-- Sonuç Alanı -->
-            <section id="resultSection" class="result-section" style="display: none;">
-                <h3>Sorgu Sonucu</h3>
-                <div id="resultContent" class="result-content"></div>
             </section>
 
             <!-- Yükleme Göstergesi -->
