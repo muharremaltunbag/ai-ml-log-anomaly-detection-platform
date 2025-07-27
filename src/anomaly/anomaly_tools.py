@@ -13,10 +13,15 @@ import pandas as pd
 from pathlib import Path
 import os
 from pymongo import MongoClient
+import numpy as np
 
 from .log_reader import MongoDBLogReader, OpenSearchProxyReader
 from .feature_engineer import MongoDBFeatureEngineer
 from .anomaly_detector import MongoDBAnomalyDetector
+
+from ..connectors.openai_connector import OpenAIConnector
+from langchain.schema import HumanMessage, SystemMessage
+
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +48,11 @@ class AnomalyDetectionTools:
         self.feature_engineer = MongoDBFeatureEngineer(config_path)
         self.detector = MongoDBAnomalyDetector(config_path)
         logger.debug("Feature engineer and detector modules initialized")
+
+        # YENİ: OpenAI connector'ı başlat
+        self.openai_connector = OpenAIConnector()
+        self.openai_connector.connect()
+        logger.info("OpenAI connector initialized for anomaly explanations")
         
         # Son analiz sonuçlarını sakla
         self.last_analysis = None
@@ -66,6 +76,22 @@ class AnomalyDetectionTools:
         """Sonuçları MongoDB Agent formatına uygun şekilde formatla"""
         logger.debug(f"Formatting result for operation: {operation}")
         try:
+            def convert_numpy_types(obj):
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                elif isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, dict):
+                    return {k: convert_numpy_types(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_numpy_types(item) for item in obj]
+                return obj
+            
+            # Result'ı temizle
+            result = convert_numpy_types(result)
+
             if "error" in result:
                 logger.debug(f"Formatting error result: {result.get('error', 'Unknown error')}")
                 return json.dumps({
@@ -74,6 +100,8 @@ class AnomalyDetectionTools:
                     "açıklama": result.get("error", "Bilinmeyen hata"),
                     "sonuç": None
                 }, ensure_ascii=False, indent=2)
+
+                
             
             logger.debug("Formatting successful result")
             return json.dumps({
@@ -83,7 +111,6 @@ class AnomalyDetectionTools:
                 "sonuç": result.get("data", result),
                 "öneriler": result.get("suggestions", [])
             }, ensure_ascii=False, indent=2)
-            
         except Exception as e:
             logger.error(f"Format hatası: {e}")
             return json.dumps({
@@ -279,23 +306,47 @@ class AnomalyDetectionTools:
                         "anomaly_scores": anomaly_scores,
                         "analysis": analysis
                     }
+
+                    ai_explanation = {}
+                    # OpenAI bağlantısı varsa AI destekli açıklama üret
+                    if self.openai_connector.is_connected():
+                        logger.info("Generating AI-powered explanation for OpenSearch data...")
+                        ai_explanation = self._generate_ai_explanation(analysis)
+
                     
                     # Açıklama ve öneriler
-                    description = f"OpenSearch'ten son {last_hours} saatteki {len(df)} log analiz edildi. " + \
-                                 self._create_analysis_description(analysis, time_range)
-                    suggestions = self._create_suggestions(analysis)
+                    if ai_explanation:
+                        description = f"OpenSearch'ten son {last_hours} saatteki {len(df)} log analiz edildi.\n\n" + \
+                                    self._create_enriched_description(analysis, time_range, ai_explanation)[len("🤖 **AI DESTEKLİ ANOMALİ ANALİZİ**\n\n"):]
+                        suggestions = ai_explanation.get("onerilen_aksiyonlar", [])
+                        logger.info("AI-powered explanation and suggestions created for OpenSearch.")
+                    else:
+                        # Fallback: AI başarısız olursa standart raporlamayı kullan
+                        description = f"OpenSearch'ten son {last_hours} saatteki {len(df)} log analiz edildi. " + \
+                                     self._create_analysis_description(analysis, time_range)
+                        suggestions = self._create_suggestions(analysis)
+                        logger.warning("Fell back to basic description and suggestions for OpenSearch.")
                     
                     result = {
                         "description": description,
                         "data": {
                             "source": "OpenSearch",
                             "logs_analyzed": len(df),
+                            "filtered_logs": len(df_filtered),  # YENİ
                             "summary": analysis["summary"],
                             "critical_anomalies": analysis["critical_anomalies"][:10],
                             "security_alerts": analysis.get("security_alerts", {}),
-                            "temporal_analysis": analysis.get("temporal_analysis", {})
+                            "temporal_analysis": analysis.get("temporal_analysis", {}),
+                            "component_analysis": analysis.get("component_analysis", {}),  # YENİ
+                            "feature_importance": analysis.get("feature_importance", {}),  # YENİ
+                            "anomaly_score_stats": {  # YENİ
+                                "min": analysis["summary"]["score_range"]["min"],
+                                "max": analysis["summary"]["score_range"]["max"],
+                                "mean": analysis["summary"]["score_range"]["mean"]
+                            }
                         },
-                        "suggestions": suggestions
+                        "suggestions": suggestions,
+                        "ai_explanation": ai_explanation  
                     }
                     
                     return self._format_result(result, "anomaly_analysis")
@@ -392,25 +443,31 @@ class AnomalyDetectionTools:
             }
             logger.debug("Analysis results stored")
             
-            # Açıklama oluştur
-            description = self._create_analysis_description(analysis, time_range)
-            
-            # Öneriler oluştur
-            suggestions = self._create_suggestions(analysis)
-            logger.debug(f"Generated {len(suggestions)} suggestions")
-            
+            # YENİ: AI Entegrasyon Kısmı
+            ai_explanation = {}
+            # OpenAI bağlantısı varsa AI destekli açıklama üret
+            if self.openai_connector.is_connected():
+                logger.info("Generating AI-powered explanation...")
+                ai_explanation = self._generate_ai_explanation(analysis)
+
+            # AI'dan başarılı bir yanıt geldiyse onu kullan, gelmediyse eskiye dön
+            if ai_explanation:
+                description = self._create_enriched_description(analysis, time_range, ai_explanation)
+                suggestions = ai_explanation.get("onerilen_aksiyonlar", [])
+                logger.info("AI-powered explanation and suggestions created.")
+            else:
+                # Fallback: AI başarısız olursa standart raporlamayı kullan
+                description = self._create_analysis_description(analysis, time_range)
+                suggestions = self._create_suggestions(analysis)
+                logger.warning("Fell back to basic description and suggestions.")
+
             result = {
                 "description": description,
-                "data": {
-                    "summary": analysis["summary"],
-                    "critical_anomalies": analysis["critical_anomalies"][:10],  # İlk 10
-                    "security_alerts": analysis.get("security_alerts", {}),
-                    "temporal_analysis": analysis.get("temporal_analysis", {})
-                },
-                "suggestions": suggestions
+                "data": analysis, # Tüm ham analiz verisini de gönderelim
+                "suggestions": suggestions,
+                "ai_explanation": ai_explanation # Yapılandırılmış AI çıktısını da ekleyelim
             }
             
-            logger.debug("Analysis result prepared successfully")
             return self._format_result(result, "anomaly_analysis")
             
         except Exception as e:
@@ -734,64 +791,440 @@ class AnomalyDetectionTools:
             return self._format_result({"error": str(e)}, "model_training")
     
     def _create_analysis_description(self, analysis: Dict, time_range: str) -> str:
-        """Analiz sonucu için açıklama oluştur"""
-        logger.debug(f"Creating analysis description for time_range: {time_range}")
+        """Analiz sonucu için kullanıcı dostu açıklama oluştur"""
         summary = analysis["summary"]
         
-        desc = f"{time_range} zaman aralığında {summary['total_logs']} log analiz edildi. "
-        desc += f"{summary['n_anomalies']} anomali tespit edildi (%{summary['anomaly_rate']:.1f}). "
+        # Temel bilgiler
+        desc = f"📊 **ÖZET**: {time_range} zaman aralığında {summary['total_logs']:,} log analiz edildi.\n\n"
+        
+        # Ne oldu?
+        desc += f"🔍 **NE OLDU?**\n"
+        desc += f"• {summary['n_anomalies']} adet anomali tespit edildi (%{summary['anomaly_rate']:.1f})\n"
+        
+        # Ne zaman oldu?
+        if "temporal_analysis" in analysis and "peak_hours" in analysis["temporal_analysis"]:
+            peak_hours = analysis["temporal_analysis"]["peak_hours"]
+            desc += f"\n⏰ **NE ZAMAN OLDU?**\n"
+            desc += f"• En yoğun anomali saatleri: {', '.join(map(str, peak_hours))}\n"
+        
+        # Neden oldu? (En sık görülen anomali tipleri)
+        desc += f"\n❓ **NEDEN OLDU?**\n"
+        if "component_analysis" in analysis:
+            top_components = sorted(analysis["component_analysis"].items(), 
+                                   key=lambda x: x[1]["anomaly_count"], 
+                                   reverse=True)[:3]
+            for comp, stats in top_components:
+                desc += f"• {comp}: {stats['anomaly_count']} anomali (%{stats['anomaly_rate']:.1f})\n"
         
         # Kritik bulgular
+        desc += f"\n⚠️ **KRİTİK BULGULAR**\n"
         if "security_alerts" in analysis:
             if "drop_operations" in analysis["security_alerts"]:
                 drop_count = analysis["security_alerts"]["drop_operations"]["count"]
-                desc += f"⚠️ {drop_count} adet DROP operasyonu tespit edildi! "
-                logger.debug(f"Added DROP operations warning: {drop_count} operations")
+                desc += f"• 🚨 {drop_count} adet DROP operasyonu tespit edildi!\n"
         
-        # Temporal pattern
-        if "temporal_analysis" in analysis and "peak_hours" in analysis["temporal_analysis"]:
-            peak_hours = analysis["temporal_analysis"]["peak_hours"]
-            desc += f"En yoğun anomali saatleri: {peak_hours}. "
-            logger.debug(f"Added peak hours info: {peak_hours}")
+        if "feature_importance" in analysis:
+            critical_features = [(feat, stats) for feat, stats in analysis["feature_importance"].items() 
+                               if stats.get("ratio", 0) > 5]
+            if critical_features:
+                desc += f"• Yüksek risk faktörleri: "
+                desc += ", ".join([f"{feat} (x{stats['ratio']:.1f})" for feat, stats in critical_features[:3]])
+                desc += "\n"
         
         logger.debug("Analysis description created successfully")
         return desc
     
     def _create_suggestions(self, analysis: Dict) -> List[str]:
-        """Analiz sonucuna göre öneriler oluştur"""
-        logger.debug("Creating suggestions based on analysis")
+        """Analiz sonucuna göre aksiyona yönelik öneriler oluştur"""
         suggestions = []
         
         # Anomali oranına göre
         anomaly_rate = analysis["summary"]["anomaly_rate"]
         if anomaly_rate > 5:
-            suggestions.append("Yüksek anomali oranı tespit edildi. Sistem yöneticilerine bilgi verilmeli.")
-            logger.debug(f"Added high anomaly rate suggestion: {anomaly_rate}%")
+            suggestions.append("🔴 ACİL: Yüksek anomali oranı! Sistem yöneticilerine hemen bilgi verin.")
+            suggestions.append("📋 YAPILACAK: Son 1 saatteki sistem değişikliklerini kontrol edin.")
+        elif anomaly_rate > 2:
+            suggestions.append("🟡 ORTA: Normal üstü anomali seviyesi. Yakından takip edin.")
+        else:
+            suggestions.append("🟢 NORMAL: Anomali seviyesi kabul edilebilir sınırlarda.")
         
         # DROP operasyonları
         if "security_alerts" in analysis:
-            suggestions.append("🚨 Kritik güvenlik uyarısı: DROP operasyonları tespit edildi. Acil inceleme gerekli!")
-            logger.debug("Added security alert suggestion")
+            suggestions.append("🚨 GÜVENLİK: DROP operasyonları tespit edildi!")
+            suggestions.append("🔐 YAPILACAK: Veritabanı yetkilerini ve erişim loglarını kontrol edin.")
+            suggestions.append("💾 YAPILACAK: Etkilenen koleksiyonların yedeklerini kontrol edin.")
         
         # Component bazlı öneriler
         if "component_analysis" in analysis:
-            high_anomaly_components = [comp for comp, stats in analysis["component_analysis"].items() 
+            high_anomaly_components = [(comp, stats) for comp, stats in analysis["component_analysis"].items() 
                                       if stats["anomaly_rate"] > 20]
             if high_anomaly_components:
-                suggestions.append(f"Şu componentlerde yüksek anomali: {', '.join(high_anomaly_components[:3])}")
-                logger.debug(f"Added component-based suggestions: {high_anomaly_components}")
+                comp_names = [comp for comp, _ in high_anomaly_components[:3]]
+                suggestions.append(f"🔧 YAPILACAK: {', '.join(comp_names)} componentlerini inceleyin.")
+                suggestions.append("📊 YAPILACAK: Bu componentlerin performans metriklerini kontrol edin.")
         
-        # Feature bazlı öneriler
-        if "feature_importance" in analysis:
-            critical_features = [feat for feat, stats in analysis["feature_importance"].items() 
-                               if stats.get("ratio", 0) > 5]
-            if critical_features:
-                suggestions.append(f"Anomalilerde öne çıkan özellikler: {', '.join(critical_features[:3])}")
-                logger.debug(f"Added feature-based suggestions: {critical_features}")
+        # Temporal pattern önerileri
+        if "temporal_analysis" in analysis and "peak_hours" in analysis["temporal_analysis"]:
+            peak_hours = analysis["temporal_analysis"]["peak_hours"]
+            suggestions.append(f"⏰ BİLGİ: Anomaliler genelde saat {peak_hours[0]} civarında yoğunlaşıyor.")
+            suggestions.append("📅 YAPILACAK: Bu saatlerdeki planlı işlemleri gözden geçirin.")
         
-        logger.debug(f"Created {len(suggestions)} suggestions")
         return suggestions
 
+    def _generate_ai_explanation(self, anomaly_data: Dict[str, Any]) -> Dict[str, Any]:
+        """OpenAI kullanarak anomali verisi için zengin açıklama üret"""
+        if not self.openai_connector.is_connected():
+            logger.warning("OpenAI not connected, returning basic explanation")
+            return self._create_fallback_explanation(anomaly_data)
+        
+        try:
+            logger.info("Starting AI explanation generation...")
+            summary = anomaly_data.get("summary", {})
+            critical_anomalies = anomaly_data.get("critical_anomalies", [])[:5]
+            security_alerts = anomaly_data.get("security_alerts", {})
+            component_analysis = anomaly_data.get("component_analysis", {})
+            temporal_analysis = anomaly_data.get("temporal_analysis", {})
+            
+            # Güçlendirilmiş system prompt - daha detaylı ve sayısal referanslı
+            system_prompt = """Sen bir MongoDB veritabanı uzmanısın. Anomali analiz sonuçlarını inceleyip, 
+            kullanıcıya anlaşılır ve aksiyona yönelik açıklamalar üretiyorsun. 
+            
+            MUTLAKA her açıklamanda spesifik sayılar ve yüzdeler kullan!
+            
+            Açıklamalarında şu başlıkları kullan ve her birini madde işaretleriyle (•) listele:
+            
+            1. NE TESPİT EDİLDİ? 
+               • Her anomali tipini ayrı maddede açıkla
+               • Anomali sayılarını ve yüzdelerini belirt
+               
+            2. POTANSİYEL ETKİLER
+               • Her etkiyi ayrı maddede açıkla
+               • Hangi bileşenlerin ne kadar etkilendiğini sayılarla belirt
+               
+            3. MUHTEMEL NEDENLER
+               • Her nedeni ayrı maddede açıkla
+               • Hangi saatlerde yoğunlaştığını belirt
+               
+            4. ÖNERİLEN AKSİYONLAR
+               • Her öneriyi ayrı maddede açıkla
+               • Hangi anomali için hangi öneri olduğunu ve sayısal hedefleri belirt
+               
+            Türkçe yanıt ver ve her öneride MUTLAKA ilgili anomali sayısına veya yüzdesine referans ver."""
+            
+            # Daha detaylı user prompt
+            user_prompt = f"""
+            MongoDB log anomali analiz sonuçları:
+            
+            ÖZET:
+            - Toplam log: {summary.get('total_logs', 0):,}
+            - Anomali sayısı: {summary.get('n_anomalies', 0)}
+            - Anomali oranı: %{summary.get('anomaly_rate', 0):.1f}
+            - Ortalama anomali skoru: {summary.get('score_range', {}).get('mean', 0):.3f}
+            - Minimum skor: {summary.get('score_range', {}).get('min', 0):.3f}
+            - Maksimum skor: {summary.get('score_range', {}).get('max', 0):.3f}
+            
+            KRİTİK ANOMALİLER:
+            {self._format_critical_anomalies_detailed(critical_anomalies)}
+            
+            GÜVENLİK UYARILARI:
+            {self._format_security_alerts_detailed(security_alerts)}
+            
+            COMPONENT ANALİZİ:
+            {self._format_component_analysis_detailed(component_analysis)}
+            
+            ZAMANSAL ANALİZ:
+            - En yoğun anomali saatleri: {temporal_analysis.get('peak_hours', [])}
+            - Saat bazlı dağılım: {temporal_analysis.get('hourly_distribution', {})}
+            
+            Lütfen bu verileri analiz edip, kullanıcıya yukarıda belirtilen yapıda, 
+            maddeler halinde ve her maddede spesifik sayılarla desteklenmiş bir açıklama hazırla.
+            """
+            
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ]
+            
+            response = self.openai_connector.llm.invoke(messages)
+            ai_explanation = response.content
+            
+            logger.info(f"AI response received, length: {len(ai_explanation)}")
+            parsed_explanation = self._parse_ai_explanation_improved(ai_explanation)
+            
+            logger.info(f"AI explanation parsed successfully: {list(parsed_explanation.keys())}")
+            return parsed_explanation
+            
+        except Exception as e:
+            logger.error(f"Error generating AI explanation: {e}")
+            return self._create_fallback_explanation(anomaly_data)
+
+    def _parse_ai_explanation(self, ai_text: str) -> Dict[str, Any]:
+        """AI metnini yapılandırılmış formata dönüştür"""
+        sections = {
+            "ne_tespit_edildi": "",
+            "potansiyel_etkiler": [],
+            "muhtemel_nedenler": [],
+            "onerilen_aksiyonlar": []
+        }
+        current_section_key = None
+        
+        section_map = {
+            "ne_tespit_edildi": ["NE TESPİT EDİLDİ"],
+            "potansiyel_etkiler": ["POTANSİYEL ETKİLER", "NEDEN ÖNEMLİ"],
+            "muhtemel_nedenler": ["MUHTEMEL NEDENLER"],
+            "onerilen_aksiyonlar": ["ÖNERİLEN AKSİYONLAR", "NE YAPILMALI"]
+        }
+
+        for line in ai_text.split('\n'):
+            line_upper = line.upper()
+            found_new_section = False
+            for key, keywords in section_map.items():
+                for keyword in keywords:
+                    if keyword in line_upper:
+                        current_section_key = key
+                        found_new_section = True
+                        break
+                if found_new_section:
+                    break
+            
+            if found_new_section:
+                continue
+
+            if current_section_key:
+                clean_line = line.strip().lstrip('•-*0123456789. ')
+                if not clean_line:
+                    continue
+                if current_section_key == "ne_tespit_edildi":
+                    sections[current_section_key] += clean_line + " "
+                else:
+                    sections[current_section_key].append(clean_line)
+        
+        sections["ne_tespit_edildi"] = sections["ne_tespit_edildi"].strip()
+        return sections
+    
+    def _parse_ai_explanation_improved(self, ai_text: str) -> Dict[str, Any]:
+        """AI metnini yapılandırılmış formata dönüştür - geliştirilmiş versiyon"""
+        sections = {
+            "ne_tespit_edildi": [],
+            "potansiyel_etkiler": [],
+            "muhtemel_nedenler": [],
+            "onerilen_aksiyonlar": []
+        }
+        current_section_key = None
+        
+        section_map = {
+            "ne_tespit_edildi": ["NE TESPİT EDİLDİ"],
+            "potansiyel_etkiler": ["POTANSİYEL ETKİLER", "NEDEN ÖNEMLİ"],
+            "muhtemel_nedenler": ["MUHTEMEL NEDENLER"],
+            "onerilen_aksiyonlar": ["ÖNERİLEN AKSİYONLAR", "NE YAPILMALI"]
+        }
+
+        for line in ai_text.split('\n'):
+            line_upper = line.upper()
+            found_new_section = False
+            
+            # Yeni bölüm kontrolü
+            for key, keywords in section_map.items():
+                for keyword in keywords:
+                    if keyword in line_upper:
+                        current_section_key = key
+                        found_new_section = True
+                        break
+                if found_new_section:
+                    break
+            
+            if found_new_section:
+                continue
+
+            if current_section_key:
+                clean_line = line.strip().lstrip('•-*0123456789. ')
+                if clean_line and len(clean_line) > 5:  # Çok kısa satırları atla
+                    sections[current_section_key].append(clean_line)
+        
+        # İlk bölümü string olarak birleştir
+        if sections["ne_tespit_edildi"]:
+            sections["ne_tespit_edildi"] = "\n• ".join(sections["ne_tespit_edildi"])
+            sections["ne_tespit_edildi"] = "• " + sections["ne_tespit_edildi"]
+        else:
+            sections["ne_tespit_edildi"] = ""
+        
+        return sections
+
+    def _create_fallback_explanation(self, anomaly_data: Dict[str, Any]) -> Dict[str, Any]:
+        """AI başarısız olursa kullanılacak detaylı fallback açıklama"""
+        summary = anomaly_data.get('summary', {})
+        component_analysis = anomaly_data.get('component_analysis', {})
+        temporal_analysis = anomaly_data.get('temporal_analysis', {})
+        critical_anomalies = anomaly_data.get('critical_anomalies', [])[:3]
+        
+        ne_tespit_edildi = f"• Toplam {summary.get('total_logs', 0):,} log içinde {summary.get('n_anomalies', 0)} anomali tespit edildi (%{summary.get('anomaly_rate', 0):.1f})\n"
+        
+        # Component detayları ekle
+        for comp, stats in list(component_analysis.items())[:3]:
+            ne_tespit_edildi += f"• {comp} bileşeninde {stats.get('anomaly_count', 0)} anomali (%{stats.get('anomaly_rate', 0):.1f})\n"
+        
+        # Kritik anomaliler
+        if critical_anomalies:
+            ne_tespit_edildi += f"• En kritik anomali skoru: {critical_anomalies[0].get('score', 0):.3f} ({critical_anomalies[0].get('component', 'N/A')} bileşeni)"
+        
+        # Zamansal analiz
+        if temporal_analysis.get('peak_hours'):
+            peak_hours = temporal_analysis['peak_hours']
+            ne_tespit_edildi += f"\n• Anomaliler en çok saat {', '.join(map(str, peak_hours))} arasında yoğunlaşmış"
+        
+        return {
+            "ne_tespit_edildi": ne_tespit_edildi,
+            "potansiyel_etkiler": [
+                f"Sistem performansı %{summary.get('anomaly_rate', 0):.1f} oranında etkilenebilir",
+                f"En kritik {len(component_analysis)} bileşende sorun tespit edildi",
+                f"Ortalama anomali skoru {summary.get('score_range', {}).get('mean', 0):.3f} seviyesinde"
+            ],
+            "muhtemel_nedenler": [
+                "Yoğun kullanım veya sistem sorunu",
+                f"Saat {temporal_analysis.get('peak_hours', [0])[0] if temporal_analysis.get('peak_hours') else 'belirli'} civarında artan yük",
+                f"En yüksek anomali oranı %{max([s.get('anomaly_rate', 0) for s in component_analysis.values()] or [0]):.1f} ile tespit edildi"
+            ],
+            "onerilen_aksiyonlar": [
+                f"{summary.get('n_anomalies', 0)} anomaliyi detaylı inceleyin",
+                f"Özellikle %{max([s.get('anomaly_rate', 0) for s in component_analysis.values()] or [0]):.1f} anomali oranına sahip bileşenlere odaklanın",
+                f"Skor değeri {summary.get('score_range', {}).get('min', 0):.3f} altındaki kritik anomalileri öncelikle çözün"
+            ]
+        }
+
+    def _format_critical_anomalies_detailed(self, anomalies: List[Dict]) -> str:
+        """Prompt için kritik anomalileri detaylı formatlar"""
+        if not anomalies: 
+            return "Kritik anomali tespit edilmedi."
+        
+        result = []
+        # Component bazlı gruplama yap
+        component_groups = {}
+        for a in anomalies:
+            comp = a.get('component', 'N/A')
+            if comp not in component_groups:
+                component_groups[comp] = []
+            component_groups[comp].append(a)
+        
+        # Her component için detaylı bilgi ver
+        for comp, comp_anomalies in component_groups.items():
+            result.append(f"\n{comp} Bileşeni ({len(comp_anomalies)} anomali):")
+            for i, a in enumerate(comp_anomalies[:3], 1):  # Her component'ten ilk 3
+                result.append(f"  {i}. Skor: {a.get('score', 0):.3f}")
+                result.append(f"     Zaman: {a.get('timestamp', 'N/A')}")
+                result.append(f"     Mesaj: {a.get('message', '')[:80]}...")
+                result.append(f"     Önem: {a.get('severity', 'N/A')}")
+        
+        return "\n".join(result)
+
+    def _format_security_alerts_detailed(self, alerts: Dict) -> str:
+        """Prompt için güvenlik uyarılarını detaylı formatlar"""
+        if not alerts: 
+            return "Güvenlik uyarısı yok."
+        
+        result = []
+        if "drop_operations" in alerts:
+            drop_info = alerts['drop_operations']
+            result.append(f"🚨 DROP Operasyonları Tespit Edildi:")
+            result.append(f"   - Toplam sayı: {drop_info.get('count', 0)}")
+            result.append(f"   - İlk 5 index: {drop_info.get('indices', [])[:5]}")
+            result.append(f"   - Risk seviyesi: YÜKSEK")
+        
+        # Diğer güvenlik uyarıları için yer
+        if "auth_failures" in alerts:
+            auth_info = alerts['auth_failures']
+            result.append(f"🔐 Authentication Hataları:")
+            result.append(f"   - Toplam: {auth_info.get('count', 0)}")
+            result.append(f"   - Benzersiz IP sayısı: {auth_info.get('unique_ips', 0)}")
+        
+        return "\n".join(result) if result else "Güvenlik uyarısı yok."
+
+    def _format_component_analysis_detailed(self, components: Dict) -> str:
+        """Prompt için component analizini detaylı formatlar"""
+        if not components: 
+            return "Component analizi mevcut değil."
+        
+        result = ["\nBileşen Bazlı Anomali Dağılımı:"]
+        
+        # En yüksek anomali oranına göre sırala
+        sorted_components = sorted(components.items(), 
+                                 key=lambda x: x[1].get('anomaly_rate', 0), 
+                                 reverse=True)
+        
+        total_anomalies = sum(stats.get('anomaly_count', 0) for _, stats in components.items())
+        
+        for comp, stats in sorted_components[:5]:
+            anomaly_count = stats.get('anomaly_count', 0)
+            anomaly_rate = stats.get('anomaly_rate', 0)
+            total_count = stats.get('total_count', 0)
+            percentage_of_all = (anomaly_count / total_anomalies * 100) if total_anomalies > 0 else 0
+            
+            result.append(f"\n{comp} Bileşeni:")
+            result.append(f"  - Anomali sayısı: {anomaly_count} / {total_count} toplam log")
+            result.append(f"  - Bileşen içi anomali oranı: %{anomaly_rate:.1f}")
+            result.append(f"  - Tüm anomaliler içindeki payı: %{percentage_of_all:.1f}")
+        
+        return "\n".join(result)
+
+    def _format_critical_anomalies(self, anomalies: List[Dict]) -> str:
+        """Prompt için kritik anomalileri formatlar"""
+        if not anomalies: return "Kritik anomali tespit edilmedi."
+        result = [f"{i}. Skor: {a.get('score', 0):.3f}, Component: {a.get('component', 'N/A')}, Mesaj: {a.get('message', '')[:80]}..." 
+                  for i, a in enumerate(anomalies, 1)]
+        return "\n".join(result)
+
+    def _format_security_alerts(self, alerts: Dict) -> str:
+        """Prompt için güvenlik uyarılarını formatlar"""
+        if not alerts: return "Güvenlik uyarısı yok."
+        result = [f"DROP operasyonları: {alerts['drop_operations'].get('count', 0)} adet" 
+                  if "drop_operations" in alerts else ""]
+        return "\n".join(filter(None, result)) or "Güvenlik uyarısı yok."
+
+    def _format_component_analysis(self, components: Dict) -> str:
+        """Prompt için component analizini formatlar"""
+        if not components: return "Component analizi mevcut değil."
+        result = [f"- {comp}: {stats.get('anomaly_count', 0)} anomali (%{stats.get('anomaly_rate', 0):.1f})" 
+                  for comp, stats in list(components.items())[:5]]
+        return "\n".join(result)
+
+    def _create_enriched_description(self, analysis: Dict, time_range: str, ai_explanation: Dict) -> str:
+        """AI destekli zengin açıklama oluştur - geliştirilmiş format"""
+        desc = "🤖 **AI DESTEKLİ ANOMALİ ANALİZİ**\n\n"
+        
+        # NE TESPİT EDİLDİ?
+        if ai_explanation.get("ne_tespit_edildi"):
+            desc += f"🔍 **NE TESPİT EDİLDİ?**\n{ai_explanation['ne_tespit_edildi']}\n\n"
+        else:
+            return self._create_analysis_description(analysis, time_range)
+        
+        # POTANSİYEL ETKİLER
+        if ai_explanation.get("potansiyel_etkiler"):
+            desc += "⚠️ **POTANSİYEL ETKİLER:**\n"
+            for etki in ai_explanation["potansiyel_etkiler"]:
+                desc += f"• {etki}\n"
+            desc += "\n"
+        
+        # MUHTEMEL NEDENLER
+        if ai_explanation.get("muhtemel_nedenler"):
+            desc += "🎯 **MUHTEMEL NEDENLER:**\n"
+            for neden in ai_explanation["muhtemel_nedenler"]:
+                desc += f"• {neden}\n"
+            desc += "\n"
+        
+        # ÖNERİLEN AKSİYONLAR - Numaralı liste ile
+        if ai_explanation.get("onerilen_aksiyonlar"):
+            desc += "💡 **ÖNERİLEN AKSİYONLAR:**\n"
+            for i, aksiyon in enumerate(ai_explanation["onerilen_aksiyonlar"], 1):
+                desc += f"{i}. {aksiyon}\n"
+        
+        # İstatistik özeti ekle
+        summary = analysis.get("summary", {})
+        if summary:
+            desc += f"\n📊 **İSTATİSTİK ÖZETİ:**\n"
+            desc += f"• Toplam Log: {summary.get('total_logs', 0):,}\n"
+            desc += f"• Anomali Sayısı: {summary.get('n_anomalies', 0)} (%{summary.get('anomaly_rate', 0):.1f})\n"
+            desc += f"• Ortalama Anomali Skoru: {summary.get('score_range', {}).get('mean', 0):.3f}\n"
+        
+        return desc
 
 # Pydantic modelleri - Tool argümanları için
 class AnalyzeLogsArgs(BaseModel):

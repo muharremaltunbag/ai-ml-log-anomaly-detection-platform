@@ -168,6 +168,19 @@ async def process_query(request: QueryRequest):
                 }
             )
             
+            # ✅ YENİ: Anomali analizi tamamlandığında özel durum ve işlem tipi ayarla
+            if result.get('durum') == 'başarılı' and (
+                result.get('işlem') == 'anomaly_analysis' or
+                'summary' in result.get('sonuç', {}) or 
+                'ai_explanation' in result.get('sonuç', {})
+            ):
+                result['durum'] = 'tamamlandı'
+                result['işlem'] = 'anomaly_analysis'
+                logger.info("Anomaly analysis completed - status updated to 'tamamlandı'")
+            
+            logger.info(f"Anomaly analysis result - işlem: {result.get('işlem')}")
+            logger.info(f"Anomaly analysis result - durum: {result.get('durum')}")
+            
         elif user_response in ['hayır', 'iptal', 'dur', 'no'] and session_key in pending_confirmations:
             # İptal edildi
             logger.info("Kullanıcı analizi iptal etti")
@@ -411,8 +424,11 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
         mongodb_agent = await get_agent()
         logger.info("MongoDB Agent başarıyla alındı")
         
-        # Analiz sorgusunu oluştur
-        query = f"Log analizi yap"
+        # Analiz sorgusunu oluştur - OpenSearch için özel
+        if request.source_type == "opensearch" and request.host_filter:
+            query = f"{request.host_filter} sunucusu için MongoDB loglarında anomali analizi yap"
+        else:
+            query = f"MongoDB loglarında anomali analizi yap"
         
         logger.info(f"Agent'a sorgu gönderiliyor - Query: {query}")
         
@@ -426,7 +442,18 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
             "server_name": request.server_name,
             "host_filter": request.host_filter
         }
-        
+
+        # OpenSearch için özel parametreler ekle
+        if request.source_type == "opensearch":
+            analysis_params.update({
+                "confirmation_required": False,     # Onay gerektirme
+                "params_extracted": True,          # Parametreler zaten extract edildi
+                "skip_confirmation": True,         # Onay adımını atla
+                "detected_server": request.host_filter,    # Server bilgisi
+                "detected_time_range": request.time_range  # Zaman aralığı
+            })
+            logger.info(f"OpenSearch analizi için özel parametreler eklendi - Host: {request.host_filter}")
+            
         # Parametreleri detaylı logla
         logger.info("AGENT PARAMETRELERI:")
         for key, value in analysis_params.items():

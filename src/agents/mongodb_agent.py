@@ -714,8 +714,49 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
         Doğal dil sorgusundan zaman aralığını çıkar
         Returns: (time_range, human_readable_time)
         """
+    
+        import re
         query_lower = query.lower()
         
+        # Önce sayısal ifadeleri kontrol et (X günlük, Y haftalık vb.)
+        numeric_patterns = [
+            (r'(\d+)\s*(gün|günlük)', 'day'),
+            (r'(\d+)\s*(hafta|haftalık)', 'week'),
+            (r'(\d+)\s*(ay|aylık)', 'month'),
+            (r'(\d+)\s*(saat|saatlik)', 'hour')
+        ]
+        
+        for pattern, unit in numeric_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                number = int(match.group(1))
+                
+                # Backend'in anlayacağı formata dönüştür
+                if unit == 'hour':
+                    if number <= 1:
+                        return "last_hour", f"son {number} saat"
+                    elif number <= 24:
+                        return "last_day", f"son {number} saat"
+                    else:
+                        return "last_week", f"son {number} saat"
+                elif unit == 'day':
+                    if number <= 1:
+                        return "last_day", f"son {number} gün"
+                    elif number <= 7:
+                        return "last_week", f"son {number} gün"
+                    elif number <= 30:
+                        return "last_month", f"son {number} gün"
+                    else:
+                        return "last_month", f"son {number} gün"
+                elif unit == 'week':
+                    if number <= 1:
+                        return "last_week", f"son {number} hafta"
+                    elif number <= 4:
+                        return "last_month", f"son {number} hafta"
+                    else:
+                        return "last_month", f"son {number} hafta"
+                elif unit == 'month':
+                    return "last_month", f"son {number} ay"
         # Zaman kalıpları ve karşılıkları
         time_patterns = {
             # Saat bazlı

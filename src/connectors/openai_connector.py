@@ -1,4 +1,4 @@
-# C:\Users\muharrem.altunbag\MongoDB-LLM-assistant\MongoDB-LLM-assistant\src\connectors\openai_connector.py
+# \MongoDB-LLM-assistant\src\connectors\openai_connector.py
 
 
 import os
