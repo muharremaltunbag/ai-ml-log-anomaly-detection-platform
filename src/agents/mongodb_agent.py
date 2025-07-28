@@ -434,10 +434,65 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                         return self._format_anomaly_response(response)
                     
                     return response
-            except:
+            except json.JSONDecodeError:
                 self.logger.debug("Çıktı JSON formatında değil, standart formatlama yapılacak")
                 pass
             
+            # YENİ: Output içinde gömülü JSON var mı kontrol et
+            try:
+                # Output içinde JSON pattern'i ara
+                import re
+                json_pattern = r'\{[^{}]*"durum"[^{}]*\}'
+                json_match = re.search(json_pattern, output, re.DOTALL)
+                
+                if json_match:
+                    # JSON kısmını çıkar ve parse et
+                    json_str = json_match.group(0)
+                    # En dıştaki { } arasındaki her şeyi al
+                    start_idx = output.find('{')
+                    end_idx = output.rfind('}')
+                    if start_idx != -1 and end_idx != -1:
+                        json_str = output[start_idx:end_idx+1]
+                        response = json.loads(json_str)
+                        
+                        if all(key in response for key in ["durum", "işlem", "açıklama"]):
+                            self.logger.debug("Output içinde gömülü JSON bulundu ve parse edildi")
+                            
+                            # Anomali analizi ise özel formatlama
+                            if response.get('işlem') == 'anomaly_analysis':
+                                return self._format_anomaly_response(response)
+                            
+                            return response
+            except Exception as e:
+                self.logger.debug(f"Gömülü JSON parse hatası: {e}")
+            
+            # YENİ: Tool response'larını kontrol et
+            if agent_result.get("intermediate_steps"):
+                for step in agent_result.get("intermediate_steps", []):
+                    if len(step) >= 2 and hasattr(step[0], 'tool'):
+                        tool_name = step[0].tool
+                        tool_output = step[1]
+                        
+                        # Anomaly tool response'unu kontrol et
+                        if 'analyze_mongodb_logs' in tool_name:
+                            self.logger.debug(f"Anomaly tool response found, parsing...")
+                            try:
+                                # Tool output bir string ise parse et
+                                if isinstance(tool_output, str):
+                                    # JSON kısmını bul
+                                    start_idx = tool_output.find('{')
+                                    end_idx = tool_output.rfind('}')
+                                    if start_idx != -1 and end_idx != -1:
+                                        json_str = tool_output[start_idx:end_idx+1]
+                                        tool_response = json.loads(json_str)
+                                        
+                                        # Tool response'ta AI explanation var mı?
+                                        if isinstance(tool_response, dict) and tool_response.get('sonuç', {}).get('ai_explanation'):
+                                            self.logger.debug("AI explanation found in tool response!")
+                                            # Tool response'u direkt döndür
+                                            return tool_response
+                            except Exception as e:
+                                self.logger.debug(f"Tool response parse error: {e}")
             # Standart format oluştur
             intermediate_steps_count = len(agent_result.get("intermediate_steps", []))
             tools_used = [

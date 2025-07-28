@@ -3723,8 +3723,23 @@ footer {
 
 /* ========== Inline History Detail Stilleri  ========== */
 
-/* ========== Inline History Detail & Ek Stiller (Yeni Eklenenler) ========== */
+/* Eylem ve Metrik Kartları için eksik varyasyonlar */
 
+/* Normal durum için Eylem Kartı */
+.action-card.normal {
+    background: #f8f9fa; /* Sade arka plan */
+    border-left: 4px solid #6c757d; /* Gri kenarlık */
+}
+
+/* İkincil Metrik Kartı */
+.metric-card.secondary {
+    background: white;
+    border: 2px solid #6c757d; /* Gri çerçeve */
+}
+
+.metric-card.secondary .metric-value {
+    color: #343a40;
+}
 
 
 /* 'inline-detail' için gerekli animasyon tanımı */
@@ -4053,4 +4068,92 @@ footer {
 
     color: #333;
 
+}
+/* Detaylı Anomali Listesi Stilleri */
+.detailed-anomaly-section {
+    margin-top: 20px;
+    padding: 20px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    animation: slideDown 0.3s ease-out;
+}
+
+.detailed-anomaly-section h3 {
+    margin-bottom: 15px;
+    color: #333;
+    font-size: 1.2em;
+    border-bottom: 2px solid #0047BA;
+    padding-bottom: 10px;
+}
+
+.anomaly-list-detailed {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 600px;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+.anomaly-list-detailed .anomaly-item {
+    display: grid;
+    grid-template-columns: 50px 100px 1fr;
+    gap: 15px;
+    padding: 15px;
+    background-color: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.anomaly-list-detailed .anomaly-item:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transform: translateY(-1px);
+}
+
+.anomaly-list-detailed .anomaly-item.high {
+    border-left: 4px solid #ff4444;
+}
+
+.anomaly-list-detailed .anomaly-item.medium {
+    border-left: 4px solid #ff9800;
+}
+
+.anomaly-list-detailed .anomaly-item.low {
+    border-left: 4px solid #4caf50;
+}
+
+.anomaly-index {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    color: #666;
+    font-size: 1.1em;
+    background-color: #f0f0f0;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+}
+
+
+
+/* Scrollbar özelleştirmesi */
+.anomaly-list-detailed::-webkit-scrollbar {
+    width: 8px;
+}
+
+.anomaly-list-detailed::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.anomaly-list-detailed::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.anomaly-list-detailed::-webkit-scrollbar-thumb:hover {
+    background: #555;
 }

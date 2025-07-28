@@ -675,7 +675,35 @@ function displayResult(result) {
             result.sonuç.temporal_analysis = result.sonuç.data.temporal_analysis;
             result.sonuç.ai_explanation = result.sonuç.data.ai_explanation || result.sonuç.ai_explanation;
         }
-        displayAnomalyAnalysisResult(result);
+        
+        // YENİ: displayAnomalyAnalysisResult yerine displayAnomalyResults kullan
+        // Böylece tüm anomaly sonuçları aynı fonksiyonla işlenir
+        displayAnomalyResults(result);
+        
+        // YENİ: Eğer parent query yoksa direkt history'ye ekle
+        if (!window.pendingAnomalyQueryId && !localStorage.getItem('pendingAnomalyQueryId')) {
+            const historyItem = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                query: elements.queryInput.value || 'Anomaly Analizi',
+                type: 'anomaly',
+                category: 'anomaly',
+                result: result,
+                durum: result.durum || 'tamamlandı',
+                işlem: 'anomaly_analysis',
+                hasResult: true,
+                childResult: result // AI açıklamaları dahil tüm sonuç
+            };
+            
+            queryHistory.unshift(historyItem);
+            if (queryHistory.length > MAX_HISTORY_ITEMS) {
+                queryHistory = queryHistory.slice(0, MAX_HISTORY_ITEMS);
+            }
+            
+            saveHistory();
+            updateHistoryDisplay();
+        }
+        
         return;
     }
     
@@ -1216,7 +1244,7 @@ function displayAnomalyAnalysisResult(result) {
     
     // Eylem Butonları
     html += '<div class="analysis-actions">';
-    html += '<button class="btn btn-primary" onclick="showDetailedAnomalyModal()">📋 Detaylı Anomali Listesi</button>';
+    html += '<button class="btn btn-primary" onclick="toggleDetailedAnomalyList()">📋 Detaylı Anomali Listesi</button>';
     html += '<button class="btn btn-secondary" onclick="exportAnomalyReport()">📥 Raporu İndir</button>';
     html += '<button class="btn btn-info" onclick="scheduleFollowUp()">📅 Takip Planla</button>';
     html += '</div>';
@@ -1302,16 +1330,6 @@ function formatSection(section) {
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\n/g, '<br>');
 }
-
-/**
- * Detaylı anomali sonuçlarını modal'da göster
- */
-function showDetailedAnomalyModal() {
-    if (window.lastAnomalyResult) {
-        displayAnomalyResults(window.lastAnomalyResult);
-    }
-}
-
 
 
 /**
@@ -2465,18 +2483,90 @@ function closeAnomalyModal() {
 function displayAnomalyResults(result) {
     console.log('displayAnomalyResults called with result:', result); // DEBUG LOG
     
+    // YENİ: AI Explanation Detection ve Parsing
+    let aiExplanation = result.sonuç?.ai_explanation || result.ai_explanation;
+    // DEBUG: AI explanation kontrolü
+    console.log("=== AI EXPLANATION DEBUG ===");
+    console.log("result.sonuç:", result.sonuç);
+    console.log("result.sonuç?.ai_explanation:", result.sonuç?.ai_explanation);
+    console.log("aiExplanation found:", !!aiExplanation);
+    
+    // Eğer AI explanation string ise parse et
+    if (typeof aiExplanation === 'string') {
+        console.log('Parsing AI explanation from text...');
+        aiExplanation = parseAIExplanationFromText(aiExplanation);
+    }
+    
+    // Eğer açıklama field'ında varsa onu da kontrol et
+    if (!aiExplanation && result.açıklama) {
+        console.log('Parsing AI explanation from açıklama field...');
+        aiExplanation = parseAIExplanationFromText(result.açıklama);
+    }
+    
     if (!result.summary && !result.sonuç?.summary && result.açıklama) {
-        const formattedText = result.açıklama
+        // YENİ: AI açıklama varsa öncelikle onu kullan
+        if (aiExplanation && (aiExplanation.ne_tespit_edildi || typeof aiExplanation === 'object')) {
+            let aiHtml = '<div class="anomaly-ai-text-results">';
+            aiHtml += '<h3>🤖 AI Destekli Anomali Analizi</h3>';
+            
+            // AI bölümlerini render et
+            if (aiExplanation.ne_tespit_edildi) {
+                aiHtml += '<div class="ai-text-section">';
+                aiHtml += '<h4>🔍 Ne Tespit Edildi?</h4>';
+                aiHtml += `<div class="ai-text-content">${highlightNumbers(aiExplanation.ne_tespit_edildi)}</div>`;
+                aiHtml += '</div>';
+            }
+            
+            if (aiExplanation.potansiyel_etkiler && aiExplanation.potansiyel_etkiler.length > 0) {
+                aiHtml += '<div class="ai-text-section">';
+                aiHtml += '<h4>⚠️ Potansiyel Etkiler</h4><ul>';
+                aiExplanation.potansiyel_etkiler.forEach(etki => {
+                    aiHtml += `<li>${highlightNumbers(etki)}</li>`;
+                });
+                aiHtml += '</ul></div>';
+            }
+            
+            if (aiExplanation.muhtemel_nedenler && aiExplanation.muhtemel_nedenler.length > 0) {
+                aiHtml += '<div class="ai-text-section">';
+                aiHtml += '<h4>🎯 Muhtemel Nedenler</h4><ul>';
+                aiExplanation.muhtemel_nedenler.forEach(neden => {
+                    aiHtml += `<li>${highlightNumbers(neden)}</li>`;
+                });
+                aiHtml += '</ul></div>';
+            }
+            
+            if (aiExplanation.onerilen_aksiyonlar && aiExplanation.onerilen_aksiyonlar.length > 0) {
+                aiHtml += '<div class="ai-text-section">';
+                aiHtml += '<h4>💡 Önerilen Aksiyonlar</h4><ol>';
+                aiExplanation.onerilen_aksiyonlar.forEach(aksiyon => {
+                    aiHtml += `<li>${highlightNumbers(aksiyon)}</li>`;
+                });
+                aiHtml += '</ol></div>';
+            }
+            
+            aiHtml += '</div>';
+            
+            // Modal yerine ana result alanında göster
+            elements.resultContent.innerHTML = aiHtml;
+            elements.resultSection.style.display = 'block';
+            elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            return;
+        }
+        
+        // AI yoksa normal text formatting (number highlighting ile)
+        const formattedText = highlightNumbers(result.açıklama)
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/### (.*?)$/gm, '<h3>$1</h3>')
             .replace(/\n/g, '<br>')
             .replace(/- /g, '• ');
             
-        showModal('Anomali Analiz Sonuçları', 
+        // Modal yerine ana result alanında göster
+        elements.resultContent.innerHTML = 
             `<div class="anomaly-text-results">
                 <div class="formatted-anomaly-text">${formattedText}</div>
-            </div>`
-        );
+            </div>`;
+        elements.resultSection.style.display = 'block';
+        elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         return;
     }
     // Eğer açıklama varsa ve summary yoksa, text formatında göster
@@ -2487,11 +2577,13 @@ function displayAnomalyResults(result) {
             .replace(/- /g, '• ')                              // List items
             .replace(/\n/g, '<br>');                          // Line breaks
             
-        showModal('Anomaly Analiz Sonuçları', 
+        // Modal yerine ana result alanında göster
+        elements.resultContent.innerHTML = 
             `<div class="anomaly-text-results">
                 <div class="formatted-anomaly-text">${formattedText}</div>
-            </div>`
-        );
+            </div>`;
+        elements.resultSection.style.display = 'block';
+        elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         return;
     }
     
@@ -2502,17 +2594,150 @@ function displayAnomalyResults(result) {
     html += '<div class="anomaly-header">';
     html += '<h2>🔍 Anomali Analiz Sonuçları</h2>';
     
-    if (result.summary) {
-        console.log('Result summary found:', result.summary); // DEBUG LOG
-        html += '<div class="anomaly-summary">';
-        html += `<p><strong>Toplam Log:</strong> ${result.summary.total_logs || 0}</p>`;
-        html += `<p><strong>Anomali Sayısı:</strong> ${result.summary.anomaly_count || 0}</p>`;
-        html += `<p><strong>Anomali Oranı:</strong> %${((result.summary.anomaly_count / result.summary.total_logs) * 100).toFixed(2)}</p>`;
-        html += '</div>';
+    // YENİ: Metrik Kartları - displayAnomalyAnalysisResult() tarzı
+    if (result.summary || result.sonuç?.summary) {
+        const summary = result.summary || result.sonuç?.summary;
+        console.log('Result summary found:', summary); // DEBUG LOG
+        
+        const anomalyRate = summary.n_anomalies ? 
+            (summary.n_anomalies / summary.total_logs * 100) : 
+            (summary.anomaly_count / summary.total_logs * 100);
+        
+        const statusClass = anomalyRate > 5 ? 'critical' : 
+                           anomalyRate > 2 ? 'warning' : 'success';
+        
+        html += '<div class="metrics-overview">';
+        html += '<h3>📊 Genel Bakış</h3>';
+        html += '<div class="metric-cards-grid">';
+        
+        // Ana metrik kartı
+        html += `
+            <div class="metric-card primary ${statusClass}">
+                <div class="metric-icon">🎯</div>
+                <div class="metric-value">${(summary.n_anomalies || summary.anomaly_count || 0).toLocaleString('tr-TR')}</div>
+                <div class="metric-label">Anomali Tespit Edildi</div>
+                <div class="metric-percentage">%${anomalyRate.toFixed(1)}</div>
+            </div>
+        `;
+        
+        // Toplam log kartı
+        html += `
+            <div class="metric-card secondary">
+                <div class="metric-icon">📄</div>
+                <div class="metric-value">${(summary.total_logs || 0).toLocaleString('tr-TR')}</div>
+                <div class="metric-label">Toplam Log Analiz Edildi</div>
+            </div>
+        `;
+        
+        // Kritik bulgular kartı
+        if (result.sonuç?.security_alerts?.drop_operations) {
+            html += `
+                <div class="metric-card alert">
+                    <div class="metric-icon">🚨</div>
+                    <div class="metric-value">${result.sonuç.security_alerts.drop_operations.count}</div>
+                    <div class="metric-label">DROP Operasyonu</div>
+                    <div class="metric-badge critical">KRİTİK</div>
+                </div>
+            `;
+        }
+        
+        html += '</div></div>';
+        
     } else {
         console.log('No summary found in result'); // DEBUG LOG
     }
-    
+
+    // YENİ: AI Explanation Bölümü - displayAnomalyAnalysisResult() tarzı
+    if (aiExplanation && (aiExplanation.ne_tespit_edildi || typeof aiExplanation === 'object')) {
+        html += '<div class="ai-explanation-section">';
+        html += '<h3>🤖 AI Destekli Analiz</h3>';
+        
+        // Ne Tespit Edildi? - Ana açıklama
+        if (aiExplanation.ne_tespit_edildi) {
+            html += '<div class="ai-section what-detected">';
+            html += '<h4>🔍 Ne Tespit Edildi?</h4>';
+            html += `<div class="ai-content">${highlightNumbers(aiExplanation.ne_tespit_edildi)}</div>`;
+            html += '</div>';
+        }
+        
+        // Potansiyel Etkiler
+        if (aiExplanation.potansiyel_etkiler && aiExplanation.potansiyel_etkiler.length > 0) {
+            html += '<div class="ai-section potential-impacts">';
+            html += '<h4>⚠️ Potansiyel Etkiler</h4>';
+            html += '<div class="impact-cards">';
+            
+            aiExplanation.potansiyel_etkiler.forEach((etki, index) => {
+                const impactLevel = etki.toLowerCase().includes('kritik') || etki.toLowerCase().includes('ciddi') ? 'high' :
+                                   etki.toLowerCase().includes('orta') ? 'medium' : 'low';
+                html += `
+                    <div class="impact-card ${impactLevel}">
+                        <span class="impact-number">${index + 1}</span>
+                        <span class="impact-text">${highlightNumbers(etki)}</span>
+                    </div>
+                `;
+            });
+            
+            html += '</div></div>';
+        }
+        
+        // Muhtemel Nedenler
+        if (aiExplanation.muhtemel_nedenler && aiExplanation.muhtemel_nedenler.length > 0) {
+            html += '<div class="ai-section probable-causes">';
+            html += '<h4>🎯 Muhtemel Nedenler</h4>';
+            html += '<div class="causes-timeline">';
+            
+            aiExplanation.muhtemel_nedenler.forEach((neden, index) => {
+                html += `
+                    <div class="cause-item">
+                        <div class="cause-marker">${index + 1}</div>
+                        <div class="cause-content">
+                            <div class="cause-text">${highlightNumbers(neden)}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div></div>';
+        }
+        
+        // Önerilen Aksiyonlar
+        if (aiExplanation.onerilen_aksiyonlar && aiExplanation.onerilen_aksiyonlar.length > 0) {
+            html += '<div class="ai-section recommended-actions">';
+            html += '<h4>🚀 Ne Yapmalısınız?</h4>';
+            html += '<div class="action-cards">';
+            
+            aiExplanation.onerilen_aksiyonlar.forEach((aksiyon, index) => {
+                let priorityClass = 'normal';
+                let priorityIcon = '📌';
+                
+                if (aksiyon.toLowerCase().includes('hemen') || aksiyon.toLowerCase().includes('acil')) {
+                    priorityClass = 'urgent';
+                    priorityIcon = '🔴';
+                } else if (aksiyon.toLowerCase().includes('kontrol') || aksiyon.toLowerCase().includes('incele')) {
+                    priorityClass = 'check';
+                    priorityIcon = '🔍';
+                } else if (aksiyon.toLowerCase().includes('öneri') || aksiyon.toLowerCase().includes('düşün')) {
+                    priorityClass = 'suggestion';
+                    priorityIcon = '💡';
+                }
+                
+                html += `
+                    <div class="action-card ${priorityClass}" data-step="${index + 1}">
+                        <div class="action-header">
+                            <span class="action-icon">${priorityIcon}</span>
+                            <span class="action-step">Adım ${index + 1}</span>
+                        </div>
+                        <div class="action-content">${highlightNumbers(aksiyon)}</div>
+                    </div>
+                `;
+            });
+            
+            html += '</div></div>';
+        }
+        
+        html += '</div>'; // ai-explanation-section end
+    }
+
     // Kritik anomaliler
     if (result.critical_anomalies && result.critical_anomalies.length > 0) {
         html += '<div class="critical-anomalies-section">';
@@ -2566,12 +2791,42 @@ function displayAnomalyResults(result) {
         html += '</div>';
     }
     
+    // YENİ: Zamansal Analiz Grafiği
+    if (result.sonuç?.temporal_analysis?.hourly_distribution) {
+        html += '<div class="temporal-chart-section">';
+        html += '<h3>📈 Saatlik Anomali Dağılımı</h3>';
+        html += '<div class="hourly-chart">';
+        
+        const hourlyData = result.sonuç.temporal_analysis.hourly_distribution;
+        const maxValue = Math.max(...Object.values(hourlyData));
+        
+        for (let hour = 0; hour < 24; hour++) {
+            const value = hourlyData[hour] || 0;
+            const height = maxValue > 0 ? (value / maxValue) * 100 : 0;
+            const isHighHour = result.sonuç.temporal_analysis.peak_hours?.includes(hour);
+            
+            html += `<div class="hour-bar ${isHighHour ? 'peak' : ''}" 
+                          style="height: ${height}%" 
+                          data-hour="${hour}"
+                          data-value="${value}">
+                        <span class="hour-value">${value}</span>
+                        <span class="hour-label">${hour}</span>
+                     </div>`;
+        }
+        
+        html += '</div>';
+        html += '<div class="chart-legend">';
+        html += '<span class="legend-item"><span class="legend-color peak"></span> En Yoğun Saatler</span>';
+        html += '<span class="legend-item"><span class="legend-color normal"></span> Normal Saatler</span>';
+        html += '</div>';
+        html += '</div>';
+    }
+
     // Component dağılımı
     if (result.component_stats) {
         html += '<div class="component-stats-section">';
         html += '<h3>📈 Component Dağılımı</h3>';
         html += '<div class="component-grid">';
-        
         Object.entries(result.component_stats).forEach(([component, count]) => {
             const percentage = ((count / result.summary.anomaly_count) * 100).toFixed(1);
             html += `
@@ -2602,6 +2857,15 @@ function displayAnomalyResults(result) {
     // Sonuçları göster
     console.log('Showing modal with anomaly results'); // DEBUG LOG
     showModal('Anomaly Analiz Sonuçları', html);
+    
+    console.log('Showing anomaly results in main content area'); // DEBUG LOG
+    
+    // Modal yerine ana result alanında göster
+    elements.resultContent.innerHTML = html;
+    elements.resultSection.style.display = 'block';
+    
+    // Sonuç alanına scroll
+    elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 /**
@@ -3273,8 +3537,72 @@ async function handleFileUpload(event) {
     }
 }
 
+/**
+ * Detaylı anomali listesini toggle et
+ */
+function toggleDetailedAnomalyList() {
+    const existingDetail = document.getElementById('detailed-anomaly-list');
+    
+    if (existingDetail) {
+        // Varsa kaldır
+        existingDetail.remove();
+        return;
+    }
+    
+    if (!window.lastAnomalyResult) {
+        showNotification('Gösterilecek anomali sonucu bulunamadı', 'warning');
+        return;
+    }
+    
+    const result = window.lastAnomalyResult;
+    let detailHtml = '<div id="detailed-anomaly-list" class="detailed-anomaly-section">';
+    detailHtml += '<h3>📋 Detaylı Anomali Listesi</h3>';
+    
+    // Tüm anomalileri göster
+    if (result.sonuç?.anomalies || result.anomalies) {
+        const anomalies = result.sonuç?.anomalies || result.anomalies;
+        detailHtml += '<div class="anomaly-list-detailed">';
+        
+        anomalies.forEach((anomaly, index) => {
+            const severityClass = anomaly.anomaly_score > 0.8 ? 'high' : 
+                                 anomaly.anomaly_score > 0.6 ? 'medium' : 'low';
+            
+            detailHtml += `
+                <div class="anomaly-item ${severityClass}">
+                    <div class="anomaly-index">#${index + 1}</div>
+                    <div class="anomaly-score">${anomaly.anomaly_score.toFixed(3)}</div>
+                    <div class="anomaly-details">
+                        <div class="anomaly-time">${new Date(anomaly.timestamp).toLocaleString('tr-TR')}</div>
+                        <div class="anomaly-message">${highlightNumbers(escapeHtml(anomaly.message))}</div>
+                        ${anomaly.component ? `<div class="anomaly-component">Component: ${escapeHtml(anomaly.component)}</div>` : ''}
+                        ${anomaly.severity ? `<div class="anomaly-severity">Severity: ${escapeHtml(anomaly.severity)}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        });
+        
+        detailHtml += '</div>';
+    }
+    
+    detailHtml += '</div>';
+    
+    // Actions butonlarından sonraya ekle
+    const actionsDiv = document.querySelector('.analysis-actions');
+    if (actionsDiv) {
+        actionsDiv.insertAdjacentHTML('afterend', detailHtml);
+        
+        // Yeni eklenen elemente scroll
+        document.getElementById('detailed-anomaly-list').scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'nearest' 
+        });
+    }
+}
+
+
 // ===== GLOBAL FONKSİYON TANIMLAMALARI =====
 // Tüm global fonksiyonları burada tanımlıyoruz
+window.toggleDetailedAnomalyList = toggleDetailedAnomalyList;
 
 // History fonksiyonları
 window.replayQuery = replayQuery;
@@ -3290,8 +3618,6 @@ window.exportAnomalyReport = exportAnomalyReport;
 window.scheduleFollowUp = scheduleFollowUp;
 window.saveFollowUp = saveFollowUp;
 
-// Modal fonksiyonları
-window.showDetailedAnomalyModal = showDetailedAnomalyModal;
 
 // Dosya yönetimi
 window.deleteUploadedFile = deleteUploadedFile;

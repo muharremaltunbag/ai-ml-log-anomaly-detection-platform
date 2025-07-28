@@ -80,7 +80,18 @@ class AnomalyDetectionTools:
                 if isinstance(obj, np.integer):
                     return int(obj)
                 elif isinstance(obj, np.floating):
+                    # YENİ: Infinity ve NaN kontrolü
+                    if np.isinf(obj):
+                        return 999999.0 if obj > 0 else -999999.0
+                    elif np.isnan(obj):
+                        return 0.0
                     return float(obj)
+                elif isinstance(obj, float):  # YENİ: Python float için de kontrol
+                    if np.isinf(obj):
+                        return 999999.0 if obj > 0 else -999999.0
+                    elif np.isnan(obj):
+                        return 0.0
+                    return obj
                 elif isinstance(obj, np.ndarray):
                     return obj.tolist()
                 elif isinstance(obj, dict):
@@ -100,17 +111,26 @@ class AnomalyDetectionTools:
                     "açıklama": result.get("error", "Bilinmeyen hata"),
                     "sonuç": None
                 }, ensure_ascii=False, indent=2)
-
-                
             
             logger.debug("Formatting successful result")
-            return json.dumps({
+            
+            # Response yapısını oluştur
+            response = {
                 "durum": "başarılı",
                 "işlem": operation,
                 "açıklama": result.get("description", f"{operation} işlemi tamamlandı"),
                 "sonuç": result.get("data", result),
                 "öneriler": result.get("suggestions", [])
-            }, ensure_ascii=False, indent=2)
+            }
+            
+            # YENİ: AI explanation varsa ekle
+            if "ai_explanation" in result and result["ai_explanation"]:
+                # data içindeyse oraya, değilse direkt sonuç'a ekle
+                if isinstance(response["sonuç"], dict):
+                    response["sonuç"]["ai_explanation"] = result["ai_explanation"]
+                logger.debug("AI explanation added to response")
+            
+            return json.dumps(response, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"Format hatası: {e}")
             return json.dumps({
@@ -873,6 +893,9 @@ class AnomalyDetectionTools:
 
     def _generate_ai_explanation(self, anomaly_data: Dict[str, Any]) -> Dict[str, Any]:
         """OpenAI kullanarak anomali verisi için zengin açıklama üret"""
+        logger.info(f"=== AI EXPLANATION DEBUG ===")
+        logger.info(f"OpenAI connected: {self.openai_connector.is_connected()}")
+        
         if not self.openai_connector.is_connected():
             logger.warning("OpenAI not connected, returning basic explanation")
             return self._create_fallback_explanation(anomaly_data)
@@ -884,6 +907,8 @@ class AnomalyDetectionTools:
             security_alerts = anomaly_data.get("security_alerts", {})
             component_analysis = anomaly_data.get("component_analysis", {})
             temporal_analysis = anomaly_data.get("temporal_analysis", {})
+            logger.info(f"Anomaly data keys: {list(anomaly_data.keys())}")
+            logger.info(f"Total anomalies: {anomaly_data.get('summary', {}).get('n_anomalies', 0)}")
             
             # Güçlendirilmiş system prompt - daha detaylı ve sayısal referanslı
             system_prompt = """Sen bir MongoDB veritabanı uzmanısın. Anomali analiz sonuçlarını inceleyip, 

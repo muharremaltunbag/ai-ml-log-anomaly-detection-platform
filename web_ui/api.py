@@ -467,7 +467,20 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
         
         # MongoDB agent'a özel argümanlarla gönder
         result = mongodb_agent.process_query_with_args(query, analysis_params)
-        
+
+        # DEBUG: Agent response'u detaylı logla
+        logger.info(f"=== AGENT RESPONSE DEBUG ===")
+        logger.info(f"Result keys: {list(result.keys())}")
+        if 'sonuç' in result:
+            logger.info(f"Sonuç type: {type(result['sonuç'])}")
+            if isinstance(result['sonuç'], dict):
+                logger.info(f"Sonuç keys: {list(result['sonuç'].keys())}")
+                if 'ai_explanation' in result['sonuç']:
+                    logger.info("✅ AI explanation FOUND in sonuç!")
+                    logger.info(f"AI explanation keys: {list(result['sonuç']['ai_explanation'].keys())}")
+                else:
+                    logger.info("❌ AI explanation NOT found in sonuç")
+
         logger.info(f"Log analizi tamamlandı - Durum: {result.get('durum', 'unknown')}")
         
         # Sonuçları da logla
