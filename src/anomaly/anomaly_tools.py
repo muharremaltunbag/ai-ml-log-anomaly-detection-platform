@@ -20,6 +20,7 @@ from .feature_engineer import MongoDBFeatureEngineer
 from .anomaly_detector import MongoDBAnomalyDetector
 
 from ..connectors.openai_connector import OpenAIConnector
+from ..connectors.lcwgpt_connector import LCWGPTConnector
 from langchain.schema import HumanMessage, SystemMessage
 
 
@@ -48,11 +49,21 @@ class AnomalyDetectionTools:
         self.feature_engineer = MongoDBFeatureEngineer(config_path)
         self.detector = MongoDBAnomalyDetector(config_path)
         logger.debug("Feature engineer and detector modules initialized")
+        
+        # YENİ: LLM connector'ı başlat (OpenAI veya LCWGPT)
+        llm_provider = os.getenv('LLM_PROVIDER', 'lcwgpt').lower()
 
-        # YENİ: OpenAI connector'ı başlat
-        self.openai_connector = OpenAIConnector()
-        self.openai_connector.connect()
-        logger.info("OpenAI connector initialized for anomaly explanations")
+        if llm_provider == 'lcwgpt':
+            self.llm_connector = LCWGPTConnector()
+            self.llm_connector.connect()
+            logger.info("LCWGPT connector initialized for anomaly explanations")
+        elif llm_provider == 'openai':
+            self.llm_connector = OpenAIConnector()
+            self.llm_connector.connect()
+            logger.info("OpenAI connector initialized for anomaly explanations")
+        else:
+            logger.error(f"Unknown LLM provider: {llm_provider}")
+            self.llm_connector = None
         
         # Son analiz sonuçlarını sakla
         self.last_analysis = None
@@ -329,7 +340,7 @@ class AnomalyDetectionTools:
 
                     ai_explanation = {}
                     # OpenAI bağlantısı varsa AI destekli açıklama üret
-                    if self.openai_connector.is_connected():
+                    if self.llm_connector and self.llm_connector.is_connected():
                         logger.info("Generating AI-powered explanation for OpenSearch data...")
                         ai_explanation = self._generate_ai_explanation(analysis)
 
@@ -465,8 +476,8 @@ class AnomalyDetectionTools:
             
             # YENİ: AI Entegrasyon Kısmı
             ai_explanation = {}
-            # OpenAI bağlantısı varsa AI destekli açıklama üret
-            if self.openai_connector.is_connected():
+            # LLM bağlantısı varsa AI destekli açıklama üret
+            if self.llm_connector and self.llm_connector.is_connected():
                 logger.info("Generating AI-powered explanation...")
                 ai_explanation = self._generate_ai_explanation(analysis)
 
@@ -892,89 +903,99 @@ class AnomalyDetectionTools:
         return suggestions
 
     def _generate_ai_explanation(self, anomaly_data: Dict[str, Any]) -> Dict[str, Any]:
-        """OpenAI kullanarak anomali verisi için zengin açıklama üret"""
+        """LCWGPT kullanarak anomali verisi için zengin açıklama üret"""
         logger.info(f"=== AI EXPLANATION DEBUG ===")
-        logger.info(f"OpenAI connected: {self.openai_connector.is_connected()}")
+        logger.info(f"LLM connected: {self.llm_connector.is_connected() if self.llm_connector else False}")
         
-        if not self.openai_connector.is_connected():
-            logger.warning("OpenAI not connected, returning basic explanation")
+        if not self.llm_connector or not self.llm_connector.is_connected():
+            logger.warning("LLM not connected, returning basic explanation")
             return self._create_fallback_explanation(anomaly_data)
         
         try:
             logger.info("Starting AI explanation generation...")
             summary = anomaly_data.get("summary", {})
-            critical_anomalies = anomaly_data.get("critical_anomalies", [])[:5]
+            critical_anomalies = anomaly_data.get("critical_anomalies", [])[:10]
             security_alerts = anomaly_data.get("security_alerts", {})
             component_analysis = anomaly_data.get("component_analysis", {})
             temporal_analysis = anomaly_data.get("temporal_analysis", {})
-            logger.info(f"Anomaly data keys: {list(anomaly_data.keys())}")
-            logger.info(f"Total anomalies: {anomaly_data.get('summary', {}).get('n_anomalies', 0)}")
+            feature_importance = anomaly_data.get("feature_importance", {})
             
-            # Güçlendirilmiş system prompt - daha detaylı ve sayısal referanslı
-            system_prompt = """Sen bir MongoDB veritabanı uzmanısın. Anomali analiz sonuçlarını inceleyip, 
-            kullanıcıya anlaşılır ve aksiyona yönelik açıklamalar üretiyorsun. 
-            
-            MUTLAKA her açıklamanda spesifik sayılar ve yüzdeler kullan!
-            
-            Açıklamalarında şu başlıkları kullan ve her birini madde işaretleriyle (•) listele:
-            
-            1. NE TESPİT EDİLDİ? 
-               • Her anomali tipini ayrı maddede açıkla
-               • Anomali sayılarını ve yüzdelerini belirt
-               
-            2. POTANSİYEL ETKİLER
-               • Her etkiyi ayrı maddede açıkla
-               • Hangi bileşenlerin ne kadar etkilendiğini sayılarla belirt
-               
-            3. MUHTEMEL NEDENLER
-               • Her nedeni ayrı maddede açıkla
-               • Hangi saatlerde yoğunlaştığını belirt
-               
-            4. ÖNERİLEN AKSİYONLAR
-               • Her öneriyi ayrı maddede açıkla
-               • Hangi anomali için hangi öneri olduğunu ve sayısal hedefleri belirt
-               
-            Türkçe yanıt ver ve her öneride MUTLAKA ilgili anomali sayısına veya yüzdesine referans ver."""
+            # Güçlendirilmiş system prompt - daha detaylı ve aksiyona yönelik
+            system_prompt = """Sen bir MongoDB güvenlik ve performans uzmanısın. MongoDB log anomali analiz sonuçlarını inceleyip, kullanıcıya anlamlı ve aksiyona yönelik öneriler sunuyorsun.
+
+GÖREVİN:
+1. Kritik güvenlik olaylarını ve sistemsel riskleri öne çıkar
+2. Kullanıcının anlaması kolay olacak şekilde sadeleştirilmiş açıklamalar oluştur
+3. Her bulgu için spesifik aksiyon önerileri sun (örn. indeks oluştur, sorgu optimizasyonu yap, firewall kuralı koy, vs)
+4. Önerileri önceliklendir (kritik → orta → bilgilendirici)
+
+YANITINDA MUTLAKA ŞU BAŞLIKLAR OLSUN:
+
+## 🔍 NE TESPİT EDİLDİ?
+- Tespit edilen anomalileri maddeler halinde listele
+- Her madde için sayısal veri kullan (kaç anomali, yüzde kaç, hangi saatlerde)
+
+## ⚠️ KRİTİK BULGULAR
+- En kritik 3-5 bulguyu öne çıkar
+- Her bulgu için risk seviyesini belirt (KRİTİK/ORTA/DÜŞÜK)
+
+## 💡 ÖNERİLEN AKSİYONLAR
+### Acil (24 saat içinde):
+- Spesifik ve uygulanabilir aksiyonlar
+### Orta Vadeli (1 hafta içinde):
+- Sistemsel iyileştirmeler
+### Uzun Vadeli:
+- Kalıcı çözümler
+
+## 📊 GENEL DURUM ÖZETİ
+- Sistemin genel durumu hakkında 2-3 cümlelik özet
+
+KURALLAR:
+- Türkçe konuş
+- Gerçek log verilerine dayanarak konuş, varsayım yapma
+- Her öneri için NEDEN gerekli olduğunu kısaca açıkla
+- Teknik terimleri kullan ama yanında açıklama da yap"""
             
             # Daha detaylı user prompt
             user_prompt = f"""
-            MongoDB log anomali analiz sonuçları:
-            
-            ÖZET:
-            - Toplam log: {summary.get('total_logs', 0):,}
-            - Anomali sayısı: {summary.get('n_anomalies', 0)}
-            - Anomali oranı: %{summary.get('anomaly_rate', 0):.1f}
-            - Ortalama anomali skoru: {summary.get('score_range', {}).get('mean', 0):.3f}
-            - Minimum skor: {summary.get('score_range', {}).get('min', 0):.3f}
-            - Maksimum skor: {summary.get('score_range', {}).get('max', 0):.3f}
-            
-            KRİTİK ANOMALİLER:
-            {self._format_critical_anomalies_detailed(critical_anomalies)}
-            
-            GÜVENLİK UYARILARI:
-            {self._format_security_alerts_detailed(security_alerts)}
-            
-            COMPONENT ANALİZİ:
-            {self._format_component_analysis_detailed(component_analysis)}
-            
-            ZAMANSAL ANALİZ:
-            - En yoğun anomali saatleri: {temporal_analysis.get('peak_hours', [])}
-            - Saat bazlı dağılım: {temporal_analysis.get('hourly_distribution', {})}
-            
-            Lütfen bu verileri analiz edip, kullanıcıya yukarıda belirtilen yapıda, 
-            maddeler halinde ve her maddede spesifik sayılarla desteklenmiş bir açıklama hazırla.
-            """
+MongoDB log anomali analiz sonuçları:
+
+ÖZET:
+- Toplam log: {summary.get('total_logs', 0):,}
+- Anomali sayısı: {summary.get('n_anomalies', 0)}
+- Anomali oranı: %{summary.get('anomaly_rate', 0):.1f}
+- Ortalama anomali skoru: {summary.get('score_range', {}).get('mean', 0):.3f}
+
+KRİTİK ANOMALİLER (İlk 10):
+{self._format_critical_anomalies_for_prompt(critical_anomalies)}
+
+COMPONENT ANALİZİ:
+{self._format_component_analysis_for_prompt(component_analysis)}
+
+ZAMANSAL ANALİZ:
+- En yoğun anomali saatleri: {temporal_analysis.get('peak_hours', [])}
+- Saat bazlı dağılım: {temporal_analysis.get('hourly_distribution', {})}
+
+ÖNEMLİ ÖZELLIKLER:
+{self._format_feature_importance_for_prompt(feature_importance)}
+
+GÜVENLİK UYARILARI:
+{self._format_security_alerts_for_prompt(security_alerts)}
+
+Lütfen bu verileri analiz edip, yukarıda belirtilen formatta kullanıcıya anlamlı ve aksiyona yönelik öneriler sun."""
             
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ]
             
-            response = self.openai_connector.llm.invoke(messages)
+            response = self.llm_connector.invoke(messages)
             ai_explanation = response.content
             
             logger.info(f"AI response received, length: {len(ai_explanation)}")
-            parsed_explanation = self._parse_ai_explanation_improved(ai_explanation)
+            
+            # Yeni parse fonksiyonu - LCWGPT'nin yeni formatı için
+            parsed_explanation = self._parse_ai_explanation_structured(ai_explanation)
             
             logger.info(f"AI explanation parsed successfully: {list(parsed_explanation.keys())}")
             return parsed_explanation
@@ -1028,52 +1049,285 @@ class AnomalyDetectionTools:
         return sections
     
     def _parse_ai_explanation_improved(self, ai_text: str) -> Dict[str, Any]:
-        """AI metnini yapılandırılmış formata dönüştür - geliştirilmiş versiyon"""
+        """AI metnini yapılandırılmış formata dönüştür - LCWGPT markdown formatı için optimize edilmiş"""
         sections = {
-            "ne_tespit_edildi": [],
+            "ne_tespit_edildi": "",
             "potansiyel_etkiler": [],
             "muhtemel_nedenler": [],
             "onerilen_aksiyonlar": []
         }
-        current_section_key = None
         
-        section_map = {
-            "ne_tespit_edildi": ["NE TESPİT EDİLDİ"],
-            "potansiyel_etkiler": ["POTANSİYEL ETKİLER", "NEDEN ÖNEMLİ"],
-            "muhtemel_nedenler": ["MUHTEMEL NEDENLER"],
-            "onerilen_aksiyonlar": ["ÖNERİLEN AKSİYONLAR", "NE YAPILMALI"]
-        }
-
-        for line in ai_text.split('\n'):
-            line_upper = line.upper()
-            found_new_section = False
-            
-            # Yeni bölüm kontrolü
-            for key, keywords in section_map.items():
-                for keyword in keywords:
-                    if keyword in line_upper:
-                        current_section_key = key
-                        found_new_section = True
-                        break
-                if found_new_section:
-                    break
-            
-            if found_new_section:
-                continue
-
-            if current_section_key:
-                clean_line = line.strip().lstrip('•-*0123456789. ')
-                if clean_line and len(clean_line) > 5:  # Çok kısa satırları atla
-                    sections[current_section_key].append(clean_line)
+        # Eğer metin çok kısa veya boşsa fallback kullan
+        if not ai_text or len(ai_text) < 50:
+            return sections
         
-        # İlk bölümü string olarak birleştir
-        if sections["ne_tespit_edildi"]:
-            sections["ne_tespit_edildi"] = "\n• ".join(sections["ne_tespit_edildi"])
-            sections["ne_tespit_edildi"] = "• " + sections["ne_tespit_edildi"]
-        else:
-            sections["ne_tespit_edildi"] = ""
+        # Markdown başlıklarını temizle
+        clean_text = ai_text.replace('```markdown', '').replace('```', '').strip()
+        
+        # Bölümleri ayır
+        import re
+        
+        # Özet bölümünü bul
+        ozet_match = re.search(r'#### Özet\s*(.*?)(?=####|\Z)', clean_text, re.DOTALL)
+        if ozet_match:
+            ozet_lines = ozet_match.group(1).strip().split('\n')
+            ozet_items = []
+            for line in ozet_lines:
+                if line.strip() and '**' in line:
+                    # Markdown bold'ları temizle ve liste öğesi yap
+                    clean_line = line.replace('**', '').replace('- ', '').strip()
+                    ozet_items.append(f"• {clean_line}")
+            sections["ne_tespit_edildi"] = "\n".join(ozet_items)
+        
+        # Kritik Anomaliler bölümünü bul
+        kritik_match = re.search(r'#### Kritik Anomaliler\s*(.*?)(?=####|\Z)', clean_text, re.DOTALL)
+        if kritik_match:
+            kritik_text = kritik_match.group(1).strip()
+            # Her bileşen için anomalileri bul
+            component_matches = re.findall(r'\*\*([^*]+) Bileşeni[^:]*:\*\*', kritik_text)
+            for comp in component_matches[:3]:  # İlk 3 bileşen
+                sections["potansiyel_etkiler"].append(f"{comp} bileşeninde kritik anomaliler tespit edildi")
+            
+            # En yüksek skorlu anomaliyi bul
+            skor_matches = re.findall(r'\*\*Skor:\*\* ([0-9.-]+)', kritik_text)
+            if skor_matches:
+                max_skor = max(float(s) for s in skor_matches)
+                sections["potansiyel_etkiler"].append(f"En kritik anomali skoru: {max_skor}")
+        
+        # Component Analizi bölümünü bul
+        component_match = re.search(r'#### (Bileşen Analizi|Component Analizi)\s*(.*?)(?=####|\Z)', clean_text, re.DOTALL)
+        if component_match:
+            component_text = component_match.group(2).strip()
+            # %100 anomali oranına sahip bileşenleri bul
+            full_anomaly_components = re.findall(r'\*\*([^*]+) Bileşeni:\*\*.*?anomali oranı:\*\* %100', component_text, re.DOTALL)
+            for comp in full_anomaly_components[:3]:  # İlk 3 tanesi
+                sections["muhtemel_nedenler"].append(f"{comp} bileşeninde tüm loglar anomali olarak işaretlenmiş (%100)")
+            
+            # Yüksek anomali oranına sahip diğer bileşenleri bul
+            high_anomaly = re.findall(r'\*\*([^*]+) Bileşeni:\*\*.*?anomali oranı:\*\* %([0-9.]+)', component_text, re.DOTALL)
+            for comp, rate in high_anomaly:
+                if float(rate) > 50 and comp not in [c for c in full_anomaly_components]:
+                    sections["muhtemel_nedenler"].append(f"{comp} bileşeninde yüksek anomali oranı (%{rate})")
+        
+        # Güvenlik Uyarıları bölümünü kontrol et
+        guvenlik_match = re.search(r'#### Güvenlik Uyarıları\s*(.*?)(?=####|\Z)', clean_text, re.DOTALL)
+        if guvenlik_match:
+            guvenlik_text = guvenlik_match.group(1).strip()
+            if "güvenlik uyarısı yok" not in guvenlik_text.lower():
+                # Güvenlik uyarıları varsa ekle
+                guvenlik_items = re.findall(r'- \*\*([^*]+)\*\*', guvenlik_text)
+                for item in guvenlik_items:
+                    sections["potansiyel_etkiler"].append(f"GÜVENLİK UYARISI: {item}")
+        
+        # Zaman bazlı analizi ekle
+        saat_match = re.search(r'en yoğun anomali saatleri[^:]*:\s*\[([^\]]+)\]', clean_text, re.IGNORECASE)
+        if saat_match:
+            saatler = saat_match.group(1)
+            sections["muhtemel_nedenler"].append(f"Anomaliler özellikle saat {saatler} arasında yoğunlaşmış")
+        
+        # Önerilen aksiyonları oluştur
+        if sections["potansiyel_etkiler"] or sections["muhtemel_nedenler"]:
+            # Kritik anomali varsa
+            if any("kritik" in etki.lower() for etki in sections["potansiyel_etkiler"]):
+                sections["onerilen_aksiyonlar"].append("Kritik anomalileri acil olarak inceleyin")
+            
+            # %100 anomali oranı varsa
+            if any("%100" in neden for neden in sections["muhtemel_nedenler"]):
+                sections["onerilen_aksiyonlar"].append("Tüm logları anomali olarak işaretleyen bileşenlerde sistem kontrolü yapın")
+            
+            # Plan executor error varsa
+            if "Plan executor error" in clean_text:
+                sections["onerilen_aksiyonlar"].append("Query plan executor hatalarını gidermek için index optimizasyonu yapın")
+            
+            # Oplog fetcher error varsa
+            if "Oplog fetcher stopped" in clean_text:
+                sections["onerilen_aksiyonlar"].append("Replication oplog hatalarını kontrol edin, replica set sağlığını doğrulayın")
+            
+            # Authentication failure varsa
+            if "Authentication failed" in clean_text:
+                sections["onerilen_aksiyonlar"].append("Authentication hatalarını inceleyin, güvenlik loglarını kontrol edin")
+            
+            # Zaman bazlı öneriler
+            if saat_match:
+                sections["onerilen_aksiyonlar"].append(f"Saat {saatler} arasındaki yoğun aktiviteleri ve scheduled job'ları kontrol edin")
+        
+        # Varsayılan öneriler
+        if not sections["onerilen_aksiyonlar"]:
+            sections["onerilen_aksiyonlar"] = [
+                "Anomali tespit edilen bileşenleri detaylı inceleyin",
+                "Sistem performans metriklerini kontrol edin",
+                "MongoDB replica set durumunu doğrulayın"
+            ]
+        
+        # Boş bölümleri doldur
+        if not sections["ne_tespit_edildi"]:
+            sections["ne_tespit_edildi"] = "MongoDB log analizi tamamlandı"
+        
+        if not sections["potansiyel_etkiler"]:
+            sections["potansiyel_etkiler"] = ["Sistem performansında düşüş riski"]
+        
+        if not sections["muhtemel_nedenler"]:
+            sections["muhtemel_nedenler"] = ["Normal operasyon dışı aktiviteler tespit edildi"]
         
         return sections
+    def _parse_ai_explanation_structured(self, ai_text: str) -> Dict[str, Any]:
+        """LCWGPT'nin yapılandırılmış yanıtını parse et - İyileştirilmiş versiyon"""
+        sections = {
+            "ne_tespit_edildi": "",
+            "potansiyel_etkiler": [],
+            "muhtemel_nedenler": [],
+            "onerilen_aksiyonlar": []
+        }
+        
+        if not ai_text or len(ai_text) < 50:
+            return sections
+        
+        import re
+        
+        # Temiz metin al
+        clean_text = ai_text.replace('**', '').replace('###', '').replace('####', '')
+        
+        # GENEL DURUM / ÖZET bölümünü parse et
+        ozet_match = re.search(r'(Genel Durum|Özet)(.*?)(?=Kritik|Bileşen|Zamansal|$)', clean_text, re.DOTALL | re.IGNORECASE)
+        if ozet_match:
+            ozet_text = ozet_match.group(2).strip()
+            ozet_lines = []
+            for line in ozet_text.split('\n'):
+                if line.strip() and (':' in line or '-' in line):
+                    clean_line = line.strip('- *').strip()
+                    if clean_line:
+                        ozet_lines.append(f"• {clean_line}")
+            sections["ne_tespit_edildi"] = "\n".join(ozet_lines)
+        
+        # KRİTİK ANOMALİLER bölümünü parse et
+        kritik_match = re.search(r'Kritik Anomaliler(.*?)(?=Bileşen|Zamansal|Önemli|Öneriler|$)', clean_text, re.DOTALL | re.IGNORECASE)
+        if kritik_match:
+            kritik_text = kritik_match.group(1).strip()
+            
+            # Genel açıklama varsa ekle
+            first_para = kritik_text.split('\n')[0]
+            if first_para and not first_para.startswith('-') and len(first_para) > 20:
+                sections["potansiyel_etkiler"].append(first_para.strip())
+            
+            # Bileşen bazlı anomalileri bul
+            bilesene_pattern = r'([A-Z]+):\s*"([^"]+)"'
+            for match in re.finditer(bilesene_pattern, kritik_text):
+                comp = match.group(1)
+                msg = match.group(2)
+                sections["potansiyel_etkiler"].append(f"{comp} bileşeninde: {msg}")
+            
+            # Liste formatındaki anomalileri bul
+            for line in kritik_text.split('\n'):
+                if '- ' in line and ':' in line:
+                    clean_line = line.strip('- ').strip()
+                    if clean_line not in sections["potansiyel_etkiler"]:
+                        sections["potansiyel_etkiler"].append(clean_line)
+        
+        # BİLEŞEN ANALİZİ bölümünü parse et
+        bilesene_match = re.search(r'Bileşen Analizi(.*?)(?=Zamansal|Önemli|Öneriler|$)', clean_text, re.DOTALL | re.IGNORECASE)
+        if bilesene_match:
+            bilesene_text = bilesene_match.group(1).strip()
+            
+            # %100 anomali oranına sahip bileşenleri bul
+            for line in bilesene_text.split('\n'):
+                if '%100' in line or '100.0' in line:
+                    # Bileşen adını çıkar
+                    comp_match = re.search(r'([A-Z]+)[,:]', line)
+                    if comp_match:
+                        comp = comp_match.group(1)
+                        sections["muhtemel_nedenler"].append(f"{comp} bileşeninde tüm loglar anomali (%100)")
+                    else:
+                        clean_line = line.strip('- ').strip()
+                        if clean_line:
+                            sections["muhtemel_nedenler"].append(clean_line)
+                elif '%' in line and any(word in line for word in ['anomali', 'oran']):
+                    # Yüksek anomali oranlarını da ekle
+                    percent_match = re.search(r'%(\d+)', line)
+                    if percent_match and int(percent_match.group(1)) > 50:
+                        clean_line = line.strip('- ').strip()
+                        sections["muhtemel_nedenler"].append(clean_line)
+            
+            # Açıklama paragraflarını ekle
+            for line in bilesene_text.split('\n'):
+                if len(line) > 50 and '.' in line and not line.startswith('-'):
+                    sections["muhtemel_nedenler"].append(line.strip())
+        
+        # ZAMANSAL ANALİZ bölümünü parse et
+        zaman_match = re.search(r'Zamansal Analiz(.*?)(?=Önemli|Öneriler|$)', clean_text, re.DOTALL | re.IGNORECASE)
+        if zaman_match:
+            zaman_text = zaman_match.group(1).strip()
+            for line in zaman_text.split('\n'):
+                if line.strip() and (':' in line or 'saat' in line.lower()):
+                    clean_line = line.strip('- ').strip()
+                    if clean_line:
+                        sections["muhtemel_nedenler"].append(f"Zamansal: {clean_line}")
+        
+        # ÖNERİLER bölümünü parse et
+        oneriler_match = re.search(r'Öneriler(.*?)$', clean_text, re.DOTALL | re.IGNORECASE)
+        if oneriler_match:
+            oneriler_text = oneriler_match.group(1).strip()
+            
+            # Numaralı liste formatı
+            numbered_pattern = r'\d+\.\s*(.+?)(?=\d+\.|$)'
+            for match in re.finditer(numbered_pattern, oneriler_text, re.DOTALL):
+                suggestion = match.group(1).strip()
+                if suggestion and len(suggestion) > 10:
+                    # Öneri içindeki bileşeni bul
+                    comp_match = re.search(r'([A-Z]+)', suggestion)
+                    prefix = f"[{comp_match.group(1)}] " if comp_match else ""
+                    sections["onerilen_aksiyonlar"].append(f"{prefix}{suggestion}")
+            
+            # Eğer numaralı liste yoksa satır satır al
+            if not sections["onerilen_aksiyonlar"]:
+                for line in oneriler_text.split('\n'):
+                    if line.strip() and len(line.strip()) > 10:
+                        clean_line = line.strip('- ').strip()
+                        if not any(clean_line in s for s in sections["onerilen_aksiyonlar"]):
+                            sections["onerilen_aksiyonlar"].append(clean_line)
+        
+        # ÖNEMLİ ÖZELLİKLER varsa ekle
+        ozellik_match = re.search(r'Önemli Özellikler(.*?)(?=Öneriler|$)', clean_text, re.DOTALL | re.IGNORECASE)
+        if ozellik_match:
+            ozellik_text = ozellik_match.group(1).strip()
+            for line in ozellik_text.split('\n'):
+                if line.strip() and ':' in line:
+                    clean_line = line.strip('- ').strip()
+                    sections["potansiyel_etkiler"].append(f"Özellik: {clean_line}")
+        
+        # Eğer hala çok az bilgi varsa, tüm metinden önemli bilgileri çıkar
+        if len(sections["ne_tespit_edildi"]) < 50:
+            # Sayısal verileri bul
+            numbers = re.findall(r'(\d+[,.]?\d*)\s*(log|anomali|%)', clean_text, re.IGNORECASE)
+            if numbers:
+                sections["ne_tespit_edildi"] = "Anomali Analizi Özeti:\n"
+                for num, unit in numbers[:5]:  # İlk 5 sayısal veri
+                    sections["ne_tespit_edildi"] += f"• {num} {unit}\n"
+        
+        # Boş bölümleri kontrol et ve varsayılan değerler ekle
+        if not sections["potansiyel_etkiler"]:
+            # En azından kritik bileşenleri ekle
+            if "STORAGE" in clean_text and "100" in clean_text:
+                sections["potansiyel_etkiler"].append("STORAGE bileşeninde kritik seviyede anomali")
+            if "ACCESS" in clean_text and "100" in clean_text:
+                sections["potansiyel_etkiler"].append("ACCESS bileşeninde güvenlik riski")
+            if "WRITE" in clean_text and "slow" in clean_text.lower():
+                sections["potansiyel_etkiler"].append("WRITE performansında yavaşlama")
+        
+        if not sections["onerilen_aksiyonlar"] or len(sections["onerilen_aksiyonlar"]) < 3:
+            # Metinden akıllı öneriler çıkar
+            if "slow query" in clean_text.lower():
+                sections["onerilen_aksiyonlar"].append("[PERFORMANS] Yavaş sorguları optimize edin, indeksleri gözden geçirin")
+            if "unclean shutdown" in clean_text.lower():
+                sections["onerilen_aksiyonlar"].append("[STORAGE] Temiz olmayan kapanma nedenlerini araştırın, veri bütünlüğünü kontrol edin")
+            if "TransportLayer" in clean_text:
+                sections["onerilen_aksiyonlar"].append("[NETWORK] Ağ yapılandırmasını kontrol edin, TransportLayer ayarlarını düzeltin")
+            if "100" in clean_text or "%100" in clean_text:
+                sections["onerilen_aksiyonlar"].append("[KRİTİK] %100 anomali oranına sahip bileşenleri acilen inceleyin")
+            if any(hour in clean_text for hour in ["16:00", "17:00", "16-17"]):
+                sections["onerilen_aksiyonlar"].append("[ZAMANSAL] 16:00-17:00 arasındaki yoğun aktiviteleri analiz edin")
+        
+        return sections
+
 
     def _create_fallback_explanation(self, anomaly_data: Dict[str, Any]) -> Dict[str, Any]:
         """AI başarısız olursa kullanılacak detaylı fallback açıklama"""
@@ -1140,7 +1394,71 @@ class AnomalyDetectionTools:
                 result.append(f"     Önem: {a.get('severity', 'N/A')}")
         
         return "\n".join(result)
+    
+    def _format_critical_anomalies_for_prompt(self, anomalies: List[Dict]) -> str:
+        """Kritik anomalileri prompt için formatla"""
+        if not anomalies:
+            return "Kritik anomali tespit edilmedi."
+        
+        result = []
+        for i, a in enumerate(anomalies, 1):
+            result.append(f"{i}. {a.get('timestamp', 'N/A')} - {a.get('component', 'N/A')}")
+            result.append(f"   Mesaj: {a.get('message', '')[:100]}...")
+            result.append(f"   Skor: {a.get('score', 0):.3f} (Önem: {a.get('severity', 'N/A')})")
+            result.append("")
+        
+        return "\n".join(result)
 
+    def _format_component_analysis_for_prompt(self, components: Dict) -> str:
+        """Component analizini prompt için formatla"""
+        if not components:
+            return "Component analizi mevcut değil."
+        
+        result = []
+        # En yüksek anomali oranına göre sırala
+        sorted_components = sorted(components.items(), 
+                                 key=lambda x: x[1].get('anomaly_rate', 0), 
+                                 reverse=True)
+        
+        for comp, stats in sorted_components[:5]:
+            anomaly_count = stats.get('anomaly_count', 0)
+            total_count = stats.get('total_count', 0)
+            anomaly_rate = stats.get('anomaly_rate', 0)
+            
+            result.append(f"- {comp}: {anomaly_count}/{total_count} anomali (%{anomaly_rate:.1f})")
+        
+        return "\n".join(result)
+
+    def _format_feature_importance_for_prompt(self, features: Dict) -> str:
+        """Feature importance'ı prompt için formatla"""
+        if not features:
+            return "Feature analizi mevcut değil."
+        
+        result = []
+        # Ratio'ya göre sırala (yüksek ratio = önemli)
+        sorted_features = sorted(features.items(), 
+                               key=lambda x: x[1].get('ratio', 0), 
+                               reverse=True)
+        
+        for feat, stats in sorted_features[:3]:
+            if stats.get('ratio', 0) > 10:  # Sadece önemli olanları göster
+                result.append(f"- {feat}: {stats.get('ratio', 0):.1f}x normal değerden sapma")
+        
+        return "\n".join(result) if result else "Normal değerler içinde."
+
+    def _format_security_alerts_for_prompt(self, alerts: Dict) -> str:
+        """Güvenlik uyarılarını prompt için formatla"""
+        if not alerts:
+            return "Güvenlik uyarısı yok."
+        
+        result = []
+        if "drop_operations" in alerts:
+            result.append(f"- DROP operasyonları: {alerts['drop_operations'].get('count', 0)} adet")
+        if "auth_failures" in alerts:
+            result.append(f"- Authentication hataları: {alerts['auth_failures'].get('count', 0)} adet")
+        
+        return "\n".join(result) if result else "Güvenlik uyarısı yok."
+    
     def _format_security_alerts_detailed(self, alerts: Dict) -> str:
         """Prompt için güvenlik uyarılarını detaylı formatlar"""
         if not alerts: 

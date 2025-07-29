@@ -17,6 +17,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 import urllib3
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -766,118 +767,96 @@ class OpenSearchProxyReader:
             return pd.DataFrame()
     
     def _read_logs_with_scroll(self, last_hours: int, host_filter: str = None) -> pd.DataFrame:
-        """Büyük veri setleri için batch okuma (from/size pagination)"""
+        """Timestamp-based slicing ile büyük veri setlerini oku"""
         try:
-            logger.info(f"Starting batch read for last {last_hours} hours")
-            print(f"[DEBUG] Starting batch read for last {last_hours} hours, host_filter: {host_filter}")
-            all_logs = []
-            batch_size = 10000
-            from_offset = 0
-            max_results = 100000  # OpenSearch limiti
+            logger.info(f"Starting timestamp-sliced read for last {last_hours} hours")
+            print(f"[DEBUG] Starting timestamp-sliced read for last {last_hours} hours, host_filter: {host_filter}")
             
-            while from_offset < max_results:
-                # Normal search query with from/size
-                query = {
-                    "size": batch_size,
-                    "from": from_offset,  # Pagination için offset
-                    "query": {
-                        "bool": {
-                            "must": [
-                                {"range": {"@timestamp": {"gte": f"now-{last_hours}h"}}}
-                            ]
-                        }
-                    },
-                    "sort": [{"@timestamp": {"order": "desc"}}]
+            all_logs = []
+            batch_size = 10000  # OpenSearch limiti
+            
+            # Zaman aralığını hesapla
+            end_time = datetime.now()
+            start_time = end_time - timedelta(hours=last_hours)
+            
+            # Zaman dilimlerini belirle
+            # Eğer 24 saatten az ise 1 saatlik dilimler, 
+            # 24-168 saat arası ise 4 saatlik dilimler,
+            # 168 saatten fazla ise 12 saatlik dilimler kullan
+            if last_hours <= 24:
+                slice_hours = 1
+            elif last_hours <= 168:  # 1 hafta
+                slice_hours = 4
+            else:
+                slice_hours = 12
+                
+            time_slices = []
+            current_time = start_time
+            
+            while current_time < end_time:
+                slice_end = min(current_time + timedelta(hours=slice_hours), end_time)
+                time_slices.append((current_time, slice_end))
+                current_time = slice_end
+            
+            logger.info(f"Created {len(time_slices)} time slices (each {slice_hours} hours)")
+            print(f"[DEBUG] Created {len(time_slices)} time slices (each {slice_hours} hours)")
+            
+            # İlk önce toplam log sayısını kontrol et
+            total_check_query = {
+                "size": 0,  # Sadece count için
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"range": {"@timestamp": {"gte": f"now-{last_hours}h"}}}
+                        ]
+                    }
                 }
+            }
+            
+            if host_filter:
+                total_check_query["query"]["bool"]["must"].append({
+                    "term": {"host.name": host_filter}
+                })
+            
+            search_path = f"{self.index_pattern}/_search"
+            total_result = self._make_request(search_path, "GET", total_check_query)
+            
+            if total_result and 'hits' in total_result:
+                total_expected = total_result['hits']['total']['value']
+                logger.info(f"Total logs to retrieve: {total_expected}")
+                print(f"[DEBUG] Total logs to retrieve: {total_expected}")
+            else:
+                total_expected = 0
+            
+            # Her zaman dilimi için ayrı sorgular çalıştır
+            for slice_idx, (slice_start, slice_end) in enumerate(time_slices):
+                logger.info(f"Processing slice {slice_idx+1}/{len(time_slices)}: {slice_start.strftime('%Y-%m-%d %H:%M')} to {slice_end.strftime('%Y-%m-%d %H:%M')}")
+                print(f"[DEBUG] Processing time slice {slice_idx+1}/{len(time_slices)}")
                 
-                if host_filter:
-                    query["query"]["bool"]["must"].append({
-                        "term": {"host.name": host_filter}
-                    })
-                    print(f"[DEBUG] Added host filter: {host_filter}")
-                    logger.debug(f"Added host filter to query: {host_filter}")
+                # Bu zaman dilimi için tüm logları çek
+                slice_logs = self._read_time_slice(slice_start, slice_end, batch_size, host_filter)
+                all_logs.extend(slice_logs)
                 
-                # Debug: Log the query
-                logger.info(f"OpenSearch Query: {json.dumps(query, indent=2)}")
+                logger.info(f"Slice {slice_idx+1} completed: {len(slice_logs)} logs retrieved")
+                print(f"[DEBUG] Slice {slice_idx+1}: {len(slice_logs)} logs")
                 
-                # Normal search endpoint (scroll YOK)
-                search_path = f"{self.index_pattern}/_search"
-                print(f"[DEBUG] Making batch request to: {search_path} with offset: {from_offset}")
-                logger.debug(f"Batch query: {json.dumps(query, indent=2)}")
-                result = self._make_request(search_path, "GET", query)
-                
-                if not result or 'hits' not in result:
-                    logger.error("No results from query")
-                    print("[DEBUG] No results from query - breaking loop")
-                    break
-                
-                # Debug: Log the response hits
-                if 'hits' in result:
-                    logger.info(f"Total hits in OpenSearch: {result['hits']['total']['value']}")
-                
-                hits = result['hits']['hits']
-                if not hits:
-                    logger.info(f"No more results at offset {from_offset}")
-                    print(f"[DEBUG] No more results at offset {from_offset}")
-                    break
-                    
-                # İlk batch'te toplam sayıyı logla
-                if from_offset == 0:
-                    total_hits = result['hits']['total']['value']
-                    logger.info(f"Total hits available: {total_hits}")
-                    print(f"[DEBUG] Total hits available: {total_hits}")
-                    
-                    if total_hits > max_results:
-                        logger.warning(f"Total hits ({total_hits}) exceeds limit ({max_results}). Only first {max_results} will be retrieved.")
-                        print(f"[DEBUG] Total hits ({total_hits}) exceeds limit ({max_results}). Only first {max_results} will be retrieved.")
-                
-                # Logları işle
-                batch_logs = 0
-                for hit in hits:
-                    source = hit['_source']
-                    if 'message' in source and source['message']:
-                        messages = source['message'] if isinstance(source['message'], list) else [source['message']]
-                        
-                        for msg in messages:
-                            try:
-                                if msg.strip().startswith('{'):
-                                    log_entry = json.loads(msg.strip())
-                                    if 'host' not in log_entry:
-                                        log_entry['host'] = source.get('host', {}).get('name', 'unknown')
-                                    all_logs.append(log_entry)
-                                    batch_logs += 1
-                                else:
-                                    log_entry = {
-                                        't': {'$date': source.get('@timestamp')},
-                                        'msg': msg,
-                                        'host': source.get('host', {}).get('name', 'unknown'),
-                                        's': 'I',
-                                        'c': 'UNKNOWN'
-                                    }
-                                    all_logs.append(log_entry)
-                                    batch_logs += 1
-                            except Exception as e:
-                                logger.debug(f"Error parsing log: {e}")
-                                print(f"[DEBUG] Error parsing log: {e}")
-                                continue
-                
-                logger.info(f"Batch at offset {from_offset}: processed {batch_logs} logs")
-                print(f"[DEBUG] Batch at offset {from_offset}: processed {batch_logs} logs")
-                
-                # Sonraki batch için offset'i artır
-                from_offset += batch_size
-                
-                # Progress log
+                # Progress update
                 if len(all_logs) % 50000 == 0 and len(all_logs) > 0:
-                    logger.info(f"Retrieved {len(all_logs)} logs so far...")
+                    logger.info(f"Progress: {len(all_logs)} logs retrieved so far ({len(all_logs)/total_expected*100:.1f}% of total)")
                     print(f"[DEBUG] Progress update: {len(all_logs)} logs retrieved")
             
-            logger.info(f"Batch read completed. Total logs retrieved: {len(all_logs)}")
-            print(f"[DEBUG] Batch read completed. Total logs retrieved: {len(all_logs)}")
+            logger.info(f"Timestamp-sliced read completed. Total logs: {len(all_logs)}")
+            print(f"[DEBUG] Total logs retrieved: {len(all_logs)}")
+            
+            if total_expected > 0:
+                retrieval_rate = (len(all_logs) / total_expected) * 100
+                logger.info(f"Retrieved {retrieval_rate:.1f}% of available logs")
+                print(f"[DEBUG] Retrieved {retrieval_rate:.1f}% of available logs")
             
             if len(all_logs) == 0:
-                logger.warning("No logs were retrieved. Check filters and time range.")
-                print("[DEBUG] No logs were retrieved. Check filters and time range.")
+                logger.warning("No logs retrieved. Check time range and filters.")
+                print("[DEBUG] No logs retrieved. Check time range and filters.")
+                return pd.DataFrame()
             
             final_df = pd.DataFrame(all_logs)
             print(f"[DEBUG] Created final DataFrame with shape: {final_df.shape}")
@@ -885,11 +864,11 @@ class OpenSearchProxyReader:
             return final_df
             
         except Exception as e:
-            logger.error(f"Error in batch read: {e}")
-            logger.debug("Batch read error details:", exc_info=True)
-            print(f"[DEBUG] Error in batch read: {e}")
-            logger.warning("Falling back to regular search due to batch read error")
-            print("[DEBUG] Falling back to regular search due to batch read error")
+            logger.error(f"Error in timestamp-sliced read: {e}")
+            logger.debug("Timestamp-sliced read error details:", exc_info=True)
+            print(f"[DEBUG] Error in timestamp-sliced read: {e}")
+            logger.warning("Falling back to regular search due to timestamp-sliced read error")
+            print("[DEBUG] Falling back to regular search due to timestamp-sliced read error")
             # Hata durumunda normal okumaya dön
             try:
                 return self.read_logs(limit=10000, last_hours=last_hours, host_filter=host_filter)
@@ -897,7 +876,111 @@ class OpenSearchProxyReader:
                 logger.error(f"Fallback to regular search also failed: {fallback_error}")
                 print(f"[DEBUG] Fallback to regular search also failed: {fallback_error}")
                 return pd.DataFrame()
-
+                
+    def _read_time_slice(self, start_time: datetime, end_time: datetime, 
+                     batch_size: int, host_filter: str = None) -> List[Dict]:
+        """Belirli bir zaman dilimi için logları oku"""
+        slice_logs = []
+        from_offset = 0
+        
+        # ISO format timestamp'ler
+        start_iso = start_time.isoformat() + "Z"
+        end_iso = end_time.isoformat() + "Z"
+        
+        logger.debug(f"Reading time slice: {start_iso} to {end_iso}")
+        
+        while True:
+            query = {
+                "size": batch_size,
+                "from": from_offset,
+                "query": {
+                    "bool": {
+                        "must": [
+                            {
+                                "range": {
+                                    "@timestamp": {
+                                        "gte": start_iso,
+                                        "lt": end_iso
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                "sort": [{"@timestamp": {"order": "asc"}}]
+            }
+            
+            if host_filter:
+                query["query"]["bool"]["must"].append({
+                    "term": {"host.name": host_filter}
+                })
+            
+            # Search yap
+            search_path = f"{self.index_pattern}/_search"
+            result = self._make_request(search_path, "GET", query)
+            
+            if not result or 'hits' not in result:
+                logger.debug(f"No results for time slice at offset {from_offset}")
+                break
+            
+            hits = result['hits']['hits']
+            if not hits:
+                logger.debug(f"No more hits in time slice at offset {from_offset}")
+                break
+            
+            # İlk sorguda toplam sayıyı kontrol et
+            if from_offset == 0:
+                total_in_slice = result['hits']['total']['value']
+                logger.debug(f"Time slice has {total_in_slice} total logs")
+                
+                # Eğer 10K'dan fazla log varsa uyar
+                if total_in_slice > 10000:
+                    logger.warning(f"Time slice {start_iso} to {end_iso} has {total_in_slice} logs - will be limited to 10K")
+                    print(f"[DEBUG] Warning: Time slice has {total_in_slice} logs, limited to 10K")
+            
+            # Logları işle
+            batch_logs = 0
+            for hit in hits:
+                source = hit['_source']
+                if 'message' in source and source['message']:
+                    messages = source['message'] if isinstance(source['message'], list) else [source['message']]
+                    
+                    for msg in messages:
+                        try:
+                            if msg.strip().startswith('{'):
+                                log_entry = json.loads(msg.strip())
+                                if 'host' not in log_entry:
+                                    log_entry['host'] = source.get('host', {}).get('name', 'unknown')
+                                slice_logs.append(log_entry)
+                                batch_logs += 1
+                            else:
+                                log_entry = {
+                                    't': {'$date': source.get('@timestamp')},
+                                    'msg': msg,
+                                    'host': source.get('host', {}).get('name', 'unknown'),
+                                    's': 'I',
+                                    'c': 'UNKNOWN'
+                                }
+                                slice_logs.append(log_entry)
+                                batch_logs += 1
+                        except Exception as e:
+                            logger.debug(f"Error parsing log in time slice: {e}")
+                            continue
+            
+            logger.debug(f"Processed {batch_logs} logs in batch at offset {from_offset}")
+            
+            # Sonraki batch için offset'i artır
+            from_offset += batch_size
+            
+            # 10K limitine ulaştıysak, bu zaman dilimi için dur
+            if from_offset >= 10000:
+                if len(hits) == batch_size:
+                    logger.warning(f"Reached 10K limit for time slice {start_iso} to {end_iso}")
+                break
+        
+        logger.debug(f"Time slice completed: {len(slice_logs)} logs retrieved")
+        return slice_logs
+        
     def get_available_hosts(self, last_hours: int = 24) -> List[str]:
         """
         OpenSearch'ten belirli bir zaman aralığındaki MongoDB sunucularını listele
