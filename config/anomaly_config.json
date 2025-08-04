@@ -136,7 +136,7 @@
       "features": {
         "enabled_features": [
           "severity_W",
-          "component_encoded",
+          "component_encoded", 
           "is_rare_component",
           "is_rare_combo",
           "has_error_key",
@@ -149,13 +149,36 @@
           "hour_of_day",
           "is_weekend",
           "attr_key_count",
-          "has_many_attrs"
+          "has_many_attrs",
+          "is_collscan",
+          "is_index_build",
+          "is_slow_query",
+          "is_high_doc_scan",
+          "is_shutdown",
+          "is_assertion",
+          "is_fatal",
+          "is_error",
+          "is_replication_issue",
+          "is_out_of_memory",
+          "is_restart",
+          "is_memory_limit",
+          "query_duration_ms",
+          "docs_examined_count",
+          "keys_examined_count",
+          "performance_score"
         ],
         "filters": {
           "exclude_auth_success": true,
           "exclude_reauthenticate": true,
           "rare_threshold": 100,
           "burst_threshold_ms": 100
+        },
+        "performance_thresholds": {
+          "slow_query_ms": 1000,
+          "high_doc_scan": 10000,
+          "critical_collscan_count": 10,
+          "max_index_builds": 5,
+          "performance_score_threshold": 50000
         }
       },
       "output": {

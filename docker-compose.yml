@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  # MongoDB LangChain Assistant API Servisi
+  mongodb-assistant:
+    # Image adı ve tag
+    image: lcw-mongodb-assistant:latest
+    
+    # Container adı
+    container_name: mongodb-assistant-api
+    
+    # Dockerfile'dan build et
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    # Port mapping - Host:Container
+    ports:
+      - "8000:8000"
+    
+    # Environment dosyası
+    env_file:
+      - .env
+    
+    # Volume tanımlamaları
+    volumes:
+      # .env dosyasını read-only olarak mount et
+      - ./.env:/app/.env:ro
+      
+      # Log klasörü - persist edilecek
+      - ./logs:/app/logs
+      
+      # Models klasörü - anomaly detection model için
+      - ./models:/app/models
+      
+      # Temp logs klasörü - upload edilen dosyalar için
+      - ./temp_logs:/app/temp_logs
+      
+      # Output klasörü - generated files için
+      - ./output:/app/output
+      
+      # Config klasörü - anomaly_config.json vb. için
+      - ./config:/app/config:ro
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Healthcheck - Dockerfile'da tanımlı olanı kullan
+    
+    # Network
+    networks:
+      - mongodb-assistant-network
+    
+    # Container başlatma öncesi bekleme (opsiyonel)
+    # depends_on koymadık çünkü external MongoDB/OpenSearch kullanıyoruz
+    
+    # Resource limits (production için önerilen)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    
+    # Logging yapılandırması
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Güvenlik ayarları
+    security_opt:
+      - no-new-privileges:true
+    
+    # Read-only root filesystem (güvenlik için)
+    # Sadece belirli klasörlere yazma izni var
+    read_only: false  # true yaparsak volume mount'ları düzgün çalışmayabilir
+
+# Network tanımı
+networks:
+  mongodb-assistant-network:
+    driver: bridge
+    name: mongodb-assistant-net
+
+# Named volumes (opsiyonel - host mount yerine)
+# volumes:
+#   logs-volume:
+#   models-volume:
+#   temp-logs-volume:

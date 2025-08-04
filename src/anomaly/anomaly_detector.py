@@ -225,7 +225,9 @@ class MongoDBAnomalyDetector:
         # Feature importance (binary features)
         print(f"[DEBUG] Calculating feature importance...")
         binary_features = ['severity_W', 'is_rare_component', 'is_rare_combo', 'has_error_key',
-                          'is_drop_operation', 'is_rare_message', 'extreme_burst_flag']
+                          'is_drop_operation', 'is_rare_message', 'extreme_burst_flag',
+                          'is_collscan', 'is_index_build', 'is_slow_query', 'is_high_doc_scan',
+                          'is_shutdown', 'is_assertion', 'is_fatal', 'is_error', 'is_replication_issue']
         
         for feature in binary_features:
             if feature in X.columns:
@@ -254,19 +256,155 @@ class MongoDBAnomalyDetector:
             }
             analysis["critical_anomalies"].append(anomaly_info)
         
+        # Performance critical logs analysis
+        print(f"[DEBUG] Analyzing performance critical logs...")
+        performance_alerts = {}
+        
+        # COLLSCAN analysis
+        if 'is_collscan' in X.columns:
+            collscan_mask = (df['is_collscan'] == 1) & anomaly_mask
+            if collscan_mask.sum() > 0:
+                print(f"[DEBUG] PERFORMANCE ALERT: {collscan_mask.sum()} COLLSCAN queries in anomalies!")
+                
+                # Get average documents examined for COLLSCAN queries
+                if 'docs_examined_count' in df.columns:
+                    avg_docs = df[collscan_mask]['docs_examined_count'].mean()
+                    max_docs = df[collscan_mask]['docs_examined_count'].max()
+                else:
+                    avg_docs = None
+                    max_docs = None
+                
+                performance_alerts["collscan"] = {
+                    "count": int(collscan_mask.sum()),
+                    "indices": list(np.where(collscan_mask)[0][:10]),
+                    "avg_docs_examined": float(avg_docs) if avg_docs else None,
+                    "max_docs_examined": float(max_docs) if max_docs else None
+                }
+        
+        # Slow query analysis
+        if 'is_slow_query' in X.columns:
+            slow_mask = (df['is_slow_query'] == 1) & anomaly_mask
+            if slow_mask.sum() > 0:
+                print(f"[DEBUG] PERFORMANCE ALERT: {slow_mask.sum()} slow queries in anomalies!")
+                
+                # Get query durations
+                if 'query_duration_ms' in df.columns:
+                    avg_duration = df[slow_mask]['query_duration_ms'].mean()
+                    max_duration = df[slow_mask]['query_duration_ms'].max()
+                else:
+                    avg_duration = None
+                    max_duration = None
+                
+                performance_alerts["slow_queries"] = {
+                    "count": int(slow_mask.sum()),
+                    "indices": list(np.where(slow_mask)[0][:10]),
+                    "avg_duration_ms": float(avg_duration) if avg_duration else None,
+                    "max_duration_ms": float(max_duration) if max_duration else None
+                }
+        
+        # Index build analysis
+        if 'is_index_build' in X.columns:
+            index_mask = (df['is_index_build'] == 1) & anomaly_mask
+            if index_mask.sum() > 0:
+                print(f"[DEBUG] INDEX ALERT: {index_mask.sum()} index builds in anomalies!")
+                performance_alerts["index_builds"] = {
+                    "count": int(index_mask.sum()),
+                    "indices": list(np.where(index_mask)[0][:10])
+                }
+        
+        # High document scan analysis
+        if 'is_high_doc_scan' in X.columns:
+            high_scan_mask = (df['is_high_doc_scan'] == 1) & anomaly_mask
+            if high_scan_mask.sum() > 0:
+                print(f"[DEBUG] SCAN ALERT: {high_scan_mask.sum()} high document scans in anomalies!")
+                performance_alerts["high_doc_scans"] = {
+                    "count": int(high_scan_mask.sum()),
+                    "indices": list(np.where(high_scan_mask)[0][:10])
+                }
+        
+        # Add performance alerts to analysis
+        if performance_alerts:
+            analysis["performance_alerts"] = performance_alerts
+            print(f"[DEBUG] Performance analysis completed - {len(performance_alerts)} alert types found")
+        
+        # Security and critical alerts
+        security_alerts = {}
+        
         # DROP operasyonları kontrolü
         if 'is_drop_operation' in X.columns:
             print(f"[DEBUG] Checking for DROP operations...")
             drop_mask = (df['is_drop_operation'] == 1) & anomaly_mask
             if drop_mask.sum() > 0:
                 print(f"[DEBUG] SECURITY ALERT: {drop_mask.sum()} DROP operations detected in anomalies!")
-                analysis["security_alerts"] = {
-                    "drop_operations": {
-                        "count": int(drop_mask.sum()),
-                        "indices": list(np.where(drop_mask)[0][:10])  # İlk 10
-                    }
+                security_alerts["drop_operations"] = {
+                    "count": int(drop_mask.sum()),
+                    "indices": list(np.where(drop_mask)[0][:10])
                 }
         
+        # Shutdown detection
+        if 'is_shutdown' in X.columns:
+            shutdown_mask = (df['is_shutdown'] == 1) & anomaly_mask
+            if shutdown_mask.sum() > 0:
+                print(f"[DEBUG] CRITICAL: {shutdown_mask.sum()} shutdown events in anomalies!")
+                security_alerts["shutdowns"] = {
+                    "count": int(shutdown_mask.sum()),
+                    "indices": list(np.where(shutdown_mask)[0][:10])
+                }
+        
+        # Assertion errors
+        if 'is_assertion' in X.columns:
+            assertion_mask = (df['is_assertion'] == 1) & anomaly_mask
+            if assertion_mask.sum() > 0:
+                print(f"[DEBUG] ERROR ALERT: {assertion_mask.sum()} assertion errors in anomalies!")
+                security_alerts["assertions"] = {
+                    "count": int(assertion_mask.sum()),
+                    "indices": list(np.where(assertion_mask)[0][:10])
+                }
+        
+        # Fatal errors
+        if 'is_fatal' in X.columns:
+            fatal_mask = (df['is_fatal'] == 1) & anomaly_mask
+            if fatal_mask.sum() > 0:
+                print(f"[DEBUG] FATAL ALERT: {fatal_mask.sum()} fatal errors in anomalies!")
+                security_alerts["fatal_errors"] = {
+                    "count": int(fatal_mask.sum()),
+                    "indices": list(np.where(fatal_mask)[0][:10])
+                }
+
+        # Out of Memory errors
+        if 'is_out_of_memory' in X.columns:
+            oom_mask = (df['is_out_of_memory'] == 1) & anomaly_mask
+            if oom_mask.sum() > 0:
+                print(f"[DEBUG] MEMORY ALERT: {oom_mask.sum()} Out of Memory errors in anomalies!")
+                security_alerts["out_of_memory"] = {
+                    "count": int(oom_mask.sum()),
+                    "indices": list(np.where(oom_mask)[0][:10])
+                }
+
+        # Restart events
+        if 'is_restart' in X.columns:
+            restart_mask = (df['is_restart'] == 1) & anomaly_mask
+            if restart_mask.sum() > 0:
+                print(f"[DEBUG] RESTART ALERT: {restart_mask.sum()} restart events in anomalies!")
+                security_alerts["restarts"] = {
+                    "count": int(restart_mask.sum()),
+                    "indices": list(np.where(restart_mask)[0][:10])
+                }
+
+        # Memory limit exceeded
+        if 'is_memory_limit' in X.columns:
+            mem_limit_mask = (df['is_memory_limit'] == 1) & anomaly_mask
+            if mem_limit_mask.sum() > 0:
+                print(f"[DEBUG] MEMORY LIMIT ALERT: {mem_limit_mask.sum()} memory limit exceeded errors in anomalies!")
+                security_alerts["memory_limits"] = {
+                    "count": int(mem_limit_mask.sum()),
+                    "indices": list(np.where(mem_limit_mask)[0][:10])
+                }
+
+        # Add security alerts to analysis
+        if security_alerts:
+            analysis["security_alerts"] = security_alerts
+            print(f"[DEBUG] Security analysis completed - {len(security_alerts)} alert types found")
         print(f"[DEBUG] Anomaly analysis completed")
         return analysis
     

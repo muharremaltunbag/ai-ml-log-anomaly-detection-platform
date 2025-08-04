@@ -467,6 +467,60 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
         
         # MongoDB agent'a özel argümanlarla gönder
         result = mongodb_agent.process_query_with_args(query, analysis_params)
+        # Tool output'u düzelt
+        if result.get('işlem') == 'anomaly_analysis':
+            try:
+                # Agent executor'dan tool output'u al
+                if hasattr(mongodb_agent, 'agent_executor') and mongodb_agent.agent_executor:
+                    # Son çalıştırmanın intermediate_steps'ini kontrol et
+                    last_result = getattr(mongodb_agent.agent_executor, '_last_result', None)
+                    
+                    # Eğer _last_result yoksa, memory'den almayı dene
+                    if not last_result and hasattr(mongodb_agent, 'memory'):
+                        # Memory'deki son mesajları kontrol et
+                        messages = mongodb_agent.memory.chat_memory.messages
+                        if messages:
+                            # Son agent response'unu bul
+                            for msg in reversed(messages):
+                                if hasattr(msg, 'additional_kwargs'):
+                                    last_result = msg.additional_kwargs
+                                    break
+                    
+                    # Result varsa intermediate_steps'i kontrol et
+                    if last_result and 'intermediate_steps' in last_result:
+                        for step in last_result['intermediate_steps']:
+                            if len(step) >= 2 and hasattr(step[0], 'tool') and step[0].tool == 'analyze_mongodb_logs':
+                                tool_output = step[1]
+                                
+                                # String ise JSON olarak parse et
+                                if isinstance(tool_output, str):
+                                    import json
+                                    parsed_output = json.loads(tool_output)
+                                    if 'sonuç' in parsed_output:
+                                        # ML verilerini ekle
+                                        if 'sonuç' not in result:
+                                            result['sonuç'] = {}
+                                        result['sonuç'].update(parsed_output['sonuç'])
+                                        logger.info(f"ML verileri eklendi: {list(parsed_output['sonuç'].keys())}")
+            except Exception as e:
+                logger.error(f"Tool output çıkarma hatası: {e}")
+                for step in mongodb_agent.agent._last_run.get('intermediate_steps', []):
+                    if step[0].tool == 'analyze_mongodb_logs':
+                        tool_output = step[1]
+                        
+                        # String ise JSON olarak parse et
+                        if isinstance(tool_output, str):
+                            try:
+                                import json
+                                parsed_output = json.loads(tool_output)
+                                if 'sonuç' in parsed_output:
+                                    # ML verilerini ekle
+                                    if 'sonuç' not in result:
+                                        result['sonuç'] = {}
+                                    result['sonuç'].update(parsed_output['sonuç'])
+                                    logger.info(f"ML verileri eklendi: {list(parsed_output['sonuç'].keys())}")
+                            except json.JSONDecodeError:
+                                logger.error("Tool output JSON parse edilemedi")
 
         # DEBUG: Agent response'u detaylı logla
         logger.info(f"=== AGENT RESPONSE DEBUG ===")
@@ -502,6 +556,7 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
             "açıklama": f"Log analizi sırasında hata: {str(e)}",
             "öneriler": ["Veri kaynağını kontrol edin", "Parametreleri doğrulayın"]
         }
+        
 
 @app.get("/api/uploaded-logs")
 async def list_uploaded_logs(api_key: str):
@@ -541,6 +596,41 @@ async def delete_uploaded_log(filename: str, api_key: str):
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/get-detailed-anomalies")
+async def get_detailed_anomalies(request: Dict[str, Any]):
+    """Detaylı anomali listesini getir"""
+    try:
+        # API key kontrolü
+        if not await verify_api_key(request.get('api_key')):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        # Agent'ı al
+        mongodb_agent = await get_agent()
+        
+        # Anomaly tool'u direkt çağır
+        from src.anomaly.anomaly_tools import get_detailed_anomalies
+        
+        result = get_detailed_anomalies(
+            source_type=request.get('source_type', 'opensearch'),
+            host_filter=request.get('host_filter'),
+            time_range=request.get('time_range', 'last_day'),
+            limit=request.get('limit', 1000)
+        )
+        
+        return {
+            "status": "success",
+            "anomalies": result.get('anomalies', []),
+            "total_count": result.get('total_count', 0)
+        }
+        
+    except Exception as e:
+        logger.error(f"Detaylı anomali verisi hatası: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "anomalies": []
+        }
 
 # Arka plan görevi - eski onay bekleyen parametreleri temizle
 async def cleanup_pending_confirmations():

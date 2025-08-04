@@ -11,6 +11,7 @@ import json
 import logging
 from typing import Dict, List, Tuple, Any, Optional
 from pathlib import Path
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,6 @@ class MongoDBFeatureEngineer:
             logger.error(f"Error in timestamp features: {e}")
             
         return df
-    
     def extract_message_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Message-based features"""
         try:
@@ -141,6 +141,76 @@ class MongoDBFeatureEngineer:
             # DROP operasyonları için flag
             df['is_drop_operation'] = df['msg'].str.contains('CMD: drop|dropIndexes', case=False, na=False).astype(int)
             
+            
+            # COLLSCAN detection (performans sorunu)
+            df['is_collscan'] = df['msg'].str.contains(
+                'COLLSCAN|planSummary.*COLLSCAN|"planSummary":"COLLSCAN"', 
+                case=False, na=False, regex=True
+            ).astype(int)
+            
+            # Index build detection
+            df['is_index_build'] = df['msg'].str.contains(
+                'Index build|index.*build.*starting|"msg":"Index build: starting"', 
+                case=False, na=False, regex=True
+            ).astype(int)
+            
+            # Slow query detection (Slow query mesajı veya yüksek durationMillis)
+            df['is_slow_query'] = df['msg'].str.contains(
+                'Slow query|durationMillis":[1-9]\\d{3,}', 
+                regex=True, case=False, na=False
+            ).astype(int)
+            
+            # High document scan detection (docsExamined > 10000)
+            df['is_high_doc_scan'] = df['msg'].str.contains(
+                'docsExamined":[1-9]\\d{4,}', 
+                regex=True, na=False
+            ).astype(int)
+            
+            # Shutdown detection
+            df['is_shutdown'] = df['msg'].str.contains(
+                'shutdown|mongod shutdown complete|dbexit', 
+                case=False, na=False
+            ).astype(int)
+            
+            # Assertion errors
+            df['is_assertion'] = df['msg'].str.contains(
+                'assertion|assert|Assertion|BSONObjectTooLarge', 
+                case=False, na=False
+            ).astype(int)
+            
+            # Fatal errors (memory related dahil)
+            df['is_fatal'] = df['msg'].str.contains(
+                'fatal|FATAL|Applied op|memory', 
+                case=False, na=False
+            ).astype(int)
+            
+            # ERROR severity (JSON formatı için)
+            df['is_error'] = ((df['s'] == 'E') | df['msg'].str.contains('"s":"E"', na=False)).astype(int)
+            
+            # Replication issues
+            df['is_replication_issue'] = df['msg'].str.contains(
+                'Cannot select sync source|ReplCoordExtern|REPL', 
+                case=False, na=False
+            ).astype(int)
+
+            # Out of Memory detection (spesifik)
+            df['is_out_of_memory'] = df['msg'].str.contains(
+                'Out of memory|OOM|OutOfMemory|memory allocation failed|cannot allocate memory|tcmalloc|jemalloc',
+                case=False, na=False, regex=True
+            ).astype(int)
+
+            # Restart detection
+            df['is_restart'] = df['msg'].str.contains(
+                'restart|restarted|starting.*mongod|mongod.*starting|server restarted|Recovering journal|STARTUP2',
+                case=False, na=False, regex=True
+            ).astype(int)
+
+            # Memory limit exceeded detection
+            df['is_memory_limit'] = df['msg'].str.contains(
+                'memory limit exceeded|exceeded memory limit|memory threshold|WiredTiger cache|cache overflow|eviction',
+                case=False, na=False, regex=True
+            ).astype(int)
+
             # Message category (ilk kelime)
             df['msg_category'] = df['msg'].str.split().str[0]
             
@@ -153,12 +223,72 @@ class MongoDBFeatureEngineer:
             logger.info(f"✅ Message features extracted")
             logger.info(f"   Auth failures: {df['is_auth_failure'].sum()} ({df['is_auth_failure'].mean()*100:.1f}%)")
             logger.info(f"   Drop operations: {df['is_drop_operation'].sum()}")
+            logger.info(f"   COLLSCAN queries: {df['is_collscan'].sum()}")
+            logger.info(f"   Slow queries: {df['is_slow_query'].sum()}")
+            logger.info(f"   Index builds: {df['is_index_build'].sum()}")
+            logger.info(f"   High doc scans: {df['is_high_doc_scan'].sum()}")
+            logger.info(f"   Out of Memory errors: {df['is_out_of_memory'].sum()}")
+            logger.info(f"   Restart events: {df['is_restart'].sum()}")
+            logger.info(f"   Memory limit exceeded: {df['is_memory_limit'].sum()}")
+            
+            # === NUMERIC VALUE EXTRACTION BAŞLANGIÇ ===
+            
+            # Duration extraction helper function
+            def extract_duration(text):
+                """Extract durationMillis from log message"""
+                try:
+                    match = re.search(r'"durationMillis":(\d+)', str(text))
+                    return int(match.group(1)) if match else 0
+                except:
+                    return 0
+            
+            # Documents examined extraction helper function
+            def extract_docs_examined(text):
+                """Extract docsExamined count from log message"""
+                try:
+                    match = re.search(r'"docsExamined":(\d+)', str(text))
+                    return int(match.group(1)) if match else 0
+                except:
+                    return 0
+            
+            # Keys examined extraction helper function
+            def extract_keys_examined(text):
+                """Extract keysExamined count from log message"""
+                try:
+                    match = re.search(r'"keysExamined":(\d+)', str(text))
+                    return int(match.group(1)) if match else 0
+                except:
+                    return 0
+            
+            # Apply numeric extractions
+            df['query_duration_ms'] = df['msg'].apply(extract_duration)
+            df['docs_examined_count'] = df['msg'].apply(extract_docs_examined)
+            df['keys_examined_count'] = df['msg'].apply(extract_keys_examined)
+            
+            # Performance score (yüksek değer = kötü performans)
+            # COLLSCAN'de keys_examined 0 olur, bu da kötü performans göstergesi
+            df['performance_score'] = np.where(
+                df['is_collscan'] == 1,
+                df['docs_examined_count'] * 2,  # COLLSCAN'de çarpan uygula
+                df['docs_examined_count'] - df['keys_examined_count']
+            )
+            
+            # Log numeric extraction stats
+            slow_queries = df[df['query_duration_ms'] > 1000]
+            if len(slow_queries) > 0:
+                logger.info(f"   Avg slow query duration: {slow_queries['query_duration_ms'].mean():.0f}ms")
+                logger.info(f"   Max query duration: {df['query_duration_ms'].max():.0f}ms")
+            
+            high_scan_queries = df[df['docs_examined_count'] > 10000]
+            if len(high_scan_queries) > 0:
+                logger.info(f"   Avg docs examined (high scan): {high_scan_queries['docs_examined_count'].mean():.0f}")
+            
+            # === NUMERIC VALUE EXTRACTION BİTİŞ ===
             
         except Exception as e:
             logger.error(f"Error in message features: {e}")
             
         return df
-    
     def extract_severity_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Severity features"""
         try:
@@ -306,10 +436,13 @@ class MongoDBFeatureEngineer:
             "continuous_features": {}
         }
         
+        # Binary features
         binary_features = ['severity_W', 'is_rare_component', 'is_rare_combo', 'has_error_key', 
                           'is_auth_failure', 'is_drop_operation', 'is_rare_message',
-                          'extreme_burst_flag', 'is_weekend', 'component_changed', 'has_many_attrs']
-        
+                          'extreme_burst_flag', 'is_weekend', 'component_changed', 'has_many_attrs',
+                          'is_collscan', 'is_index_build', 'is_slow_query', 'is_high_doc_scan',
+                          'is_shutdown', 'is_assertion', 'is_fatal', 'is_error', 'is_replication_issue',
+                          'is_out_of_memory', 'is_restart', 'is_memory_limit']
         for col in X.columns:
             if col in binary_features:
                 stats["binary_features"][col] = {

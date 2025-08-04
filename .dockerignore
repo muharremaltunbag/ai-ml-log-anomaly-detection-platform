@@ -1,0 +1,78 @@
+# Python cache dosyaları
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Test ve coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.cover
+*.log
+
+# IDE dosyaları
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS dosyaları
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Environment dosyaları
+# DİKKAT: .env dosyası volume olarak mount edilecek
+.env
+.env.local
+.env.*.local
+
+# Log dosyaları (runtime'da oluşturulacak)
+logs/
+temp_logs/
+output/
+
+# Geçici dosyalar
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Backup dosyaları
+*.backup
+*.bak
+*.old
+*backup*
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Docker dosyaları (kendisi hariç)
+Dockerfile*
+docker-compose*.yml
+
+# Dokümantasyon
+README.md
+docs/
+*.md
+
+# Test dosyaları (production'da gerek yok)
+tests/
