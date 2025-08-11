@@ -48,7 +48,7 @@ class MongoDBFeatureEngineer:
                     }
                 }
             }
-    
+            
     def create_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Tüm feature'ları oluştur
@@ -64,6 +64,14 @@ class MongoDBFeatureEngineer:
         # DataFrame kopyası oluştur
         df = df.copy()
         
+        # ÖNEMLİ: raw_log field'ını koru (OpenSearch'ten gelen tam mesaj)
+        if 'raw_log' not in df.columns:
+            # Eğer raw_log yoksa, mevcut mesajları kullan
+            logger.warning("raw_log field not found, using msg field as fallback")
+            df['raw_log'] = df['msg'] if 'msg' in df.columns else ''
+        else:
+            logger.info(f"✅ raw_log field preserved with {df['raw_log'].notna().sum()} entries")
+
         # Sırasıyla feature extraction
         df = self.extract_timestamp_features(df)
         df = self.extract_message_features(df)
@@ -86,7 +94,7 @@ class MongoDBFeatureEngineer:
         logger.info(f"Features: {list(X.columns)}")
         
         return X, df
-    
+        
     def extract_timestamp_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Temporal features extraction"""
         try:
@@ -178,11 +186,20 @@ class MongoDBFeatureEngineer:
                 case=False, na=False
             ).astype(int)
             
-            # Fatal errors (memory related dahil)
-            df['is_fatal'] = df['msg'].str.contains(
-                'fatal|FATAL|Applied op|memory', 
+            # YENİ: Normal replication operations (FILTER OUT)
+            df['is_normal_replication'] = df['msg'].str.contains(
+                'Applied op|"msg":"Applied op"', 
                 case=False, na=False
             ).astype(int)
+            
+            # Fatal errors (APPLIED OP ÇIKARILDİ)
+            df['is_fatal'] = df['msg'].str.contains(
+                'fatal|FATAL|Out of memory|OOM|OutOfMemory|memory allocation failed', 
+                case=False, na=False
+            ).astype(int)
+            
+            # Normal replication işlemlerini fatal'dan çıkar
+            df['is_fatal'] = ((df['is_fatal'] == 1) & (df['is_normal_replication'] == 0)).astype(int)
             
             # ERROR severity (JSON formatı için)
             df['is_error'] = ((df['s'] == 'E') | df['msg'].str.contains('"s":"E"', na=False)).astype(int)
@@ -230,6 +247,7 @@ class MongoDBFeatureEngineer:
             logger.info(f"   Out of Memory errors: {df['is_out_of_memory'].sum()}")
             logger.info(f"   Restart events: {df['is_restart'].sum()}")
             logger.info(f"   Memory limit exceeded: {df['is_memory_limit'].sum()}")
+            logger.info(f"   Normal replication ops: {df['is_normal_replication'].sum()} ({df['is_normal_replication'].mean()*100:.1f}%)")
             
             # === NUMERIC VALUE EXTRACTION BAŞLANGIÇ ===
             
@@ -412,6 +430,10 @@ class MongoDBFeatureEngineer:
             # Reauthenticate filter
             if self.filters.get('exclude_reauthenticate', True) and 'is_reauthenticate' in df.columns:
                 filter_mask &= (df['is_reauthenticate'] == 0)
+            
+            # YENİ: Normal replication filter
+            if self.filters.get('exclude_normal_replication', True) and 'is_normal_replication' in df.columns:
+                filter_mask &= (df['is_normal_replication'] == 0)
             
             # Filtrelemeyi uygula
             df_filtered = df[filter_mask].reset_index(drop=True)

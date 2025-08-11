@@ -386,6 +386,168 @@ class MongoDBLogReader:
         logger.debug(f"Log stats completed: {stats}")
         print(f"[DEBUG] Log stats completed")
         return stats
+        
+def extract_mongodb_message(log_entry):
+    """
+    MongoDB log mesajından GERÇEK HATA MESAJINI çıkar
+    Nested JSON yapılarını parse ederek anlamlı mesaj döndürür
+    """
+    try:
+        # 1. Önce attr.error.errmsg kontrol et (MongoDB hata detayları)
+        if 'attr' in log_entry and isinstance(log_entry['attr'], dict):
+            attr = log_entry['attr']
+            
+            # Error mesajı varsa o en detaylı bilgiyi içerir
+            if 'error' in attr and isinstance(attr['error'], dict):
+                error_obj = attr['error']
+                if 'errmsg' in error_obj:
+                    return error_obj['errmsg']
+                elif 'message' in error_obj:
+                    return error_obj['message']
+            
+            # Command failure durumları
+            if 'command' in attr and 'error' in attr:
+                command = attr.get('command', {})
+                if isinstance(command, dict):
+                    cmd_name = command.get('find', command.get('insert', command.get('update', 'unknown')))
+                    return f"Command '{cmd_name}' failed: {attr.get('error', '')}"
+        
+        # 2. Standart msg alanı (kısa açıklama)
+        msg = log_entry.get('msg', '')
+        if msg and msg not in ['AppliedOp', 'Checking authorization failed']:
+            
+            # YENİ: Özel MongoDB log türleri için akıllı parse
+            if msg == "Slow query" and 'attr' in log_entry:
+                return _format_slow_query_message(log_entry)
+            elif msg.startswith("CMD: ") and 'attr' in log_entry:
+                return _format_command_message(log_entry)
+            elif "error" in msg.lower() and 'attr' in log_entry:
+                return _format_error_message(log_entry)
+            else:
+                # Normal mesaj döndür
+                return msg
+        
+        # 3. Raw log'dan JSON parse etmeyi dene (nested durumlar için)
+        if 'raw_log' in log_entry and log_entry['raw_log']:
+            raw_log = log_entry['raw_log']
+            if isinstance(raw_log, str) and raw_log.strip().startswith('{'):
+                try:
+                    import json
+                    parsed = json.loads(raw_log.strip())
+                    # Recursive call ile nested JSON'u parse et
+                    nested_message = extract_mongodb_message(parsed)
+                    if nested_message and nested_message != raw_log:
+                        return nested_message
+                except json.JSONDecodeError:
+                    pass
+        
+        # 4. Son çare olarak msg alanını döndür
+        return msg or 'No detailed message available'
+        
+    except Exception as e:
+        # Hata durumunda basit mesajı döndür
+        return log_entry.get('msg', 'Message extraction failed')
+
+def _format_slow_query_message(log_entry):
+    """Yavaş sorgu mesajını insan tarafından okunabilir formata çevir"""
+    try:
+        attr = log_entry.get('attr', {})
+        namespace = attr.get('ns', 'unknown')
+        duration = attr.get('durationMillis', 0)
+        
+        # Planın type'ını bul (COLLSCAN, IXSCAN vs.)
+        plan_summary = attr.get('planSummary', 'unknown')
+        
+        # Temel mesaj
+        message = f"Slow query on '{namespace}' took {duration}ms"
+        
+        # Plan detayı ekle
+        if plan_summary == 'COLLSCAN':
+            message += " - FULL TABLE SCAN detected (needs index)"
+        elif plan_summary == 'IXSCAN':
+            message += " - using index"
+        elif plan_summary != 'unknown':
+            message += f" - plan: {plan_summary}"
+            
+        # Documents examined ekle
+        docs_examined = attr.get('docsExamined', 0)
+        if docs_examined > 0:
+            message += f" (scanned {docs_examined:,} docs)"
+            
+        return message
+        
+    except Exception:
+        return "Slow query detected (details unavailable)"
+
+def _format_command_message(log_entry):
+    """MongoDB komut mesajını formatlayacak"""
+    try:
+        attr = log_entry.get('attr', {})
+        msg = log_entry.get('msg', '')
+        
+        if 'dropIndexes' in msg:
+            namespace = attr.get('namespace', 'unknown')
+            indexes = attr.get('indexes', 'unknown')
+            return f"Index dropped: {indexes} on collection '{namespace}'"
+        elif 'createIndex' in msg:
+            namespace = attr.get('namespace', 'unknown')
+            return f"Index created on collection '{namespace}'"
+        else:
+            # Diğer komutlar için genel format
+            cmd_type = msg.replace('CMD: ', '')
+            namespace = attr.get('namespace', attr.get('ns', 'unknown'))
+            return f"Command executed: {cmd_type} on '{namespace}'"
+            
+    except Exception:
+        return log_entry.get('msg', 'Command executed')
+
+def _format_error_message(log_entry):
+    """Hata mesajını detaylı formatlayacak"""
+    try:
+        attr = log_entry.get('attr', {})
+        msg = log_entry.get('msg', '')
+        
+        # Error objesi varsa detayları çıkar
+        if 'error' in attr:
+            error_obj = attr['error']
+            if isinstance(error_obj, dict):
+                error_code = error_obj.get('code', 'Unknown')
+                error_name = error_obj.get('codeName', 'Unknown')
+                error_msg = error_obj.get('errmsg', error_obj.get('message', ''))
+                
+                return f"Error {error_code} ({error_name}): {error_msg}"
+        
+        # Fallback - orijinal mesaj
+        return msg
+        
+    except Exception:
+        return log_entry.get('msg', 'Error occurred')
+
+def enrich_log_entry(log_entry):
+    """
+    Log entry'yi zenginleştir - AKILLI MESAJ ÇIKARMA
+    """
+    # YENİ: extract_mongodb_message ile akıllı mesaj çıkarma
+    extracted_message = extract_mongodb_message(log_entry)
+    log_entry['full_message'] = extracted_message
+    
+    # Ayrıca message alanını da set et (API consistency için)
+    log_entry['message'] = extracted_message
+    
+    # Sadece kritik operation details'i sakla (opsiyonel)
+    if 'attr' in log_entry and 'CRUD' in log_entry['attr']:
+        crud = log_entry['attr']['CRUD']
+        log_entry['operation_type'] = crud.get('op')
+        log_entry['namespace'] = crud.get('ns')
+        log_entry['duration_ms'] = log_entry['attr'].get('durationMillis')
+        
+        # BÜYÜK ALANLARI TEMİZLE
+        if 'o' in crud:
+            del crud['o']
+        if 'o2' in crud:
+            del crud['o2']
+            
+    return log_entry
 
 class OpenSearchProxyReader:
     """OpenSearch Proxy API üzerinden MongoDB loglarını okuma"""
@@ -724,11 +886,22 @@ class OpenSearchProxyReader:
                     # Message bir array olabilir
                     messages = source['message'] if isinstance(source['message'], list) else [source['message']]
                     
+                    # Duplicate mesajları filtrele
+                    seen_messages = set()
+                    unique_messages = []
                     for msg in messages:
+                        msg_hash = hash(msg.strip())
+                        if msg_hash not in seen_messages:
+                            seen_messages.add(msg_hash)
+                            unique_messages.append(msg)
+                    
+                    for msg in unique_messages:
                         try:
                             # JSON log ise parse et
                             if msg.strip().startswith('{'):
                                 log_entry = json.loads(msg.strip())
+                                # YENİ: Tam OpenSearch mesajını sakla
+                                log_entry['raw_log'] = msg.strip()  # Tam JSON string
                                 # Host bilgisini ekle
                                 if 'host' not in log_entry:
                                     log_entry['host'] = source.get('host', {}).get('name', 'unknown')
@@ -889,6 +1062,9 @@ class OpenSearchProxyReader:
         
         logger.debug(f"Reading time slice: {start_iso} to {end_iso}")
         
+        # Duplicate kontrolü için set
+        seen_messages = set()
+        
         while True:
             query = {
                 "size": batch_size,
@@ -946,26 +1122,67 @@ class OpenSearchProxyReader:
                     messages = source['message'] if isinstance(source['message'], list) else [source['message']]
                     
                     for msg in messages:
-                        try:
-                            if msg.strip().startswith('{'):
-                                log_entry = json.loads(msg.strip())
-                                if 'host' not in log_entry:
-                                    log_entry['host'] = source.get('host', {}).get('name', 'unknown')
-                                slice_logs.append(log_entry)
-                                batch_logs += 1
-                            else:
-                                log_entry = {
-                                    't': {'$date': source.get('@timestamp')},
-                                    'msg': msg,
-                                    'host': source.get('host', {}).get('name', 'unknown'),
-                                    's': 'I',
-                                    'c': 'UNKNOWN'
-                                }
-                                slice_logs.append(log_entry)
-                                batch_logs += 1
-                        except Exception as e:
-                            logger.debug(f"Error parsing log in time slice: {e}")
-                            continue
+                        msg_hash = hash(msg.strip())
+                        if msg_hash not in seen_messages:
+                            seen_messages.add(msg_hash)
+                            try:
+                                if msg.strip().startswith('{'):
+                                    try:
+                                        # Dış JSON'u parse et
+                                        outer_json = json.loads(msg.strip())
+                                        
+                                        # Eğer msg alanı varsa ve string ise, onu da parse etmeyi dene
+                                        if 'msg' in outer_json and isinstance(outer_json['msg'], str):
+                                            if outer_json['msg'].strip().startswith('{'):
+                                                try:
+                                                    # İç JSON'u parse et
+                                                    inner_json = json.loads(outer_json['msg'])
+                                                    # İç JSON'u ana JSON olarak kullan
+                                                    log_entry = inner_json
+                                                    # Orijinal nested yapıyı da sakla
+                                                    log_entry['_original_nested'] = True
+                                                    log_entry['_outer_wrapper'] = {
+                                                        't': outer_json.get('t'),
+                                                        's': outer_json.get('s'),
+                                                        'c': outer_json.get('c')
+                                                    }
+                                                except:
+                                                    # İç JSON parse edilemezse, dış JSON'u kullan
+                                                    log_entry = outer_json
+                                            else:
+                                                # msg bir JSON değilse, normal kullan
+                                                log_entry = outer_json
+                                        else:
+                                            # msg alanı yoksa veya string değilse
+                                            log_entry = outer_json
+                                            
+                                        # Her durumda tam raw log'u sakla
+                                        log_entry['raw_log'] = msg.strip()
+                                        
+                                    except json.JSONDecodeError:
+                                        # JSON parse edilemezse
+                                        log_entry = {'message': msg, 'raw_log': msg}
+                                    if 'host' not in log_entry:
+                                        log_entry['host'] = source.get('host', {}).get('name', 'unknown')
+                                    
+                                    # YENİ: Log'u zenginleştir
+                                    log_entry = enrich_log_entry(log_entry)
+                                    
+                                    slice_logs.append(log_entry)
+                                    batch_logs += 1
+                                else:
+                                    log_entry = {
+                                        't': {'$date': source.get('@timestamp')},
+                                        'msg': msg,
+                                        'host': source.get('host', {}).get('name', 'unknown'),
+                                        's': 'I',
+                                        'c': 'UNKNOWN'
+                                    }
+                                    slice_logs.append(log_entry)
+                                    batch_logs += 1
+                            except Exception as e:
+                                logger.debug(f"Error parsing log in time slice: {e}")
+                                continue
             
             logger.debug(f"Processed {batch_logs} logs in batch at offset {from_offset}")
             

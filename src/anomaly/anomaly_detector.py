@@ -13,6 +13,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
 
+# YENİ: Message extraction import
+from .log_reader import extract_mongodb_message
+
 logger = logging.getLogger(__name__)
 
 class MongoDBAnomalyDetector:
@@ -29,15 +32,121 @@ class MongoDBAnomalyDetector:
         self.config = self._load_config(config_path)
         self.model_config = self.config['anomaly_detection']['model']
         self.output_config = self.config['anomaly_detection']['output']
-        
+        # Ensemble config
+        self.ensemble_config = self.config['anomaly_detection'].get('ensemble', {
+            'enabled': True,
+            'rule_weight': 1.0,  # Rule override'ların ağırlığı
+            'combine_method': 'override'  # 'override' veya 'weighted'
+        })
+
         self.model = None
         self.is_trained = False
         self.feature_names = None
         self.training_stats = {}
+
+        # Online Learning - Historical Pattern Buffer
+        self.historical_data = {
+            'features': None,  # Historical feature DataFrame
+            'predictions': None,  # Historical predictions
+            'scores': None,  # Historical anomaly scores
+            'metadata': {
+                'total_samples': 0,
+                'anomaly_samples': 0,
+                'last_update': None,
+                'buffer_version': 1.0
+            }
+        }
+        self.online_learning_config = self.config['anomaly_detection'].get('online_learning', {
+            'enabled': True,
+            'history_retention': 'full',  # 'full', 'sliding_window', 'smart_sampling'
+            'max_history_size': None,  # None = unlimited for full history
+            'update_frequency': 1000,  # Update model every N new samples
+            'weight_decay': 0.95  # Eski verilere verilecek ağırlık
+        })
+
+        # Critical rules engine
+        self.critical_rules = self._initialize_critical_rules()
+        self.rule_stats = {'total_overrides': 0, 'rule_hits': {}}
         
         print(f"[DEBUG] Model config loaded: {self.model_config['type']}")
+        print(f"[DEBUG] Ensemble mode: {self.ensemble_config.get('enabled', False)}")
         logger.info(f"Anomaly detector initialized with {self.model_config['type']} model")
     
+    def _initialize_critical_rules(self) -> Dict[str, Any]:
+        """
+        Kritik anomali kurallarını tanımla
+        
+        Returns:
+            Rule dictionary
+        """
+        print(f"[DEBUG] Initializing critical anomaly rules...")
+        
+        rules = {
+            # Sistem kritik hatalar
+            'system_failure': {
+                'condition': lambda row: (
+                    row.get('is_fatal', 0) == 1 or 
+                    row.get('is_out_of_memory', 0) == 1 or
+                    row.get('is_shutdown', 0) == 1
+                ),
+                'severity': 1.0,  # En yüksek
+                'description': 'Critical system failure detected'
+            },
+            
+            # Bellek sorunları
+            'memory_crisis': {
+                'condition': lambda row: (
+                    row.get('is_out_of_memory', 0) == 1 or
+                    row.get('is_memory_limit', 0) == 1
+                ),
+                'severity': 0.95,
+                'description': 'Memory crisis detected'
+            },
+            
+            # Performans kritik
+            'performance_critical': {
+                'condition': lambda row: (
+                    row.get('is_collscan', 0) == 1 and 
+                    row.get('docs_examined_count', 0) > 100000
+                ),
+                'severity': 0.85,
+                'description': 'Critical performance issue'
+            },
+            
+            # Multi-error burst
+            'error_burst': {
+                'condition': lambda row: (
+                    row.get('is_error', 0) == 1 and
+                    row.get('extreme_burst_flag', 0) == 1
+                ),
+                'severity': 0.90,
+                'description': 'Error burst detected'
+            },
+            
+            # Güvenlik kritik
+            'security_alert': {
+                'condition': lambda row: (
+                    row.get('is_drop_operation', 0) == 1 or
+                    row.get('is_assertion', 0) == 1
+                ),
+                'severity': 0.88,
+                'description': 'Security-critical operation'
+            },
+            
+            # Restart sonrası hatalar
+            'post_restart_errors': {
+                'condition': lambda row: (
+                    row.get('is_restart', 0) == 1 or
+                    (row.get('is_error', 0) == 1 and row.get('is_restart', 0) == 1)
+                ),
+                'severity': 0.85,
+                'description': 'Post-restart anomaly'
+            }
+        }
+        
+        print(f"[DEBUG] Initialized {len(rules)} critical rules")
+        return rules
+
     def _load_config(self, config_path: str) -> Dict:
         """Config dosyasını yükle"""
         try:
@@ -63,14 +172,99 @@ class MongoDBAnomalyDetector:
                     "output": {}
                 }
             }
-    
-    def train(self, X: pd.DataFrame, save_model: bool = None) -> Dict[str, Any]:
+
+    def _combine_with_history(self, X_new: pd.DataFrame) -> pd.DataFrame:
         """
-        Anomali modelini eğit
+        Yeni veriyi historical data ile birleştir
+        
+        Args:
+            X_new: Yeni feature matrix
+            
+        Returns:
+            Birleştirilmiş feature matrix
+        """
+        print(f"[DEBUG] Combining new data with historical buffer...")
+        
+        try:
+            # Historical features'ı al
+            X_historical = self.historical_data['features']
+            
+            # Feature uyumluluğunu kontrol et
+            if list(X_historical.columns) != list(X_new.columns):
+                print(f"[DEBUG] WARNING: Feature mismatch detected!")
+                print(f"[DEBUG] Historical features: {list(X_historical.columns)}")
+                print(f"[DEBUG] New features: {list(X_new.columns)}")
+                # Ortak feature'ları kullan
+                common_features = list(set(X_historical.columns) & set(X_new.columns))
+                X_historical = X_historical[common_features]
+                X_new = X_new[common_features]
+            
+            # Full History Strategy - Tüm historical data'yı koru
+            X_combined = pd.concat([X_historical, X_new], ignore_index=True)
+            
+            # Duplicate kontrolü (opsiyonel - performans için kapatılabilir)
+            initial_size = len(X_combined)
+            X_combined = X_combined.drop_duplicates()
+            if initial_size != len(X_combined):
+                print(f"[DEBUG] Removed {initial_size - len(X_combined)} duplicate samples")
+            
+            # İstatistikleri logla
+            print(f"[DEBUG] Historical samples: {len(X_historical)}")
+            print(f"[DEBUG] New samples: {len(X_new)}")
+            print(f"[DEBUG] Combined samples: {len(X_combined)}")
+            
+            # Anomaly oranını hesapla (bilgi amaçlı)
+            if self.historical_data['predictions'] is not None:
+                historical_anomaly_rate = (self.historical_data['predictions'] == -1).mean() * 100
+                print(f"[DEBUG] Historical anomaly rate: {historical_anomaly_rate:.2f}%")
+            
+            return X_combined
+            
+        except Exception as e:
+            print(f"[DEBUG] Error combining with history: {e}")
+            logger.error(f"Failed to combine with historical data: {e}")
+            # Hata durumunda sadece yeni veriyi kullan
+            return X_new
+
+    def _calculate_sample_weights(self, X_combined: pd.DataFrame, X_new_size: int) -> np.ndarray:
+        """
+        Combined dataset için sample weight'leri hesapla
+        Historical data'ya azalan weight, yeni data'ya full weight
+        
+        Args:
+            X_combined: Birleştirilmiş dataset
+            X_new_size: Yeni data'nın boyutu
+            
+        Returns:
+            Sample weights array
+        """
+        total_size = len(X_combined)
+        historical_size = total_size - X_new_size
+        
+        # Weight decay factor from config
+        weight_decay = self.online_learning_config.get('weight_decay', 0.95)
+        
+        # Historical data weights (decayed)
+        historical_weights = np.full(historical_size, weight_decay)
+        
+        # New data weights (full weight = 1.0)
+        new_weights = np.ones(X_new_size)
+        
+        # Combine weights
+        weights = np.concatenate([historical_weights, new_weights])
+        
+        print(f"[DEBUG] Sample weights - Historical: {weight_decay}, New: 1.0")
+        
+        return weights
+
+    def train(self, X: pd.DataFrame, save_model: bool = None, incremental: bool = None) -> Dict[str, Any]:
+        """
+        Anomali modelini eğit (Online Learning desteği ile)
         
         Args:
             X: Feature matrix
             save_model: Modeli kaydet (None ise config'den al)
+            incremental: Online learning kullan (None ise config'den al)
             
         Returns:
             Training sonuçları
@@ -78,20 +272,48 @@ class MongoDBAnomalyDetector:
         print(f"[DEBUG] Starting training - Shape: {X.shape}, Features: {list(X.columns)}")
         logger.info(f"Training model on {X.shape[0]} samples with {X.shape[1]} features...")
         
+        # Online learning kontrolü
+        if incremental is None:
+            incremental = self.online_learning_config.get('enabled', True)
+        
         # Feature isimlerini sakla
         self.feature_names = list(X.columns)
         print(f"[DEBUG] Feature names stored: {len(self.feature_names)} features")
+        
+        # Historical data ile birleştir
+        X_train = X.copy()
+        training_mode = "new"
+        
+        if incremental and self.is_trained and self.historical_data['features'] is not None:
+            print(f"[DEBUG] Online Learning Mode: Combining with historical data")
+            print(f"[DEBUG] Historical samples: {len(self.historical_data['features'])}")
+            print(f"[DEBUG] New samples: {len(X)}")
+            
+            # Historical data ile birleştir
+            X_train = self._combine_with_history(X)
+            training_mode = "incremental"
+            
+            print(f"[DEBUG] Combined dataset size: {X_train.shape}")
+        else:
+            print(f"[DEBUG] Standard training mode (no historical data)")
         
         # Model parametreleri
         params = self.model_config['parameters'].copy()
         print(f"[DEBUG] Model parameters: {params}")
         
-        # Model oluştur
-        if self.model_config['type'] == 'IsolationForest':
-            print(f"[DEBUG] Creating IsolationForest model...")
-            self.model = IsolationForest(**params)
+        # Model oluştur veya mevcut modeli kullan
+        if not incremental or not self.is_trained:
+            # Yeni model oluştur
+            if self.model_config['type'] == 'IsolationForest':
+                print(f"[DEBUG] Creating NEW IsolationForest model...")
+                self.model = IsolationForest(**params)
+            else:
+                raise ValueError(f"Unknown model type: {self.model_config['type']}")
         else:
-            raise ValueError(f"Unknown model type: {self.model_config['type']}")
+            print(f"[DEBUG] Using existing model for incremental update")
+            # Mevcut model parametrelerini güncelle (contamination gibi)
+            if hasattr(self.model, 'contamination'):
+                self.model.contamination = params.get('contamination', 0.03)
         
         # Eğitim
         print(f"[DEBUG] Starting model fitting...")
@@ -122,15 +344,80 @@ class MongoDBAnomalyDetector:
         if save_model:
             print(f"[DEBUG] Saving model...")
             self.save_model()
+
+        # Online Learning: Historical buffer'ı güncelle
+        if incremental and self.online_learning_config.get('enabled', True):
+            print(f"[DEBUG] Updating historical buffer...")
+            self._update_historical_buffer(X, X_train, training_mode)
         
         return self.training_stats
-    
-    def predict(self, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+
+    def _update_historical_buffer(self, X_new: pd.DataFrame, X_train: pd.DataFrame, 
+                             training_mode: str) -> None:
         """
-        Anomali tahminleri yap
+        Training sonrası historical buffer'ı güncelle
+        
+        Args:
+            X_new: Bu training'de kullanılan yeni veri
+            X_train: Training'de kullanılan tüm veri (historical + new)
+            training_mode: 'new' veya 'incremental'
+        """
+        try:
+            print(f"[DEBUG] Updating historical buffer - Mode: {training_mode}")
+            
+            # İlk training ise veya yeni training mode
+            if training_mode == "new" or self.historical_data['features'] is None:
+                # Direkt yeni veriyi historical olarak sakla
+                self.historical_data['features'] = X_new.copy()
+                
+                # Predictions ve scores'u hesapla ve sakla
+                predictions = self.model.predict(X_new)
+                scores = self.model.score_samples(X_new)
+                
+                self.historical_data['predictions'] = predictions
+                self.historical_data['scores'] = scores
+                
+            else:  # incremental mode
+                # Full history strategy - tüm combined data'yı sakla
+                self.historical_data['features'] = X_train.copy()
+                
+                # Yeni predictions ve scores hesapla
+                predictions = self.model.predict(X_train)
+                scores = self.model.score_samples(X_train)
+                
+                self.historical_data['predictions'] = predictions
+                self.historical_data['scores'] = scores
+            
+            # Metadata güncelle
+            self.historical_data['metadata']['total_samples'] = len(self.historical_data['features'])
+            self.historical_data['metadata']['anomaly_samples'] = int((self.historical_data['predictions'] == -1).sum())
+            self.historical_data['metadata']['last_update'] = datetime.now().isoformat()
+            
+            # İstatistikleri logla
+            anomaly_rate = (self.historical_data['predictions'] == -1).mean() * 100
+            print(f"[DEBUG] Historical buffer updated:")
+            print(f"[DEBUG]   Total samples: {self.historical_data['metadata']['total_samples']}")
+            print(f"[DEBUG]   Anomaly samples: {self.historical_data['metadata']['anomaly_samples']}")
+            print(f"[DEBUG]   Anomaly rate: {anomaly_rate:.2f}%")
+            
+            # Bellek kullanımı uyarısı
+            buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
+            print(f"[DEBUG]   Buffer size: {buffer_size_mb:.2f} MB")
+            
+            if buffer_size_mb > 1000:  # 1 GB'dan büyükse uyar
+                logger.warning(f"Historical buffer size is large: {buffer_size_mb:.2f} MB")
+                
+        except Exception as e:
+            logger.error(f"Error updating historical buffer: {e}")
+            print(f"[DEBUG] ERROR: Failed to update historical buffer: {e}")
+
+    def predict(self, X: pd.DataFrame, df: Optional[pd.DataFrame] = None) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Anomali tahminleri yap (Ensemble model ile)
         
         Args:
             X: Feature matrix
+            df: Original dataframe (rule engine için gerekli)
             
         Returns:
             (predictions, anomaly_scores): -1=anomaly, 1=normal ve anomaly skorları
@@ -146,20 +433,82 @@ class MongoDBAnomalyDetector:
             X = X[self.feature_names]
             print(f"[DEBUG] Features reordered successfully")
         
-        # Tahminler
-        print(f"[DEBUG] Generating predictions...")
+        # ML tahminleri
+        print(f"[DEBUG] Generating ML predictions...")
         predictions = self.model.predict(X)
         print(f"[DEBUG] Calculating anomaly scores...")
         anomaly_scores = self.model.score_samples(X)
         
+        # Ensemble mode: Critical rules override
+        if self.ensemble_config.get('enabled', True) and df is not None:
+            print(f"[DEBUG] Applying ensemble rules...")
+            predictions, anomaly_scores = self._apply_critical_rules(
+                predictions, anomaly_scores, X, df
+            )
+        
         n_anomalies = (predictions == -1).sum()
         anomaly_rate = n_anomalies / len(predictions) * 100
         
-        print(f"[DEBUG] Prediction results: {n_anomalies}/{len(predictions)} anomalies ({anomaly_rate:.1f}%)")
+        print(f"[DEBUG] Final prediction results: {n_anomalies}/{len(predictions)} anomalies ({anomaly_rate:.1f}%)")
         logger.info(f"Predictions completed: {n_anomalies} anomalies ({anomaly_rate:.1f}%)")
         
         return predictions, anomaly_scores
     
+    def _apply_critical_rules(self, predictions: np.ndarray, anomaly_scores: np.ndarray,
+                         X: pd.DataFrame, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Critical rule override'ları uygula
+        
+        Args:
+            predictions: ML model tahminleri
+            anomaly_scores: ML model skorları
+            X: Feature matrix
+            df: Original dataframe
+            
+        Returns:
+            Updated (predictions, anomaly_scores)
+        """
+        print(f"[DEBUG] Applying critical rules to {len(predictions)} predictions")
+        
+        # Kopya oluştur
+        ensemble_predictions = predictions.copy()
+        ensemble_scores = anomaly_scores.copy()
+        
+        # Rule hit counters
+        rule_overrides = 0
+        
+        # Her satır için rule kontrolü
+        for idx in range(len(df)):
+            row_features = X.iloc[idx].to_dict()
+            
+            # Her rule'u kontrol et
+            for rule_name, rule_config in self.critical_rules.items():
+                try:
+                    # Rule condition'ı kontrol et
+                    if rule_config['condition'](row_features):
+                        # Eğer ML normal dedi ama rule anomali diyorsa override et
+                        if ensemble_predictions[idx] == 1:  # Normal
+                            ensemble_predictions[idx] = -1  # Anomaly'ye çevir
+                            # Score'u da kritiklik seviyesine göre ayarla
+                            ensemble_scores[idx] = min(ensemble_scores[idx], 
+                                                      -rule_config['severity'])
+                            rule_overrides += 1
+                            
+                            # İstatistik güncelle
+                            if rule_name not in self.rule_stats['rule_hits']:
+                                self.rule_stats['rule_hits'][rule_name] = 0
+                            self.rule_stats['rule_hits'][rule_name] += 1
+                            
+                            print(f"[DEBUG] Rule override at idx {idx}: {rule_name} - {rule_config['description']}")
+                            
+                except Exception as e:
+                    logger.warning(f"Error applying rule {rule_name}: {e}")
+        
+        self.rule_stats['total_overrides'] += rule_overrides
+        print(f"[DEBUG] Total rule overrides in this batch: {rule_overrides}")
+        
+        return ensemble_predictions, ensemble_scores
+        
     def analyze_anomalies(self, df: pd.DataFrame, X: pd.DataFrame, 
                          predictions: np.ndarray, anomaly_scores: np.ndarray) -> Dict[str, Any]:
         """
@@ -175,12 +524,25 @@ class MongoDBAnomalyDetector:
             Analiz sonuçları
         """
         print(f"[DEBUG] Starting anomaly analysis...")
+
+        # ÖNEMLİ: security_alerts ve performance_alerts'i BAŞTA tanımla!
+        security_alerts = {
+            "drop_operations": {"count": 0, "indices": []},
+            "out_of_memory": {"count": 0, "indices": []}, 
+            "restarts": {"count": 0, "indices": []},
+            "memory_limits": {"count": 0, "indices": []},
+            "shutdowns": {"count": 0, "indices": []},
+            "assertions": {"count": 0, "indices": []},
+            "fatal_errors": {"count": 0, "indices": []}
+        }
+
+        performance_alerts = {}
+
         anomaly_mask = predictions == -1
         anomaly_data = X[anomaly_mask]
         normal_data = X[~anomaly_mask]
         
         print(f"[DEBUG] Anomaly mask created - {anomaly_mask.sum()} anomalies found")
-        
         analysis = {
             "summary": {
                 "total_logs": len(predictions),
@@ -192,25 +554,9 @@ class MongoDBAnomalyDetector:
                     "mean": float(anomaly_scores.mean())
                 }
             },
-            "component_analysis": {},
             "temporal_analysis": {},
-            "feature_importance": {},
             "critical_anomalies": []
         }
-        
-        # Component bazlı analiz
-        if 'c' in df.columns:
-            print(f"[DEBUG] Analyzing component distribution...")
-            anomaly_components = df[anomaly_mask]['c'].value_counts()
-            total_components = df['c'].value_counts()
-            
-            for comp in anomaly_components.index[:10]:  # Top 10
-                analysis["component_analysis"][comp] = {
-                    "anomaly_count": int(anomaly_components[comp]),
-                    "total_count": int(total_components[comp]),
-                    "anomaly_rate": float(anomaly_components[comp] / total_components[comp] * 100)
-                }
-            print(f"[DEBUG] Component analysis completed for {len(analysis['component_analysis'])} components")
         
         # Temporal analiz
         if 'hour_of_day' in X.columns:
@@ -222,39 +568,87 @@ class MongoDBAnomalyDetector:
             analysis["temporal_analysis"]["peak_hours"] = list(anomaly_hours.nlargest(3).index.astype(int))
             print(f"[DEBUG] Temporal analysis completed - Peak hours: {analysis['temporal_analysis']['peak_hours']}")
         
-        # Feature importance (binary features)
-        print(f"[DEBUG] Calculating feature importance...")
-        binary_features = ['severity_W', 'is_rare_component', 'is_rare_combo', 'has_error_key',
-                          'is_drop_operation', 'is_rare_message', 'extreme_burst_flag',
-                          'is_collscan', 'is_index_build', 'is_slow_query', 'is_high_doc_scan',
-                          'is_shutdown', 'is_assertion', 'is_fatal', 'is_error', 'is_replication_issue']
         
-        for feature in binary_features:
-            if feature in X.columns:
-                anomaly_rate = anomaly_data[feature].mean() * 100
-                normal_rate = normal_data[feature].mean() * 100
-                
-                analysis["feature_importance"][feature] = {
-                    "anomaly_rate": float(anomaly_rate),
-                    "normal_rate": float(normal_rate),
-                    "ratio": float(anomaly_rate / normal_rate) if normal_rate > 0 else float('inf')
-                }
-        print(f"[DEBUG] Feature importance calculated for {len(analysis['feature_importance'])} features")
-        
-        # En kritik anomaliler
-        print(f"[DEBUG] Identifying critical anomalies...")
-        top_anomaly_indices = np.argsort(anomaly_scores)[:20]  # En düşük 20 skor
-        
-        for idx in top_anomaly_indices:
-            anomaly_info = {
+        # En kritik anomaliler - SEVERITY SKORUNA GÖRE SIRALA
+        print(f"[DEBUG] Identifying critical anomalies with severity scores...")
+
+        # Tüm anomalilerin severity skorlarını hesapla
+        anomaly_indices = np.where(anomaly_mask)[0]
+        anomaly_severities = []
+
+        for idx in anomaly_indices:
+            # Feature dict oluştur
+            row_features = X.iloc[idx].to_dict()
+            df_row = df.iloc[idx]
+            
+            # Severity hesapla
+            severity_info = self.calculate_severity_score(
+                idx, 
+                anomaly_scores[idx], 
+                row_features,
+                df_row
+            )
+            
+            # YENİ: Akıllı mesaj çıkarma ile formatted mesaj al
+            log_entry_dict = df.iloc[idx].to_dict()
+            full_message = extract_mongodb_message(log_entry_dict)
+            
+            # Fallback: Eğer extract_mongodb_message boş dönerse, raw_log kullan
+            if not full_message or full_message in ['No detailed message available', 'Message extraction failed']:
+                if 'raw_log' in df.columns and pd.notna(df.iloc[idx]['raw_log']):
+                    full_message = str(df.iloc[idx]['raw_log'])
+                elif 'msg' in df.columns and pd.notna(df.iloc[idx]['msg']):
+                    full_message = str(df.iloc[idx]['msg'])
+                else:
+                    full_message = "No message available"
+            
+            # message_summary KULLANMA, direkt full_message kullan
+            anomaly_severities.append({
                 "index": int(idx),
-                "score": float(anomaly_scores[idx]),
+                "severity_score": severity_info["score"],
+                "severity_level": severity_info["level"],
+                "severity_color": severity_info["color"],
+                "anomaly_score": float(anomaly_scores[idx]),
                 "timestamp": str(df.iloc[idx]['timestamp']) if 'timestamp' in df.columns else None,
                 "severity": df.iloc[idx]['s'] if 's' in df.columns else None,
                 "component": df.iloc[idx]['c'] if 'c' in df.columns else None,
-                "message": df.iloc[idx]['msg'][:100] if 'msg' in df.columns else None
-            }
-            analysis["critical_anomalies"].append(anomaly_info)
+                "message": full_message,  # TAM MESAJ
+                "severity_factors": None  # Frontend'de gösterme
+            })
+
+        # Severity skoruna göre sırala ve top 20'yi al
+        anomaly_severities.sort(key=lambda x: x['severity_score'], reverse=True)
+        
+        # Sadece severity score > 30 olanları al (MEDIUM, HIGH ve CRITICAL)
+        critical_only = [a for a in anomaly_severities if a['severity_score'] > 30]
+        
+        # YENİ: En az 20 anomali garantisi
+        if len(critical_only) < 20 and len(anomaly_severities) >= 20:
+            # Eğer yeterli anomali yoksa threshold'u düşür
+            critical_only = anomaly_severities[:20]  # En yüksek skorlu 20 tanesini al
+            print(f"[DEBUG] Threshold lowered to ensure minimum 20 anomalies")
+        elif len(critical_only) < 20 and len(anomaly_severities) > 0:
+            # Eğer toplam anomali sayısı 20'den azsa, hepsini al
+            critical_only = anomaly_severities
+            print(f"[DEBUG] Taking all {len(anomaly_severities)} available anomalies")
+        
+        # Maximum 20 kritik anomali göster
+        analysis["critical_anomalies"] = critical_only[:20]
+        
+        print(f"[DEBUG] Filtered to {len(critical_only)} critical anomalies (severity > 40)")
+        print(f"[DEBUG] Showing top {min(20, len(critical_only))} critical anomalies")
+
+        # Severity distribution ekle
+        severity_dist = {
+            "CRITICAL": sum(1 for a in anomaly_severities if a['severity_level'] == 'CRITICAL'),
+            "HIGH": sum(1 for a in anomaly_severities if a['severity_level'] == 'HIGH'),
+            "MEDIUM": sum(1 for a in anomaly_severities if a['severity_level'] == 'MEDIUM'),
+            "LOW": sum(1 for a in anomaly_severities if a['severity_level'] == 'LOW'),
+            "INFO": sum(1 for a in anomaly_severities if a['severity_level'] == 'INFO')
+        }
+        analysis["severity_distribution"] = severity_dist
+
+        print(f"[DEBUG] Severity analysis completed - Distribution: {severity_dist}")
         
         # Performance critical logs analysis
         print(f"[DEBUG] Analyzing performance critical logs...")
@@ -326,20 +720,7 @@ class MongoDBAnomalyDetector:
         if performance_alerts:
             analysis["performance_alerts"] = performance_alerts
             print(f"[DEBUG] Performance analysis completed - {len(performance_alerts)} alert types found")
-        
-        # Security and critical alerts
-        security_alerts = {}
-        
-        # DROP operasyonları kontrolü
-        if 'is_drop_operation' in X.columns:
-            print(f"[DEBUG] Checking for DROP operations...")
-            drop_mask = (df['is_drop_operation'] == 1) & anomaly_mask
-            if drop_mask.sum() > 0:
-                print(f"[DEBUG] SECURITY ALERT: {drop_mask.sum()} DROP operations detected in anomalies!")
-                security_alerts["drop_operations"] = {
-                    "count": int(drop_mask.sum()),
-                    "indices": list(np.where(drop_mask)[0][:10])
-                }
+            
         
         # Shutdown detection
         if 'is_shutdown' in X.columns:
@@ -405,9 +786,153 @@ class MongoDBAnomalyDetector:
         if security_alerts:
             analysis["security_alerts"] = security_alerts
             print(f"[DEBUG] Security analysis completed - {len(security_alerts)} alert types found")
+
+        # Ensemble stats'i summary içine ekle (frontend buradan alıyor)
+        if self.ensemble_config:
+            analysis['summary']['ensemble_stats'] = {
+                'total_rule_overrides': self.rule_stats['total_overrides'],
+                'rules_active': len(self.critical_rules),
+                'ensemble_method': 'override',
+                'rule_hits': dict(self.rule_stats['rule_hits'])
+            }
+            print("[DEBUG] Ensemble stats added to summary")
+
         print(f"[DEBUG] Anomaly analysis completed")
         return analysis
-    
+    def calculate_severity_score(self, anomaly_idx: int, anomaly_score: float, 
+                               row_features: Dict, df_row: pd.Series) -> Dict[str, Any]:
+        """
+        Anomali için severity skoru hesapla (0-100)
+        
+        Args:
+            anomaly_idx: Anomali index
+            anomaly_score: ML anomaly score (-1 to 0)
+            row_features: Feature dictionary
+            df_row: Original dataframe row
+            
+        Returns:
+            Severity bilgileri
+        """
+        severity_score = 0
+        factors = []
+        
+        # 1. Base ML Score (0-40 puan)
+        # ML skoru -1'e yaklaştıkça daha yüksek
+        ml_contribution = abs(anomaly_score) * 40
+        severity_score += ml_contribution
+        factors.append(f"ML Score: +{ml_contribution:.1f}")
+        
+        # 2. Component Criticality (0-20 puan)
+        component_scores = {
+            'REPL': 20,      # Replikasyon kritik
+            'ACCESS': 18,    # Erişim kontrolü kritik
+            'STORAGE': 15,   # Storage önemli
+            'COMMAND': 12,   # Command önemli
+            'NETWORK': 10,   # Network orta
+            'QUERY': 8,      # Query normal
+            'INDEX': 8,      # Index normal
+            '-': 5           # Diğer
+        }
+        
+        component = df_row.get('c', '-')
+        comp_score = component_scores.get(component, 5)
+        severity_score += comp_score
+        factors.append(f"Component ({component}): +{comp_score}")
+        
+        # 3. Critical Features (0-30 puan)
+        feature_score = 0
+        
+        # Fatal errors - en kritik
+        if row_features.get('is_fatal', 0) == 1:
+            feature_score += 30
+            factors.append("Fatal Error: +30")
+        # Out of memory
+        elif row_features.get('is_out_of_memory', 0) == 1:
+            feature_score += 28
+            factors.append("Out of Memory: +28")
+        # Shutdown
+        elif row_features.get('is_shutdown', 0) == 1:
+            feature_score += 25
+            factors.append("Shutdown: +25")
+        # Drop operation
+        elif row_features.get('is_drop_operation', 0) == 1:
+            feature_score += 25
+            factors.append("DROP Operation: +25")
+        # Assertion failure
+        elif row_features.get('is_assertion', 0) == 1:
+            feature_score += 22
+            factors.append("Assertion Failure: +22")
+        # Memory limit
+        elif row_features.get('is_memory_limit', 0) == 1:
+            feature_score += 20
+            factors.append("Memory Limit: +20")
+        # Restart
+        elif row_features.get('is_restart', 0) == 1:
+            feature_score += 18
+            factors.append("Restart Event: +18")
+        # Slow query with high docs
+        elif (row_features.get('is_slow_query', 0) == 1 and 
+              row_features.get('docs_examined_count', 0) > 100000):
+            feature_score += 15
+            factors.append("Slow Query (High Docs): +15")
+        # COLLSCAN
+        elif row_features.get('is_collscan', 0) == 1:
+            feature_score += 12
+            factors.append("COLLSCAN: +12")
+        # Regular slow query
+        elif row_features.get('is_slow_query', 0) == 1:
+            feature_score += 8
+            factors.append("Slow Query: +8")
+        
+        severity_score += feature_score
+        
+        # 4. Temporal Factor (0-10 puan)
+        # Peak saatlerde daha kritik
+        hour = row_features.get('hour_of_day', 0)
+        if hour in [8, 9, 10, 17, 18, 19]:  # İş saatleri
+            temporal_score = 10
+            factors.append(f"Peak Hour ({hour}:00): +10")
+        elif hour in [0, 1, 2, 3, 4, 5]:  # Gece
+            temporal_score = 5
+            factors.append(f"Night Hour ({hour}:00): +5")
+        else:
+            temporal_score = 7
+            factors.append(f"Normal Hour ({hour}:00): +7")
+        
+        severity_score += temporal_score
+        
+        # 5. Rule Engine Bonus (ek 20 puan)
+        if anomaly_score == -1.0:  # Rule override edilmiş
+            severity_score += 20
+            factors.append("Rule Override: +20")
+        
+        # Normalize to 0-100
+        severity_score = min(100, max(0, severity_score))
+        
+        # Severity level
+        if severity_score >= 80:
+            level = "CRITICAL"
+            color = "#e74c3c"
+        elif severity_score >= 60:
+            level = "HIGH"
+            color = "#e67e22"
+        elif severity_score >= 40:
+            level = "MEDIUM"
+            color = "#f39c12"
+        elif severity_score >= 20:
+            level = "LOW"
+            color = "#3498db"
+        else:
+            level = "INFO"
+            color = "#95a5a6"
+        
+        return {
+            "score": severity_score,
+            "level": level,
+            "color": color,
+            "factors": factors
+        }
+        
     def export_results(self, df: pd.DataFrame, predictions: np.ndarray, 
                       anomaly_scores: np.ndarray, analysis: Dict[str, Any]) -> Dict[str, str]:
         """
@@ -488,10 +1013,27 @@ class MongoDBAnomalyDetector:
                 'model': self.model,
                 'feature_names': self.feature_names,
                 'training_stats': self.training_stats,
-                'config': self.config
+                'config': self.config,
+                # Online Learning - Historical Buffer
+                'historical_data': self.historical_data if self.online_learning_config.get('enabled', True) else None,
+                'online_learning_config': self.online_learning_config,
+                'model_version': '2.0'  # Version tracking for compatibility
             }
-            
+
+            # Historical buffer size kontrolü
+            if self.historical_data['features'] is not None:
+                buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
+                print(f"[DEBUG] Saving historical buffer: {buffer_size_mb:.2f} MB")
+                
+                # Büyük dosya uyarısı
+                if buffer_size_mb > 500:
+                    logger.warning(f"Large model file warning: Historical buffer is {buffer_size_mb:.2f} MB")
+
             joblib.dump(model_data, path)
+
+            # Dosya boyutu bilgisi
+            file_size_mb = Path(path).stat().st_size / 1024 / 1024
+            print(f"[DEBUG] Model file saved: {file_size_mb:.2f} MB")
             print(f"[DEBUG] Model saved successfully")
             logger.info(f"Model saved to: {path}")
             
@@ -521,13 +1063,48 @@ class MongoDBAnomalyDetector:
                 print(f"[DEBUG] Model file not found: {path}")
                 logger.error(f"Model file not found: {path}")
                 return False
-            
             # Model ve metadata'yı yükle
             model_data = joblib.load(path)
             
             self.model = model_data['model']
             self.feature_names = model_data['feature_names']
             self.training_stats = model_data.get('training_stats', {})
+            
+            # Online Learning - Historical Buffer'ı yükle
+            model_version = model_data.get('model_version', '1.0')
+            print(f"[DEBUG] Loading model version: {model_version}")
+            
+            if model_version >= '2.0' and 'historical_data' in model_data:
+                if model_data['historical_data'] is not None:
+                    self.historical_data = model_data['historical_data']
+                    print(f"[DEBUG] Historical buffer loaded:")
+                    print(f"[DEBUG]   Total samples: {self.historical_data['metadata']['total_samples']}")
+                    print(f"[DEBUG]   Last update: {self.historical_data['metadata']['last_update']}")
+                    
+                    # Buffer size info
+                    if self.historical_data['features'] is not None:
+                        buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
+                        print(f"[DEBUG]   Buffer size: {buffer_size_mb:.2f} MB")
+                else:
+                    print(f"[DEBUG] No historical buffer found in model file")
+            else:
+                print(f"[DEBUG] Legacy model format - no historical buffer")
+                # Legacy model için boş buffer initialize et
+                self.historical_data = {
+                    'features': None,
+                    'predictions': None,
+                    'scores': None,
+                    'metadata': {
+                        'total_samples': 0,
+                        'anomaly_samples': 0,
+                        'last_update': None,
+                        'buffer_version': 1.0
+                    }
+                }
+            
+            # Online learning config'i güncelle
+            if 'online_learning_config' in model_data:
+                self.online_learning_config.update(model_data['online_learning_config'])
             
             self.is_trained = True
             print(f"[DEBUG] Model loaded successfully - Features: {len(self.feature_names)}")
@@ -556,3 +1133,160 @@ class MongoDBAnomalyDetector:
             })
         
         return info
+    
+    def get_historical_buffer_info(self) -> Dict[str, Any]:
+        """
+        Historical buffer bilgilerini döndür
+        
+        Returns:
+            Buffer istatistikleri
+        """
+        info = {
+            "enabled": self.online_learning_config.get('enabled', False),
+            "retention_strategy": self.online_learning_config.get('history_retention', 'none'),
+            "buffer_stats": {
+                "total_samples": 0,
+                "anomaly_samples": 0,
+                "anomaly_rate": 0.0,
+                "size_mb": 0.0,
+                "last_update": None
+            }
+        }
+        
+        if self.historical_data['features'] is not None:
+            # Buffer istatistikleri
+            info["buffer_stats"]["total_samples"] = self.historical_data['metadata']['total_samples']
+            info["buffer_stats"]["anomaly_samples"] = self.historical_data['metadata']['anomaly_samples']
+            info["buffer_stats"]["anomaly_rate"] = (
+                self.historical_data['metadata']['anomaly_samples'] / 
+                self.historical_data['metadata']['total_samples'] * 100
+                if self.historical_data['metadata']['total_samples'] > 0 else 0
+            )
+            info["buffer_stats"]["last_update"] = self.historical_data['metadata']['last_update']
+            
+            # Buffer boyutu
+            buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
+            info["buffer_stats"]["size_mb"] = round(buffer_size_mb, 2)
+            
+            # Feature breakdown
+            if self.historical_data['predictions'] is not None:
+                # Component distribution in buffer
+                if 'c' in self.historical_data['features'].columns:
+                    component_dist = self.historical_data['features']['c'].value_counts().to_dict()
+                    info["buffer_stats"]["component_distribution"] = {
+                        str(k): int(v) for k, v in list(component_dist.items())[:10]
+                    }
+                
+                # Temporal distribution
+                if 'hour_of_day' in self.historical_data['features'].columns:
+                    hour_dist = self.historical_data['features']['hour_of_day'].value_counts().sort_index().to_dict()
+                    info["buffer_stats"]["hourly_distribution"] = {
+                        int(k): int(v) for k, v in hour_dist.items()
+                    }
+        
+        return info
+
+    def clear_historical_buffer(self) -> bool:
+        """
+        Historical buffer'ı temizle (reset)
+        
+        Returns:
+            Başarılı olup olmadığı
+        """
+        try:
+            print(f"[DEBUG] Clearing historical buffer...")
+            
+            # Buffer'ı sıfırla
+            self.historical_data = {
+                'features': None,
+                'predictions': None,
+                'scores': None,
+                'metadata': {
+                    'total_samples': 0,
+                    'anomaly_samples': 0,
+                    'last_update': None,
+                    'buffer_version': 1.0
+                }
+            }
+            
+            print(f"[DEBUG] Historical buffer cleared successfully")
+            logger.info("Historical buffer cleared")
+            return True
+            
+        except Exception as e:
+            print(f"[DEBUG] Error clearing historical buffer: {e}")
+            logger.error(f"Error clearing historical buffer: {e}")
+            return False
+
+    def validate_online_learning(self) -> Dict[str, Any]:
+        """
+        Online learning sisteminin doğru çalıştığını kontrol et
+        
+        Returns:
+            Validation sonuçları
+        """
+        validation_results = {
+            "status": "OK",
+            "checks": {},
+            "warnings": [],
+            "errors": []
+        }
+        
+        # 1. Config kontrolü
+        validation_results["checks"]["config_loaded"] = self.online_learning_config.get('enabled', False)
+        if not validation_results["checks"]["config_loaded"]:
+            validation_results["warnings"].append("Online learning is disabled in config")
+        
+        # 2. Historical buffer kontrolü
+        has_buffer = self.historical_data['features'] is not None
+        validation_results["checks"]["has_historical_buffer"] = has_buffer
+        
+        if has_buffer:
+            # Buffer size kontrolü
+            buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
+            validation_results["checks"]["buffer_size_mb"] = round(buffer_size_mb, 2)
+            
+            # Size warnings
+            warn_size = self.online_learning_config.get('buffer_management', {}).get('warn_size_mb', 500)
+            max_size = self.online_learning_config.get('buffer_management', {}).get('max_size_mb', 2000)
+            
+            if buffer_size_mb > max_size:
+                validation_results["errors"].append(f"Buffer size ({buffer_size_mb:.0f}MB) exceeds maximum ({max_size}MB)")
+                validation_results["status"] = "ERROR"
+            elif buffer_size_mb > warn_size:
+                validation_results["warnings"].append(f"Buffer size ({buffer_size_mb:.0f}MB) is large (warning at {warn_size}MB)")
+                if validation_results["status"] == "OK":
+                    validation_results["status"] = "WARNING"
+            
+            # Feature consistency kontrolü
+            if self.feature_names:
+                buffer_features = set(self.historical_data['features'].columns)
+                model_features = set(self.feature_names)
+                
+                missing_features = model_features - buffer_features
+                extra_features = buffer_features - model_features
+                
+                validation_results["checks"]["feature_consistency"] = len(missing_features) == 0 and len(extra_features) == 0
+                
+                if missing_features:
+                    validation_results["errors"].append(f"Missing features in buffer: {missing_features}")
+                    validation_results["status"] = "ERROR"
+                if extra_features:
+                    validation_results["warnings"].append(f"Extra features in buffer: {extra_features}")
+        
+        # 3. Model state kontrolü
+        validation_results["checks"]["model_trained"] = self.is_trained
+        validation_results["checks"]["model_type"] = self.model_config['type']
+        
+        # 4. Performance metrics
+        if has_buffer and self.historical_data['predictions'] is not None:
+            anomaly_rate = (self.historical_data['predictions'] == -1).mean() * 100
+            validation_results["checks"]["historical_anomaly_rate"] = round(anomaly_rate, 2)
+            
+            # Anomaly rate kontrolü
+            if anomaly_rate > 10:
+                validation_results["warnings"].append(f"High historical anomaly rate: {anomaly_rate:.1f}%")
+            elif anomaly_rate < 0.1:
+                validation_results["warnings"].append(f"Very low historical anomaly rate: {anomaly_rate:.1f}%")
+        
+        return validation_results

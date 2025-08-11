@@ -323,7 +323,7 @@ class AnomalyDetectionTools:
                         logger.info("Training new model...")
                         self.detector.train(X_filtered)
                     
-                    predictions, anomaly_scores = self.detector.predict(X_filtered)
+                    predictions, anomaly_scores = self.detector.predict(X_filtered, df=df_filtered)
                     anomaly_count = sum(predictions == -1)
                     logger.info(f"Found {anomaly_count} anomalies in OpenSearch logs")
                     
@@ -455,7 +455,7 @@ class AnomalyDetectionTools:
             
             # Tahmin yap
             logger.debug("Starting anomaly prediction...")
-            predictions, anomaly_scores = self.detector.predict(X_filtered)
+            predictions, anomaly_scores = self.detector.predict(X_filtered, df=df_filtered)
             anomaly_count = sum(predictions == -1)
             logger.info(f"Anomaly detection completed. Found {anomaly_count} anomalies")
             logger.debug(f"Anomaly scores range: min={min(anomaly_scores):.4f}, max={max(anomaly_scores):.4f}")
@@ -556,7 +556,7 @@ class AnomalyDetectionTools:
                 self.detector.train(X_filtered)
             
             # Tahmin yap
-            predictions, anomaly_scores = self.detector.predict(X_filtered)
+            predictions, anomaly_scores = self.detector.predict(X_filtered, df=df_filtered)
             logger.debug(f"Found {sum(predictions == -1)} anomalies in MongoDB logs")
             
             # Analiz et

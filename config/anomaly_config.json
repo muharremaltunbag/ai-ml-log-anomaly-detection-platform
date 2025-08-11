@@ -124,7 +124,7 @@
       "model": {
         "type": "IsolationForest",
         "parameters": {
-          "contamination": 0.03,
+          "contamination": 0.02,
           "n_estimators": 300,
           "max_samples": 512,
           "max_features": 0.9,
@@ -170,6 +170,7 @@
         "filters": {
           "exclude_auth_success": true,
           "exclude_reauthenticate": true,
+          "exclude_normal_replication": false,
           "rare_threshold": 100,
           "burst_threshold_ms": 100
         },
@@ -190,6 +191,54 @@
           "enabled": false,
           "webhook_url": "",
           "email": ""
+        }
+      },
+      "ensemble": {
+        "enabled": true,
+        "rule_weight": 1.0,
+        "combine_method": "override",
+        "log_rule_hits": true,
+        "rules": {
+          "system_failure": {
+            "enabled": true,
+            "description": "Critical system failures (OOM, Fatal, Shutdown)"
+          },
+          "memory_crisis": {
+            "enabled": true,
+            "description": "Memory-related critical issues"
+          },
+          "performance_critical": {
+            "enabled": true,
+            "description": "COLLSCAN with high document count"
+          },
+          "error_burst": {
+            "enabled": true,
+            "description": "Multiple errors in short timeframe"
+          },
+          "security_alert": {
+            "enabled": true,
+            "description": "DROP operations and security issues"
+          },
+          "post_restart_errors": {
+            "enabled": true,
+            "description": "Errors after system restart"
+          }
+        }
+      },
+      "online_learning": {
+        "enabled": true,
+        "history_retention": "full",
+        "max_history_size": null,
+        "update_frequency": 1000,
+        "weight_decay": 0.95,
+        "buffer_management": {
+          "warn_size_mb": 1000,
+          "max_size_mb": 10000,
+          "compression_enabled": false
+        },
+        "logging": {
+          "log_buffer_stats": true,
+          "log_incremental_updates": true
         }
       }
     },
