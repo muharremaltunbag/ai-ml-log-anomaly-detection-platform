@@ -9,9 +9,12 @@ from sklearn.ensemble import IsolationForest
 import joblib
 import json
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
+from collections import deque
+from sklearn.preprocessing import StandardScaler
 
 # YENİ: Message extraction import
 from .log_reader import extract_mongodb_message
@@ -66,6 +69,21 @@ class MongoDBAnomalyDetector:
 
         # Critical rules engine
         self.critical_rules = self._initialize_critical_rules()
+        
+        # Incremental Learning - Ensemble of Mini Models
+        self.incremental_models = deque(maxlen=10)  # Max 10 mini model
+        self.model_weights = []  # Her modelin ağırlığı
+        self.model_metadata = []  # Her modelin metadata'sı
+        self.incremental_config = {
+            'enabled': True,
+            'max_models': 10,
+            'min_samples_per_model': 1000,
+            'weight_decay_factor': 0.9,  # Eski modellerin ağırlığı azalır
+            'drift_threshold': 0.3,  # Model drift threshold
+            'ensemble_method': 'weighted_voting'  # 'weighted_voting' veya 'stacking'
+        }
+        self.scaler = StandardScaler()  # Feature normalization için
+        self.is_scaler_fitted = False
         self.rule_stats = {'total_overrides': 0, 'rule_hits': {}}
         
         print(f"[DEBUG] Model config loaded: {self.model_config['type']}")
@@ -198,11 +216,23 @@ class MongoDBAnomalyDetector:
                 common_features = list(set(X_historical.columns) & set(X_new.columns))
                 X_historical = X_historical[common_features]
                 X_new = X_new[common_features]
-            
+
             # Full History Strategy - Tüm historical data'yı koru
             X_combined = pd.concat([X_historical, X_new], ignore_index=True)
             
-            # Duplicate kontrolü (opsiyonel - performans için kapatılabilir)
+            # Basit buffer limiti - En yeni kayıtları tut (FIFO)
+            max_buffer_samples = self.online_learning_config.get('max_buffer_samples', 100000)
+            if len(X_combined) > max_buffer_samples:
+                # En eski kayıtları at, en yeni max_buffer_samples kadarını tut
+                print(f"[DEBUG] Buffer size ({len(X_combined)}) exceeded limit ({max_buffer_samples})")
+                X_combined = X_combined.tail(max_buffer_samples)
+                print(f"[DEBUG] Buffer trimmed to last {len(X_combined)} samples")
+                
+                # Bellek kullanımını logla
+                buffer_size_mb = X_combined.memory_usage(deep=True).sum() / 1024 / 1024
+                print(f"[DEBUG] Current buffer size: {buffer_size_mb:.2f} MB")
+
+            # Duplicate kontrolü 
             initial_size = len(X_combined)
             X_combined = X_combined.drop_duplicates()
             if initial_size != len(X_combined):
@@ -410,7 +440,6 @@ class MongoDBAnomalyDetector:
         except Exception as e:
             logger.error(f"Error updating historical buffer: {e}")
             print(f"[DEBUG] ERROR: Failed to update historical buffer: {e}")
-
     def predict(self, X: pd.DataFrame, df: Optional[pd.DataFrame] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         Anomali tahminleri yap (Ensemble model ile)
@@ -433,11 +462,15 @@ class MongoDBAnomalyDetector:
             X = X[self.feature_names]
             print(f"[DEBUG] Features reordered successfully")
         
-        # ML tahminleri
-        print(f"[DEBUG] Generating ML predictions...")
-        predictions = self.model.predict(X)
-        print(f"[DEBUG] Calculating anomaly scores...")
-        anomaly_scores = self.model.score_samples(X)
+        # Incremental ensemble varsa onu kullan
+        if self.incremental_models and self.incremental_config['enabled']:
+            print(f"[DEBUG] Using incremental ensemble prediction...")
+            predictions, anomaly_scores = self.predict_ensemble(X)
+        else:
+            # Legacy single model prediction
+            print(f"[DEBUG] Using single model prediction...")
+            predictions = self.model.predict(X)
+            anomaly_scores = self.model.score_samples(X)
         
         # Ensemble mode: Critical rules override
         if self.ensemble_config.get('enabled', True) and df is not None:
@@ -453,7 +486,6 @@ class MongoDBAnomalyDetector:
         logger.info(f"Predictions completed: {n_anomalies} anomalies ({anomaly_rate:.1f}%)")
         
         return predictions, anomaly_scores
-    
     def _apply_critical_rules(self, predictions: np.ndarray, anomaly_scores: np.ndarray,
                          X: pd.DataFrame, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -619,24 +651,49 @@ class MongoDBAnomalyDetector:
         # Severity skoruna göre sırala ve top 20'yi al
         anomaly_severities.sort(key=lambda x: x['severity_score'], reverse=True)
         
-        # Sadece severity score > 30 olanları al (MEDIUM, HIGH ve CRITICAL)
-        critical_only = [a for a in anomaly_severities if a['severity_score'] > 30]
+        print(f"[DEBUG] Total anomaly_severities before filtering: {len(anomaly_severities)}")
+        print(f"[DEBUG] Top 5 scores: {[a['severity_score'] for a in anomaly_severities[:5]]}")
         
-        # YENİ: En az 20 anomali garantisi
-        if len(critical_only) < 20 and len(anomaly_severities) >= 20:
-            # Eğer yeterli anomali yoksa threshold'u düşür
-            critical_only = anomaly_severities[:20]  # En yüksek skorlu 20 tanesini al
-            print(f"[DEBUG] Threshold lowered to ensure minimum 20 anomalies")
-        elif len(critical_only) < 20 and len(anomaly_severities) > 0:
-            # Eğer toplam anomali sayısı 20'den azsa, hepsini al
-            critical_only = anomaly_severities
-            print(f"[DEBUG] Taking all {len(anomaly_severities)} available anomalies")
+        # YENİ: İki aşamalı akıllı filtreleme
+        # 1. Aşama: Yüksek severity score veya kritik tip
+        critical_only = []
+        for a in anomaly_severities:
+            # Kritik tipler her zaman dahil edilir
+            is_critical_type = False
+            if a.get('message'):
+                msg_lower = a['message'].lower()
+                is_critical_type = any([
+                    'drop' in msg_lower and ('collection' in msg_lower or 'index' in msg_lower),
+                    'authentication failed' in msg_lower,
+                    'fatal' in msg_lower,
+                    'out of memory' in msg_lower,
+                    'oom' in msg_lower,
+                    'assertion' in msg_lower,
+                    'shutdown' in msg_lower
+                ])
+            
+            # Severity score > 50 veya kritik tip ise ekle
+            if a['severity_score'] > 50 or is_critical_type:
+                critical_only.append(a)
+
+        print(f"[DEBUG] critical_only after smart filter: {len(critical_only)}")
+
+        # 2. Aşama: Maximum limit uygula 
+        if len(critical_only) > 500:
+            print(f"[DEBUG] Limiting from {len(critical_only)} to 500 most critical anomalies")
+            critical_only = critical_only[:500]
+
+        print(f"[DEBUG] Selected {len(critical_only)} anomalies for critical list")
+
+        # Kritik anomalileri göster
+        analysis["critical_anomalies"] = critical_only
+        print(f"[DEBUG] DETECTOR: Setting analysis['critical_anomalies'] to {len(critical_only)} items")
+        logger.debug(f"Critical anomalies assigned to analysis: {len(critical_only)}")
+        print(f"[DEBUG] DETECTOR: Final critical_anomalies count: {len(analysis['critical_anomalies'])}")
+        print(f"[DEBUG] DETECTOR: First 10 critical anomaly indices: {[a.get('index', 'N/A') for a in analysis['critical_anomalies'][:10]]}")
         
-        # Maximum 20 kritik anomali göster
-        analysis["critical_anomalies"] = critical_only[:20]
-        
-        print(f"[DEBUG] Filtered to {len(critical_only)} critical anomalies (severity > 40)")
-        print(f"[DEBUG] Showing top {min(20, len(critical_only))} critical anomalies")
+        print(f"[DEBUG] Filtered to {len(critical_only)} critical anomalies (severity > 10)")
+        print(f"[DEBUG] Showing {len(critical_only)} critical anomalies (no limit)")
 
         # Severity distribution ekle
         severity_dist = {
@@ -1290,3 +1347,874 @@ class MongoDBAnomalyDetector:
                 validation_results["warnings"].append(f"Very low historical anomaly rate: {anomaly_rate:.1f}%")
         
         return validation_results
+
+    def calculate_feature_importance(self, X: pd.DataFrame, n_repeats: int = 10,
+                                    sample_size: int = None) -> Dict[str, float]:
+        """
+        Permutation importance yöntemiyle feature importance hesapla
+        
+        Args:
+            X: Feature matrix
+            n_repeats: Permutation tekrar sayısı
+            sample_size: Örneklem boyutu (None ise tüm veri kullanılır)
+            
+        Returns:
+            Feature importance skorları
+        """
+        sys.setrecursionlimit(10000)  # Recursion limitini artır
+        
+        print(f"[DEBUG] Calculating feature importance for {len(X)} samples...")
+        
+        if not self.is_trained:
+            raise ValueError("Model must be trained before calculating feature importance!")
+        
+        # Sample size kontrolü (büyük veri setleri için)
+        if sample_size and len(X) > sample_size:
+            print(f"[DEBUG] Sampling {sample_size} from {len(X)} for importance calculation")
+            X_sample = X.sample(n=sample_size, random_state=42)
+        else:
+            X_sample = X
+        
+        # Baseline score hesapla
+        baseline_scores = self.model.score_samples(X_sample)
+        baseline_score = baseline_scores.mean()
+        
+        feature_importance = {}
+        
+        # Her feature için permutation importance
+        for feature in X_sample.columns:
+            print(f"[DEBUG] Calculating importance for feature: {feature}")
+            
+            importance_scores = []
+            for _ in range(n_repeats):
+                # Feature'ı karıştır
+                X_permuted = X_sample.copy()
+                X_permuted[feature] = np.random.permutation(X_permuted[feature].values)
+                
+                # Yeni score hesapla
+                permuted_scores = self.model.score_samples(X_permuted)
+                permuted_score = permuted_scores.mean()
+                
+                # Importance = baseline - permuted (düşüş ne kadar fazlaysa o kadar önemli)
+                importance = baseline_score - permuted_score
+                importance_scores.append(importance)
+            
+            # Ortalama importance
+            feature_importance[feature] = np.mean(importance_scores)
+        
+        # Normalize et (0-1 arası)
+        max_importance = max(feature_importance.values())
+        if max_importance > 0:
+            for feature in feature_importance:
+                feature_importance[feature] = feature_importance[feature] / max_importance
+        
+        # Sırala (en önemliden en önemsize)
+        feature_importance = dict(sorted(feature_importance.items(), 
+                                       key=lambda x: x[1], reverse=True))
+        
+        print(f"[DEBUG] Feature importance calculation completed")
+        print(f"[DEBUG] Top 5 features: {list(feature_importance.keys())[:5]}")
+        
+        return feature_importance
+    
+    def detect_dead_features(self, importance_scores: Dict[str, float], 
+                            threshold: float = 0.01) -> Tuple[List[str], List[str]]:
+        """
+        Etkisiz ve düşük etkili feature'ları tespit et
+        
+        Args:
+            importance_scores: Feature importance skorları
+            threshold: Minimum importance threshold
+            
+        Returns:
+            (dead_features, low_impact_features) tuple'ı
+        """
+        print(f"[DEBUG] Detecting dead features with threshold: {threshold}")
+        
+        dead_features = []
+        low_impact_features = []
+        
+        for feature, score in importance_scores.items():
+            if score < threshold:
+                dead_features.append(feature)
+                print(f"[DEBUG] Dead feature detected: {feature} (score: {score:.4f})")
+            elif score < threshold * 5:  # Low impact threshold
+                low_impact_features.append(feature)
+                print(f"[DEBUG] Low impact feature: {feature} (score: {score:.4f})")
+        
+        print(f"[DEBUG] Dead features: {len(dead_features)}")
+        print(f"[DEBUG] Low impact features: {len(low_impact_features)}")
+        
+        return dead_features, low_impact_features
+    
+    def optimize_feature_selection(self, X: pd.DataFrame, method: str = 'importance',
+                                  top_n: int = 20, save_config: bool = False) -> Dict[str, Any]:
+        """
+        Feature optimization analizi ve önerileri
+        
+        Args:
+            X: Feature matrix
+            method: 'importance' veya 'correlation'
+            top_n: Seçilecek feature sayısı
+            save_config: Optimized config'i kaydet
+            
+        Returns:
+            Optimization sonuçları ve önerileri
+        """
+        print(f"[DEBUG] Starting feature optimization analysis...")
+        
+        results = {
+            "current_features": list(X.columns),
+            "current_feature_count": len(X.columns),
+            "optimization_method": method,
+            "recommendations": {}
+        }
+        
+        # Feature importance hesapla
+        print(f"[DEBUG] Step 1: Calculating feature importance...")
+        importance_scores = self.calculate_feature_importance(X, sample_size=min(5000, len(X)))
+        results["feature_importance"] = importance_scores
+        
+        # Dead features tespit et
+        print(f"[DEBUG] Step 2: Detecting dead features...")
+        dead_features, low_impact_features = self.detect_dead_features(importance_scores)
+        results["dead_features"] = dead_features
+        results["low_impact_features"] = low_impact_features
+        
+        # Correlation analizi
+        print(f"[DEBUG] Step 3: Analyzing feature correlations...")
+        correlation_matrix = X.corr()
+        
+        # Yüksek korelasyonlu feature çiftlerini bul
+        high_corr_pairs = []
+        for i in range(len(correlation_matrix.columns)):
+            for j in range(i+1, len(correlation_matrix.columns)):
+                if abs(correlation_matrix.iloc[i, j]) > 0.9:
+                    feature1 = correlation_matrix.columns[i]
+                    feature2 = correlation_matrix.columns[j]
+                    corr_value = correlation_matrix.iloc[i, j]
+                    high_corr_pairs.append((feature1, feature2, corr_value))
+                    print(f"[DEBUG] High correlation: {feature1} <-> {feature2} ({corr_value:.3f})")
+        
+        results["high_correlation_pairs"] = high_corr_pairs
+        
+        # Top N feature önerisi
+        print(f"[DEBUG] Step 4: Selecting top {top_n} features...")
+        top_features = list(importance_scores.keys())[:top_n]
+        
+        # Dead features'ı çıkar
+        recommended_features = [f for f in top_features if f not in dead_features]
+        
+        results["recommendations"] = {
+            "recommended_features": recommended_features,
+            "features_to_remove": dead_features,
+            "features_to_review": low_impact_features,
+            "expected_reduction": f"{len(dead_features)} features ({len(dead_features)/len(X.columns)*100:.1f}%)"
+        }
+        
+        # Model performans tahmini
+        print(f"[DEBUG] Step 5: Estimating performance impact...")
+        
+        # Sadece recommended features ile mini test
+        X_optimized = X[recommended_features]
+        
+        # Baseline vs Optimized karşılaştırma için skorlar
+        baseline_scores = self.model.score_samples(X)
+        
+        # Yeni model eğit (test amaçlı)
+        from sklearn.ensemble import IsolationForest
+        test_model = IsolationForest(**self.model_config['parameters'])
+        test_model.fit(X_optimized)
+        optimized_scores = test_model.score_samples(X_optimized)
+        
+        # Anomaly detection consistency kontrolü
+        baseline_anomalies = (baseline_scores < np.percentile(baseline_scores, 2)).sum()
+        optimized_anomalies = (optimized_scores < np.percentile(optimized_scores, 2)).sum()
+        
+        results["performance_comparison"] = {
+            "baseline_features": len(X.columns),
+            "optimized_features": len(recommended_features),
+            "baseline_anomalies": int(baseline_anomalies),
+            "optimized_anomalies": int(optimized_anomalies),
+            "consistency_rate": f"{min(baseline_anomalies, optimized_anomalies) / max(baseline_anomalies, optimized_anomalies) * 100:.1f}%"
+        }
+        
+        # Özet rapor
+        print(f"\n[DEBUG] ========== FEATURE OPTIMIZATION REPORT ==========")
+        print(f"Current features: {len(X.columns)}")
+        print(f"Dead features found: {len(dead_features)}")
+        print(f"Low impact features: {len(low_impact_features)}")
+        print(f"High correlation pairs: {len(high_corr_pairs)}")
+        print(f"Recommended features: {len(recommended_features)}")
+        print(f"Expected reduction: {len(X.columns) - len(recommended_features)} features")
+        print(f"\nTop 10 Most Important Features:")
+        for i, (feature, score) in enumerate(list(importance_scores.items())[:10], 1):
+            print(f"  {i}. {feature}: {score:.4f}")
+        print(f"\nDead Features to Remove:")
+        for feature in dead_features[:10]:  # İlk 10'u göster
+            print(f"  - {feature}")
+        print(f"[DEBUG] ===================================================\n")
+        
+        # Config güncelleme önerisi
+        if save_config:
+            config_update = {
+                "enabled_features": recommended_features,
+                "disabled_features": dead_features,
+                "optimization_date": datetime.now().isoformat(),
+                "optimization_stats": results["performance_comparison"]
+            }
+            results["config_update"] = config_update
+            print(f"[DEBUG] Config update prepared (not saved yet)")
+        
+        return results
+
+    def create_validation_dataset(self, X: pd.DataFrame, df: pd.DataFrame, 
+                                 method: str = 'rule_based') -> Tuple[pd.DataFrame, np.ndarray]:
+        """
+        Semi-supervised validation dataset oluştur
+        Rule engine ve statistical methods kullanarak pseudo-labels oluştur
+        
+        Args:
+            X: Feature matrix
+            df: Original dataframe
+            method: 'rule_based', 'statistical', or 'combined'
+            
+        Returns:
+            (X_validation, y_validation): Validation features ve labels
+        """
+        print(f"[DEBUG] Creating validation dataset using {method} method...")
+        
+        # Başlangıç label'ları (0: normal, 1: anomaly)
+        y_validation = np.zeros(len(X))
+        confidence_scores = np.zeros(len(X))
+        
+        # Method 1: Rule-based labeling (yüksek güvenilirlik)
+        if method in ['rule_based', 'combined']:
+            print(f"[DEBUG] Applying rule-based labeling...")
+            
+            # Kritik anomaliler (kesin anomaly)
+            critical_conditions = [
+                ('is_fatal', 1.0),
+                ('is_out_of_memory', 1.0),
+                ('is_shutdown', 0.9),
+                ('is_drop_operation', 0.85),
+                ('is_assertion', 0.8),
+                ('is_memory_limit', 0.8)
+            ]
+            
+            for feature, confidence in critical_conditions:
+                if feature in X.columns:
+                    mask = X[feature] == 1
+                    y_validation[mask] = 1
+                    confidence_scores[mask] = np.maximum(confidence_scores[mask], confidence)
+                    print(f"[DEBUG]   {feature}: {mask.sum()} anomalies marked (confidence: {confidence})")
+            
+            # Performans anomalileri
+            if 'is_collscan' in X.columns and 'docs_examined_count' in X.columns:
+                perf_mask = (X['is_collscan'] == 1) & (X['docs_examined_count'] > 100000)
+                y_validation[perf_mask] = 1
+                confidence_scores[perf_mask] = np.maximum(confidence_scores[perf_mask], 0.75)
+                print(f"[DEBUG]   Performance anomalies: {perf_mask.sum()}")
+            
+            # Kesin normal patterns (yüksek güvenilirlik)
+            normal_conditions = []
+            
+            # Normal replication operations
+            if 'is_normal_replication' in df.columns:
+                normal_mask = df['is_normal_replication'] == 1
+                y_validation[normal_mask] = 0
+                confidence_scores[normal_mask] = 0.95
+                print(f"[DEBUG]   Normal replication: {normal_mask.sum()} marked as normal")
+        
+        # Method 2: Statistical outliers (orta güvenilirlik)
+        if method in ['statistical', 'combined']:
+            print(f"[DEBUG] Applying statistical labeling...")
+            
+            # Z-score based outliers for numeric features
+            numeric_features = ['query_duration_ms', 'docs_examined_count', 
+                              'keys_examined_count', 'performance_score']
+            
+            for feature in numeric_features:
+                if feature in X.columns:
+                    values = X[feature].values
+                    if len(values[values > 0]) > 10:  # Yeterli veri varsa
+                        # Log transform for skewed data
+                        log_values = np.log1p(values)
+                        z_scores = np.abs((log_values - np.mean(log_values)) / (np.std(log_values) + 1e-10))
+                        
+                        # Z-score > 3 olanlar anomaly
+                        stat_anomalies = z_scores > 3
+                        y_validation[stat_anomalies] = 1
+                        confidence_scores[stat_anomalies] = np.maximum(
+                            confidence_scores[stat_anomalies], 0.6
+                        )
+                        print(f"[DEBUG]   {feature}: {stat_anomalies.sum()} statistical outliers")
+        
+        # Validation istatistikleri
+        n_anomalies = (y_validation == 1).sum()
+        n_normal = (y_validation == 0).sum()
+        n_confident = (confidence_scores > 0.7).sum()
+        
+        print(f"[DEBUG] Validation dataset created:")
+        print(f"[DEBUG]   Total samples: {len(y_validation)}")
+        print(f"[DEBUG]   Anomalies: {n_anomalies} ({n_anomalies/len(y_validation)*100:.1f}%)")
+        print(f"[DEBUG]   Normal: {n_normal} ({n_normal/len(y_validation)*100:.1f}%)")
+        print(f"[DEBUG]   High confidence labels: {n_confident} ({n_confident/len(y_validation)*100:.1f}%)")
+        
+        # Confidence score'a göre filtreleme (opsiyonel)
+        high_confidence_mask = confidence_scores > 0.7
+        
+        return X, y_validation, confidence_scores
+    
+    def evaluate_model(self, X: pd.DataFrame, y_true: np.ndarray = None, 
+                      df: pd.DataFrame = None) -> Dict[str, Any]:
+        """
+        Model performansını değerlendir
+        
+        Args:
+            X: Feature matrix
+            y_true: Gerçek labels (opsiyonel)
+            df: Original dataframe (rule-based labeling için)
+            
+        Returns:
+            Evaluation metrikleri
+        """
+        print(f"[DEBUG] Starting model evaluation...")
+        
+        if not self.is_trained:
+            raise ValueError("Model must be trained before evaluation!")
+        
+        # Eğer y_true yoksa, validation dataset oluştur
+        if y_true is None:
+            if df is None:
+                raise ValueError("Either y_true or df must be provided for evaluation!")
+            
+            print(f"[DEBUG] No labels provided, creating validation dataset...")
+            X, y_true, confidence = self.create_validation_dataset(X, df, method='combined')
+            
+            # Sadece yüksek güvenilirlikli samples'ı kullan
+            high_conf_mask = confidence > 0.7
+            X = X[high_conf_mask]
+            y_true = y_true[high_conf_mask]
+            print(f"[DEBUG] Using {len(X)} high-confidence samples for evaluation")
+        
+        # Model predictions
+        predictions = self.model.predict(X)
+        # Isolation Forest -1: anomaly, 1: normal -> 1: anomaly, 0: normal'e çevir
+        y_pred = (predictions == -1).astype(int)
+        
+        # Anomaly scores
+        anomaly_scores = self.model.score_samples(X)
+        
+        # Metrikleri hesapla
+        metrics = self.calculate_metrics(y_true, y_pred, anomaly_scores)
+        
+        return metrics
+    
+    def calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, 
+                         scores: np.ndarray = None) -> Dict[str, Any]:
+        """
+        Detaylı performans metrikleri hesapla
+        
+        Args:
+            y_true: Gerçek labels (1: anomaly, 0: normal)
+            y_pred: Tahminler (1: anomaly, 0: normal)
+            scores: Anomaly scores (opsiyonel)
+            
+        Returns:
+            Metrics dictionary
+        """
+        from sklearn.metrics import (
+            confusion_matrix, precision_score, recall_score, 
+            f1_score, accuracy_score, roc_auc_score
+        )
+        
+        print(f"[DEBUG] Calculating performance metrics...")
+        
+        # Confusion matrix
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+        
+        # Basic metrics
+        precision = precision_score(y_true, y_pred, zero_division=0)
+        recall = recall_score(y_true, y_pred, zero_division=0)
+        f1 = f1_score(y_true, y_pred, zero_division=0)
+        accuracy = accuracy_score(y_true, y_pred)
+        
+        # False positive/negative rates
+        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+        fnr = fn / (fn + tp) if (fn + tp) > 0 else 0
+        
+        # AUC-ROC (eğer scores varsa)
+        auc_roc = None
+        if scores is not None and len(np.unique(y_true)) > 1:
+            try:
+                # Normalize scores to [0, 1]
+                scores_normalized = (scores - scores.min()) / (scores.max() - scores.min() + 1e-10)
+                # Invert for anomaly (lower score = more anomalous)
+                scores_for_roc = 1 - scores_normalized
+                auc_roc = roc_auc_score(y_true, scores_for_roc)
+            except:
+                auc_roc = None
+        
+        metrics = {
+            "confusion_matrix": {
+                "true_negatives": int(tn),
+                "false_positives": int(fp),
+                "false_negatives": int(fn),
+                "true_positives": int(tp)
+            },
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1_score": float(f1),
+            "accuracy": float(accuracy),
+            "false_positive_rate": float(fpr),
+            "false_negative_rate": float(fnr),
+            "auc_roc": float(auc_roc) if auc_roc else None,
+            "support": {
+                "total": len(y_true),
+                "anomalies": int((y_true == 1).sum()),
+                "normal": int((y_true == 0).sum())
+            }
+        }
+        
+        # Matthews Correlation Coefficient (balanced metric)
+        if tp + fp > 0 and tp + fn > 0 and tn + fp > 0 and tn + fn > 0:
+            mcc_numerator = (tp * tn) - (fp * fn)
+            mcc_denominator = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+            mcc = mcc_numerator / mcc_denominator if mcc_denominator > 0 else 0
+            metrics["matthews_correlation"] = float(mcc)
+        
+        print(f"[DEBUG] Metrics calculated:")
+        print(f"[DEBUG]   Precision: {precision:.3f}")
+        print(f"[DEBUG]   Recall: {recall:.3f}")
+        print(f"[DEBUG]   F1-Score: {f1:.3f}")
+        print(f"[DEBUG]   FPR: {fpr:.3f}")
+        print(f"[DEBUG]   FNR: {fnr:.3f}")
+        
+        return metrics
+    
+    def generate_evaluation_report(self, X: pd.DataFrame, df: pd.DataFrame, 
+                                  save_report: bool = True) -> Dict[str, Any]:
+        """
+        Kapsamlı model değerlendirme raporu oluştur
+        
+        Args:
+            X: Feature matrix
+            df: Original dataframe
+            save_report: Raporu JSON olarak kaydet
+            
+        Returns:
+            Evaluation report
+        """
+        print(f"[DEBUG] Generating comprehensive evaluation report...")
+        
+        report = {
+            "timestamp": datetime.now().isoformat(),
+            "model_info": self.get_model_info(),
+            "dataset_info": {
+                "total_samples": len(X),
+                "features": list(X.columns),
+                "feature_count": len(X.columns)
+            }
+        }
+        
+        # Model performance metrics
+        print(f"[DEBUG] Step 1: Evaluating model performance...")
+        metrics = self.evaluate_model(X, df=df)
+        report["performance_metrics"] = metrics
+        
+        # Feature importance analysis
+        print(f"[DEBUG] Step 2: Analyzing feature importance...")
+        if len(X) > 10000:
+            importance = self.calculate_feature_importance(X, sample_size=5000)
+        else:
+            importance = self.calculate_feature_importance(X)
+        
+        report["feature_analysis"] = {
+            "top_10_features": dict(list(importance.items())[:10]),
+            "dead_features": self.detect_dead_features(importance)[0]
+        }
+        
+        # Rule engine statistics
+        print(f"[DEBUG] Step 3: Collecting rule engine statistics...")
+        report["ensemble_statistics"] = {
+            "rules_enabled": self.ensemble_config.get('enabled', False),
+            "total_overrides": self.rule_stats['total_overrides'],
+            "rule_hits": dict(self.rule_stats['rule_hits'])
+        }
+        
+        # Historical buffer stats
+        print(f"[DEBUG] Step 4: Gathering historical buffer info...")
+        report["online_learning"] = self.get_historical_buffer_info()
+        
+        # Performance assessment
+        precision = metrics["precision"]
+        recall = metrics["recall"]
+        f1 = metrics["f1_score"]
+        fpr = metrics["false_positive_rate"]
+        
+        if f1 >= 0.8:
+            assessment = "EXCELLENT"
+            color = "green"
+        elif f1 >= 0.6:
+            assessment = "GOOD"
+            color = "yellow"
+        elif f1 >= 0.4:
+            assessment = "FAIR"
+            color = "orange"
+        else:
+            assessment = "POOR"
+            color = "red"
+        
+        report["assessment"] = {
+            "overall_rating": assessment,
+            "rating_color": color,
+            "strengths": [],
+            "weaknesses": [],
+            "recommendations": []
+        }
+        
+        # Strengths and weaknesses
+        if precision > 0.8:
+            report["assessment"]["strengths"].append(f"High precision ({precision:.2f}) - Low false positives")
+        else:
+            report["assessment"]["weaknesses"].append(f"Low precision ({precision:.2f}) - Too many false positives")
+            
+        if recall > 0.8:
+            report["assessment"]["strengths"].append(f"High recall ({recall:.2f}) - Catches most anomalies")
+        else:
+            report["assessment"]["weaknesses"].append(f"Low recall ({recall:.2f}) - Missing many anomalies")
+            
+        if fpr < 0.1:
+            report["assessment"]["strengths"].append(f"Low false positive rate ({fpr:.2f})")
+        else:
+            report["assessment"]["weaknesses"].append(f"High false positive rate ({fpr:.2f})")
+        
+        # Recommendations
+        if precision < 0.7:
+            report["assessment"]["recommendations"].append(
+                "Consider adjusting contamination parameter or adding more normal pattern rules"
+            )
+        if recall < 0.7:
+            report["assessment"]["recommendations"].append(
+                "Consider lowering contamination parameter or reviewing critical rules"
+            )
+        if len(report["feature_analysis"]["dead_features"]) > 5:
+            report["assessment"]["recommendations"].append(
+                f"Remove {len(report['feature_analysis']['dead_features'])} dead features to improve performance"
+            )
+        
+        # Save report
+        if save_report:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_path = f"output/model_evaluation_{timestamp}.json"
+            Path(report_path).parent.mkdir(parents=True, exist_ok=True)
+            
+            with open(report_path, 'w', encoding='utf-8') as f:
+                json.dump(report, f, indent=2, ensure_ascii=False)
+            
+            print(f"[DEBUG] Evaluation report saved to: {report_path}")
+            report["report_path"] = report_path
+        
+        # Print summary
+        print(f"\n[DEBUG] ========== MODEL EVALUATION SUMMARY ==========")
+        print(f"Overall Rating: {assessment}")
+        print(f"Precision: {precision:.3f}")
+        print(f"Recall: {recall:.3f}")
+        print(f"F1-Score: {f1:.3f}")
+        print(f"False Positive Rate: {fpr:.3f}")
+        print(f"Top 3 Features: {', '.join(list(importance.keys())[:3])}")
+        print(f"Dead Features: {len(report['feature_analysis']['dead_features'])}")
+        if report["assessment"]["recommendations"]:
+            print(f"\nRecommendations:")
+            for rec in report["assessment"]["recommendations"]:
+                print(f"  • {rec}")
+        print(f"[DEBUG] ===============================================\n")
+        
+        return report
+
+    def train_incremental(self, X: pd.DataFrame, batch_id: str = None) -> Dict[str, Any]:
+        """
+        Gerçek incremental learning - Yeni mini model ekle
+        
+        Args:
+            X: Yeni batch feature matrix
+            batch_id: Batch identifier
+            
+        Returns:
+            Training sonuçları
+        """
+        print(f"[DEBUG] Starting INCREMENTAL training on batch {batch_id}...")
+        print(f"[DEBUG] Batch size: {len(X)} samples")
+        print(f"[DEBUG] Current ensemble size: {len(self.incremental_models)} models")
+        
+        # Feature isimlerini sakla
+        if self.feature_names is None:
+            self.feature_names = list(X.columns)
+        
+        # Feature normalization (consistency için)
+        if not self.is_scaler_fitted:
+            X_scaled = self.scaler.fit_transform(X)
+            self.is_scaler_fitted = True
+        else:
+            X_scaled = self.scaler.transform(X)
+        
+        X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
+        
+        # Yeni mini model oluştur
+        mini_model_params = self.model_config['parameters'].copy()
+        mini_model_params['n_estimators'] = min(100, mini_model_params.get('n_estimators', 100))  # Daha küçük model
+        
+        mini_model = IsolationForest(**mini_model_params)
+        
+        # Mini model'i eğit
+        start_time = datetime.now()
+        mini_model.fit(X_scaled_df)
+        training_time = (datetime.now() - start_time).total_seconds()
+        
+        # Model metadata
+        metadata = {
+            'batch_id': batch_id or datetime.now().isoformat(),
+            'timestamp': datetime.now().isoformat(),
+            'n_samples': len(X),
+            'training_time': training_time,
+            'anomaly_ratio': 0  # Henüz bilinmiyor
+        }
+        
+        # Model performansını test et (kendi verisi üzerinde)
+        predictions = mini_model.predict(X_scaled_df)
+        anomaly_ratio = (predictions == -1).mean()
+        metadata['anomaly_ratio'] = float(anomaly_ratio)
+        
+        # Model ağırlığını hesapla (yeni model full ağırlık)
+        model_weight = 1.0
+        
+        # Ensemble'a ekle
+        self.incremental_models.append(mini_model)
+        self.model_metadata.append(metadata)
+        self.model_weights.append(model_weight)
+        
+        # Eski modellerin ağırlıklarını decay et
+        decay_factor = self.incremental_config['weight_decay_factor']
+        for i in range(len(self.model_weights) - 1):
+            self.model_weights[i] *= decay_factor
+        
+        # Ağırlıkları normalize et
+        total_weight = sum(self.model_weights)
+        self.model_weights = [w / total_weight for w in self.model_weights]
+        
+        # Eğer maksimum model sayısına ulaştıysak, en eski modeli çıkar
+        if len(self.incremental_models) > self.incremental_config['max_models']:
+            self.incremental_models.popleft()
+            self.model_metadata.pop(0)
+            self.model_weights.pop(0)
+        
+        # Ana model olarak ensemble'ı kullan
+        self.model = self  # Self'i model olarak kullan (predict override edilecek)
+        self.is_trained = True
+        
+        # Training stats
+        training_stats = {
+            'method': 'incremental',
+            'batch_id': metadata['batch_id'],
+            'batch_size': len(X),
+            'ensemble_size': len(self.incremental_models),
+            'model_weights': self.model_weights.copy(),
+            'training_time': training_time,
+            'anomaly_ratio': anomaly_ratio
+        }
+        
+        print(f"[DEBUG] Incremental training completed:")
+        print(f"[DEBUG]   New mini-model added (weight: {model_weight:.3f})")
+        print(f"[DEBUG]   Ensemble size: {len(self.incremental_models)} models")
+        print(f"[DEBUG]   Model weights: {[f'{w:.3f}' for w in self.model_weights]}")
+        print(f"[DEBUG]   Anomaly ratio in batch: {anomaly_ratio:.3f}")
+        
+        return training_stats
+    
+    def predict_ensemble(self, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Ensemble prediction - Weighted voting from all mini models
+        
+        Args:
+            X: Feature matrix
+            
+        Returns:
+            (predictions, anomaly_scores)
+        """
+        if not self.incremental_models:
+            raise ValueError("No incremental models available!")
+        
+        print(f"[DEBUG] Ensemble prediction with {len(self.incremental_models)} models...")
+        
+        # Feature normalization
+        if self.is_scaler_fitted:
+            X_scaled = self.scaler.transform(X)
+            X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
+        else:
+            X_scaled_df = X
+        
+        # Her modelden prediction al
+        all_predictions = []
+        all_scores = []
+        
+        for i, (model, weight) in enumerate(zip(self.incremental_models, self.model_weights)):
+            try:
+                pred = model.predict(X_scaled_df)
+                scores = model.score_samples(X_scaled_df)
+                
+                all_predictions.append(pred * weight)  # Weighted prediction
+                all_scores.append(scores * weight)  # Weighted scores
+                
+            except Exception as e:
+                print(f"[DEBUG] Warning: Model {i} prediction failed: {e}")
+                continue
+        
+        if not all_predictions:
+            raise ValueError("No successful predictions from ensemble!")
+        
+        # Weighted voting
+        weighted_predictions = np.sum(all_predictions, axis=0)
+        weighted_scores = np.sum(all_scores, axis=0)
+        
+        # Final predictions (threshold at 0)
+        final_predictions = np.where(weighted_predictions < 0, -1, 1)
+        
+        # Normalize scores
+        final_scores = weighted_scores / len(self.incremental_models)
+        
+        n_anomalies = (final_predictions == -1).sum()
+        print(f"[DEBUG] Ensemble prediction: {n_anomalies}/{len(X)} anomalies ({n_anomalies/len(X)*100:.1f}%)")
+        
+        return final_predictions, final_scores
+    
+    def detect_model_drift(self, X_new: pd.DataFrame, threshold: float = None) -> Dict[str, Any]:
+        """
+        Model drift detection - Yeni verinin mevcut modellere uyumunu kontrol et
+        
+        Args:
+            X_new: Yeni veri
+            threshold: Drift threshold
+            
+        Returns:
+            Drift analiz sonuçları
+        """
+        if not self.incremental_models:
+            return {"drift_detected": False, "reason": "No models available"}
+        
+        threshold = threshold or self.incremental_config['drift_threshold']
+        
+        print(f"[DEBUG] Checking for model drift...")
+        
+        # Feature normalization
+        if self.is_scaler_fitted:
+            X_scaled = self.scaler.transform(X_new)
+            X_scaled_df = pd.DataFrame(X_scaled, columns=X_new.columns)
+        else:
+            X_scaled_df = X_new
+        
+        # Her modelin yeni veri üzerindeki performansını ölç
+        model_performances = []
+        
+        for i, model in enumerate(self.incremental_models):
+            scores = model.score_samples(X_scaled_df)
+            mean_score = scores.mean()
+            anomaly_ratio = (model.predict(X_scaled_df) == -1).mean()
+            
+            # Original training anomaly ratio ile karşılaştır
+            original_ratio = self.model_metadata[i]['anomaly_ratio']
+            ratio_diff = abs(anomaly_ratio - original_ratio)
+            
+            model_performances.append({
+                'model_index': i,
+                'mean_score': float(mean_score),
+                'anomaly_ratio': float(anomaly_ratio),
+                'original_ratio': float(original_ratio),
+                'ratio_difference': float(ratio_diff)
+            })
+        
+        # Ortalama drift hesapla
+        avg_ratio_diff = np.mean([p['ratio_difference'] for p in model_performances])
+        
+        drift_detected = avg_ratio_diff > threshold
+        
+        drift_analysis = {
+            'drift_detected': drift_detected,
+            'average_drift': float(avg_ratio_diff),
+            'threshold': float(threshold),
+            'model_performances': model_performances,
+            'recommendation': None
+        }
+        
+        if drift_detected:
+            drift_analysis['recommendation'] = "High drift detected. Consider retraining or adjusting parameters."
+            print(f"[DEBUG] ⚠️ MODEL DRIFT DETECTED! Average drift: {avg_ratio_diff:.3f}")
+        else:
+            print(f"[DEBUG] ✅ No significant drift. Average drift: {avg_ratio_diff:.3f}")
+        
+        return drift_analysis
+    
+    def get_ensemble_info(self) -> Dict[str, Any]:
+        """
+        Ensemble model bilgilerini döndür
+        
+        Returns:
+            Ensemble istatistikleri
+        """
+        if not self.incremental_models:
+            return {
+                "enabled": self.incremental_config['enabled'],
+                "status": "No models in ensemble",
+                "model_count": 0
+            }
+        
+        info = {
+            "enabled": self.incremental_config['enabled'],
+            "status": "Active",
+            "model_count": len(self.incremental_models),
+            "max_models": self.incremental_config['max_models'],
+            "ensemble_method": self.incremental_config['ensemble_method'],
+            "model_weights": [float(w) for w in self.model_weights],
+            "models": []
+        }
+        
+        for i, (model, metadata, weight) in enumerate(zip(
+            self.incremental_models, self.model_metadata, self.model_weights
+        )):
+            model_info = {
+                "index": i,
+                "batch_id": metadata['batch_id'],
+                "timestamp": metadata['timestamp'],
+                "n_samples": metadata['n_samples'],
+                "anomaly_ratio": metadata['anomaly_ratio'],
+                "weight": float(weight),
+                "weight_percentage": f"{weight * 100:.1f}%"
+            }
+            info["models"].append(model_info)
+        
+        # Total samples trained on
+        total_samples = sum(m['n_samples'] for m in self.model_metadata)
+        info["total_samples_seen"] = total_samples
+        
+        # Average anomaly ratio
+        avg_anomaly_ratio = np.mean([m['anomaly_ratio'] for m in self.model_metadata])
+        info["average_anomaly_ratio"] = float(avg_anomaly_ratio)
+        
+        return info
+    
+    def score_samples(self, X):
+        """
+        Calculate anomaly scores for samples
+        Lower scores indicate more abnormal samples
+        """
+        if not self.is_trained:
+            raise ValueError("Model is not trained yet!")
+        
+        # Use the primary model for scoring
+        if hasattr(self, 'model') and self.model is not None:
+            return self.model.score_samples(X)
+        elif self.incremental_models:
+            # Use first model in ensemble for scoring
+            return self.incremental_models[0]['model'].score_samples(X)
+        else:
+            raise ValueError("No model available for scoring!")

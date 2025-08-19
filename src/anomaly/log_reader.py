@@ -414,7 +414,8 @@ def extract_mongodb_message(log_entry):
         
         # 2. Standart msg alanı (kısa açıklama)
         msg = log_entry.get('msg', '')
-        if msg and msg not in ['AppliedOp', 'Checking authorization failed']:
+        # YENİ: AppliedOp filtresini anomaly detection katmanına taştık - buradan kaldırıldı
+        if msg and msg not in ['Checking authorization failed']:
             
             # YENİ: Özel MongoDB log türleri için akıllı parse
             if msg == "Slow query" and 'attr' in log_entry:
@@ -736,7 +737,7 @@ class OpenSearchProxyReader:
                 self.proxy_endpoint,
                 params=params,
                 data=data,
-                timeout=30
+                timeout=120  # YENİ: Büyük veri setleri için timeout artırıldı
             )
             
             print(f"[DEBUG] Request response status: {response.status_code}")
@@ -749,6 +750,24 @@ class OpenSearchProxyReader:
                 return None
                 
         except Exception as e:
+            # YENİ: Timeout durumunda retry dene
+            if "Read timed out" in str(e) and not hasattr(self, '_retry_count'):
+                logger.warning(f"Timeout detected, retrying with longer timeout: {e}")
+                print(f"[DEBUG] Timeout detected, retrying: {e}")
+                self._retry_count = True
+                try:
+                    # Retry with longer timeout
+                    response = self.session.post(
+                        self.proxy_endpoint,
+                        params=params,
+                        data=data,
+                        timeout=300  # 5 dakika
+                    )
+                    if response.status_code == 200:
+                        return response.json()
+                finally:
+                    delattr(self, '_retry_count')
+            
             logger.error(f"Request error: {e}")
             print(f"[DEBUG] Request error: {e}")
             return None
@@ -1054,7 +1073,6 @@ class OpenSearchProxyReader:
                      batch_size: int, host_filter: str = None) -> List[Dict]:
         """Belirli bir zaman dilimi için logları oku"""
         slice_logs = []
-        from_offset = 0
         
         # ISO format timestamp'ler
         start_iso = start_time.isoformat() + "Z"
@@ -1065,10 +1083,46 @@ class OpenSearchProxyReader:
         # Duplicate kontrolü için set
         seen_messages = set()
         
+        # YENİ: Erken boş kontrol - gereksiz pagination önleme
+        early_check_query = {
+            "size": 0,  # Sadece count için
+            "query": {
+                "bool": {
+                    "must": [
+                        {
+                            "range": {
+                                "@timestamp": {
+                                    "gte": start_iso,
+                                    "lt": end_iso
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        }
+        
+        if host_filter:
+            early_check_query["query"]["bool"]["must"].append({
+                "term": {"host.name": host_filter}
+            })
+        
+        # Erken kontrol yap
+        search_path = f"{self.index_pattern}/_search"
+        early_result = self._make_request(search_path, "GET", early_check_query)
+        
+        if early_result and 'hits' in early_result:
+            total_available = early_result['hits']['total']['value']
+            if total_available == 0:
+                logger.debug(f"Time slice {start_iso} to {end_iso} has no data, skipping pagination")
+                return []
+        
+        # YENİ: search_after pagination değişkenleri
+        search_after = None
+        
         while True:
             query = {
                 "size": batch_size,
-                "from": from_offset,
                 "query": {
                     "bool": {
                         "must": [
@@ -1083,8 +1137,15 @@ class OpenSearchProxyReader:
                         ]
                     }
                 },
-                "sort": [{"@timestamp": {"order": "asc"}}]
+                "sort": [
+                    {"@timestamp": {"order": "asc"}},
+                    {"_id": {"order": "asc"}}  # YENİ: Unique sort için _id eklendi
+                ]
             }
+            
+            # YENİ: search_after ekleme
+            if search_after:
+                query["search_after"] = search_after
             
             if host_filter:
                 query["query"]["bool"]["must"].append({
@@ -1096,16 +1157,16 @@ class OpenSearchProxyReader:
             result = self._make_request(search_path, "GET", query)
             
             if not result or 'hits' not in result:
-                logger.debug(f"No results for time slice at offset {from_offset}")
+                logger.debug(f"No results for time slice")
                 break
             
             hits = result['hits']['hits']
             if not hits:
-                logger.debug(f"No more hits in time slice at offset {from_offset}")
+                logger.debug(f"No more hits in time slice")
                 break
             
             # İlk sorguda toplam sayıyı kontrol et
-            if from_offset == 0:
+            if search_after is None:
                 total_in_slice = result['hits']['total']['value']
                 logger.debug(f"Time slice has {total_in_slice} total logs")
                 
@@ -1184,15 +1245,24 @@ class OpenSearchProxyReader:
                                 logger.debug(f"Error parsing log in time slice: {e}")
                                 continue
             
-            logger.debug(f"Processed {batch_logs} logs in batch at offset {from_offset}")
+            logger.debug(f"Processed {batch_logs} logs in batch with search_after")
             
-            # Sonraki batch için offset'i artır
-            from_offset += batch_size
+            # YENİ: search_after için son hit'in sort değerlerini al
+            if hits:
+                last_hit = hits[-1]
+                search_after = last_hit.get('sort')
+                if search_after:
+                    logger.debug(f"Next search_after: {search_after}")
+                else:
+                    logger.debug("No sort values found, stopping pagination")
+                    break
+            else:
+                logger.debug("No hits returned, stopping pagination")
+                break
             
-            # 10K limitine ulaştıysak, bu zaman dilimi için dur
-            if from_offset >= 10000:
-                if len(hits) == batch_size:
-                    logger.warning(f"Reached 10K limit for time slice {start_iso} to {end_iso}")
+            # YENİ: Batch sayısı kontrolü (güvenlik için, sınırsız pagination)
+            if len(hits) < batch_size:
+                logger.debug("Received less than batch_size hits, end of data reached")
                 break
         
         logger.debug(f"Time slice completed: {len(slice_logs)} logs retrieved")

@@ -4,9 +4,10 @@
 import sys
 import os
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta 
 import asyncio
 from typing import Dict, Any, Optional
+from uuid import uuid4  
 
 # Proje root'u ekle
 sys.path.append(str(Path(__file__).parent.parent))
@@ -57,6 +58,9 @@ agent_lock = asyncio.Lock()
 # Onay bekleyen parametreleri saklamak için
 pending_confirmations: Dict[str, Dict[str, Any]] = {}
 
+# Güvenli session yönetimi
+user_sessions: Dict[str, Dict[str, Any]] = {}
+
 # Request/Response modelleri
 class QueryRequest(BaseModel):
     query: str = Field(..., description="MongoDB sorgusu", max_length=MAX_QUERY_LENGTH)
@@ -71,6 +75,7 @@ class QueryResponse(BaseModel):
     sonuç: Optional[Dict[str, Any]] = None
     öneriler: Optional[list] = None
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+    session_id: Optional[str] = None
 
 class LogUploadResponse(BaseModel):
     status: str
@@ -88,6 +93,28 @@ class AnalyzeLogsRequest(BaseModel):
     connection_string: Optional[str] = Field(None, description="MongoDB connection string (mongodb_direct için)")
     server_name: Optional[str] = Field(None, description="Test sunucu adı (test_servers için)")
     host_filter: Optional[str] = Field(None, description="Belirli bir MongoDB sunucusu (OpenSearch için)")
+
+# Session yönetimi fonksiyonları
+def create_session(api_key: str) -> str:
+    """Güvenli session oluştur"""
+    session_id = str(uuid4())
+    user_sessions[session_id] = {
+        'api_key': api_key,
+        'created_at': datetime.now(),
+        'expires_at': datetime.now() + timedelta(minutes=30)
+    }
+    return session_id
+
+def get_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """Session bilgisini getir"""
+    if session_id in user_sessions:
+        session = user_sessions[session_id]
+        if datetime.now() < session['expires_at']:
+            return session
+        else:
+            # Süresi dolmuş session'ı sil
+            del user_sessions[session_id]
+    return None
 
 # Basit API key kontrolü
 async def verify_api_key(api_key: str) -> bool:
@@ -148,7 +175,17 @@ async def process_query(request: QueryRequest):
         
         # YENİ: Onay yanıtı kontrolü
         user_response = request.query.lower().strip()
-        session_key = request.api_key  # Basit session key olarak API key kullan
+        # Güvenli session key yönetimi
+        session_key = request.headers.get('X-Session-ID') if hasattr(request, 'headers') else None
+        if not session_key:
+            session_key = create_session(request.api_key)
+            logger.info(f"New session created: {session_key[:8]}...")
+        else:
+            # Session'ı kontrol et
+            session = get_session(session_key)
+            if not session or session['api_key'] != request.api_key:
+                session_key = create_session(request.api_key)
+                logger.info(f"Session renewed: {session_key[:8]}...")
         
         if user_response in ['evet', 'onay', 'başlat', 'yes'] and session_key in pending_confirmations:
             # Onaylanmış parametreleri al
@@ -208,7 +245,9 @@ async def process_query(request: QueryRequest):
             
             # Onay bekliyorsa parametreleri sakla
             if result.get('durum') == 'onay_bekliyor':
-                session_key = request.api_key
+                # Session key'i güvenli şekilde al veya oluştur
+                if not session_key:
+                    session_key = create_session(request.api_key)
                 pending_confirmations[session_key] = {
                     'server': result['sonuç']['server'],
                     'time_range': result['sonuç']['time_range'],
@@ -224,7 +263,9 @@ async def process_query(request: QueryRequest):
         logger.info(f"Query işlendi - Sonuç durumu: {result.get('durum', 'unknown')}")
         
         # Response oluştur
-        return QueryResponse(**result)
+        response = QueryResponse(**result)
+        response.session_id = session_key
+        return response
         
     except HTTPException:
         raise
@@ -465,8 +506,40 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
         
         print(f"DEBUG: Agent'a gönderilen parametreler - {analysis_params}")
         
-        # MongoDB agent'a özel argümanlarla gönder
-        result = mongodb_agent.process_query_with_args(query, analysis_params)
+        # YENİ: OpenSearch için direkt anomaly tools kullan
+        if request.source_type == "opensearch":
+            logger.info("OpenSearch için direkt anomaly tools kullanılıyor...")
+            from src.anomaly.anomaly_tools import AnomalyDetectionTools
+            
+            # Anomaly tools instance oluştur
+            anomaly_tools = AnomalyDetectionTools(environment='production')
+            
+            # Direkt analyze_mongodb_logs fonksiyonunu çağır
+            tool_result = anomaly_tools.analyze_mongodb_logs({
+                "source_type": "opensearch",
+                "host_filter": request.host_filter,
+                "time_range": request.time_range,
+                "last_hours": analysis_params.get("last_hours", 24)
+            })
+            
+            # Tool sonucunu parse et
+            import json
+            if isinstance(tool_result, str):
+                try:
+                    parsed_result = json.loads(tool_result)
+                    result = parsed_result
+                except:
+                    result = {
+                        "durum": "tamamlandı",
+                        "işlem": "anomaly_analysis",
+                        "açıklama": "Anomali analizi tamamlandı",
+                        "sonuç": {"raw_result": tool_result}
+                    }
+            else:
+                result = tool_result
+        else:
+            # Diğer source type'lar için MongoDB agent kullan
+            result = mongodb_agent.process_query_with_args(query, analysis_params)
         # Tool output'u düzelt
         if result.get('işlem') == 'anomaly_analysis':
             try:
@@ -542,6 +615,15 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
             logger.info(f"ANALİZ SONUCU - Kullanılan koleksiyon: {result.get('koleksiyon')}")
         if result.get('sonuç'):
             logger.info(f"ANALİZ SONUCU - Bulunan kayıt sayısı: {len(result.get('sonuç', []))}")
+        
+        # DEBUG: API response'da critical_anomalies sayısını logla
+        if isinstance(result, dict) and 'sonuç' in result:
+            if isinstance(result['sonuç'], dict) and 'critical_anomalies' in result['sonuç']:
+                logger.info(f"[DEBUG API] API response contains {len(result['sonuç']['critical_anomalies'])} critical_anomalies")
+                print(f"[DEBUG API] Returning {len(result['sonuç']['critical_anomalies'])} critical anomalies to frontend")
+            else:
+                logger.info("[DEBUG API] API response - no critical_anomalies in sonuç")
+                print("[DEBUG API] No critical_anomalies found in response")
         
         return result
         
@@ -640,6 +722,7 @@ async def cleanup_pending_confirmations():
             current_time = datetime.now()
             expired_keys = []
             
+            # Pending confirmations temizliği
             for key, data in pending_confirmations.items():
                 if 'timestamp' in data:
                     created_time = datetime.fromisoformat(data['timestamp'])
@@ -649,6 +732,16 @@ async def cleanup_pending_confirmations():
             for key in expired_keys:
                 pending_confirmations.pop(key, None)
                 logger.debug(f"Expired confirmation cleared: {key}")
+            
+            # Expired session'ları da temizle
+            expired_sessions = []
+            for session_id, session_data in user_sessions.items():
+                if current_time > session_data['expires_at']:
+                    expired_sessions.append(session_id)
+            
+            for session_id in expired_sessions:
+                del user_sessions[session_id]
+                logger.debug(f"Expired session cleared: {session_id[:8]}...")
             
             await asyncio.sleep(300)  # 5 dakikada bir kontrol et
             

@@ -142,6 +142,11 @@
           "has_error_key",
           "is_auth_failure",
           "is_drop_operation",
+          "is_create_operation",
+          "is_aggregate_operation",
+          "is_admin_operation",
+          "is_bulk_operation",
+          "is_transaction_operation",
           "is_rare_message",
           "extreme_burst_flag",
           "burst_density",
@@ -170,7 +175,7 @@
         "filters": {
           "exclude_auth_success": true,
           "exclude_reauthenticate": true,
-          "exclude_normal_replication": false,
+          "exclude_normal_replication": true,
           "rare_threshold": 100,
           "burst_threshold_ms": 100
         },
@@ -227,6 +232,7 @@
       },
       "online_learning": {
         "enabled": true,
+        "max_buffer_samples": 100000,
         "history_retention": "full",
         "max_history_size": null,
         "update_frequency": 1000,

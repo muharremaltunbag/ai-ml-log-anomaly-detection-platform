@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 
 from ..connectors.mongodb_connector import MongoDBConnector
 from ..connectors.openai_connector import OpenAIConnector
+from ..connectors.lcwgpt_connector import LCWGPTConnector
 from .query_translator import QueryTranslator
 from .query_validator import QueryValidator
 from .schema_analyzer import SchemaAnalyzer
@@ -27,7 +28,9 @@ class MongoDBAgent:
         
         # Bileşenleri başlat
         self.db_connector = MongoDBConnector()
-        self.openai_connector = OpenAIConnector()
+        # YENİ: LCWGPT kullan, OpenAI yerine
+        self.llm_connector = LCWGPTConnector()  # OpenAI yerine LCWGPT
+        self.openai_connector = self.llm_connector  # Geriye uyumluluk için
         self.validator = QueryValidator()
         self.analyzer = SchemaAnalyzer()
         self.translator = QueryTranslator()
@@ -81,19 +84,19 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 self.mongodb_connected = False
                 # MongoDB bağlantısı başarısız olsa bile devam et
             
-            # OpenAI bağlantısı (zorunlu)
-            self.logger.info("OpenAI bağlantısı kuruluyor...")
-            self.logger.debug("OpenAI connector durumu kontrol ediliyor...")
-            if not self.openai_connector.connect():
-                self.logger.error("OpenAI bağlantısı başarısız")
+            # LLM bağlantısı (zorunlu) - LCWGPT kullanılıyor
+            self.logger.info("LCWGPT bağlantısı kuruluyor...")
+            self.logger.debug("LCWGPT connector durumu kontrol ediliyor...")
+            if not self.llm_connector.connect():
+                self.logger.error("LCWGPT bağlantısı başarısız")
                 return False
-            self.logger.debug("OpenAI bağlantısı başarılı")
+            self.logger.debug("LCWGPT bağlantısı başarılı")
             
             # Bileşenleri bağla
             self.logger.debug("Schema analyzer veritabanı bağlantısı ayarlanıyor...")
             self.analyzer.set_database(self.db_connector.database)
             self.logger.debug("Query translator LLM bağlantısı ayarlanıyor...")
-            self.translator.set_llm(self.openai_connector.llm)
+            self.translator.set_llm(self.llm_connector.llm)
             
             # Agent'ı oluştur
             self.logger.debug("Agent oluşturma işlemi başlatılıyor...")
@@ -129,9 +132,9 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
             ])
             
             # Agent oluştur
-            self.logger.debug("OpenAI tools agent oluşturuluyor...")
+            self.logger.debug("LCWGPT tools agent oluşturuluyor...")
             agent = create_openai_tools_agent(
-                llm=self.openai_connector.llm,
+                llm=self.llm_connector.llm,  # LCWGPT kullan
                 tools=tools,
                 prompt=prompt
             )
@@ -397,15 +400,15 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                         self.logger.debug("MongoDB yeniden bağlantı başarılı")
                         self.mongodb_connected = True
             
-            # OpenAI bağlantısı
-            openai_status = self.openai_connector.is_connected()
-            self.logger.debug(f"OpenAI bağlantı durumu: {openai_status}")
-            if not openai_status:
-                self.logger.warning("OpenAI bağlantısı kopuk, yenileniyor...")
-                if not self.openai_connector.connect():
-                    self.logger.debug("OpenAI yeniden bağlantı başarısız")
+            # LLM bağlantısı
+            llm_status = self.llm_connector.is_connected()
+            self.logger.debug(f"LCWGPT bağlantı durumu: {llm_status}")
+            if not llm_status:
+                self.logger.warning("LCWGPT bağlantısı kopuk, yenileniyor...")
+                if not self.llm_connector.connect():
+                    self.logger.debug("LCWGPT yeniden bağlantı başarısız")
                     return False
-                self.logger.debug("OpenAI yeniden bağlantı başarılı")
+                self.logger.debug("LCWGPT yeniden bağlantı başarılı")
             
             return True
             
@@ -659,9 +662,9 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 self.logger.debug("MongoDB bağlantısı kapatılıyor...")
                 self.db_connector.disconnect()
             
-            if self.openai_connector:
-                self.logger.debug("OpenAI bağlantısı kapatılıyor...")
-                self.openai_connector.disconnect()
+            if self.llm_connector:
+                self.logger.debug("LCWGPT bağlantısı kapatılıyor...")
+                self.llm_connector.disconnect()
             
             # Belleği temizle
             if self.memory:
@@ -678,7 +681,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
         """Agent durumunu döndür"""
         return {
             "mongodb_connected": self.mongodb_connected,
-            "openai_connected": self.openai_connector.is_connected() if self.openai_connector else False,
+            "llm_connected": self.llm_connector.is_connected() if self.llm_connector else False,
             "agent_ready": self.agent_executor is not None,
             "conversation_length": len(self.memory.chat_memory.messages) if self.memory else 0,
             "available_tools": [

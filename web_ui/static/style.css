@@ -9323,3 +9323,194 @@ message-container {
     max-height: 300px;
     overflow-y: auto;
 }
+
+/* YENİ: Message Toggle Control Styles */
+.message-toggle-control {
+    display: flex;
+    align-items: center;
+    margin: 15px 0;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    margin-right: 10px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 24px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .toggle-slider {
+    background-color: #2196F3;
+}
+
+input:focus + .toggle-slider {
+    box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .toggle-slider:before {
+    transform: translateX(26px);
+}
+
+.toggle-label {
+    color: #333;
+    font-weight: 500;
+    font-size: 14px;
+}
+
+/* YENİ: Risk Badge Styles */
+.risk-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: bold;
+    margin-left: 8px;
+    white-space: nowrap;
+}
+
+.risk-badge:contains("🔴") {
+    background: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+    border: 1px solid rgba(231, 76, 60, 0.4);
+}
+
+.risk-badge:contains("🟡") {
+    background: rgba(243, 156, 18, 0.2);
+    color: #f39c12;
+    border: 1px solid rgba(243, 156, 18, 0.4);
+}
+
+.risk-badge:contains("🟠") {
+    background: rgba(230, 126, 34, 0.2);
+    color: #e67e22;
+    border: 1px solid rgba(230, 126, 34, 0.4);
+}
+
+.risk-badge:contains("🟢") {
+    background: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+    border: 1px solid rgba(46, 204, 113, 0.4);
+}
+
+/* YENİ: Enhanced Anomaly Item Styles */
+.enhanced-anomaly-item {
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.enhanced-anomaly-item[data-anomaly-type="drop_operation"] {
+    border-left: 4px solid #e74c3c;
+    background: rgba(231, 76, 60, 0.05);
+}
+
+.enhanced-anomaly-item[data-anomaly-type="auth_failure"] {
+    border-left: 4px solid #e74c3c;
+    background: rgba(231, 76, 60, 0.05);
+}
+
+.enhanced-anomaly-item[data-anomaly-type="slow_query"] {
+    border-left: 4px solid #f39c12;
+    background: rgba(243, 156, 18, 0.05);
+}
+
+.enhanced-anomaly-item[data-anomaly-type="collection_scan"] {
+    border-left: 4px solid #e67e22;
+    background: rgba(230, 126, 34, 0.05);
+}
+
+.enhanced-anomaly-item[data-anomaly-type="out_of_memory"] {
+    border-left: 4px solid #e74c3c;
+    background: rgba(231, 76, 60, 0.08);
+}
+
+.critical-message-container {
+    position: relative;
+    min-height: 20px;
+}
+
+.formatted-message {
+    font-style: italic;
+    color: #2c3e50;
+    background: rgba(52, 152, 219, 0.1);
+    padding: 8px;
+    border-radius: 4px;
+    border-left: 3px solid #3498db;
+}
+
+.original-message {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #555;
+}
+
+/* Dark mode uyumluluğu */
+@media (prefers-color-scheme: dark) {
+    .message-toggle-control {
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .toggle-label {
+        color: #fff;
+    }
+    
+    .formatted-message {
+        background: rgba(52, 152, 219, 0.2);
+        color: #ecf0f1;
+    }
+    
+    .original-message {
+        color: #bdc3c7;
+    }
+}
+
+/* Responsive ayarları */
+@media (max-width: 768px) {
+    .message-toggle-control {
+        padding: 8px;
+        margin: 10px 0;
+    }
+    
+    .toggle-label {
+        font-size: 13px;
+    }
+    
+    .risk-badge {
+        font-size: 10px;
+        padding: 1px 6px;
+    }
+}

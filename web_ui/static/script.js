@@ -14,6 +14,7 @@
 let apiKey = '';
 let isConnected = false;
 let selectedDataSource = 'upload';  // Varsayılan veri kaynağı
+let currentSessionId = null;  // ✅ YENİ: Session ID için
 
 // Konuşma geçmişi için sabitler
 const HISTORY_KEY = 'mongodb_query_history';
@@ -355,6 +356,7 @@ async function handleQuery() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-Session-ID': currentSessionId || ''  // ✅ YENİ: Session header
             },
             body: JSON.stringify(queryBody)
         });
@@ -363,6 +365,12 @@ async function handleQuery() {
         
         const result = await response.json();
         console.log('Query result:', result); // DEBUG LOG
+        
+        // ✅ YENİ: Session ID'yi sakla
+        if (result.session_id) {
+            currentSessionId = result.session_id;
+            console.log('Session ID updated:', currentSessionId.substring(0, 8) + '...');
+        }
         
         // YENİ: Onay bekleyen durum kontrolü
         if (result.durum === 'onay_bekliyor') {
@@ -951,6 +959,23 @@ function displayResult(result) {
 function displayAnomalyAnalysisResult(result) {
     console.log('Displaying AI-enhanced anomaly analysis result');
     
+    // Hata durumu kontrolü
+    if (result.durum === 'hata' || !result.sonuç) {
+        console.log('Error in anomaly analysis:', result.açıklama);
+        let html = '<div class="anomaly-error">';
+        html += '<h3>❌ Analiz Hatası</h3>';
+        html += `<p>${escapeHtml(result.açıklama || "Analiz sırasında bir hata oluştu")}</p>`;
+        
+        // Eğer API rate limit hatası ise özel mesaj
+        if (result.açıklama && result.açıklama.includes('rate_limit_exceeded')) {
+            html += '<p class="info-message">💡 <strong>Not:</strong> AI açıklama servisi token limiti aşıldığı için kullanılamadı. Anomali analizi başarıyla tamamlandı ancak AI destekli açıklamalar oluşturulamadı.</p>';
+        }
+        
+        html += '</div>';
+        elements.resultContent.innerHTML = html;
+        return;
+    }
+    
     let html = '<div class="anomaly-analysis-result ai-enhanced">';
     
     // Durum göstergesi
@@ -1108,20 +1133,44 @@ function displayAnomalyAnalysisResult(result) {
         html += '</div></div>';
     }
     
-    // Kritik Anomaliler - Sadece ilk 5 tanesi, daha kompakt
+    // Kritik Anomaliler - Sadece ilk 20 tanesi, daha kompakt + ENHANCED with toggle
     if (result.sonuç.critical_anomalies && result.sonuç.critical_anomalies.length > 0) {
         html += '<div class="critical-section">';
-        html += '<h3>⚡ En Kritik 5 Anomali</h3>';
+        html += '<h3>⚡ En Kritik 20 Anomali</h3>';
+        
+        // YENİ: Toggle kontrolü ekle
+        html += `
+            <div class="message-toggle-control">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="criticalMessageToggle" onchange="toggleCriticalAnomalyMessages()">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">Formatlı Mesajları Göster</span>
+            </div>
+        `;
+        
         html += '<div class="critical-list">';
         
-        result.sonuç.critical_anomalies.slice(0, 5).forEach((anomaly, index) => {
+        result.sonuç.critical_anomalies.forEach((anomaly, index) => {
             const scorePercent = Math.abs(anomaly.score) * 100;
+            
+            // Hem formatlı hem orijinal mesajı hazırla
+            const originalMessage = escapeHtml(anomaly.message || '');
+            const formattedMessage = escapeHtml(anomaly.formatted_message || originalMessage);
+            const anomalyType = anomaly.anomaly_type || 'unknown';
+            const riskLevel = anomaly.risk_level || '🟢 DÜŞÜK';
+            
             html += `
-                <div class="critical-item">
+                <div class="critical-item enhanced-anomaly-item" data-anomaly-type="${anomalyType}">
                     <div class="critical-rank">#${index + 1}</div>
                     <div class="critical-details">
-                        <div class="critical-component">${escapeHtml(anomaly.component || 'N/A')}</div>
-                        <div class="critical-message">${escapeHtml(anomaly.message || '')}</div>
+                        <div class="critical-component">${escapeHtml(anomaly.component || 'N/A')} 
+                            <span class="risk-badge">${riskLevel}</span>
+                        </div>
+                        <div class="critical-message-container">
+                            <div class="critical-message original-message">${originalMessage}</div>
+                            <div class="critical-message formatted-message" style="display: none;">${formattedMessage}</div>
+                        </div>
                     </div>
                     <div class="critical-score">
                         <div class="score-bar" style="width: ${scorePercent}%"></div>
@@ -2472,6 +2521,24 @@ function closeAnomalyModal() {
 function displayAnomalyResults(result) {
     console.log('displayAnomalyResults called with result:', result);
     
+    // Hata durumu kontrolü
+    if (result.durum === 'hata' || !result.sonuç) {
+        console.log('Error in anomaly analysis:', result.açıklama);
+        let html = '<div class="anomaly-error">';
+        html += '<h3>❌ Analiz Hatası</h3>';
+        html += `<p>${escapeHtml(result.açıklama || "Analiz sırasında bir hata oluştu")}</p>`;
+        
+        // Eğer API rate limit hatası ise özel mesaj
+        if (result.açıklama && result.açıklama.includes('rate_limit_exceeded')) {
+            html += '<p class="info-message">💡 <strong>Not:</strong> AI açıklama servisi token limiti aşıldığı için kullanılamadı. Anomali analizi başarıyla tamamlandı ancak AI destekli açıklamalar oluşturulamadı.</p>';
+            html += '<p>Lütfen birkaç dakika bekleyip tekrar deneyin veya daha küçük bir zaman aralığı seçin.</p>';
+        }
+        
+        html += '</div>';
+        elements.resultContent.innerHTML = html;
+        return;
+    }
+    
     // YENİ: Backend'den gelen tüm veriyi kontrol et
     const mlData = result.sonuç?.data || result.sonuç || {};
     const summary = mlData.summary || {};
@@ -2479,6 +2546,9 @@ function displayAnomalyResults(result) {
     const temporalAnalysis = mlData.temporal_analysis || {};
     const featureImportance = mlData.feature_importance || {};
     const criticalAnomalies = mlData.critical_anomalies || [];
+    console.log('[DEBUG FRONTEND] displayAnomalyResults - criticalAnomalies length:', criticalAnomalies.length);
+    console.log('[DEBUG FRONTEND] mlData structure:', Object.keys(mlData));
+    console.log('[DEBUG FRONTEND] result.sonuç structure:', Object.keys(result.sonuç || {}));
     const anomalyScoreStats = mlData.anomaly_score_stats || {};
     
     // YENİ: AI açıklaması mevcutsa parse et
@@ -2686,13 +2756,19 @@ function displayAnomalyResults(result) {
         html += renderSeverityDistribution(result.sonuç.severity_distribution);
     }
     
-    // Kritik anomaliler - Severity ile göster
+    // Kritik anomaliler - Severity ile göster (Pagination ile)
     if (criticalAnomalies.length > 0) {
+        console.log('[DEBUG FRONTEND] About to render critical anomalies section with', criticalAnomalies.length, 'items');
         html += '<div class="critical-anomalies-section">';
-        html += '<h3>⚠️ Kritik Anomaliler</h3>';
-        html += '<div class="anomaly-list">';
+        html += `<h3>⚠️ Kritik Anomaliler (${criticalAnomalies.length} toplam)</h3>`;
+        html += '<div class="anomaly-list" id="criticalAnomaliesList">';
         
-        criticalAnomalies.slice(0, 10).forEach(anomaly => {
+        // İlk 20 anomaliyi göster
+        const itemsToShow = 20;
+        const visibleAnomalies = criticalAnomalies.slice(0, itemsToShow);
+        const remainingCount = criticalAnomalies.length - itemsToShow;
+        
+        visibleAnomalies.forEach(anomaly => {
             const severityColor = anomaly.severity_color || '#e74c3c';
             const severityLevel = anomaly.severity_level || 'HIGH';
             const severityScore = anomaly.severity_score || 0;
@@ -2735,8 +2811,23 @@ function displayAnomalyResults(result) {
             `;
         });
         
+        // "Daha fazla göster" butonu ekle
+        if (remainingCount > 0) {
+            html += `
+                <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+                    <button class="btn btn-secondary" onclick="loadMoreCriticalAnomalies()" id="loadMoreCriticalBtn">
+                        Daha Fazla Göster (+${remainingCount} anomali)
+                    </button>
+                </div>
+            `;
+        }
+        
         html += '</div>';
         html += '</div>';
+        
+        // Global değişken olarak tüm anomalileri sakla
+        window.allCriticalAnomalies = criticalAnomalies;
+        window.currentlyShownCount = itemsToShow;
     }
     // Tüm anomaliler (eğer kritik anomaliler gösterildiyse atlayabilir)
     if (result.anomalies && result.anomalies.length > 0 && !criticalAnomalies.length) {
@@ -2744,7 +2835,7 @@ function displayAnomalyResults(result) {
         html += '<h3>📊 Tüm Anomaliler</h3>';
         html += '<div class="anomaly-list">';
         
-        result.anomalies.slice(0, 50).forEach(anomaly => {
+        result.anomalies.slice(0, 100).forEach(anomaly => {
             const severityClass = anomaly.anomaly_score > 0.8 ? 'high' : 
                                  anomaly.anomaly_score > 0.6 ? 'medium' : 'low';
             
@@ -2760,8 +2851,8 @@ function displayAnomalyResults(result) {
             `;
         });
         
-        if (result.anomalies.length > 50) {
-            html += `<p class="more-anomalies">... ve ${result.anomalies.length - 50} anomali daha</p>`;
+        if (result.anomalies.length > 100) {
+            html += `<p class="more-anomalies">... ve ${result.anomalies.length - 100} anomali daha</p>`;
         }
         
         html += '</div>';
@@ -2826,7 +2917,7 @@ function displayAnomalyResults(result) {
         if (result.sonuç.data?.critical_anomalies) {
             result.sonuç.critical_anomalies = result.sonuç.data.critical_anomalies;
         } else if (result.anomalies) {
-            result.sonuç.critical_anomalies = result.anomalies.slice(0, 20);
+            result.sonuç.critical_anomalies = result.anomalies;
         }
     }
     
@@ -3425,10 +3516,10 @@ function showHistoryDetail(id) {
         // Critical Anomalies Listesi
         if (item.childResult.sonuç?.critical_anomalies && item.childResult.sonuç.critical_anomalies.length > 0) {
             content += '<div class="history-critical-anomalies">';
-            content += '<h5>🚨 Kritik Anomaliler (İlk 5)</h5>';
+            content += '<h5>🚨 Kritik Anomaliler (İlk 10)</h5>';
             content += '<div class="history-anomaly-list">';
             
-            item.childResult.sonuç.critical_anomalies.slice(0, 5).forEach((anomaly, index) => {
+            item.childResult.sonuç.critical_anomalies.slice(0, 10).forEach((anomaly, index) => {
                 const severityScore = anomaly.severity_score || 0;
                 const severityLevel = anomaly.severity_level || 'MEDIUM';
                 const severityColor = anomaly.severity_color || '#e67e22';
@@ -3475,8 +3566,8 @@ function showHistoryDetail(id) {
                 `;
             });
             
-            if (item.childResult.sonuç.critical_anomalies.length > 5) {
-                content += `<p class="more-anomalies">... ve ${item.childResult.sonuç.critical_anomalies.length - 5} anomali daha</p>`;
+            if (item.childResult.sonuç.critical_anomalies.length > 10) {
+                content += `<p class="more-anomalies">... ve ${item.childResult.sonuç.critical_anomalies.length - 10} anomali daha</p>`;
             }
             
             content += '</div></div>';
@@ -3719,40 +3810,97 @@ function detectAnomalyType(anomaly) {
     const component = (anomaly.component || '').toLowerCase();
     const severity = (anomaly.severity || '').toLowerCase();
     
-    // Anomali tip tespiti
-    if (message.includes('auth') || message.includes('authentication')) {
+    // 🔒 SECURITY & AUTHENTICATION PATTERNS
+    if (message.includes('authentication failed') || message.includes('unauthorized') || 
+        message.includes('access denied') || message.includes('invalid credentials')) {
         return 'auth_failure';
-    } else if (message.includes('connection') && (message.includes('drop') || message.includes('closed'))) {
-        return 'connection_drop';
-    } else if (message.includes('index') && (message.includes('fail') || message.includes('error'))) {
-        return 'index_build_fail';
-    } else if (message.includes('slow') || message.includes('took')) {
-        return 'slow_query';
-    } else if (message.includes('memory') || message.includes('oom')) {
-        return 'out_of_memory';
-    } else if (message.includes('restart') || message.includes('restarted')) {
-        return 'service_restart';
-    } else if (message.includes('collscan') || message.includes('collection scan')) {
-        return 'collection_scan';
-    } else if (message.includes('assertion') || message.includes('assert')) {
-        return 'assertion_failure';
-    } else if (message.includes('fatal') || severity === 'f') {
-        return 'fatal_error';
-    } else if (message.includes('shutdown')) {
-        return 'shutdown';
-    } else if (severity === 'e' || message.includes('error')) {
-        return 'error';
-    } else if (severity === 'w' || message.includes('warning')) {
-        return 'warning';
-    } else if (component === 'network') {
-        return 'network_issue';
-    } else if (component === 'repl') {
-        return 'replication_issue';
-    } else if (component === 'query') {
-        return 'query_issue';
-    } else {
-        return 'unknown';
     }
+    
+    // 🗂️ INDEX & SCHEMA OPERATIONS  
+    if (message.includes('drop') && (message.includes('index') || message.includes('collection'))) {
+        return 'drop_operation';
+    }
+    if (message.includes('createindex') || message.includes('index build') || message.includes('indexbuild')) {
+        return 'index_build';
+    }
+    if (message.includes('dropindex') || message.includes('index dropped')) {
+        return 'index_drop';
+    }
+    
+    // ⚡ PERFORMANCE CRITICAL PATTERNS
+    if (message.includes('collscan') || message.includes('collection scan') || message.includes('full table scan')) {
+        return 'collection_scan';
+    }
+    if (message.includes('docsexamined') && (message.includes('high') || /docsexamined.*[1-9]\d{4,}/.test(message))) {
+        return 'high_doc_scan';
+    }
+    if (message.includes('slow query') || message.includes('slow operation') || /took.*\d+ms/.test(message)) {
+        return 'slow_query';
+    }
+    
+    // 🔄 AGGREGATION & PIPELINE
+    if (message.includes('aggregate') || message.includes('pipeline') || message.includes('$match') || message.includes('$group')) {
+        return 'aggregation_issue';
+    }
+    
+    // 🖥️ SYSTEM & RESOURCE PATTERNS
+    if (message.includes('out of memory') || message.includes('oom') || message.includes('memory allocation failed')) {
+        return 'out_of_memory';
+    }
+    if (message.includes('too many connections') || message.includes('connection limit') || message.includes('pool exhausted')) {
+        return 'connection_limit';
+    }
+    if (message.includes('assertion') || message.includes('assert') || message.includes('invariant')) {
+        return 'assertion_failure';
+    }
+    
+    // 🔄 REPLICATION & CLUSTER
+    if (component === 'repl' || message.includes('oplog') || message.includes('replication')) {
+        return 'replication_issue';
+    }
+    if (message.includes('election') || message.includes('primary') || message.includes('secondary')) {
+        return 'replica_set_issue';
+    }
+    
+    // 💾 STORAGE & IO PATTERNS
+    if (message.includes('compact') || message.includes('reindex') || message.includes('collmod')) {
+        return 'storage_operation';
+    }
+    if (message.includes('journal') || message.includes('checkpoint') || message.includes('sync')) {
+        return 'storage_sync';
+    }
+    
+    // 🚨 SYSTEM EVENTS
+    if (message.includes('shutdown') || message.includes('shutting down')) {
+        return 'shutdown';
+    }
+    if (message.includes('restart') || message.includes('restarted') || message.includes('startup')) {
+        return 'service_restart';
+    }
+    if (message.includes('fatal') || severity === 'f') {
+        return 'fatal_error';
+    }
+    
+    // 🌐 NETWORK & CONNECTION
+    if (message.includes('connection') && (message.includes('drop') || message.includes('closed') || message.includes('timeout'))) {
+        return 'connection_drop';
+    }
+    if (component === 'network' || message.includes('socket') || message.includes('tcp')) {
+        return 'network_issue';
+    }
+    
+    // 📊 GENERAL ERROR LEVELS
+    if (severity === 'e' || message.includes('error')) {
+        return 'error';
+    }
+    if (severity === 'w' || message.includes('warning')) {
+        return 'warning';
+    }
+    if (component === 'query') {
+        return 'query_issue';
+    }
+    
+    return 'unknown';
 }
 
 /**
@@ -3773,22 +3921,50 @@ function renderDetailedAnomalyList(anomalies) {
         groupedAnomalies[type].push(anomaly);
     });
     
-    // Anomali tip açıklamaları
+    // Anomali tip açıklamaları - MongoDB-SPESİFİK GENİŞLETİLMİŞ VERSİYON
     const typeDescriptions = {
+        // 🔒 SECURITY & AUTHENTICATION
         'auth_failure': { icon: '🔐', name: 'Kimlik Doğrulama Hataları', color: '#e74c3c' },
-        'connection_drop': { icon: '🔌', name: 'Bağlantı Kopmaları', color: '#e67e22' },
+        
+        // 🗂️ INDEX & SCHEMA OPERATIONS  
+        'drop_operation': { icon: '🗑️', name: 'Drop İşlemleri (Collection/Index)', color: '#e74c3c' },
+        'index_build': { icon: '🏗️', name: 'Index Oluşturma İşlemleri', color: '#f39c12' },
+        'index_drop': { icon: '📑', name: 'Index Silme İşlemleri', color: '#e67e22' },
         'index_build_fail': { icon: '📑', name: 'Index Oluşturma Hataları', color: '#f39c12' },
+        
+        // ⚡ PERFORMANCE CRITICAL
+        'collection_scan': { icon: '🔍', name: 'Collection Scan (COLLSCAN)', color: '#e67e22' },
+        'high_doc_scan': { icon: '📊', name: 'Yüksek Document Scan', color: '#f39c12' },
         'slow_query': { icon: '🐌', name: 'Yavaş Sorgular', color: '#3498db' },
-        'out_of_memory': { icon: '💾', name: 'Bellek Yetersizliği', color: '#e74c3c' },
-        'service_restart': { icon: '🔄', name: 'Servis Yeniden Başlatmaları', color: '#9b59b6' },
-        'collection_scan': { icon: '🔍', name: 'Collection Scan Uyarıları', color: '#1abc9c' },
+        
+        // 🔄 AGGREGATION & PIPELINE
+        'aggregation_issue': { icon: '⚙️', name: 'Aggregation Pipeline Sorunları', color: '#9b59b6' },
+        
+        // 🖥️ SYSTEM & RESOURCE
+        'out_of_memory': { icon: '💾', name: 'Bellek Yetersizliği (OOM)', color: '#e74c3c' },
+        'connection_limit': { icon: '🔗', name: 'Bağlantı Limiti Aşıldı', color: '#e74c3c' },
         'assertion_failure': { icon: '❗', name: 'Assertion Hataları', color: '#e74c3c' },
-        'fatal_error': { icon: '💀', name: 'Fatal Hatalar', color: '#c0392b' },
+        
+        // 🔄 REPLICATION & CLUSTER
+        'replication_issue': { icon: '🔄', name: 'Replikasyon Sorunları', color: '#9b59b6' },
+        'replica_set_issue': { icon: '👥', name: 'Replica Set Sorunları', color: '#8e44ad' },
+        
+        // 💾 STORAGE & IO
+        'storage_operation': { icon: '💿', name: 'Storage İşlemleri (Compact/Reindex)', color: '#16a085' },
+        'storage_sync': { icon: '🔄', name: 'Storage Sync İşlemleri', color: '#27ae60' },
+        
+        // 🚨 SYSTEM EVENTS
         'shutdown': { icon: '⏹️', name: 'Kapanma Olayları', color: '#7f8c8d' },
+        'service_restart': { icon: '🔄', name: 'Servis Yeniden Başlatmaları', color: '#9b59b6' },
+        'fatal_error': { icon: '💀', name: 'Fatal Hatalar', color: '#c0392b' },
+        
+        // 🌐 NETWORK & CONNECTION
+        'connection_drop': { icon: '🔌', name: 'Bağlantı Kopmaları', color: '#e67e22' },
+        'network_issue': { icon: '🌐', name: 'Network Sorunları', color: '#3498db' },
+        
+        // 📊 GENERAL CATEGORIES
         'error': { icon: '❌', name: 'Genel Hatalar', color: '#e74c3c' },
         'warning': { icon: '⚠️', name: 'Uyarılar', color: '#f39c12' },
-        'network_issue': { icon: '🌐', name: 'Network Sorunları', color: '#3498db' },
-        'replication_issue': { icon: '🔄', name: 'Replikasyon Sorunları', color: '#9b59b6' },
         'query_issue': { icon: '❓', name: 'Sorgu Sorunları', color: '#e67e22' },
         'unknown': { icon: '❔', name: 'Sınıflandırılmamış', color: '#95a5a6' }
     };
@@ -3796,6 +3972,7 @@ function renderDetailedAnomalyList(anomalies) {
     let html = '<div class="anomaly-type-groups">';
     
     // Özet bilgi
+    console.log('[DEBUG FRONTEND] renderDetailedAnomalyList - received anomalies count:', anomalies.length);
     html += `
         <div class="anomaly-summary-stats">
             <h4>📊 Özet Bilgiler</h4>
@@ -3828,8 +4005,8 @@ function renderDetailedAnomalyList(anomalies) {
                 <div class="anomaly-list-by-type">
         `;
         
-        // En fazla 20 anomali göster
-        typeAnomalies.slice(0, 20).forEach((anomaly, index) => {
+        // Tüm anomalileri göster
+        typeAnomalies.forEach((anomaly, index) => {
             const score = anomaly.score || anomaly.anomaly_score || 0;
             const scoreClass = score < -0.78 ? 'critical' : score < -0.75 ? 'high' : 'medium';
             
@@ -3855,9 +4032,7 @@ function renderDetailedAnomalyList(anomalies) {
             `;
         });
         
-        if (typeAnomalies.length > 20) {
-            html += `<p class="more-items">... ve ${typeAnomalies.length - 20} ${typeInfo.name.toLowerCase()} daha</p>`;
-        }
+        // Tüm anomaliler gösteriliyor, ek mesaj gerekmiyor
         
         html += '</div></div>';
     });
@@ -3903,7 +4078,7 @@ async function requestDetailedAnomalies() {
                 source_type: lastParams.source_type || 'opensearch',
                 host_filter: lastParams.host_filter,
                 time_range: lastParams.time_range || 'last_day',
-                limit: 1000 // Maksimum 1000 anomali getir
+                limit: 2000 // Maksimum 2000 anomali getir
             })
         });
         
@@ -5312,7 +5487,7 @@ function renderCriticalAnomaliesTable(criticalAnomalies) {
     html += '</thead>';
     html += '<tbody>';
     
-    criticalAnomalies.slice(0, 10).forEach((anomaly, index) => {
+    criticalAnomalies.forEach((anomaly, index) => {
         const score = anomaly.anomaly_score || anomaly.score || 0;
         const scoreClass = score < -0.5 ? 'critical' : 
                           score < -0.3 ? 'high' : 'medium';
@@ -6320,3 +6495,174 @@ window.exportFeatureImportance = function() {
 console.log('Global functions initialized. showHistoryDetail version check:', 
     window.showHistoryDetail.toString().includes('showHistoryDetail DEBUG') ? 'DEBUG VERSION' : 'STANDARD VERSION'
 );
+
+/**
+ * YENİ: Kritik anomali mesajları toggle fonksiyonu
+ */
+function toggleCriticalAnomalyMessages() {
+    const toggle = document.getElementById('criticalMessageToggle');
+    const isFormatted = toggle.checked;
+    
+    // Tüm critical-item'ları bul
+    const criticalItems = document.querySelectorAll('.enhanced-anomaly-item');
+    
+    criticalItems.forEach(item => {
+        const originalMsg = item.querySelector('.original-message');
+        const formattedMsg = item.querySelector('.formatted-message');
+        
+        if (originalMsg && formattedMsg) {
+            if (isFormatted) {
+                originalMsg.style.display = 'none';
+                formattedMsg.style.display = 'block';
+            } else {
+                originalMsg.style.display = 'block';
+                formattedMsg.style.display = 'none';
+            }
+        }
+    });
+    
+    // Storage'a tercihi kaydet
+    localStorage.setItem('showFormattedMessages', isFormatted.toString());
+}
+
+/**
+ * YENİ: Detaylı anomali listesi toggle fonksiyonu
+ */
+function toggleDetailedAnomalyMessages() {
+    const toggle = document.getElementById('detailedMessageToggle');
+    const isFormatted = toggle.checked;
+    
+    // Tüm detailed anomaly item'ları bul
+    const detailedItems = document.querySelectorAll('.detailed-anomaly-item');
+    
+    detailedItems.forEach(item => {
+        const originalMsg = item.querySelector('.original-message');
+        const formattedMsg = item.querySelector('.formatted-message');
+        
+        if (originalMsg && formattedMsg) {
+            if (isFormatted) {
+                originalMsg.style.display = 'none';
+                formattedMsg.style.display = 'block';
+            } else {
+                originalMsg.style.display = 'block';
+                formattedMsg.style.display = 'none';
+            }
+        }
+    });
+    
+    // Storage'a tercihi kaydet
+    localStorage.setItem('showFormattedMessages', isFormatted.toString());
+}
+
+/**
+ * YENİ: Sayfa yüklendiğinde kullanıcı tercihini geri yükle
+ */
+function restoreMessageTogglePreference() {
+    const savedPreference = localStorage.getItem('showFormattedMessages');
+    if (savedPreference === 'true') {
+        // Critical anomalies toggle'ı
+        const criticalToggle = document.getElementById('criticalMessageToggle');
+        if (criticalToggle) {
+            criticalToggle.checked = true;
+            toggleCriticalAnomalyMessages();
+        }
+        
+        // Detailed anomalies toggle'ı
+        const detailedToggle = document.getElementById('detailedMessageToggle');
+        if (detailedToggle) {
+            detailedToggle.checked = true;
+            toggleDetailedAnomalyMessages();
+        }
+    }
+}
+
+/**
+ * Daha fazla kritik anomali göster (Pagination)
+ */
+function loadMoreCriticalAnomalies() {
+    if (!window.allCriticalAnomalies || !window.currentlyShownCount) {
+        console.error('Anomaly data not available for pagination');
+        return;
+    }
+    
+    const nextBatch = 20; // Bir seferde 20 daha göster
+    const currentCount = window.currentlyShownCount;
+    const totalCount = window.allCriticalAnomalies.length;
+    
+    // Yeni gösterilecek anomaliler
+    const startIndex = currentCount;
+    const endIndex = Math.min(currentCount + nextBatch, totalCount);
+    const newAnomalies = window.allCriticalAnomalies.slice(startIndex, endIndex);
+    
+    // Mevcut listeye yeni anomalileri ekle
+    const anomalyList = document.getElementById('criticalAnomaliesList');
+    if (!anomalyList) {
+        console.error('Anomaly list container not found');
+        return;
+    }
+    
+    let html = '';
+    newAnomalies.forEach(anomaly => {
+        const severityColor = anomaly.severity_color || '#e74c3c';
+        const severityLevel = anomaly.severity_level || 'HIGH';
+        const severityScore = anomaly.severity_score || 0;
+        
+        const fullMessage = anomaly.message || 'No message available';
+        const isLongMessage = fullMessage.length > 500;
+        
+        html += `
+            <div class="critical-anomaly-card" style="--severity-color: ${severityColor}">
+                <div class="anomaly-header-with-severity">
+                    <div class="anomaly-info">
+                        <span class="anomaly-time">${new Date(anomaly.timestamp).toLocaleString('tr-TR')}</span>
+                        <span class="severity-badge ${severityLevel.toLowerCase()}">${severityLevel}</span>
+                        <span class="severity-score-inline">${severityScore}/100</span>
+                        ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
+                    </div>
+                </div>
+                <div class="anomaly-message">
+                    ${isLongMessage ? `
+                        <div class="message-preview">
+                            <pre class="log-message-pre">${escapeHtml(fullMessage.substring(0, 500))}...</pre>
+                        </div>
+                        <div class="message-full" style="display: none;">
+                            <pre class="log-message-pre">${escapeHtml(fullMessage)}</pre>
+                        </div>
+                        <button class="btn-expand" onclick="toggleMessageExpand(this)">
+                            Tam Mesajı Göster
+                        </button>
+                    ` : `
+                        <pre class="log-message-pre">${escapeHtml(fullMessage)}</pre>
+                    `}
+                </div>
+            </div>
+        `;
+    });
+    
+    // Butonu kaldır
+    const loadMoreBtn = document.getElementById('loadMoreCriticalBtn');
+    if (loadMoreBtn) {
+        loadMoreBtn.parentElement.remove();
+    }
+    
+    // Yeni HTML'i ekle
+    anomalyList.insertAdjacentHTML('beforeend', html);
+    
+    // Sayacı güncelle
+    window.currentlyShownCount = endIndex;
+    
+    // Eğer daha fazla varsa yeni buton ekle
+    const remainingCount = totalCount - endIndex;
+    if (remainingCount > 0) {
+        const loadMoreHtml = `
+            <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+                <button class="btn btn-secondary" onclick="loadMoreCriticalAnomalies()" id="loadMoreCriticalBtn">
+                    Daha Fazla Göster (+${remainingCount} anomali)
+                </button>
+            </div>
+        `;
+        anomalyList.insertAdjacentHTML('afterend', loadMoreHtml);
+    }
+    
+    console.log(`[DEBUG FRONTEND] Loaded more anomalies: ${startIndex+1}-${endIndex} of ${totalCount}`);
+}

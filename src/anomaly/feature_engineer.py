@@ -146,8 +146,42 @@ class MongoDBFeatureEngineer:
             # Reauthenticate flag (filtreleme için)
             df['is_reauthenticate'] = (df['msg'] == 'Client has attempted to reauthenticate as a single user').astype(int)
             
-            # DROP operasyonları için flag
-            df['is_drop_operation'] = df['msg'].str.contains('CMD: drop|dropIndexes', case=False, na=False).astype(int)
+            # YENİ: GENİŞLETİLMİŞ MongoDB komut operasyonları
+            # DROP operasyonları - Veri silme riskli
+            df['is_drop_operation'] = df['msg'].str.contains(
+                'CMD: drop|dropIndexes|dropDatabase|drop collection|dropCollection', 
+                case=False, na=False
+            ).astype(int)
+            
+            # CREATE operasyonları - Index ve koleksiyon oluşturma
+            df['is_create_operation'] = df['msg'].str.contains(
+                'CMD: createIndexes|createIndex|create collection|createCollection|cmd.*create', 
+                case=False, na=False
+            ).astype(int)
+            
+            # AGGREGATE operasyonları - Pipeline sorgular
+            df['is_aggregate_operation'] = df['msg'].str.contains(
+                'CMD: aggregate|command.*aggregate|pipeline|$match|$group|$lookup|$unwind', 
+                case=False, na=False
+            ).astype(int)
+            
+            # ADMINISTRATIVE operasyonları - Admin komutları
+            df['is_admin_operation'] = df['msg'].str.contains(
+                'CMD: listCollections|listIndexes|dbStats|collStats|serverStatus|replSetGetStatus|isMaster|hello', 
+                case=False, na=False
+            ).astype(int)
+            
+            # BULK operasyonları - Toplu işlemler
+            df['is_bulk_operation'] = df['msg'].str.contains(
+                'CMD: bulkWrite|bulk|insertMany|updateMany|deleteMany|findAndModify', 
+                case=False, na=False
+            ).astype(int)
+            
+            # TRANSACTION operasyonları - İşlem yönetimi
+            df['is_transaction_operation'] = df['msg'].str.contains(
+                'startTransaction|commitTransaction|abortTransaction|session.*transaction', 
+                case=False, na=False
+            ).astype(int)
             
             
             # COLLSCAN detection (performans sorunu)
@@ -186,9 +220,27 @@ class MongoDBFeatureEngineer:
                 case=False, na=False
             ).astype(int)
             
-            # YENİ: Normal replication operations (FILTER OUT)
+            # YENİ: GÜÇLENDİRİLMİŞ - Normal replication operations (FILTER OUT)
+            # MongoDB-spesifik normal operasyon pattern'leri
+            normal_replication_patterns = [
+                'Applied op',           # Temel Applied Op
+                '"msg":"Applied op"',   # JSON format
+                'AppliedOp',           # AppliedOp variant
+                'applying batch',      # Batch replication
+                'oplog replay',        # Oplog tekrarı
+                'replSetMemberState',  # Replica set durum değişimi
+                'Primary has changed', # Primary değişimi
+                'replica set member state', # Üye durum değişimi
+                'heartbeat',           # Heartbeat mesajları
+                'election',            # Election süreçleri (normal)
+                'member is now in state PRIMARY',  # Normal durum geçişi
+                'member is now in state SECONDARY'  # Normal durum geçişi
+            ]
+            
+            # Tüm pattern'leri birleştir
+            combined_pattern = '|'.join(normal_replication_patterns)
             df['is_normal_replication'] = df['msg'].str.contains(
-                'Applied op|"msg":"Applied op"', 
+                combined_pattern, 
                 case=False, na=False
             ).astype(int)
             
@@ -239,7 +291,14 @@ class MongoDBFeatureEngineer:
             
             logger.info(f"✅ Message features extracted")
             logger.info(f"   Auth failures: {df['is_auth_failure'].sum()} ({df['is_auth_failure'].mean()*100:.1f}%)")
-            logger.info(f"   Drop operations: {df['is_drop_operation'].sum()}")
+            # YENİ: GENİŞLETİLMİŞ komut istatistikleri
+            logger.info(f"   DROP operations: {df['is_drop_operation'].sum()}")
+            logger.info(f"   CREATE operations: {df['is_create_operation'].sum()}")
+            logger.info(f"   AGGREGATE operations: {df['is_aggregate_operation'].sum()}")
+            logger.info(f"   ADMIN operations: {df['is_admin_operation'].sum()}")
+            logger.info(f"   BULK operations: {df['is_bulk_operation'].sum()}")
+            logger.info(f"   TRANSACTION operations: {df['is_transaction_operation'].sum()}")
+            # Diğer özellikler
             logger.info(f"   COLLSCAN queries: {df['is_collscan'].sum()}")
             logger.info(f"   Slow queries: {df['is_slow_query'].sum()}")
             logger.info(f"   Index builds: {df['is_index_build'].sum()}")
@@ -251,11 +310,16 @@ class MongoDBFeatureEngineer:
             
             # === NUMERIC VALUE EXTRACTION BAŞLANGIÇ ===
             
+            # Compiled regex patterns (performans için)
+            DURATION_PATTERN = re.compile(r'"durationMillis":(\d+)')
+            DOCS_EXAMINED_PATTERN = re.compile(r'"docsExamined":(\d+)')
+            KEYS_EXAMINED_PATTERN = re.compile(r'"keysExamined":(\d+)')
+            
             # Duration extraction helper function
             def extract_duration(text):
                 """Extract durationMillis from log message"""
                 try:
-                    match = re.search(r'"durationMillis":(\d+)', str(text))
+                    match = DURATION_PATTERN.search(str(text))  # ✅ Compiled pattern kullan
                     return int(match.group(1)) if match else 0
                 except:
                     return 0
@@ -264,7 +328,7 @@ class MongoDBFeatureEngineer:
             def extract_docs_examined(text):
                 """Extract docsExamined count from log message"""
                 try:
-                    match = re.search(r'"docsExamined":(\d+)', str(text))
+                    match = DOCS_EXAMINED_PATTERN.search(str(text))  # ✅ Compiled pattern kullan
                     return int(match.group(1)) if match else 0
                 except:
                     return 0
@@ -273,7 +337,7 @@ class MongoDBFeatureEngineer:
             def extract_keys_examined(text):
                 """Extract keysExamined count from log message"""
                 try:
-                    match = re.search(r'"keysExamined":(\d+)', str(text))
+                    match = KEYS_EXAMINED_PATTERN.search(str(text))  # ✅ Compiled pattern kullan
                     return int(match.group(1)) if match else 0
                 except:
                     return 0
@@ -288,7 +352,7 @@ class MongoDBFeatureEngineer:
             df['performance_score'] = np.where(
                 df['is_collscan'] == 1,
                 df['docs_examined_count'] * 2,  # COLLSCAN'de çarpan uygula
-                df['docs_examined_count'] - df['keys_examined_count']
+                np.maximum(0, df['docs_examined_count'] - df['keys_examined_count'])  # ✅ Minimum 0
             )
             
             # Log numeric extraction stats
@@ -369,6 +433,7 @@ class MongoDBFeatureEngineer:
     
     def extract_attr_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Attribute dictionary features"""
+        print(f"DataFrame columns: {df.columns.tolist()}")
         try:
             def safe_parse_attr(attr_obj):
                 try:
@@ -399,16 +464,31 @@ class MongoDBFeatureEngineer:
                 df['has_error_key'] = 0
                 df['attr_key_count'] = 0
                 df['has_many_attrs'] = 0
-            
+                
             logger.info(f"✅ Attr features extracted")
             if 'has_error_key' in df.columns:
                 logger.info(f"   Error logs: {df['has_error_key'].sum()} ({df['has_error_key'].mean()*100:.1f}%)")
+            
+            # ✅ YENİ: Memory optimization - geçici sütunu temizle
+            if 'attr_parsed' in df.columns:
+                # Temizlemeden önce bellek kullanımını logla
+                memory_before = df.memory_usage(deep=True).sum() / 1024 / 1024
+                
+                # Geçici parsed sütunu sil
+                df = df.drop('attr_parsed', axis=1)
+                
+                # Temizledikten sonra bellek kullanımını logla
+                memory_after = df.memory_usage(deep=True).sum() / 1024 / 1024
+                memory_saved = memory_before - memory_after
+                
+                logger.info(f"   Memory optimized: {memory_saved:.2f} MB saved")
+                logger.info(f"   Current DataFrame size: {memory_after:.2f} MB")
             
         except Exception as e:
             logger.error(f"Error in attr features: {e}")
             
         return df
-    
+        
     def apply_filters(self, df: pd.DataFrame, X: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Config'deki filtreleri uygula
@@ -458,10 +538,12 @@ class MongoDBFeatureEngineer:
             "continuous_features": {}
         }
         
-        # Binary features
+        # Binary features - YENİ: GENİŞLETİLMİŞ komut özellikleri dahil
         binary_features = ['severity_W', 'is_rare_component', 'is_rare_combo', 'has_error_key', 
-                          'is_auth_failure', 'is_drop_operation', 'is_rare_message',
-                          'extreme_burst_flag', 'is_weekend', 'component_changed', 'has_many_attrs',
+                          'is_auth_failure', 'is_drop_operation', 'is_create_operation', 
+                          'is_aggregate_operation', 'is_admin_operation', 'is_bulk_operation',
+                          'is_transaction_operation', 'is_rare_message', 'extreme_burst_flag', 
+                          'is_weekend', 'component_changed', 'has_many_attrs',
                           'is_collscan', 'is_index_build', 'is_slow_query', 'is_high_doc_scan',
                           'is_shutdown', 'is_assertion', 'is_fatal', 'is_error', 'is_replication_issue',
                           'is_out_of_memory', 'is_restart', 'is_memory_limit']
