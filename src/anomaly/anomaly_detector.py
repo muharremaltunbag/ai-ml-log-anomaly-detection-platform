@@ -1376,7 +1376,40 @@ class MongoDBAnomalyDetector:
             X_sample = X
         
         # Baseline score hesapla
-        baseline_scores = self.model.score_samples(X_sample)
+        # (EK) Yerel, recursion-safe skorlayıcı
+        def _get_scores(X_like):
+            # Ensemble ortalaması
+            if hasattr(self, "incremental_models") and getattr(self, "incremental_models"):
+                scores = []
+                for m in self.incremental_models:
+                    try:
+                        if hasattr(m, "score_samples"):
+                            scores.append(m.score_samples(X_like))
+                        elif hasattr(m, "decision_function"):
+                            scores.append(m.decision_function(X_like))
+                    except RecursionError:
+                        # Fallback: decision_function deneyelim
+                        if hasattr(m, "decision_function"):
+                            scores.append(m.decision_function(X_like))
+                        else:
+                            raise
+                if scores:
+                    import numpy as np
+                    return np.mean(scores, axis=0)
+            # Tekil model
+            try:
+                if hasattr(self.model, "score_samples"):
+                    return self.model.score_samples(X_like)
+                if hasattr(self.model, "decision_function"):
+                    return self.model.decision_function(X_like)
+            except RecursionError:
+                if hasattr(self.model, "decision_function"):
+                    return self.model.decision_function(X_like)
+                raise
+            raise RuntimeError("No available scorer for feature importance")
+
+        # Baseline score hesapla
+        baseline_scores = _get_scores(X_sample)
         baseline_score = baseline_scores.mean()
         
         feature_importance = {}
@@ -1392,7 +1425,7 @@ class MongoDBAnomalyDetector:
                 X_permuted[feature] = np.random.permutation(X_permuted[feature].values)
                 
                 # Yeni score hesapla
-                permuted_scores = self.model.score_samples(X_permuted)
+                permuted_scores = _get_scores(X_permuted)
                 permuted_score = permuted_scores.mean()
                 
                 # Importance = baseline - permuted (düşüş ne kadar fazlaysa o kadar önemli)

@@ -1,0 +1,63 @@
+{
+  "analysis_id": "analysis_511545d00711",
+  "source_info": {
+    "source_type": "test",
+    "host": "test_host",
+    "time_range": "test_range",
+    "timestamp": "2025-08-20T23:02:40.937586"
+  },
+  "result": {
+    "durum": "tamamland\u0131",
+    "i\u015flem": "anomaly_analysis",
+    "a\u00e7\u0131klama": "Test analizi",
+    "data": {
+      "summary": {
+        "total_logs": 1000,
+        "n_anomalies": 10,
+        "anomaly_rate": 1.0
+      },
+      "critical_anomalies": [
+        {
+          "log": "Test anomaly 1",
+          "score": 0.9
+        },
+        {
+          "log": "Test anomaly 2",
+          "score": 0.8
+        }
+      ],
+      "logs_analyzed": 1000,
+      "filtered_logs": 950,
+      "source": {
+        "type": "test",
+        "host": "test_host",
+        "time_range": "test_range"
+      }
+    },
+    "sonu\u00e7": {
+      "summary": {
+        "total_logs": 1000,
+        "n_anomalies": 10,
+        "anomaly_rate": 1.0
+      },
+      "critical_anomalies": [
+        {
+          "log": "Test anomaly 1",
+          "score": 0.9
+        },
+        {
+          "log": "Test anomaly 2",
+          "score": 0.8
+        }
+      ],
+      "logs_analyzed": 1000,
+      "filtered_logs": 950,
+      "source": {
+        "type": "test",
+        "host": "test_host",
+        "time_range": "test_range"
+      }
+    }
+  },
+  "saved_at": "2025-08-20T23:02:40.945425"
+}

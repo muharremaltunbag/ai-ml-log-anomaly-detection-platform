@@ -6,7 +6,10 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta 
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
+from src.storage.config import MONGODB_ENABLED, MONGODB_CONFIG
+from src.storage.storage_manager import StorageManager
+from src.storage.fallback_storage import FileOnlyStorageManager
 from uuid import uuid4  
 
 # Proje root'u ekle
@@ -23,6 +26,11 @@ import tempfile
 
 from src.agents.mongodb_agent import MongoDBAgent
 from web_ui.config import *
+from dotenv import load_dotenv
+
+# .env dosyasını yükle
+load_dotenv()
+
 
 # Logging - Console handler eklendi
 logging.basicConfig(level=logging.INFO)
@@ -54,6 +62,10 @@ app.add_middleware(
 # Global agent instance
 agent: Optional[MongoDBAgent] = None
 agent_lock = asyncio.Lock()
+
+# YENİ: Global storage manager instance
+storage_manager: Optional[StorageManager] = None
+storage_lock = asyncio.Lock()
 
 # Onay bekleyen parametreleri saklamak için
 pending_confirmations: Dict[str, Dict[str, Any]] = {}
@@ -137,6 +149,46 @@ async def get_agent() -> MongoDBAgent:
         else:
             logger.debug("Mevcut agent instance kullanılıyor")
         return agent
+
+# StorageManager başlatma
+async def get_storage_manager() -> Union[StorageManager, FileOnlyStorageManager]:
+    """Get appropriate storage manager based on configuration"""
+    global storage_manager
+    async with storage_lock:
+        if storage_manager is None:
+            if MONGODB_ENABLED:
+                logger.info("=" * 50)
+                logger.info("🔧 STORAGE MANAGER İNİTİALİZASYON")
+                logger.info("=" * 50)
+                logger.info("📦 MongoDB StorageManager başlatılıyor...")
+                logger.info(f"   📍 MongoDB URI: {MONGODB_CONFIG.get('uri', 'Not configured')[:50]}...")
+                logger.info(f"   📍 Database: {MONGODB_CONFIG.get('database', 'Not configured')}")
+                
+                try:
+                    storage_manager = StorageManager()
+                    if not await storage_manager.initialize():
+                        raise Exception("MongoDB connection failed")
+                    logger.info("✅ MongoDB StorageManager HAZIR!")
+                    logger.info("=" * 50)
+                except Exception as e:
+                    logger.error(f"❌ MongoDB bağlantısı başarısız: {e}")
+                    logger.info("⚠️ FileOnlyStorageManager'a geçiliyor...")
+                    storage_manager = FileOnlyStorageManager()
+                    await storage_manager.initialize()
+                    logger.info("✅ FileOnlyStorageManager HAZIR!")
+                    logger.info("=" * 50)
+            else:
+                logger.info("=" * 50)
+                logger.info("📦 File-only StorageManager başlatılıyor (MongoDB devre dışı)")
+                storage_manager = FileOnlyStorageManager()
+                await storage_manager.initialize()
+                logger.info("✅ FileOnlyStorageManager HAZIR!")
+                logger.info("=" * 50)
+            
+            await storage_manager.initialize()
+            logger.info(f"StorageManager ready: {type(storage_manager).__name__}")
+        
+        return storage_manager
 
 # Geçici dosya dizini
 UPLOAD_DIR = Path("temp_logs")
@@ -595,6 +647,14 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                             except json.JSONDecodeError:
                                 logger.error("Tool output JSON parse edilemedi")
 
+        # NEW: Normalize result status for storage flow
+        try:
+            if result.get('işlem') == 'anomaly_analysis' and result.get('durum') not in ('tamamlandı', 'hata', 'iptal'):
+                if result.get('durum') in (None, 'başarılı', 'success', 'ok'):
+                    result['durum'] = 'tamamlandı'
+        except Exception as _e:
+            logger.warning(f"Result status normalization skipped: {_e}")
+
         # DEBUG: Agent response'u detaylı logla
         logger.info(f"=== AGENT RESPONSE DEBUG ===")
         logger.info(f"Result keys: {list(result.keys())}")
@@ -625,6 +685,59 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                 logger.info("[DEBUG API] API response - no critical_anomalies in sonuç")
                 print("[DEBUG API] No critical_anomalies found in response")
         
+        # YENİ: Auto-save analysis to storage
+        if request.source_type == "opensearch" and result.get('durum') in ("tamamlandı", "başarılı", "success"):
+            try:
+                logger.info("=" * 50)
+                logger.info("📊 ANOMALİ ANALİZ SONUCU KAYIT İŞLEMİ BAŞLADI")
+                logger.info("=" * 50)
+                
+                storage = await get_storage_manager()
+                
+                # Storage tipini logla
+                storage_type = type(storage).__name__
+                logger.info(f"📦 Storage Manager Tipi: {storage_type}")
+                
+                if storage_type == "StorageManager":
+                    logger.info("✅ MongoDB destekli StorageManager kullanılıyor")
+                else:
+                    logger.info("⚠️ FileOnlyStorageManager kullanılıyor (MongoDB yok)")
+                
+                # Anomali sayısını logla
+                anomaly_count = 0
+                if 'sonuç' in result and isinstance(result['sonuç'], dict):
+                    if 'critical_anomalies' in result['sonuç']:
+                        anomaly_count = len(result['sonuç']['critical_anomalies'])
+                
+                logger.info(f"📈 Tespit edilen kritik anomali sayısı: {anomaly_count}")
+                
+                save_result = await storage.save_anomaly_analysis(
+                    analysis_result=result,
+                    source_type=request.source_type,
+                    host=request.host_filter,
+                    time_range=request.time_range
+                )
+                
+                if save_result and save_result.get('analysis_id'):
+                    logger.info("=" * 50)
+                    logger.info("✅ ANOMALİ ANALİZİ BAŞARIYLA KAYDEDİLDİ!")
+                    logger.info(f"   📍 Analysis ID: {save_result.get('analysis_id')}")
+                    logger.info(f"   📍 File Path: {save_result.get('file_path')}")
+                    logger.info(f"   📍 Host: {request.host_filter}")
+                    logger.info(f"   📍 Time Range: {request.time_range}")
+                    logger.info(f"   📍 Kritik Anomali: {anomaly_count} adet")
+                    logger.info("=" * 50)
+                    
+                    # Result'a storage bilgisini ekle
+                    result['storage_info'] = save_result
+                else:
+                    logger.warning("⚠️ Anomali analizi kaydedilemedi - save_result boş veya analysis_id yok")
+                    
+            except Exception as e:
+                logger.error("=" * 50)
+                logger.error("❌ ANOMALİ ANALİZİ KAYIT HATASI!")
+                logger.error(f"   Hata: {str(e)}")
+                logger.error("=" * 50)
         return result
         
     except HTTPException:
@@ -749,6 +862,201 @@ async def cleanup_pending_confirmations():
             logger.error(f"Cleanup error: {e}")
             await asyncio.sleep(300)
 
+# ============= YENİ STORAGE ENDPOINTS =============
+
+@app.get("/api/anomaly-history")
+async def get_anomaly_history(
+    api_key: str,
+    host: Optional[str] = None,
+    source_type: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = Query(default=100, le=1000),
+    skip: int = Query(default=0, ge=0)
+):
+    """Get anomaly analysis history"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        storage = await get_storage_manager()
+        
+        # Build filters
+        filters = {}
+        if host:
+            filters["host"] = host
+        if source_type:
+            filters["source"] = source_type
+        if start_date:
+            filters["start_date"] = datetime.fromisoformat(start_date)
+        if end_date:
+            filters["end_date"] = datetime.fromisoformat(end_date)
+        
+        # Get history
+        history = await storage.get_anomaly_history(
+            filters=filters,
+            limit=limit,
+            skip=skip,
+            include_details=False  # Don't load full details for list
+        )
+        
+        return {
+            "status": "success",
+            "count": len(history),
+            "history": history
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting anomaly history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/anomaly-history/{analysis_id}")
+async def get_anomaly_detail(analysis_id: str, api_key: str):
+    """Get detailed anomaly analysis by ID"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        storage = await get_storage_manager()
+        
+        # Get specific analysis with details
+        history = await storage.get_anomaly_history(
+            filters={"analysis_id": analysis_id},
+            limit=1,
+            include_details=True
+        )
+        
+        if not history:
+            raise HTTPException(status_code=404, detail="Analysis not found")
+        
+        return {
+            "status": "success",
+            "analysis": history[0]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting anomaly detail: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/model-registry")
+async def get_model_registry(api_key: str, active_only: bool = False):
+    """Get model registry"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        storage = await get_storage_manager()
+        models = await storage.mongodb.get_model_registry(active_only=active_only)
+        
+        return {
+            "status": "success",
+            "count": len(models),
+            "models": models
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting model registry: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/model-registry/{version_id}/activate")
+async def activate_model(version_id: str, api_key: str):
+    """Activate a specific model version"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        storage = await get_storage_manager()
+        success = await storage.mongodb.set_active_model(version_id)
+        
+        if success:
+            return {
+                "status": "success",
+                "message": f"Model {version_id} activated"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Model version not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error activating model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/storage-stats")
+async def get_storage_statistics(api_key: str, days: int = Query(default=30, le=365)):
+    """Get storage and analysis statistics"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        storage = await get_storage_manager()
+        stats = await storage.get_statistics(days=days)
+        
+        return {
+            "status": "success",
+            "statistics": stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting storage statistics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/storage-cleanup")
+async def cleanup_storage(api_key: str, force: bool = False):
+    """Cleanup old storage data"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        storage = await get_storage_manager()
+        cleanup_stats = await storage.cleanup_old_data(force=force)
+        
+        return {
+            "status": "success",
+            "cleanup_stats": cleanup_stats
+        }
+        
+    except Exception as e:
+        logger.error(f"Error during storage cleanup: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/export-analysis/{analysis_id}")
+async def export_analysis(
+    analysis_id: str,
+    api_key: str,
+    format: str = Query(default="json", regex="^(json|csv)$")
+):
+    """Export analysis in specified format"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        storage = await get_storage_manager()
+        export_path = await storage.export_analysis(analysis_id, format=format)
+        
+        if export_path:
+            return {
+                "status": "success",
+                "export_path": export_path,
+                "format": format
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Analysis not found or export failed")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error exporting analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Startup event'e ekle
 @app.on_event("startup")
 async def startup_event():
@@ -756,16 +1064,30 @@ async def startup_event():
     # Cleanup task'ı başlat
     asyncio.create_task(cleanup_pending_confirmations())
     logger.info("Cleanup task başlatıldı")
+    
+    # YENİ: StorageManager'ı başlat
+    try:
+        storage = await get_storage_manager()
+        logger.info("StorageManager initialized at startup")
+    except Exception as e:
+        logger.error(f"Failed to initialize StorageManager: {e}")
 
 # Shutdown
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup"""
-    global agent
+    global agent, storage_manager
+    
     if agent:
         logger.info("Agent kapatılıyor...")
         agent.shutdown()
         agent = None
+    
+    # YENİ: StorageManager cleanup
+    if storage_manager:
+        logger.info("StorageManager kapatılıyor...")
+        await storage_manager.shutdown()
+        storage_manager = None
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,0 +1,738 @@
+# MongoDB-LLM-assistant\src\storage\storage_manager.py
+"""
+Storage Manager - Hybrid Storage Orchestrator
+Manages both MongoDB metadata and file system storage
+"""
+import asyncio
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Union
+import json
+import shutil
+import aiofiles
+import pickle
+import joblib
+
+from .mongodb_handler import MongoDBHandler
+from .config import (
+    FILE_STORAGE_CONFIG, 
+    AUTO_SAVE_CONFIG,
+    STORAGE_LIMITS,
+    initialize_storage_dirs
+)
+
+logger = logging.getLogger(__name__)
+
+
+class StorageManager:
+    """
+    Unified storage manager for anomaly detection system
+    Coordinates MongoDB metadata storage and file system storage
+    """
+    
+    def __init__(self, mongodb_uri: str = None, database: str = None):
+        """
+        Initialize storage manager
+        
+        Args:
+            mongodb_uri: MongoDB connection string
+            database: Database name
+        """
+        # Initialize storage directories
+        initialize_storage_dirs()
+        
+        # Initialize MongoDB handler
+        self.mongodb = MongoDBHandler(mongodb_uri, database)
+        
+        # File storage paths
+        self.storage_paths = FILE_STORAGE_CONFIG["subdirs"]
+        
+        # Auto-save configuration
+        self.auto_save_enabled = AUTO_SAVE_CONFIG["enabled"]
+        self.auto_save_threshold = AUTO_SAVE_CONFIG["anomaly_threshold"]
+        self.auto_save_format = AUTO_SAVE_CONFIG["format"]
+        
+        # Cache for recent analyses
+        self._analysis_cache = {}
+        self._cache_size = 0
+        
+        # Statistics
+        self.stats = {
+            "analyses_saved": 0,
+            "models_saved": 0,
+            "cache_hits": 0,
+            "cache_misses": 0
+        }
+        
+        logger.info("StorageManager initialized")
+    
+    async def initialize(self) -> bool:
+        """
+        Initialize storage connections
+        
+        Returns:
+            Success status
+        """
+        try:
+            # Connect to MongoDB
+            connected = await self.mongodb.connect()
+            if not connected:
+                logger.error("❌ MongoDB bağlantısı BAŞARISIZ!")
+                logger.error(f"   URI: {self.mongodb.uri[:50]}...")
+                return False
+            else:
+                logger.info("✅ MongoDB bağlantısı BAŞARILI!")
+                logger.info(f"   📍 Database: {self.mongodb.database}")
+                logger.info(f"   📍 Collections: anomaly_results, model_registry")
+            
+            # Verify file storage paths
+            for name, path in self.storage_paths.items():
+                if not path.exists():
+                    path.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"Created storage directory: {path}")
+            
+            logger.info("StorageManager fully initialized")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error initializing StorageManager: {e}")
+            return False
+    
+    async def shutdown(self):
+        """Cleanup and close connections"""
+        try:
+            # Save any cached data
+            if self._analysis_cache:
+                await self._flush_cache()
+            
+            # Close MongoDB connection
+            await self.mongodb.disconnect()
+            
+            logger.info("StorageManager shutdown complete")
+            
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}")
+    
+    async def save_anomaly_analysis(self, 
+                                   analysis_result: Dict[str, Any],
+                                   source_type: str = "unknown",
+                                   host: str = None,
+                                   time_range: str = None,
+                                   auto_save: bool = None) -> Dict[str, str]:
+        """
+        Save complete anomaly analysis (metadata + data)
+        
+        Args:
+            analysis_result: Result from analyze_mongodb_logs
+            source_type: Source of data (opensearch, file, etc.)
+            host: Host filter if applicable
+            time_range: Time range of analysis
+            auto_save: Override auto-save setting
+            
+        Returns:
+            Dictionary with analysis_id and file_path
+        """
+        try:
+            # Check auto-save setting
+            if auto_save is None:
+                auto_save = self.auto_save_enabled
+            
+            if not auto_save:
+                logger.debug("Auto-save disabled, skipping")
+                return {}
+            
+            # Prepare source info
+            source_info = {
+                "source_type": source_type,
+                "host": host,
+                "time_range": time_range,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            # ✅ NEW: normalize incoming analysis_result to a safe, consistent dict
+            analysis_result = self._normalize_analysis_result(analysis_result, source_info)
+            
+            # Helpful debug: how many critical anomalies will we store?
+            try:
+                _kritik = 0
+                if isinstance(analysis_result.get("sonuç"), dict):
+                    _kritik = len(analysis_result["sonuç"].get("critical_anomalies", []))
+                logger.info(f"📊 Kayıt öncesi kritik anomali sayısı: {_kritik}")
+            except Exception as _e:
+                logger.warning(f"Normalize debug failed: {_e}")
+            
+            # Save metadata to MongoDB
+            analysis_id = await self.mongodb.save_anomaly_result(
+                analysis_result, 
+                source_info
+            )
+            
+            # ✅ YENİ: MongoDB kayıt durumunu detaylı logla
+            if analysis_id:
+                logger.info(f"✅ MongoDB KAYIT BAŞARILI - Analysis ID: {analysis_id}")
+                logger.info(f"   📍 Database: {self.mongodb.database}")
+                logger.info(f"   📍 Collection: anomaly_results")
+                logger.info(f"   📍 Host: {host or 'all'}")
+                logger.info(f"   📍 Time Range: {time_range}")
+                logger.info(f"   📍 Source Type: {source_type}")
+            else:
+                logger.error("❌ MongoDB KAYIT BAŞARISIZ - Analysis ID alınamadı!")
+            
+            # Save detailed data to file system
+            file_path = await self._save_analysis_file(
+                analysis_id,
+                analysis_result,
+                source_info
+            )
+            
+            # Update statistics
+            self.stats["analyses_saved"] += 1
+            
+            # Add to cache
+            await self._add_to_cache(analysis_id, analysis_result)
+            
+            logger.info(f"Analysis saved - ID: {analysis_id}, File: {file_path}")
+            
+            return {
+                "analysis_id": analysis_id,
+                "file_path": str(file_path)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error saving anomaly analysis: {e}")
+            return {}
+    
+    async def save_model(self,
+                        model_path: str,
+                        model_info: Dict[str, Any],
+                        performance_metrics: Dict[str, Any] = None,
+                        backup_previous: bool = True) -> str:
+        """
+        Save model with metadata and optional backup
+        
+        Args:
+            model_path: Path to model file
+            model_info: Model information
+            performance_metrics: Model performance metrics
+            backup_previous: Backup previous model version
+            
+        Returns:
+            Model version ID
+        """
+        try:
+            model_file = Path(model_path)
+            
+            # Backup previous model if exists
+            if backup_previous and model_file.exists():
+                await self._backup_model(model_file)
+            
+            # Save model metadata to MongoDB
+            version_id = await self.mongodb.save_model_metadata(
+                model_info,
+                model_path,
+                performance_metrics
+            )
+            
+            # Copy model to versioned storage
+            versioned_path = self.storage_paths["models"] / f"model_{version_id}.pkl"
+            if model_file.exists():
+                shutil.copy2(model_file, versioned_path)
+                logger.info(f"Model copied to versioned storage: {versioned_path}")
+            
+            # Update statistics
+            self.stats["models_saved"] += 1
+            
+            return version_id
+            
+        except Exception as e:
+            logger.error(f"Error saving model: {e}")
+            return ""
+    
+    async def get_anomaly_history(self,
+                                 filters: Dict[str, Any] = None,
+                                 limit: int = 100,
+                                 skip: int = 0,
+                                 include_details: bool = False) -> List[Dict[str, Any]]:
+        """
+        Get anomaly history with optional detailed data
+        
+        Args:
+            filters: Query filters
+            limit: Maximum results
+            skip: Skip for pagination
+            include_details: Load full details from files
+            
+        Returns:
+            List of anomaly analyses
+        """
+        try:
+            # Get metadata from MongoDB
+            analyses = await self.mongodb.get_anomaly_history(filters, limit, skip)
+            
+            # Load detailed data if requested
+            if include_details:
+                for analysis in analyses:
+                    analysis_id = analysis.get("analysis_id")
+                    
+                    # Check cache first
+                    if analysis_id in self._analysis_cache:
+                        analysis["detailed_data"] = self._analysis_cache[analysis_id]
+                        self.stats["cache_hits"] += 1
+                    else:
+                        # Load from file
+                        detailed_data = await self._load_analysis_file(analysis_id)
+                        if detailed_data:
+                            analysis["detailed_data"] = detailed_data
+                        self.stats["cache_misses"] += 1
+            
+            return analyses
+            
+        except Exception as e:
+            logger.error(f"Error getting anomaly history: {e}")
+            return []
+    
+    async def get_latest_analysis(self, 
+                                 host: str = None,
+                                 source_type: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent analysis
+        
+        Args:
+            host: Filter by host
+            source_type: Filter by source type
+            
+        Returns:
+            Latest analysis with details
+        """
+        try:
+            filters = {}
+            if host:
+                filters["host"] = host
+            if source_type:
+                filters["source"] = source_type
+            
+            analyses = await self.get_anomaly_history(
+                filters=filters,
+                limit=1,
+                include_details=True
+            )
+            
+            if analyses:
+                return analyses[0]
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting latest analysis: {e}")
+            return None
+    
+    async def get_statistics(self, days: int = 30) -> Dict[str, Any]:
+        """
+        Get storage and analysis statistics
+        
+        Args:
+            days: Number of days to analyze
+            
+        Returns:
+            Statistics dictionary
+        """
+        try:
+            # Get MongoDB statistics
+            mongodb_stats = await self.mongodb.get_anomaly_statistics(days)
+            
+            # Calculate storage usage
+            storage_stats = await self._calculate_storage_usage()
+            
+            # Combine statistics
+            stats = {
+                "analysis_stats": mongodb_stats,
+                "storage_stats": storage_stats,
+                "manager_stats": self.stats,
+                "period_days": days
+            }
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error getting statistics: {e}")
+            return {}
+    
+    async def cleanup_old_data(self, force: bool = False) -> Dict[str, int]:
+        """
+        Clean up old data based on retention policies
+        
+        Args:
+            force: Force cleanup even if within limits
+            
+        Returns:
+            Cleanup statistics
+        """
+        try:
+            cleanup_stats = {
+                "files_deleted": 0,
+                "space_freed_mb": 0
+            }
+            
+            # MongoDB cleanup is handled automatically by TTL
+            
+            # File system cleanup
+            cutoff_date = datetime.utcnow() - timedelta(
+                days=AUTO_SAVE_CONFIG.get("retention_days", 90)
+            )
+            
+            # Clean analysis files
+            analysis_dir = self.storage_paths["exports"] / "anomaly"
+            if analysis_dir.exists():
+                for file_path in analysis_dir.glob("*.json"):
+                    file_stat = file_path.stat()
+                    file_date = datetime.fromtimestamp(file_stat.st_mtime)
+                    
+                    if force or file_date < cutoff_date:
+                        file_size_mb = file_stat.st_size / (1024 * 1024)
+                        file_path.unlink()
+                        cleanup_stats["files_deleted"] += 1
+                        cleanup_stats["space_freed_mb"] += file_size_mb
+            
+            # Clean temp files
+            temp_dir = self.storage_paths["temp"]
+            if temp_dir.exists():
+                temp_cutoff = datetime.utcnow() - timedelta(hours=6)
+                for file_path in temp_dir.glob("*"):
+                    file_stat = file_path.stat()
+                    file_date = datetime.fromtimestamp(file_stat.st_mtime)
+                    
+                    if file_date < temp_cutoff:
+                        file_size_mb = file_stat.st_size / (1024 * 1024)
+                        file_path.unlink()
+                        cleanup_stats["files_deleted"] += 1
+                        cleanup_stats["space_freed_mb"] += file_size_mb
+            
+            logger.info(f"Cleanup completed: {cleanup_stats}")
+            return cleanup_stats
+            
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
+            return {"files_deleted": 0, "space_freed_mb": 0}
+    
+    async def export_analysis(self, 
+                             analysis_id: str,
+                             format: str = "json") -> Optional[str]:
+        """
+        Export analysis in specified format
+        
+        Args:
+            analysis_id: Analysis ID
+            format: Export format (json, csv)
+            
+        Returns:
+            Export file path
+        """
+        try:
+            # Get analysis with details
+            filters = {"analysis_id": analysis_id}
+            analyses = await self.get_anomaly_history(
+                filters=filters,
+                limit=1,
+                include_details=True
+            )
+            
+            if not analyses:
+                logger.warning(f"Analysis not found: {analysis_id}")
+                return None
+            
+            analysis = analyses[0]
+            
+            # Export based on format
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            
+            if format == "json":
+                export_path = self.storage_paths["exports"] / f"export_{analysis_id}_{timestamp}.json"
+                async with aiofiles.open(export_path, 'w') as f:
+                    await f.write(json.dumps(analysis, indent=2, default=str))
+                    
+            elif format == "csv":
+                # Export critical anomalies as CSV
+                import pandas as pd
+                
+                export_path = self.storage_paths["exports"] / f"export_{analysis_id}_{timestamp}.csv"
+                
+                if "detailed_data" in analysis:
+                    anomalies = analysis["detailed_data"].get("data", {}).get("critical_anomalies", [])
+                    if anomalies:
+                        df = pd.DataFrame(anomalies)
+                        df.to_csv(export_path, index=False)
+                    else:
+                        logger.warning("No anomalies to export")
+                        return None
+            else:
+                logger.error(f"Unsupported export format: {format}")
+                return None
+            
+            logger.info(f"Analysis exported to: {export_path}")
+            return str(export_path)
+            
+        except Exception as e:
+            logger.error(f"Error exporting analysis: {e}")
+            return None
+    
+    async def _save_analysis_file(self,
+                                 analysis_id: str,
+                                 analysis_result: Dict[str, Any],
+                                 source_info: Dict[str, Any]) -> Path:
+        """Save analysis data to file system"""
+        try:
+            # Determine file format
+            if self.auto_save_format == "json":
+                file_name = f"{analysis_id}.json"
+                file_path = self.storage_paths["exports"] / "anomaly" / file_name
+                
+                # Ensure directory exists
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Save as JSON
+                data = {
+                    "analysis_id": analysis_id,
+                    "source_info": source_info,
+                    "result": analysis_result,
+                    "saved_at": datetime.utcnow().isoformat()
+                }
+                
+                async with aiofiles.open(file_path, 'w') as f:
+                    await f.write(json.dumps(data, indent=2, default=str))
+                    
+            elif self.auto_save_format == "pickle":
+                file_name = f"{analysis_id}.pkl"
+                file_path = self.storage_paths["exports"] / "anomaly" / file_name
+                
+                # Ensure directory exists
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Save as pickle
+                data = {
+                    "analysis_id": analysis_id,
+                    "source_info": source_info,
+                    "result": analysis_result,
+                    "saved_at": datetime.utcnow()
+                }
+                
+                # Pickle requires sync I/O
+                await asyncio.get_event_loop().run_in_executor(
+                    None, 
+                    joblib.dump,
+                    data,
+                    file_path
+                )
+            else:
+                raise ValueError(f"Unsupported format: {self.auto_save_format}")
+            
+            return file_path
+            
+        except Exception as e:
+            logger.error(f"Error saving analysis file: {e}")
+            raise
+    
+    async def _load_analysis_file(self, analysis_id: str) -> Optional[Dict[str, Any]]:
+        """Load analysis data from file system"""
+        try:
+            # Try JSON first
+            json_path = self.storage_paths["exports"] / "anomaly" / f"{analysis_id}.json"
+            if json_path.exists():
+                async with aiofiles.open(json_path, 'r') as f:
+                    content = await f.read()
+                    return json.loads(content)
+            
+            # Try pickle
+            pkl_path = self.storage_paths["exports"] / "anomaly" / f"{analysis_id}.pkl"
+            if pkl_path.exists():
+                # Pickle requires sync I/O
+                data = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    joblib.load,
+                    pkl_path
+                )
+                return data
+            
+            logger.warning(f"Analysis file not found: {analysis_id}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error loading analysis file: {e}")
+            return None
+    
+    async def _backup_model(self, model_path: Path):
+        """Backup existing model file"""
+        try:
+            if model_path.exists():
+                timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                backup_name = f"{model_path.stem}_backup_{timestamp}{model_path.suffix}"
+                backup_path = self.storage_paths["backups"] / backup_name
+                
+                shutil.copy2(model_path, backup_path)
+                logger.info(f"Model backed up to: {backup_path}")
+                
+        except Exception as e:
+            logger.error(f"Error backing up model: {e}")
+    
+    async def _add_to_cache(self, analysis_id: str, analysis_result: Dict[str, Any]):
+        """Add analysis to cache with size management"""
+        try:
+            # Estimate size (rough approximation)
+            estimated_size = len(json.dumps(analysis_result, default=str))
+            
+            # Check cache size limit (10 MB)
+            max_cache_size = 10 * 1024 * 1024
+            
+            # If adding would exceed limit, clear oldest entries
+            if self._cache_size + estimated_size > max_cache_size:
+                # Clear half of cache
+                to_remove = len(self._analysis_cache) // 2
+                for key in list(self._analysis_cache.keys())[:to_remove]:
+                    del self._analysis_cache[key]
+                
+                # Recalculate cache size
+                self._cache_size = sum(
+                    len(json.dumps(v, default=str)) 
+                    for v in self._analysis_cache.values()
+                )
+            
+            # Add to cache
+            self._analysis_cache[analysis_id] = analysis_result
+            self._cache_size += estimated_size
+            
+        except Exception as e:
+            logger.error(f"Error adding to cache: {e}")
+    
+    async def _flush_cache(self):
+        """Flush cache to disk if needed"""
+        try:
+            if self._analysis_cache:
+                cache_file = self.storage_paths["temp"] / "analysis_cache.json"
+                
+                async with aiofiles.open(cache_file, 'w') as f:
+                    await f.write(json.dumps(
+                        self._analysis_cache,
+                        indent=2,
+                        default=str
+                    ))
+                
+                logger.info(f"Cache flushed to: {cache_file}")
+                
+        except Exception as e:
+            logger.error(f"Error flushing cache: {e}")
+    
+    async def _calculate_storage_usage(self) -> Dict[str, Any]:
+        """Calculate storage usage statistics"""
+        try:
+            stats = {
+                "total_size_mb": 0,
+                "models_size_mb": 0,
+                "exports_size_mb": 0,
+                "temp_size_mb": 0,
+                "file_counts": {}
+            }
+            
+            for name, path in self.storage_paths.items():
+                if path.exists():
+                    # Calculate size
+                    size_bytes = sum(
+                        f.stat().st_size 
+                        for f in path.rglob("*") 
+                        if f.is_file()
+                    )
+                    size_mb = size_bytes / (1024 * 1024)
+                    
+                    # Count files
+                    file_count = sum(1 for f in path.rglob("*") if f.is_file())
+                    
+                    stats[f"{name}_size_mb"] = round(size_mb, 2)
+                    stats["file_counts"][name] = file_count
+                    stats["total_size_mb"] += size_mb
+            
+            stats["total_size_mb"] = round(stats["total_size_mb"], 2)
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error calculating storage usage: {e}")
+            return {}
+    
+    def _normalize_analysis_result(self, analysis_result: Any, source_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Ensure analysis_result is a dict with a stable shape:
+        {
+          "durum": "...",
+          "işlem": "...",
+          "açıklama": "...",
+          "sonuç": {
+              "summary": {...},
+              "critical_anomalies": [...],
+              ...
+          },
+          "ai_explanation": {...} (opsiyonel),
+          "suggestions": [...]
+        }
+        """
+        # 1) parse string to dict if needed
+        if isinstance(analysis_result, str):
+            try:
+                analysis_result = json.loads(analysis_result)
+            except Exception:
+                # wrap raw string
+                analysis_result = {
+                    "durum": "tamamlandı",
+                    "işlem": "anomaly_analysis",
+                    "açıklama": "Raw string result wrapped by normalizer",
+                    "sonuç": {"raw_result": analysis_result}
+                }
+
+        # 2) ensure we have a dict
+        if not isinstance(analysis_result, dict):
+            analysis_result = {
+                "durum": "tamamlandı",
+                "işlem": "anomaly_analysis",
+                "açıklama": "Non-dict result wrapped by normalizer",
+                "sonuç": {"raw_result": str(analysis_result)}
+            }
+
+        # 3) prefer "sonuç", fallback to "data"
+        if "sonuç" not in analysis_result:
+            if "data" in analysis_result and isinstance(analysis_result["data"], dict):
+                analysis_result["sonuç"] = analysis_result["data"]
+            else:
+                analysis_result.setdefault("sonuç", {})
+
+        data = analysis_result["sonuç"]
+        if not isinstance(data, dict):
+            data = {"raw_data": data}
+            analysis_result["sonuç"] = data
+
+        # 4) ensure summary exists with minimal fields
+        summary = data.get("summary") or {}
+        if not isinstance(summary, dict):
+            summary = {}
+        # fill minimal safe fields
+        summary.setdefault("total_logs", data.get("logs_analyzed") or data.get("filtered_logs") or 0)
+        # anomaly count fallback
+        try:
+            ca = data.get("critical_anomalies") or []
+            if isinstance(ca, list):
+                summary.setdefault("n_anomalies", len(ca))
+        except Exception:
+            summary.setdefault("n_anomalies", 0)
+        # anomaly rate fallback (best-effort)
+        if "anomaly_rate" not in summary:
+            tl = summary.get("total_logs") or 0
+            na = summary.get("n_anomalies") or 0
+            summary["anomaly_rate"] = round((na / tl * 100), 3) if tl else 0.0
+
+        # attach back
+        data["summary"] = summary
+
+        # 5) attach source hints (useful for querying later)
+        data.setdefault("source", {})
+        if isinstance(data["source"], dict):
+            data["source"].setdefault("type", source_info.get("source_type"))
+            data["source"].setdefault("host", source_info.get("host"))
+            data["source"].setdefault("time_range", source_info.get("time_range"))
+
+        return analysis_result

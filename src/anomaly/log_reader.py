@@ -18,7 +18,7 @@ from requests.auth import HTTPBasicAuth
 from urllib.parse import quote
 import urllib3
 from datetime import datetime, timedelta
-
+from datetime import timezone
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -968,7 +968,8 @@ class OpenSearchProxyReader:
             batch_size = 10000  # OpenSearch limiti
             
             # Zaman aralığını hesapla
-            end_time = datetime.now()
+            # Zaman aralığını hesapla - UTC kullan
+            end_time = datetime.now(timezone.utc)  # UTC zamanı al
             start_time = end_time - timedelta(hours=last_hours)
             
             # Zaman dilimlerini belirle
@@ -1074,9 +1075,10 @@ class OpenSearchProxyReader:
         """Belirli bir zaman dilimi için logları oku"""
         slice_logs = []
         
-        # ISO format timestamp'ler
-        start_iso = start_time.isoformat() + "Z"
-        end_iso = end_time.isoformat() + "Z"
+        # ISO format timestamp'ler - UTC'ye çevir
+        from datetime import timezone
+        start_iso = start_time.replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
+        end_iso = end_time.replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
         
         logger.debug(f"Reading time slice: {start_iso} to {end_iso}")
         
@@ -1108,8 +1110,16 @@ class OpenSearchProxyReader:
             })
         
         # Erken kontrol yap
+        # Search yap
         search_path = f"{self.index_pattern}/_search"
         early_result = self._make_request(search_path, "GET", early_check_query)
+        
+        # DEBUG: Response'u kontrol et
+        print(f"[DEBUG TIME_SLICE] Query: {json.dumps(early_check_query, indent=2)}")
+        print(f"[DEBUG TIME_SLICE] Result keys: {early_result.keys() if early_result else 'None'}")
+        if early_result and 'hits' in early_result:
+            print(f"[DEBUG TIME_SLICE] Total hits: {early_result['hits']['total']}")
+            print(f"[DEBUG TIME_SLICE] Returned hits: {len(early_result['hits']['hits'])}")
         
         if early_result and 'hits' in early_result:
             total_available = early_result['hits']['total']['value']

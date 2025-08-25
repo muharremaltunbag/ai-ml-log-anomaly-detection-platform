@@ -1,0 +1,225 @@
+{
+  "analysis_id": "analysis_3f46d3c4bf67",
+  "source_info": {
+    "source_type": "opensearch",
+    "host": "lcwmongodb01n2.lcwaikiki.local",
+    "time_range": "last_day",
+    "timestamp": "2025-08-20T22:54:27.769433"
+  },
+  "result": {
+    "durum": "tamamland\u0131",
+    "i\u015flem": "anomaly_analysis",
+    "a\u00e7\u0131klama": "OpenSearch'ten son 24 saatteki 123399 log analiz edildi.\n\n\ud83d\udd0d **NE TESP\u0130T ED\u0130LD\u0130?**\n\u2022 Toplam 121,091 log i\u00e7inde 2 anomali tespit edildi (%0.0)\n\u2022 ACCESS bile\u015feninde 513 anomali (%100.0)\n\u2022 ELECTION bile\u015feninde 37 anomali (%100.0)\n\u2022 REPL bile\u015feninde 44 anomali (%100.0)\n\u2022 En kritik anomali skoru: 0.000 (COMMAND bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 0, 1, 14 aras\u0131nda yo\u011funla\u015fm\u0131\u015f\n\n\u26a0\ufe0f **POTANS\u0130YEL ETK\u0130LER:**\n\u2022 Sistem performans\u0131 %0.0 oran\u0131nda etkilenebilir\n\u2022 En kritik 9 bile\u015fende sorun tespit edildi\n\u2022 Ortalama anomali skoru -0.455 seviyesinde\n\n\ud83c\udfaf **MUHTEMEL NEDENLER:**\n\u2022 Yo\u011fun kullan\u0131m veya sistem sorunu\n\u2022 Saat 0 civar\u0131nda artan y\u00fck\n\u2022 En y\u00fcksek anomali oran\u0131 %100.0 ile tespit edildi\n\n\ud83d\udca1 **\u00d6NER\u0130LEN AKS\u0130YONLAR:**\n1. 2 anomaliyi detayl\u0131 inceleyin\n2. \u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n\n3. Skor de\u011feri -0.880 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn\n\n\ud83d\udcca **\u0130STAT\u0130ST\u0130K \u00d6ZET\u0130:**\n\u2022 Toplam Log: 121,091\n\u2022 Anomali Say\u0131s\u0131: 2 (%0.0)\n\u2022 Ortalama Anomali Skoru: -0.455\n",
+    "sonu\u00e7": {
+      "source": "OpenSearch",
+      "logs_analyzed": 123399,
+      "filtered_logs": 121091,
+      "summary": {
+        "total_logs": 121091,
+        "n_anomalies": 2,
+        "anomaly_rate": 0.001651650411673865,
+        "score_range": {
+          "min": -0.88,
+          "max": -0.3754217362234752,
+          "mean": -0.4550480925830534
+        },
+        "ensemble_stats": {
+          "total_rule_overrides": 1,
+          "rules_active": 6,
+          "ensemble_method": "override",
+          "rule_hits": {
+            "security_alert": 1
+          }
+        },
+        "false_positive_filtered": {
+          "original_count": 500,
+          "filtered_count": 2,
+          "false_positive_rate": 99.6
+        }
+      },
+      "critical_anomalies": [
+        {
+          "index": 8081,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-20 08:49:03.191000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"OriginCode_1_TransactionType_1_FiscalDateTime_-1_CreatedDateUtc_-1\" on collection 'salestransactionapi.RetailTransaction'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-20 08:49:03) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 8084,
+          "severity_score": 72.04408640626409,
+          "severity_level": "HIGH",
+          "severity_color": "#e67e22",
+          "anomaly_score": -0.6261021601566022,
+          "timestamp": "2025-08-20 08:49:11.137000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"OriginCode_1_TransactionType_1_MpOrigin.OperationType_1_FiscalDateTime_-1_CreatedDateUtc_-1\" on collection 'salestransactionapi.RetailTransaction'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-20 08:49:11) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        }
+      ],
+      "security_alerts": {
+        "drop_operations": {
+          "count": 0,
+          "indices": []
+        },
+        "out_of_memory": {
+          "count": 0,
+          "indices": []
+        },
+        "restarts": {
+          "count": 0,
+          "indices": []
+        },
+        "memory_limits": {
+          "count": 0,
+          "indices": []
+        },
+        "shutdowns": {
+          "count": 0,
+          "indices": []
+        },
+        "assertions": {
+          "count": 0,
+          "indices": []
+        },
+        "fatal_errors": {
+          "count": 0,
+          "indices": []
+        }
+      },
+      "temporal_analysis": {
+        "hourly_distribution": {
+          "0": 503,
+          "1": 298,
+          "4": 15,
+          "5": 88,
+          "6": 93,
+          "7": 125,
+          "8": 103,
+          "9": 132,
+          "10": 60,
+          "11": 75,
+          "12": 70,
+          "13": 85,
+          "14": 146,
+          "15": 77,
+          "16": 52,
+          "17": 80,
+          "18": 70,
+          "19": 79,
+          "20": 66,
+          "21": 72,
+          "22": 74,
+          "23": 60
+        },
+        "peak_hours": [
+          0,
+          1,
+          14
+        ]
+      },
+      "component_analysis": {
+        "ACCESS": {
+          "total_count": 513,
+          "anomaly_count": 513,
+          "anomaly_rate": 100.0
+        },
+        "ELECTION": {
+          "total_count": 37,
+          "anomaly_count": 37,
+          "anomaly_rate": 100.0
+        },
+        "REPL": {
+          "total_count": 44,
+          "anomaly_count": 44,
+          "anomaly_rate": 100.0
+        },
+        "QUERY": {
+          "total_count": 25,
+          "anomaly_count": 25,
+          "anomaly_rate": 100.0
+        },
+        "CONNPOOL": {
+          "total_count": 2,
+          "anomaly_count": 2,
+          "anomaly_rate": 100.0
+        },
+        "STORAGE": {
+          "total_count": 2939,
+          "anomaly_count": 340,
+          "anomaly_rate": 11.568560734943858
+        },
+        "-": {
+          "total_count": 4399,
+          "anomaly_count": 392,
+          "anomaly_rate": 8.911116162764264
+        },
+        "COMMAND": {
+          "total_count": 63023,
+          "anomaly_count": 841,
+          "anomaly_rate": 1.3344334608000255
+        },
+        "NETWORK": {
+          "total_count": 50109,
+          "anomaly_count": 229,
+          "anomaly_rate": 0.4570037318645353
+        }
+      },
+      "feature_importance": {
+        "has_many_attrs": 1.0,
+        "burst_density": 0.9511609677113104,
+        "component_changed": 0.2172470173832012,
+        "has_error_key": 0.034489492357895536,
+        "is_rare_message": 0.004948968783339326,
+        "severity_W": 0.0,
+        "is_rare_component": 0.0,
+        "is_auth_failure": 0.0,
+        "is_drop_operation": 0.0,
+        "is_create_operation": 0.0
+      },
+      "anomaly_score_stats": {
+        "min": -0.88,
+        "max": -0.3754217362234752,
+        "mean": -0.4550480925830534
+      },
+      "ai_explanation": {
+        "ne_tespit_edildi": "\u2022 Toplam 121,091 log i\u00e7inde 2 anomali tespit edildi (%0.0)\n\u2022 ACCESS bile\u015feninde 513 anomali (%100.0)\n\u2022 ELECTION bile\u015feninde 37 anomali (%100.0)\n\u2022 REPL bile\u015feninde 44 anomali (%100.0)\n\u2022 En kritik anomali skoru: 0.000 (COMMAND bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 0, 1, 14 aras\u0131nda yo\u011funla\u015fm\u0131\u015f",
+        "potansiyel_etkiler": [
+          "Sistem performans\u0131 %0.0 oran\u0131nda etkilenebilir",
+          "En kritik 9 bile\u015fende sorun tespit edildi",
+          "Ortalama anomali skoru -0.455 seviyesinde"
+        ],
+        "muhtemel_nedenler": [
+          "Yo\u011fun kullan\u0131m veya sistem sorunu",
+          "Saat 0 civar\u0131nda artan y\u00fck",
+          "En y\u00fcksek anomali oran\u0131 %100.0 ile tespit edildi"
+        ],
+        "onerilen_aksiyonlar": [
+          "2 anomaliyi detayl\u0131 inceleyin",
+          "\u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+          "Skor de\u011feri -0.880 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+        ]
+      }
+    },
+    "\u00f6neriler": [
+      "2 anomaliyi detayl\u0131 inceleyin",
+      "\u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+      "Skor de\u011feri -0.880 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+    ]
+  },
+  "saved_at": "2025-08-20T22:54:27.795370"
+}

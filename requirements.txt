@@ -14,11 +14,11 @@ pydantic==2.10.4
 paramiko==3.5.0
 
 # Anomaly Detection için - Uyumlu versiyonlar
-pandas==2.2.3
-numpy==1.26.4  
-scikit-learn==1.5.2
-joblib==1.4.2
+pandas
+numpy  
+scikit-learn
+joblib
 
 # Storage Management için
-motor==3.3.2          # Async MongoDB driver
-aiofiles==23.2.1      # Async file operations
+motor==3.5.0          # Async MongoDB driver
+aiofiles==24.1.0      # Async file operations

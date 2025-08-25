@@ -1,0 +1,169 @@
+{
+  "analysis_id": "analysis_161c9e95b003",
+  "source_info": {
+    "source_type": "opensearch",
+    "host": "pplmongodbn3.lcwaikiki.local",
+    "time_range": "last_day",
+    "timestamp": "2025-08-20T23:18:22.755940"
+  },
+  "result": {
+    "durum": "tamamland\u0131",
+    "i\u015flem": "anomaly_analysis",
+    "a\u00e7\u0131klama": "OpenSearch'ten son 24 saatteki 1305 log analiz edildi.\n\n\ud83d\udd0d **NE TESP\u0130T ED\u0130LD\u0130?**\n\u2022 Toplam 1,305 log i\u00e7inde 2 anomali tespit edildi (%0.2)\n\u2022 REPL bile\u015feninde 8 anomali (%17.4)\n\u2022 WTCHKPT bile\u015feninde 8 anomali (%0.6)\n\u2022 En kritik anomali skoru: 0.000 (REPL bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 0, 5, 18 aras\u0131nda yo\u011funla\u015fm\u0131\u015f\n\n\u26a0\ufe0f **POTANS\u0130YEL ETK\u0130LER:**\n\u2022 Sistem performans\u0131 %0.2 oran\u0131nda etkilenebilir\n\u2022 En kritik 2 bile\u015fende sorun tespit edildi\n\u2022 Ortalama anomali skoru -0.446 seviyesinde\n\n\ud83c\udfaf **MUHTEMEL NEDENLER:**\n\u2022 Yo\u011fun kullan\u0131m veya sistem sorunu\n\u2022 Saat 0 civar\u0131nda artan y\u00fck\n\u2022 En y\u00fcksek anomali oran\u0131 %17.4 ile tespit edildi\n\n\ud83d\udca1 **\u00d6NER\u0130LEN AKS\u0130YONLAR:**\n1. 2 anomaliyi detayl\u0131 inceleyin\n2. \u00d6zellikle %17.4 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n\n3. Skor de\u011feri -0.837 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn\n\n\ud83d\udcca **\u0130STAT\u0130ST\u0130K \u00d6ZET\u0130:**\n\u2022 Toplam Log: 1,305\n\u2022 Anomali Say\u0131s\u0131: 2 (%0.2)\n\u2022 Ortalama Anomali Skoru: -0.446\n",
+    "sonu\u00e7": {
+      "source": "OpenSearch",
+      "logs_analyzed": 1305,
+      "filtered_logs": 1305,
+      "summary": {
+        "total_logs": 1305,
+        "n_anomalies": 2,
+        "anomaly_rate": 0.15325670498084293,
+        "score_range": {
+          "min": -0.8365249124356297,
+          "max": -0.4006498383874297,
+          "mean": -0.44550246981125663
+        },
+        "ensemble_stats": {
+          "total_rule_overrides": 0,
+          "rules_active": 6,
+          "ensemble_method": "override",
+          "rule_hits": {}
+        },
+        "false_positive_filtered": {
+          "original_count": 8,
+          "filtered_count": 2,
+          "false_positive_rate": 75.0
+        }
+      },
+      "critical_anomalies": [
+        {
+          "index": 808,
+          "severity_score": 61.21761653790657,
+          "severity_level": "HIGH",
+          "severity_color": "#e67e22",
+          "anomaly_score": -0.7804404134476643,
+          "timestamp": "2025-08-20 18:47:17.293000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Cannot select sync source which is not ahead of me",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-08-20 18:47:17) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 817,
+          "severity_score": 61.21761653790657,
+          "severity_level": "HIGH",
+          "severity_color": "#e67e22",
+          "anomaly_score": -0.7804404134476643,
+          "timestamp": "2025-08-20 18:47:22.925000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Cannot select sync source which is not ahead of me",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-08-20 18:47:22) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        }
+      ],
+      "security_alerts": {
+        "drop_operations": {
+          "count": 0,
+          "indices": []
+        },
+        "out_of_memory": {
+          "count": 0,
+          "indices": []
+        },
+        "restarts": {
+          "count": 0,
+          "indices": []
+        },
+        "memory_limits": {
+          "count": 0,
+          "indices": []
+        },
+        "shutdowns": {
+          "count": 0,
+          "indices": []
+        },
+        "assertions": {
+          "count": 0,
+          "indices": []
+        },
+        "fatal_errors": {
+          "count": 0,
+          "indices": []
+        }
+      },
+      "temporal_analysis": {
+        "hourly_distribution": {
+          "0": 7,
+          "5": 7,
+          "18": 2
+        },
+        "peak_hours": [
+          0,
+          5,
+          18
+        ]
+      },
+      "component_analysis": {
+        "REPL": {
+          "total_count": 46,
+          "anomaly_count": 8,
+          "anomaly_rate": 17.391304347826086
+        },
+        "WTCHKPT": {
+          "total_count": 1259,
+          "anomaly_count": 8,
+          "anomaly_rate": 0.6354249404289118
+        }
+      },
+      "feature_importance": {
+        "burst_density": 1.0,
+        "severity_W": 0.0,
+        "has_error_key": 0.0,
+        "is_auth_failure": 0.0,
+        "is_drop_operation": 0.0,
+        "is_create_operation": 0.0,
+        "is_aggregate_operation": 0.0,
+        "is_admin_operation": 0.0,
+        "is_bulk_operation": 0.0,
+        "is_transaction_operation": 0.0
+      },
+      "anomaly_score_stats": {
+        "min": -0.8365249124356297,
+        "max": -0.4006498383874297,
+        "mean": -0.44550246981125663
+      },
+      "ai_explanation": {
+        "ne_tespit_edildi": "\u2022 Toplam 1,305 log i\u00e7inde 2 anomali tespit edildi (%0.2)\n\u2022 REPL bile\u015feninde 8 anomali (%17.4)\n\u2022 WTCHKPT bile\u015feninde 8 anomali (%0.6)\n\u2022 En kritik anomali skoru: 0.000 (REPL bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 0, 5, 18 aras\u0131nda yo\u011funla\u015fm\u0131\u015f",
+        "potansiyel_etkiler": [
+          "Sistem performans\u0131 %0.2 oran\u0131nda etkilenebilir",
+          "En kritik 2 bile\u015fende sorun tespit edildi",
+          "Ortalama anomali skoru -0.446 seviyesinde"
+        ],
+        "muhtemel_nedenler": [
+          "Yo\u011fun kullan\u0131m veya sistem sorunu",
+          "Saat 0 civar\u0131nda artan y\u00fck",
+          "En y\u00fcksek anomali oran\u0131 %17.4 ile tespit edildi"
+        ],
+        "onerilen_aksiyonlar": [
+          "2 anomaliyi detayl\u0131 inceleyin",
+          "\u00d6zellikle %17.4 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+          "Skor de\u011feri -0.837 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+        ]
+      }
+    },
+    "\u00f6neriler": [
+      "2 anomaliyi detayl\u0131 inceleyin",
+      "\u00d6zellikle %17.4 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+      "Skor de\u011feri -0.837 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+    ]
+  },
+  "saved_at": "2025-08-20T23:18:22.758915"
+}

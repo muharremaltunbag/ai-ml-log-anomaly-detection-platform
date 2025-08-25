@@ -1,0 +1,459 @@
+{
+  "analysis_id": "analysis_0ad7195bbf54",
+  "source_info": {
+    "source_type": "opensearch",
+    "host": "lcwmongodb01n2.lcwaikiki.local",
+    "time_range": "last_week",
+    "timestamp": "2025-08-20T22:11:25.059581"
+  },
+  "result": {
+    "durum": "tamamland\u0131",
+    "i\u015flem": "anomaly_analysis",
+    "a\u00e7\u0131klama": "OpenSearch'ten son 168 saatteki 568453 log analiz edildi.\n\n\ud83d\udd0d **NE TESP\u0130T ED\u0130LD\u0130?**\n\u2022 Toplam 549,024 log i\u00e7inde 16 anomali tespit edildi (%0.0)\n\u2022 ELECTION bile\u015feninde 90 anomali (%100.0)\n\u2022 CONNPOOL bile\u015feninde 6 anomali (%100.0)\n\u2022 ACCESS bile\u015feninde 2460 anomali (%100.0)\n\u2022 En kritik anomali skoru: 0.000 (COMMAND bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 3, 0, 23 aras\u0131nda yo\u011funla\u015fm\u0131\u015f\n\n\u26a0\ufe0f **POTANS\u0130YEL ETK\u0130LER:**\n\u2022 Sistem performans\u0131 %0.0 oran\u0131nda etkilenebilir\n\u2022 En kritik 10 bile\u015fende sorun tespit edildi\n\u2022 Ortalama anomali skoru -0.468 seviyesinde\n\n\ud83c\udfaf **MUHTEMEL NEDENLER:**\n\u2022 Yo\u011fun kullan\u0131m veya sistem sorunu\n\u2022 Saat 3 civar\u0131nda artan y\u00fck\n\u2022 En y\u00fcksek anomali oran\u0131 %100.0 ile tespit edildi\n\n\ud83d\udca1 **\u00d6NER\u0130LEN AKS\u0130YONLAR:**\n1. 16 anomaliyi detayl\u0131 inceleyin\n2. \u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n\n3. Skor de\u011feri -0.880 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn\n\n\ud83d\udcca **\u0130STAT\u0130ST\u0130K \u00d6ZET\u0130:**\n\u2022 Toplam Log: 549,024\n\u2022 Anomali Say\u0131s\u0131: 16 (%0.0)\n\u2022 Ortalama Anomali Skoru: -0.468\n",
+    "sonu\u00e7": {
+      "source": "OpenSearch",
+      "logs_analyzed": 568453,
+      "filtered_logs": 549024,
+      "summary": {
+        "total_logs": 549024,
+        "n_anomalies": 16,
+        "anomaly_rate": 0.0029142624001865128,
+        "score_range": {
+          "min": -0.88,
+          "max": -0.39358599068116795,
+          "mean": -0.46794850369577506
+        },
+        "ensemble_stats": {
+          "total_rule_overrides": 13,
+          "rules_active": 6,
+          "ensemble_method": "override",
+          "rule_hits": {
+            "security_alert": 13
+          }
+        },
+        "false_positive_filtered": {
+          "original_count": 500,
+          "filtered_count": 16,
+          "false_positive_rate": 96.8
+        }
+      },
+      "critical_anomalies": [
+        {
+          "index": 300552,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-18 08:20:57.023000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"ProcessedAt_1\" on collection 'retailtransaction.messagebox.inbox'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-18 08:20:57) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 300601,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-18 08:21:04.939000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"EventId_1_ConsumerType_1\" on collection 'retailtransaction.messagebox.inbox'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-18 08:21:04) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 300941,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-18 08:22:04.622000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"recordtime_1\" on collection 'retailtransaction.messagebox.outbox'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-18 08:22:04) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 301369,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-18 08:23:34.806000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"RecordTime_1\" on collection 'retailtransaction.message.deadletter'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-18 08:23:34) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 301371,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-18 08:23:40.662000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"RecordTime_1_Topic_1_ConsumerGroup_1_Status_1_EffectiveTime_1\" on collection 'retailtransaction.message.deadletter'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-18 08:23:40) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 301375,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-18 08:23:46.765000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"RecordTime_1_TopicKey_1\" on collection 'retailtransaction.message.deadletter'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-18 08:23:46) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 301377,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-18 08:23:50.928000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"RecordInfo_1\" on collection 'retailtransaction.message.deadletter'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-18 08:23:50) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 301414,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-18 08:24:00.343000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"ProcessedAt_1\" on collection 'retailtransaction.messagebox.inbox'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-18 08:24:00) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 378256,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-19 11:08:06.578000+03:00",
+          "severity": "I",
+          "component": "STORAGE",
+          "message": "dropCollection: storage engine will take ownership of drop-pending collection",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-19 11:08:06) - STORAGE bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 438457,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-20 08:49:03.191000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"OriginCode_1_TransactionType_1_FiscalDateTime_-1_CreatedDateUtc_-1\" on collection 'salestransactionapi.RetailTransaction'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-20 08:49:03) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 438460,
+          "severity_score": 82.2,
+          "severity_level": "CRITICAL",
+          "severity_color": "#e74c3c",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-20 08:49:11.137000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"OriginCode_1_TransactionType_1_MpOrigin.OperationType_1_FiscalDateTime_-1_CreatedDateUtc_-1\" on collection 'salestransactionapi.RetailTransaction'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-20 08:49:11) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 378255,
+          "severity_score": 79.2,
+          "severity_level": "HIGH",
+          "severity_color": "#e67e22",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-19 11:08:06.560000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Command executed: drop on 'Flux.OptionImageWithAllPoseBlob'",
+          "severity_factors": null,
+          "formatted_message": "\u2754 S\u0131n\u0131fland\u0131r\u0131lamayan anomali (2025-08-19 11:08:06) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000)",
+          "anomaly_type": "unknown",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 399195,
+          "severity_score": 79.2,
+          "severity_level": "HIGH",
+          "severity_color": "#e67e22",
+          "anomaly_score": -0.88,
+          "timestamp": "2025-08-19 16:44:44.863000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Index dropped: \"FiscalDateTime.0_(-1)_IX\" on collection 'salestransactionapi.RetailTransaction'",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\uddd1\ufe0f DROP i\u015flemi - Veri silme operasyonu (2025-08-19 16:44:44) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - G\u00fcvenlik kontrol\u00fc gerekli \u2192 Yetkileri ve backup'lar\u0131 kontrol edin",
+          "anomaly_type": "drop_operation",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 427222,
+          "severity_score": 64.03363800899763,
+          "severity_level": "HIGH",
+          "severity_color": "#e67e22",
+          "anomaly_score": -0.7258409502249407,
+          "timestamp": "2025-08-20 03:15:04.233000+03:00",
+          "severity": "I",
+          "component": "QUERY",
+          "message": "not authorized for query on local.startup_log",
+          "severity_factors": null,
+          "formatted_message": "\u2753 Sorgu i\u015flem sorunu (2025-08-20 03:15:04) - QUERY bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000)",
+          "anomaly_type": "query_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 427223,
+          "severity_score": 61.36739554726418,
+          "severity_level": "HIGH",
+          "severity_color": "#e67e22",
+          "anomaly_score": -0.6591848886816046,
+          "timestamp": "2025-08-20 03:15:04.233000+03:00",
+          "severity": "I",
+          "component": "QUERY",
+          "message": "Assertion for query with nToSkip and/or nToReturn",
+          "severity_factors": null,
+          "formatted_message": "\u2757 Assertion hatas\u0131 - Sistem tutars\u0131zl\u0131\u011f\u0131 (2025-08-20 03:15:04) - QUERY bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Sistem loglar\u0131n\u0131 detayl\u0131 inceleyin",
+          "anomaly_type": "assertion_failure",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 515351,
+          "severity_score": 60.522717394416105,
+          "severity_level": "HIGH",
+          "severity_color": "#e67e22",
+          "anomaly_score": -0.7630679348604026,
+          "timestamp": "2025-08-20 19:40:58.782000+03:00",
+          "severity": "W",
+          "component": "REPL",
+          "message": "Oplog fetcher stopped querying remote oplog with error",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-08-20 19:40:58) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        }
+      ],
+      "security_alerts": {
+        "drop_operations": {
+          "count": 0,
+          "indices": []
+        },
+        "out_of_memory": {
+          "count": 0,
+          "indices": []
+        },
+        "restarts": {
+          "count": 0,
+          "indices": []
+        },
+        "memory_limits": {
+          "count": 0,
+          "indices": []
+        },
+        "shutdowns": {
+          "count": 0,
+          "indices": []
+        },
+        "assertions": {
+          "count": 2,
+          "indices": [
+            427222,
+            427223
+          ]
+        },
+        "fatal_errors": {
+          "count": 0,
+          "indices": []
+        }
+      },
+      "temporal_analysis": {
+        "hourly_distribution": {
+          "0": 855,
+          "1": 403,
+          "2": 272,
+          "3": 1370,
+          "4": 564,
+          "5": 344,
+          "6": 529,
+          "7": 422,
+          "8": 383,
+          "9": 378,
+          "10": 354,
+          "11": 362,
+          "12": 371,
+          "13": 450,
+          "14": 357,
+          "15": 302,
+          "16": 350,
+          "17": 313,
+          "18": 357,
+          "19": 412,
+          "20": 402,
+          "21": 476,
+          "22": 401,
+          "23": 566
+        },
+        "peak_hours": [
+          3,
+          0,
+          23
+        ]
+      },
+      "component_analysis": {
+        "ELECTION": {
+          "total_count": 90,
+          "anomaly_count": 90,
+          "anomaly_rate": 100.0
+        },
+        "CONNPOOL": {
+          "total_count": 6,
+          "anomaly_count": 6,
+          "anomaly_rate": 100.0
+        },
+        "ACCESS": {
+          "total_count": 2461,
+          "anomaly_count": 2460,
+          "anomaly_rate": 99.95936611133686
+        },
+        "QUERY": {
+          "total_count": 116,
+          "anomaly_count": 108,
+          "anomaly_rate": 93.10344827586206
+        },
+        "REPL": {
+          "total_count": 111,
+          "anomaly_count": 91,
+          "anomaly_rate": 81.98198198198197
+        },
+        "INDEX": {
+          "total_count": 51,
+          "anomaly_count": 40,
+          "anomaly_rate": 78.43137254901961
+        },
+        "STORAGE": {
+          "total_count": 10379,
+          "anomaly_count": 1890,
+          "anomaly_rate": 18.209846806050678
+        },
+        "COMMAND": {
+          "total_count": 88298,
+          "anomaly_count": 5546,
+          "anomaly_rate": 6.281002967224627
+        },
+        "-": {
+          "total_count": 35913,
+          "anomaly_count": 570,
+          "anomaly_rate": 1.5871689917300142
+        },
+        "NETWORK": {
+          "total_count": 411599,
+          "anomaly_count": 192,
+          "anomaly_rate": 0.04664734365243842
+        }
+      },
+      "feature_importance": {
+        "component_encoded": 1.0,
+        "is_weekend": 0.7061229640225583,
+        "has_many_attrs": 0.703761940968023,
+        "burst_density": 0.4573961261510628,
+        "component_changed": 0.39018571665746077,
+        "is_slow_query": 0.12716083347497156,
+        "hour_of_day": 0.055525893083320475,
+        "extreme_burst_flag": 0.02532201438492114,
+        "is_rare_component": 0.0,
+        "is_rare_combo": 0.0
+      },
+      "anomaly_score_stats": {
+        "min": -0.88,
+        "max": -0.39358599068116795,
+        "mean": -0.46794850369577506
+      },
+      "ai_explanation": {
+        "ne_tespit_edildi": "\u2022 Toplam 549,024 log i\u00e7inde 16 anomali tespit edildi (%0.0)\n\u2022 ELECTION bile\u015feninde 90 anomali (%100.0)\n\u2022 CONNPOOL bile\u015feninde 6 anomali (%100.0)\n\u2022 ACCESS bile\u015feninde 2460 anomali (%100.0)\n\u2022 En kritik anomali skoru: 0.000 (COMMAND bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 3, 0, 23 aras\u0131nda yo\u011funla\u015fm\u0131\u015f",
+        "potansiyel_etkiler": [
+          "Sistem performans\u0131 %0.0 oran\u0131nda etkilenebilir",
+          "En kritik 10 bile\u015fende sorun tespit edildi",
+          "Ortalama anomali skoru -0.468 seviyesinde"
+        ],
+        "muhtemel_nedenler": [
+          "Yo\u011fun kullan\u0131m veya sistem sorunu",
+          "Saat 3 civar\u0131nda artan y\u00fck",
+          "En y\u00fcksek anomali oran\u0131 %100.0 ile tespit edildi"
+        ],
+        "onerilen_aksiyonlar": [
+          "16 anomaliyi detayl\u0131 inceleyin",
+          "\u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+          "Skor de\u011feri -0.880 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+        ]
+      }
+    },
+    "\u00f6neriler": [
+      "16 anomaliyi detayl\u0131 inceleyin",
+      "\u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+      "Skor de\u011feri -0.880 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+    ]
+  },
+  "saved_at": "2025-08-20T22:11:25.070451"
+}

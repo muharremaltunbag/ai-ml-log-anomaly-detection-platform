@@ -761,6 +761,7 @@ class AnomalyDetectionTools:
             
             print(f"[DEBUG] MAIN FUNCTION: Final result data critical_anomalies count: {len(result['data'].get('critical_anomalies', []))}")
             
+            self.last_analysis = result
             return self._format_result(result, "anomaly_analysis")
             
         except Exception as e:
@@ -1136,25 +1137,47 @@ class AnomalyDetectionTools:
         original_count = len(analysis.get('critical_anomalies', []))
         logger.info(f"Original critical anomalies: {original_count}")
         
+        # DEBUG: Gelen critical_anomalies'i kontrol et
+        print(f"[DEBUG FILTER] Input critical_anomalies count: {original_count}")
+        if original_count > 0:
+            print(f"[DEBUG FILTER] First anomaly sample: {analysis['critical_anomalies'][0]}")
+        
         # 1. Component-based filtering
-        # ACCESS gibi %100 anomali olan componentleri temizle
+        suspicious_components = []
         if 'component_analysis' in analysis:
-            suspicious_components = []
+            print(f"[DEBUG FILTER] Component analysis found, checking {len(analysis['component_analysis'])} components")
             for comp, stats in analysis['component_analysis'].items():
-                # %97'ten fazla anomali oranı varsa şüpheli
-                if stats.get('anomaly_rate', 0) > 97:
+                # ÖZEL DURUM: Bazı component'ler her zaman önemlidir
+                important_components = ['COMMAND', 'REPL', 'CONTROL', 'NETWORK', 'STORAGE']
+                
+                # Eğer önemli component ise filtreleme
+                if comp in important_components:
+                    print(f"[DEBUG FILTER] Component {comp} is important, skipping filter")
+                    continue
+                    
+                # %99.5'ten fazla anomali oranı VE 100'den fazla log varsa şüpheli
+                if (stats.get('anomaly_rate', 0) > 99.5 and 
+                    stats.get('total_count', 0) > 100):
                     suspicious_components.append(comp)
                     logger.warning(f"Component {comp} has {stats['anomaly_rate']:.1f}% anomaly rate - marking as suspicious")
+                    print(f"[DEBUG FILTER] Component {comp} marked as suspicious")
+        else:
+            print("[DEBUG FILTER] No component_analysis in analysis dict")
+        
+        print(f"[DEBUG FILTER] Suspicious components: {suspicious_components}")
         
         # 2. Critical anomalies filtreleme
         if 'critical_anomalies' in analysis:
             filtered_anomalies = []
+            filtered_out_count = 0
             
-            for anomaly in analysis['critical_anomalies']:
+            for i, anomaly in enumerate(analysis['critical_anomalies']):
                 # Skip suspicious components
                 if 'component_analysis' in analysis:
                     comp = anomaly.get('component', '')
                     if comp in suspicious_components:
+                        filtered_out_count += 1
+                        print(f"[DEBUG FILTER] Anomaly {i} filtered out - suspicious component: {comp}")
                         continue
                 
                 # Gerçek kritik anomali kriterleri
@@ -1163,6 +1186,9 @@ class AnomalyDetectionTools:
                 severity_score = anomaly.get('severity_score', 0)
                 severity_level = anomaly.get('severity_level', '')
                 
+                # Debug için
+                print(f"[DEBUG FILTER] Checking anomaly: score={severity_score}, level={severity_level}, msg={msg[:50]}...")
+
                 # Kritik tipler her zaman dahil
                 critical_patterns = [
                     'drop' in msg and ('collection' in msg or 'index' in msg),
@@ -1172,30 +1198,41 @@ class AnomalyDetectionTools:
                     'oom' in msg,
                     'assertion' in msg,
                     'shutdown' in msg,
-                    'restart' in msg
+                    'restart' in msg,
+                    'slow query' in msg and severity_score > 45  # YENİ: Slow query için düşük threshold
                 ]
                 
                 if any(critical_patterns):
                     is_critical = True
+                    print(f"[DEBUG FILTER] Critical pattern matched!")
                 
                 # Yüksek severity score olanlar
-                elif severity_score > 65:  # Daha yüksek threshold
+                elif severity_score > 50:  # Daha yüksek threshold
                     is_critical = True
+                    print(f"[DEBUG FILTER] High severity score: {severity_score}")
                 
                 # CRITICAL veya HIGH severity level
-                elif severity_level in ['CRITICAL', 'HIGH']:
+                elif severity_level in ['CRITICAL', 'HIGH','MEDIUM']:
                     is_critical = True
-                
+                    print(f"[DEBUG FILTER] Severity level: {severity_level}")
+
                 # Performance kritik anomaliler
                 elif any([
-                    'collscan' in msg and severity_score > 50,
-                    'slow' in msg and 'ms' in msg and severity_score > 60,
-                    'high_doc_scan' in anomaly.get('anomaly_type', '') and severity_score > 50
+                    'collscan' in msg and severity_score > 40,
+                    'slow' in msg and 'ms' in msg and severity_score > 45,
+                    'high_doc_scan' in anomaly.get('anomaly_type', '') and severity_score > 40
                 ]):
                     is_critical = True
+                    print(f"[DEBUG FILTER] Performance critical!")
                 
                 if is_critical:
                     filtered_anomalies.append(anomaly)
+                    print(f"[DEBUG FILTER] Anomaly {i} kept as critical")
+                else:
+                    filtered_out_count += 1
+                    print(f"[DEBUG FILTER] Anomaly {i} filtered out - not critical enough")
+            
+            print(f"[DEBUG FILTER] Filtered result: {len(filtered_anomalies)} kept, {filtered_out_count} filtered out")
             
             # Maximum 500 anomali limiti
             if len(filtered_anomalies) > 500:

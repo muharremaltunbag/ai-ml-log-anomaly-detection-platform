@@ -32,9 +32,15 @@ const API_ENDPOINTS = {
     uploadLog: '/api/upload-log',              // YENİ
     uploadedLogs: '/api/uploaded-logs',        // YENİ
     deleteUploadedLog: '/api/uploaded-log',    // YENİ
-    mongodbHosts: '/api/mongodb/hosts'         // YENİ
+    mongodbHosts: '/api/mongodb/hosts',         // YENİ
+    // YENİ STORAGE ENDPOINTS
+    anomalyHistory: '/api/anomaly-history',
+    anomalyDetail: '/api/anomaly-history',
+    modelRegistry: '/api/model-registry',
+    storageStats: '/api/storage-stats',
+    storageCleanup: '/api/storage-cleanup',
+    exportAnalysis: '/api/export-analysis'
 };
-
 // DOM elementleri
 const elements = {
     apiKeyInput: document.getElementById('apiKey'),
@@ -50,6 +56,89 @@ const elements = {
     modal: document.getElementById('modal'),
     modalTitle: document.getElementById('modalTitle'),
     modalBody: document.getElementById('modalBody')
+};
+
+// Sayfa yüklendiğinde storage butonlarını ekle (DOMContentLoaded event'inde)
+function addStorageMenuButtons() {
+    const quickActions = document.querySelector('.quick-actions');
+    if (quickActions && isConnected) {
+        // Storage dropdown menü ekle
+        const storageDropdown = document.createElement('div');
+        storageDropdown.className = 'storage-dropdown';
+        storageDropdown.innerHTML = `
+            <button class="btn btn-secondary dropdown-toggle" onclick="toggleStorageMenu()">
+                💾 STORAGE
+            </button>
+            <div class="storage-menu" id="storageMenu" style="display: none;">
+                <button onclick="showStorageStatistics()">📊 İstatistikler</button>
+                <button onclick="showModelRegistry()">🤖 Model Registry</button>
+                <button onclick="loadMongoDBHistory()">📜 Geçmiş Analizler</button>
+                <button onclick="performStorageCleanup()">🗑️ Temizlik</button>
+            </div>
+        `;
+        quickActions.appendChild(storageDropdown);
+    }
+}
+
+// Storage menüsünü toggle et
+window.toggleStorageMenu = function() {
+    const menu = document.getElementById('storageMenu');
+    if (menu) {
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+};
+
+// MongoDB geçmişini yükle ve göster
+window.loadMongoDBHistory = async function() {
+    const history = await loadAnomalyHistoryFromMongoDB({ limit: 50 });
+    
+    let modalContent = '<div class="mongodb-history">';
+    modalContent += '<h3>📜 MongoDB Anomali Geçmişi</h3>';
+    
+    if (history && history.length > 0) {
+        modalContent += '<div class="history-list">';
+        history.forEach(item => {
+            modalContent += `
+                <div class="history-item">
+                    <div class="history-date">${new Date(item.timestamp).toLocaleString('tr-TR')}</div>
+                    <div class="history-summary">
+                        Anomali: ${item.anomaly_count} / ${item.logs_analyzed} 
+                        (%${item.anomaly_rate?.toFixed(2) || 0})
+                    </div>
+                    <button onclick="viewStoredAnalysis('${item.analysis_id}')">Detay</button>
+                </div>
+            `;
+        });
+        modalContent += '</div>';
+    } else {
+        modalContent += '<p>Kayıtlı analiz bulunamadı.</p>';
+    }
+    
+    modalContent += '</div>';
+    showModal('MongoDB Anomali Geçmişi', modalContent);
+};
+
+// Kaydedilmiş analizi görüntüle
+window.viewStoredAnalysis = async function(analysisId) {
+    try {
+        const response = await fetch(`${API_ENDPOINTS.anomalyDetail}/${analysisId}?api_key=${apiKey}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Detayları göster
+            displayAnomalyResults({
+                durum: 'tamamlandı',
+                işlem: 'anomaly_analysis',
+                sonuç: data.analysis
+            });
+            
+            closeModal();
+        }
+    } catch (error) {
+        console.error('Error loading analysis detail:', error);
+        showNotification('Analiz detayı yüklenemedi', 'error');
+    }
 };
 
 // Sayfa yüklendiğinde
@@ -988,7 +1077,7 @@ function displayAnomalyAnalysisResult(result) {
     html += `<strong>✅ Anomali Analizi Tamamlandı</strong>`;
     html += `</div>`;
     
-    // AI AÇIKLAMASI - ÖNCELİKLİ BÖLÜM
+    // AI AÇIKLAMASI - VERİ PARSE EDİLİYOR AMA UI'DA GÖSTERİLMİYOR
     let aiExplanation = result.sonuç?.ai_explanation || result.ai_explanation;
 
     // Eğer AI explanation string ise parse et
@@ -1003,6 +1092,9 @@ function displayAnomalyAnalysisResult(result) {
         aiExplanation = parseAIExplanationFromText(result.sonuç.açıklama);
     }
 
+    // AI DESTEKLİ AÇIKLAMA BÖLÜMÜ DEVRE DIŞI BIRAKILDI
+    // Backend'den veri gelmeye devam ediyor ama UI'da gösterilmiyor
+    /* 
     if (aiExplanation && (aiExplanation.ne_tespit_edildi || typeof aiExplanation === 'object')) {
         html += '<div class="ai-explanation-section">';
         html += '<h3>🤖 AI Destekli Analiz</h3>';
@@ -1091,7 +1183,8 @@ function displayAnomalyAnalysisResult(result) {
         
         html += '</div>'; // ai-explanation-section end
     }
-    
+    */
+   
     // Özet Metrikler - Daha görsel hale getirilmiş
     if (summary) {
         html += '<div class="metrics-overview">';
@@ -2569,6 +2662,7 @@ function displayAnomalyResults(result) {
     // Eğer sadece text tabanlı sonuçsa, mevcut mantığı kullan
     if (!result.summary && !result.sonuç?.summary && result.açıklama) {
         // AI açıklama varsa öncelikle onu kullan
+        /* AI EXPLANATION UI RENDERING COMMENTED OUT
         if (aiExplanation && (aiExplanation.ne_tespit_edildi || typeof aiExplanation === 'object')) {
             let aiHtml = '<div class="anomaly-ai-text-results">';
             aiHtml += '<h3>🤖 AI Destekli Anomali Analizi</h3>';
@@ -2616,7 +2710,8 @@ function displayAnomalyResults(result) {
             elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             return;
         }
-        
+        */
+       
         // AI yoksa normal text formatting
         const formattedText = highlightNumbers(result.açıklama)
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -2653,6 +2748,10 @@ function displayAnomalyResults(result) {
     }
     
 
+    // Mevcut AI Explanation (varsa)
+    // AI DESTEKLİ AÇIKLAMA BÖLÜMÜ DEVRE DIŞI BIRAKILDI
+    // Backend'den veri gelmeye devam ediyor ama UI'da gösterilmiyor
+    /* 
     // Mevcut AI Explanation (varsa)
     if (aiExplanation && (aiExplanation.ne_tespit_edildi || typeof aiExplanation === 'object')) {
         html += '<div class="ai-explanation-section">';
@@ -2743,7 +2842,7 @@ function displayAnomalyResults(result) {
         
         html += '</div>'; // ai-explanation-section end
     }
-    
+    */
     
     // GELİŞTİRİLMİŞ: Temporal Analysis Heatmap
     if (temporalAnalysis.hourly_distribution) {
@@ -2924,6 +3023,25 @@ function displayAnomalyResults(result) {
     console.log('Anomaly result saved to window.lastAnomalyResult');
     console.log('Critical anomalies count:', result.sonuç?.critical_anomalies?.length || 0);
     console.log('Feature importance available:', !!(result.sonuç?.feature_importance));
+    
+    // Storage info varsa göster
+    if (result.storage_info) {
+        console.log('Analysis auto-saved with ID:', result.storage_info.analysis_id);
+        
+        // Bildirim göster
+        setTimeout(() => {
+            showNotification(
+                `✅ Analiz otomatik olarak kaydedildi (ID: ${result.storage_info.analysis_id.substring(0, 8)}...)`,
+                'success'
+            );
+        }, 1000);
+        
+        // Geçmişe storage bilgisini ekle
+        if (window.lastAnomalyResult) {
+            window.lastAnomalyResult.storage_id = result.storage_info.analysis_id;
+            window.lastAnomalyResult.storage_path = result.storage_info.file_path;
+        }
+    }
 }
 
 /**
@@ -3144,19 +3262,76 @@ function formatJSON(obj) {
 // ===== KONUŞMA GEÇMİŞİ YÖNETİMİ =====
 
 /**
- * Geçmişi localStorage'dan yükle
+ * Geçmişi yükle - MongoDB entegrasyonu ile
  */
-function loadHistory() {
+async function loadHistory() {
     try {
+        // Önce localStorage'dan yükle (offline destek)
         const saved = localStorage.getItem(HISTORY_KEY);
         if (saved) {
             queryHistory = JSON.parse(saved);
             updateHistoryDisplay();
         }
+        
+        // MongoDB'den de kontrol et (eğer bağlıysa)
+        if (isConnected && apiKey) {
+            const mongoHistory = await loadAnomalyHistoryFromMongoDB({
+                limit: 20
+            });
+            
+            if (mongoHistory && mongoHistory.length > 0) {
+                // MongoDB'den gelen verileri entegre et
+                mergeHistoryWithMongoDB(mongoHistory);
+            }
+        }
     } catch (e) {
         console.error('Geçmiş yüklenemedi:', e);
         queryHistory = [];
     }
+}
+
+/**
+ * MongoDB geçmişini local history ile birleştir
+ */
+function mergeHistoryWithMongoDB(mongoHistory) {
+    mongoHistory.forEach(mongoItem => {
+        // Local history'de yoksa ekle
+        const exists = queryHistory.find(h => 
+            h.storage_id === mongoItem.analysis_id ||
+            h.timestamp === mongoItem.timestamp
+        );
+        
+        if (!exists) {
+            // MongoDB verisini local format'a çevir
+            const historyItem = {
+                id: Date.now() + Math.random(),
+                timestamp: mongoItem.timestamp,
+                query: mongoItem.source_info?.query || 'MongoDB Anomaly Analysis',
+                type: 'anomaly',
+                category: 'anomaly',
+                result: {
+                    durum: 'tamamlandı',
+                    işlem: 'anomaly_analysis',
+                    sonuç: mongoItem
+                },
+                storage_id: mongoItem.analysis_id,
+                fromMongoDB: true
+            };
+            
+            queryHistory.push(historyItem);
+        }
+    });
+    
+    // Tarihe göre sırala
+    queryHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    // Limit uygula
+    if (queryHistory.length > MAX_HISTORY_ITEMS) {
+        queryHistory = queryHistory.slice(0, MAX_HISTORY_ITEMS);
+    }
+    
+    saveHistory();
+    updateHistoryDisplay();
 }
 
 /**
@@ -3398,79 +3573,11 @@ function showHistoryDetail(id) {
             content += '</div>';
         }
         
-        // AI destekli açıklama varsa öncelikle onu göster
-        if (item.childResult.sonuç?.ai_explanation || 
-            (item.childResult.açıklama && item.childResult.açıklama.includes('AI DESTEKLİ'))) {
-            
-            content += '<div class="anomaly-ai-result">';
-            content += '<h4>🤖 AI Destekli Anomali Analiz Sonuçları</h4>';
-            
-            // AI explanation obje ise
-            const aiExpl = item.childResult.sonuç?.ai_explanation;
-            if (aiExpl && typeof aiExpl === 'object') {
-                // Ne Tespit Edildi?
-                if (aiExpl.ne_tespit_edildi) {
-                    content += '<div class="ai-section">';
-                    content += '<h5>🔍 Ne Tespit Edildi?</h5>';
-                    content += `<div class="ai-content">${highlightNumbers(escapeHtml(aiExpl.ne_tespit_edildi))}</div>`;
-                    content += '</div>';
-                }
-                
-                // Potansiyel Etkiler
-                if (aiExpl.potansiyel_etkiler && aiExpl.potansiyel_etkiler.length > 0) {
-                    content += '<div class="ai-section">';
-                    content += '<h5>⚠️ Potansiyel Etkiler</h5>';
-                    content += '<ul>';
-                    aiExpl.potansiyel_etkiler.forEach(etki => {
-                        content += `<li>${highlightNumbers(escapeHtml(etki))}</li>`;
-                    });
-                    content += '</ul>';
-                    content += '</div>';
-                }
-                
-                // Muhtemel Nedenler
-                if (aiExpl.muhtemel_nedenler && aiExpl.muhtemel_nedenler.length > 0) {
-                    content += '<div class="ai-section">';
-                    content += '<h5>🎯 Muhtemel Nedenler</h5>';
-                    content += '<ul>';
-                    aiExpl.muhtemel_nedenler.forEach(neden => {
-                        content += `<li>${highlightNumbers(escapeHtml(neden))}</li>`;
-                    });
-                    content += '</ul>';
-                    content += '</div>';
-                }
-                
-                // Önerilen Aksiyonlar
-                if (aiExpl.onerilen_aksiyonlar && aiExpl.onerilen_aksiyonlar.length > 0) {
-                    content += '<div class="ai-section">';
-                    content += '<h5>💡 Önerilen Aksiyonlar</h5>';
-                    content += '<ol>';
-                    aiExpl.onerilen_aksiyonlar.forEach(aksiyon => {
-                        content += `<li>${highlightNumbers(escapeHtml(aksiyon))}</li>`;
-                    });
-                    content += '</ol>';
-                    content += '</div>';
-                }
-            }
-            // AI explanation text ise (açıklama field'ında)
-            else if (item.childResult.açıklama && item.childResult.açıklama.includes('AI DESTEKLİ')) {
-                content += '<div class="ai-formatted-text">';
-                const formattedAI = item.childResult.açıklama
-                    .replace(/🔍\s*\*\*(.*?)\*\*/g, '<h5>🔍 <strong>$1</strong></h5>')
-                    .replace(/⚠️\s*\*\*(.*?)\*\*/g, '<h5>⚠️ <strong>$1</strong></h5>')
-                    .replace(/🎯\s*\*\*(.*?)\*\*/g, '<h5>🎯 <strong>$1</strong></h5>')
-                    .replace(/💡\s*\*\*(.*?)\*\*/g, '<h5>💡 <strong>$1</strong></h5>')
-                    .replace(/📊\s*\*\*(.*?)\*\*/g, '<h5>📊 <strong>$1</strong></h5>')
-                    .replace(/• (.*?)$/gm, '<li>$1</li>')
-                    .replace(/\n/g, '<br>');
-                content += formattedAI;
-                content += '</div>';
-            }
-            
-            content += '</div>';
-        }
-        // AI explanation yoksa ama açıklama varsa, text format kullan
-        else if (item.childResult.açıklama) {
+        // AI DESTEKLİ AÇIKLAMA GEÇMİŞ DETAYINDA DEVRE DIŞI - COMMENT OUT EDİLDİ
+        
+        // AI explanation yoksa ama açıklama varsa, text format kullan - BU KISIM KALACAK
+        // else if yerine direkt if olmalı çünkü üstteki blok comment out edildi
+        if (item.childResult.açıklama && !item.childResult.açıklama.includes('AI DESTEKLİ')) {
             content += '<div class="anomaly-text-result">';
             content += '<h4>🔍 Anomali Analiz Sonuçları</h4>';
             content += '<div class="formatted-anomaly-text">';
@@ -6575,6 +6682,216 @@ function restoreMessageTogglePreference() {
         }
     }
 }
+
+// ========== STORAGE MANAGER ENTEGRASYONU ==========
+
+/**
+ * MongoDB'den anomali geçmişini yükle
+ */
+async function loadAnomalyHistoryFromMongoDB(filters = {}) {
+    try {
+        const params = new URLSearchParams({
+            api_key: apiKey,
+            ...filters
+        });
+        
+        const response = await fetch(`${API_ENDPOINTS.anomalyHistory}?${params}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log(`Loaded ${data.count} anomaly records from MongoDB`);
+            return data.history;
+        }
+    } catch (error) {
+        console.error('Error loading anomaly history from MongoDB:', error);
+    }
+    return [];
+}
+
+/**
+ * Storage istatistiklerini göster
+ */
+async function showStorageStatistics() {
+    try {
+        const response = await fetch(`${API_ENDPOINTS.storageStats}?api_key=${apiKey}&days=30`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            const stats = data.statistics;
+            
+            let modalContent = '<div class="storage-stats-modal">';
+            modalContent += '<h3>📊 Storage İstatistikleri (Son 30 Gün)</h3>';
+            
+            // Analysis stats
+            if (stats.analysis_stats) {
+                modalContent += '<div class="stats-section">';
+                modalContent += '<h4>📈 Analiz İstatistikleri</h4>';
+                modalContent += '<div class="stats-grid">';
+                modalContent += `<div class="stat-card">
+                    <div class="stat-value">${stats.analysis_stats.total_analyses || 0}</div>
+                    <div class="stat-label">Toplam Analiz</div>
+                </div>`;
+                modalContent += `<div class="stat-card">
+                    <div class="stat-value">${stats.analysis_stats.total_anomalies || 0}</div>
+                    <div class="stat-label">Tespit Edilen Anomali</div>
+                </div>`;
+                modalContent += `<div class="stat-card">
+                    <div class="stat-value">${stats.analysis_stats.avg_anomaly_rate || 0}%</div>
+                    <div class="stat-label">Ortalama Anomali Oranı</div>
+                </div>`;
+                modalContent += '</div></div>';
+            }
+            
+            // Storage stats
+            if (stats.storage_stats) {
+                modalContent += '<div class="stats-section">';
+                modalContent += '<h4>💾 Storage Kullanımı</h4>';
+                modalContent += '<div class="stats-grid">';
+                modalContent += `<div class="stat-card">
+                    <div class="stat-value">${stats.storage_stats.total_size_mb || 0} MB</div>
+                    <div class="stat-label">Toplam Boyut</div>
+                </div>`;
+                modalContent += `<div class="stat-card">
+                    <div class="stat-value">${stats.storage_stats.file_counts?.exports || 0}</div>
+                    <div class="stat-label">Export Dosyası</div>
+                </div>`;
+                modalContent += `<div class="stat-card">
+                    <div class="stat-value">${stats.storage_stats.file_counts?.models || 0}</div>
+                    <div class="stat-label">Model Versiyonu</div>
+                </div>`;
+                modalContent += '</div></div>';
+            }
+            
+            modalContent += '</div>';
+            showModal('Storage İstatistikleri', modalContent);
+        }
+    } catch (error) {
+        console.error('Error loading storage statistics:', error);
+        showNotification('Storage istatistikleri yüklenemedi', 'error');
+    }
+}
+
+/**
+ * Model registry'yi göster
+ */
+async function showModelRegistry() {
+    try {
+        const response = await fetch(`${API_ENDPOINTS.modelRegistry}?api_key=${apiKey}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            let modalContent = '<div class="model-registry-modal">';
+            modalContent += '<h3>🤖 Model Registry</h3>';
+            
+            if (data.models && data.models.length > 0) {
+                modalContent += '<table class="model-table">';
+                modalContent += '<thead><tr>';
+                modalContent += '<th>Version</th>';
+                modalContent += '<th>Type</th>';
+                modalContent += '<th>Features</th>';
+                modalContent += '<th>Created</th>';
+                modalContent += '<th>Status</th>';
+                modalContent += '<th>Actions</th>';
+                modalContent += '</tr></thead><tbody>';
+                
+                data.models.forEach(model => {
+                    const isActive = model.is_active;
+                    const statusClass = isActive ? 'active' : 'inactive';
+                    const statusText = isActive ? 'Active' : 'Inactive';
+                    
+                    modalContent += '<tr>';
+                    modalContent += `<td><strong>${model.version}</strong></td>`;
+                    modalContent += `<td>${model.model_type}</td>`;
+                    modalContent += `<td>${model.n_features || 0}</td>`;
+                    modalContent += `<td>${new Date(model.created_at).toLocaleDateString('tr-TR')}</td>`;
+                    modalContent += `<td><span class="status-badge ${statusClass}">${statusText}</span></td>`;
+                    modalContent += '<td>';
+                    if (!isActive) {
+                        modalContent += `<button class="btn-small" onclick="activateModel('${model.version}')">Activate</button>`;
+                    }
+                    modalContent += '</td>';
+                    modalContent += '</tr>';
+                });
+                
+                modalContent += '</tbody></table>';
+            } else {
+                modalContent += '<p>Henüz kayıtlı model bulunmuyor.</p>';
+            }
+            
+            modalContent += '</div>';
+            showModal('Model Registry', modalContent);
+        }
+    } catch (error) {
+        console.error('Error loading model registry:', error);
+        showNotification('Model registry yüklenemedi', 'error');
+    }
+}
+
+/**
+ * Model'i aktif et
+ */
+async function activateModel(versionId) {
+    if (!confirm(`${versionId} versiyonunu aktif model olarak ayarlamak istiyor musunuz?`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_ENDPOINTS.modelRegistry}/${versionId}/activate`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ api_key: apiKey })
+        });
+        
+        if (response.ok) {
+            showNotification('Model başarıyla aktif edildi', 'success');
+            closeModal();
+            // Registry'yi yeniden yükle
+            setTimeout(() => showModelRegistry(), 500);
+        } else {
+            throw new Error('Model aktif edilemedi');
+        }
+    } catch (error) {
+        console.error('Error activating model:', error);
+        showNotification('Model aktif edilirken hata oluştu', 'error');
+    }
+}
+
+/**
+ * Storage cleanup işlemi
+ */
+async function performStorageCleanup() {
+    if (!confirm('Eski storage verilerini temizlemek istediğinizden emin misiniz?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_ENDPOINTS.storageCleanup}?api_key=${apiKey}`, {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const stats = data.cleanup_stats;
+            
+            showNotification(
+                `Temizlik tamamlandı: ${stats.files_deleted} dosya silindi, ${stats.space_freed_mb.toFixed(2)} MB alan boşaltıldı`,
+                'success'
+            );
+        }
+    } catch (error) {
+        console.error('Error during storage cleanup:', error);
+        showNotification('Temizlik işlemi başarısız oldu', 'error');
+    }
+}
+
+// Global fonksiyonları window'a ekle
+window.activateModel = activateModel;
+window.showStorageStatistics = showStorageStatistics;
+window.showModelRegistry = showModelRegistry;
+window.performStorageCleanup = performStorageCleanup;
 
 /**
  * Daha fazla kritik anomali göster (Pagination)
