@@ -23,6 +23,8 @@ from pydantic import BaseModel, Field
 import logging
 import shutil
 import tempfile
+from langchain.schema import HumanMessage, SystemMessage
+from src.connectors.lcwgpt_connector import LCWGPTConnector
 
 from src.agents.mongodb_agent import MongoDBAgent
 from web_ui.config import *
@@ -66,6 +68,10 @@ agent_lock = asyncio.Lock()
 # YENİ: Global storage manager instance
 storage_manager: Optional[StorageManager] = None
 storage_lock = asyncio.Lock()
+
+# Global LCWGPT connector instance
+llm_connector: Optional[Any] = None
+llm_lock = asyncio.Lock()
 
 # Onay bekleyen parametreleri saklamak için
 pending_confirmations: Dict[str, Dict[str, Any]] = {}
@@ -149,6 +155,22 @@ async def get_agent() -> MongoDBAgent:
         else:
             logger.debug("Mevcut agent instance kullanılıyor")
         return agent
+
+# LCWGPT Connector'ı singleton olarak al
+async def get_llm_connector():
+    """Singleton LCWGPT connector instance"""
+    global llm_connector
+    async with llm_lock:
+        if llm_connector is None:
+            from src.connectors.lcwgpt_connector import LCWGPTConnector
+            logger.info("LCWGPT Connector başlatılıyor...")
+            llm_connector = LCWGPTConnector()
+            llm_connector.connect()
+            if not llm_connector.is_connected():
+                logger.error("LCWGPT bağlantısı kurulamadı")
+                return None
+            logger.info("LCWGPT Connector hazır")
+        return llm_connector
 
 # StorageManager başlatma
 async def get_storage_manager() -> Union[StorageManager, FileOnlyStorageManager]:
@@ -1056,6 +1078,156 @@ async def export_analysis(
     except Exception as e:
         logger.error(f"Error exporting analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chat-query-anomalies")
+async def chat_query_anomalies(request: Dict[str, Any]):
+    """Chat üzerinden anomali sorgulama - LCWGPT ile"""
+    try:
+        # API key kontrolü
+        if not await verify_api_key(request.get('api_key')):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        query = request.get("query", "")
+        analysis_id = request.get("analysis_id")
+        
+        logger.info(f"Chat anomaly query received - Query: {query[:50]}...")
+        
+        # Storage'dan anomalileri al
+        storage = await get_storage_manager()
+        filters = {"analysis_id": analysis_id} if analysis_id else {}
+        analyses = await storage.get_anomaly_history(
+            filters=filters,
+            limit=1,
+            include_details=True
+        )
+        
+        if not analyses:
+            return {
+                "status": "error",
+                "message": "Anomali analizi bulunamadı",
+                "total_anomalies": 0
+            }
+        
+        analysis = analyses[0]
+        
+        # Unfiltered anomalileri al
+        all_anomalies = analysis.get("unfiltered_anomalies", [])
+        if not all_anomalies:
+            all_anomalies = analysis.get("critical_anomalies", [])
+        
+        logger.info(f"Found {len(all_anomalies)} anomalies for LCWGPT processing")
+        
+        # LCWGPT ile işle
+        llm_connector = await get_llm_connector()
+
+        if not llm_connector:
+            logger.error("LCWGPT connection failed")
+            return {
+                "status": "error",
+                "message": "LCWGPT bağlantısı kurulamadı",
+                "total_anomalies": len(all_anomalies)
+            }
+        
+        # Token limiti için chunk'lara böl (her chunk 50 anomali)
+        chunk_size = 50
+        first_chunk = all_anomalies[:chunk_size]
+        
+        # Component ve severity dağılımı hesapla
+        component_dist = {}
+        severity_dist = {}
+        for a in all_anomalies:
+            comp = a.get('component', 'N/A')
+            component_dist[comp] = component_dist.get(comp, 0) + 1
+            
+            sev = a.get('severity_level', 'N/A')
+            severity_dist[sev] = severity_dist.get(sev, 0) + 1
+        
+        # LCWGPT için system prompt
+        system_prompt = """Sen MongoDB anomali analizi uzmanısın. Kullanıcının sorusuna göre anomalileri analiz et ve Türkçe yanıt ver.
+
+KURALLAR:
+1. Kısa, net ve aksiyona yönelik yanıtlar ver
+2. Sayısal verileri ve yüzdeleri kullan
+3. En kritik bulguları vurgula
+4. Öneriler sun
+5. Teknik ama anlaşılır ol
+
+YANIT FORMATI:
+- Önce direkt soruya cevap ver
+- Sonra detayları ekle
+- En sonda öneriler sun"""
+
+        # User prompt hazırla
+        user_prompt = f"""
+KULLANICI SORUSU: {query}
+
+ANALİZ VERİSİ:
+- Toplam Anomali: {len(all_anomalies)}
+- Zaman Aralığı: {analysis.get('time_range', 'N/A')}
+- Host: {analysis.get('host', 'N/A')}
+
+COMPONENT DAĞILIMI:
+{_format_dict_for_prompt(component_dist, limit=10)}
+
+SEVERITY DAĞILIMI:
+{_format_dict_for_prompt(severity_dist)}
+
+İLK {len(first_chunk)} ANOMALİ DETAYI:
+{_format_anomalies_for_prompt(first_chunk)}
+
+Kullanıcının sorusunu bu veriler ışığında yanıtla."""
+
+        # LCWGPT'ye gönder
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt)
+        ]
+        
+        try:
+            response = llm_connector.invoke(messages)
+            ai_response = response.content
+            logger.info("LCWGPT response received successfully")
+        except Exception as e:
+            logger.error(f"LCWGPT invoke error: {e}")
+            ai_response = f"LCWGPT yanıt veremedi: {str(e)}"
+        
+        return {
+            "status": "success",
+            "total_anomalies": len(all_anomalies),
+            "ai_response": ai_response,
+            "analysis_id": analysis.get("analysis_id"),
+            "timestamp": str(analysis.get("timestamp")),
+            "chunk_info": f"1/{(len(all_anomalies) + chunk_size - 1) // chunk_size} chunk işlendi"
+        }
+        
+    except Exception as e:
+        logger.error(f"Chat anomaly query error: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "message": str(e),
+            "total_anomalies": 0
+        }
+
+# Helper fonksiyonlar (aynı dosyaya ekleyin)
+def _format_dict_for_prompt(data: dict, limit: int = None) -> str:
+    """Dictionary'yi prompt için formatla"""
+    sorted_items = sorted(data.items(), key=lambda x: x[1], reverse=True)
+    if limit:
+        sorted_items = sorted_items[:limit]
+    
+    result = []
+    for key, value in sorted_items:
+        result.append(f"- {key}: {value} adet")
+    return "\n".join(result)
+
+def _format_anomalies_for_prompt(anomalies: list) -> str:
+    """Anomalileri prompt için formatla"""
+    result = []
+    for i, a in enumerate(anomalies[:20], 1):  # İlk 20 anomali
+        result.append(f"{i}. [{a.get('component', 'N/A')}] Score: {a.get('severity_score', 0):.1f} - {a.get('message', '')[:80]}...")
+    return "\n".join(result)
+
 
 # Startup event'e ekle
 @app.on_event("startup")

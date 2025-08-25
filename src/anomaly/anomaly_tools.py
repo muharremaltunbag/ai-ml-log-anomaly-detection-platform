@@ -520,7 +520,20 @@ class AnomalyDetectionTools:
                     )
                     
                     # YENİ: False positive filtering
+                    # YENİ - Filtreleme öncesi orijinal veriyi sakla:
+                    # Filtreleme öncesi orijinal anomali sayısını sakla
+                    unfiltered_analysis = analysis.copy()
+                    unfiltered_anomaly_count = len(analysis.get('critical_anomalies', []))
+                    logger.info(f"Unfiltered anomaly count: {unfiltered_anomaly_count}")
+
+                    # YENİ: False positive filtering  
                     analysis = self._filter_false_positives(analysis, source_name="opensearch")
+
+                    # Filtreleme sonrası istatistikleri ekle
+                    analysis["unfiltered_stats"] = {
+                        "total_anomalies_before_filter": unfiltered_anomaly_count,
+                        "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', [])
+                    }
                     
                     # Sonuçları sakla
                     self.last_analysis = {
@@ -579,6 +592,8 @@ class AnomalyDetectionTools:
                             "filtered_logs": len(df_filtered),  # YENİ
                             "summary": analysis["summary"],
                             "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),
+                            "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),  # TÜM anomaliler
+                            "unfiltered_count": unfiltered_anomaly_count,  # Filtrelenmemiş sayı
                             "security_alerts": analysis.get("security_alerts", {}),
                             "temporal_analysis": analysis.get("temporal_analysis", {}),
                             "component_analysis": analysis.get("component_analysis", {}),  # YENİ
@@ -2301,6 +2316,103 @@ class SummaryArgs(BaseModel):
 class TrainModelArgs(BaseModel):
     sample_size: int = Field(default=10000, description="Eğitim için kullanılacak log sayısı")
 
+
+    async def query_anomalies_from_storage(self, query: str, analysis_id: str = None, limit: int = 50) -> Dict[str, Any]:
+        """
+        Storage'daki anomalileri LCWGPT ile sorgula
+        
+        Args:
+            query: Kullanıcı sorusu
+            analysis_id: Specific analysis ID (optional)
+            limit: Max anomalies to process per chunk
+            
+        Returns:
+            AI processed response
+        """
+        try:
+            # Storage manager'ı import et
+            from src.storage.storage_manager import StorageManager
+            storage = StorageManager()
+            await storage.initialize()
+            
+            # Son analizi veya belirli analizi al
+            if analysis_id:
+                filters = {"analysis_id": analysis_id}
+            else:
+                filters = {}
+                
+            analyses = await storage.get_anomaly_history(
+                filters=filters,
+                limit=1,
+                include_details=True
+            )
+            
+            if not analyses:
+                return {"error": "Henüz kayıtlı anomali analizi yok"}
+                
+            analysis = analyses[0]
+            
+            # Unfiltered anomalileri al (yoksa filtered kullan)
+            all_anomalies = (
+                analysis.get("unfiltered_anomalies", []) or 
+                analysis.get("critical_anomalies_full", []) or
+                analysis.get("critical_anomalies_display", [])
+            )
+            
+            if not all_anomalies:
+                return {"error": "Kayıtlı anomali bulunamadı"}
+                
+            # LCWGPT ile işle (chunked)
+            if not self.llm_connector or not self.llm_connector.is_connected():
+                return {"error": "LCWGPT bağlantısı yok"}
+                
+            # Token limit için chunk'lara böl
+            chunks = [all_anomalies[i:i+limit] for i in range(0, len(all_anomalies), limit)]
+            
+            system_prompt = """MongoDB anomali uzmanısın. Kullanıcı sorusuna göre anomalileri analiz et.
+            Kullanıcı şunları sorabilir:
+            - Belirli component'teki anomaliler
+            - Belirli severity'deki anomaliler
+            - Zaman bazlı filtreleme
+            - Pattern analizi
+            
+            Kısa, net ve aksiyona yönelik yanıt ver."""
+            
+            # İlk chunk'ı işle (token limiti için)
+            first_chunk = chunks[0]
+            
+            user_prompt = f"""
+            Kullanıcı Sorusu: {query}
+            
+            Toplam Anomali: {len(all_anomalies)}
+            İşlenen Chunk: 1/{len(chunks)} ({len(first_chunk)} anomali)
+            
+            Anomali Detayları:
+            {self._format_anomalies_for_ai_query(first_chunk)}
+            
+            Component Dağılımı:
+            {self._get_component_distribution(all_anomalies)}
+            """
+            
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ]
+            
+            response = self.llm_connector.invoke(messages)
+            
+            return {
+                "query": query,
+                "total_anomalies": len(all_anomalies),
+                "processed_chunk": f"1/{len(chunks)}",
+                "ai_response": response.content,
+                "analysis_id": analysis.get("analysis_id"),
+                "timestamp": analysis.get("timestamp")
+            }
+            
+        except Exception as e:
+            logger.error(f"Storage query error: {e}")
+            return {"error": str(e)}
 
 def create_anomaly_tools(config_path: str = "config/anomaly_config.json", 
                         environment: str = "test") -> List[StructuredTool]:

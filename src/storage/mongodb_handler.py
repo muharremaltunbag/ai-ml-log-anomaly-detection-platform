@@ -150,9 +150,12 @@ class MongoDBHandler:
                 "anomaly_rate": data.get("summary", {}).get("anomaly_rate", 0),
                 "score_range": data.get("summary", {}).get("score_range", {}),
                 
-                # Critical anomalies (store only top N for storage efficiency)
-                "critical_anomalies": data.get("critical_anomalies", [])[:100],
+                # Store both filtered and unfiltered anomalies
+                "critical_anomalies_display": data.get("critical_anomalies", [])[:100],  # UI için ilk 100
+                "critical_anomalies_full": data.get("critical_anomalies", []),  # Filtrelenmiş TÜM anomaliler
                 "critical_count": len(data.get("critical_anomalies", [])),
+                "unfiltered_anomalies": data.get("unfiltered_anomalies", []),  # Filtrelenmemiş TÜM anomaliler
+                "unfiltered_count": data.get("unfiltered_count", 0),
                 
                 # Alerts and analysis
                 "security_alerts": data.get("security_alerts", {}),

@@ -1,5 +1,12 @@
 {
-  "analysis_9b5bca3322e7": {
+  "analysis_id": "analysis_9b5bca3322e7",
+  "source_info": {
+    "source_type": "opensearch",
+    "host": "lcwmongodb01n2.lcwaikiki.local",
+    "time_range": "last_week",
+    "timestamp": "2025-08-25T08:09:16.853295"
+  },
+  "result": {
     "durum": "tamamland\u0131",
     "i\u015flem": "anomaly_analysis",
     "a\u00e7\u0131klama": "OpenSearch'ten son 168 saatteki 441287 log analiz edildi.\n\n\ud83d\udd0d **NE TESP\u0130T ED\u0130LD\u0130?**\n\u2022 Toplam 430,033 log i\u00e7inde 67 anomali tespit edildi (%0.0)\n\u2022 ACCESS bile\u015feninde 2026 anomali (%100.0)\n\u2022 ELECTION bile\u015feninde 89 anomali (%100.0)\n\u2022 QUERY bile\u015feninde 71 anomali (%100.0)\n\u2022 En kritik anomali skoru: 0.000 (REPL bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 0, 23, 1 aras\u0131nda yo\u011funla\u015fm\u0131\u015f\n\n\u26a0\ufe0f **POTANS\u0130YEL ETK\u0130LER:**\n\u2022 Sistem performans\u0131 %0.0 oran\u0131nda etkilenebilir\n\u2022 En kritik 10 bile\u015fende sorun tespit edildi\n\u2022 Ortalama anomali skoru -0.482 seviyesinde\n\n\ud83c\udfaf **MUHTEMEL NEDENLER:**\n\u2022 Yo\u011fun kullan\u0131m veya sistem sorunu\n\u2022 Saat 0 civar\u0131nda artan y\u00fck\n\u2022 En y\u00fcksek anomali oran\u0131 %100.0 ile tespit edildi\n\n\ud83d\udca1 **\u00d6NER\u0130LEN AKS\u0130YONLAR:**\n1. 67 anomaliyi detayl\u0131 inceleyin\n2. \u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n\n3. Skor de\u011feri -0.747 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn\n\n\ud83d\udcca **\u0130STAT\u0130ST\u0130K \u00d6ZET\u0130:**\n\u2022 Toplam Log: 430,033\n\u2022 Anomali Say\u0131s\u0131: 67 (%0.0)\n\u2022 Ortalama Anomali Skoru: -0.482\n",
@@ -7260,10 +7267,7 @@
       "67 anomaliyi detayl\u0131 inceleyin",
       "\u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
       "Skor de\u011feri -0.747 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
-    ],
-    "storage_info": {
-      "analysis_id": "analysis_9b5bca3322e7",
-      "file_path": "C:\\Users\\muharrem.altunbag\\MongoDB-LLM-assistant\\yeni\\MongoDB-LLM-assistant\\MongoDB-LLM-assistant\\storage\\exports\\anomaly\\analysis_9b5bca3322e7.json"
-    }
-  }
+    ]
+  },
+  "saved_at": "2025-08-25T08:09:16.860620"
 }
