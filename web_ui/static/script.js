@@ -343,7 +343,7 @@ async function checkInitialStatus() {
         console.error('Initial status check failed:', error); // DEBUG LOG
         updateStatus('offline', 'Bağlantı hatası');
     }
-}
+}displayConfirmationDialog
 
 /**
  * API bağlantısını kur
@@ -380,6 +380,8 @@ async function handleConnect() {
             elements.apiKeyInput.disabled = true;
             elements.connectBtn.textContent = 'BAĞLANDI';
             elements.connectBtn.classList.add('connected');
+
+            addStorageMenuButtons();   // ✅ storage menüsünü ekle
             
             updateStatus('online', 'Sistem bağlantısı başarılı');
             showNotification('Başarıyla bağlandı!', 'success');
@@ -407,13 +409,14 @@ async function handleConnect() {
 async function handleQuery() {
     const query = elements.queryInput.value.trim();
     
-    console.log('handleQuery called with query:', query); // DEBUG LOG
+    // DEBUG
+    console.log('Query:', query);
+    console.log('Has lastAnomalyResult:', !!window.lastAnomalyResult);
+    if (window.lastAnomalyResult?.storage_info) {
+        console.log('Analysis ID:', window.lastAnomalyResult.storage_info.analysis_id);
+    }
+    // DEBUG END
         
-    // Onay sorgusu kontrolü
-    const isConfirmation = window.isConfirmationQuery || false;
-    window.isConfirmationQuery = false; // Flag'i resetle
-    console.log('handleQuery called with query:', query, 'isConfirmation:', isConfirmation);
-    
     if (!query) {
         console.log('Query is empty'); // DEBUG LOG
         showNotification('Lütfen bir sorgu girin', 'warning');
@@ -432,8 +435,118 @@ async function handleQuery() {
     elements.resultSection.style.display = 'none';
     
     try {
-        // Onay sorgusu flag'ini global olarak sakla
-        window.lastQueryWasConfirmation = isConfirmation;
+        // YENİ: Chat anomali sorgusu tespiti - Daha geniş keyword listesi
+        const chatAnomalyKeywords = [
+            'anomali', 'anomaly', 'log', 'analiz', 'analyze', 'kritik', 'hata', 'sorun', 
+            'problem', 'uyarı', 'warning', 'error', 'critical', 'tespit', 'detect', 'bul', 'göster',
+            'listele', 'getir', 'nedir', 'açıkla', 'yorumla', 'özetle',
+            'bağlantı hatası', 'zaman aşımı', 'kesinti',
+            'primary değişti', 'replikasyon gecikmesi',
+            'yavaş sorgu',
+            'disk dolu', 'yüksek bellek', 'yüksek cpu',
+            'journal hatası', 'çöktü',
+            'çalışmıyor', 'yavaş', 'donuyor',
+            'bağlanamıyor', 'disk doldu', 'bellek doldu',
+            'replikasyon hatası', 'neden çalışmıyor', 'bozuldu',
+            'takılıyor', 'bağlantı', 'bağlantı sorunu',
+            'erişim', 'secondary', 'primary'
+        ];
+
+        // DEBUG: Detaylı kontrol
+        console.log('=== CHAT ANOMALY DETECTION DEBUG ===');
+        console.log('Query:', query);
+        console.log('Query lowercase:', query.toLowerCase());
+        console.log('Has lastAnomalyResult:', !!window.lastAnomalyResult);
+        
+        const hasKeyword = chatAnomalyKeywords.some(keyword => 
+            query.toLowerCase().includes(keyword)
+        ) && (
+            query.toLowerCase().includes('anomali') || 
+            query.toLowerCase().includes('log') ||
+            window.lastAnomalyResult // Önceki anomali analizi varsa
+        );
+        console.log('Has matching keyword:', hasKeyword);
+        
+        const hasAnomalyOrLog = query.toLowerCase().includes('anomali') || 
+                               query.toLowerCase().includes('log');
+        console.log('Has anomaly or log keyword:', hasAnomalyOrLog);
+        
+        const isChatAnomalyQuery = hasKeyword && (hasAnomalyOrLog || window.lastAnomalyResult);
+        console.log('Is chat anomaly query:', isChatAnomalyQuery);
+        console.log('=== END DEBUG ===');
+
+        // Chat anomali sorgusu ise özel endpoint kullan
+        if (isChatAnomalyQuery && window.lastAnomalyResult) {
+            console.log('✅ Chat anomaly query CONFIRMED, using LCWGPT endpoint');
+            
+            // Son anomali analizinin ID'sini al
+            const lastAnalysisId = window.lastAnomalyResult.storage_info?.analysis_id || 
+                                  window.lastAnomalyResult.storage_id;
+            
+            console.log('Analysis ID:', lastAnalysisId);
+            console.log('Sending query to LCWGPT:', query);
+            
+            showLoader(true);
+            
+            try {
+                const chatResponse = await fetch('/api/chat-query-anomalies', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        query: query,
+                        api_key: apiKey,
+                        analysis_id: lastAnalysisId
+                    })
+                });
+                
+                console.log('LCWGPT response status:', chatResponse.status);
+                
+                if (chatResponse.ok) {
+                    const chatResult = await chatResponse.json();
+                    console.log('LCWGPT result:', chatResult);
+                    
+                    // Chat sonucunu özel formatta göster
+                    displayChatAnomalyResult(chatResult, query);
+                    
+                    
+                    // History'ye ekle - chat-anomaly olarak işaretle
+                    const historyItem = {
+                        id: Date.now(),
+                        timestamp: new Date().toISOString(),
+                        query: query,
+                        type: 'chat-anomaly',
+                        category: 'anomaly',  // Anomaly tab'ında görünsün
+                        result: chatResult,
+                        durum: 'tamamlandı',
+                        işlem: 'chat_query',
+                        hasAIResponse: true
+                    };
+
+                    queryHistory.unshift(historyItem);
+                    if (queryHistory.length > MAX_HISTORY_ITEMS) {
+                        queryHistory = queryHistory.slice(0, MAX_HISTORY_ITEMS);
+                    }
+                    saveHistory();
+                    updateHistoryDisplay();
+                    
+                    return; // Burada return ediyoruz
+                } else {
+                    console.error('LCWGPT request failed:', chatResponse.status);
+                    const errorText = await chatResponse.text();
+                    console.error('Error response:', errorText);
+                }
+            } catch (error) {
+                console.error('LCWGPT error:', error);
+            } finally {
+                showLoader(false);
+            }
+        } else {
+            console.log('❌ NOT a chat anomaly query or no lastAnomalyResult');
+            console.log('Proceeding with normal query flow...');
+        }
+        
         const queryBody = {
             query: query,
             api_key: apiKey
@@ -444,8 +557,7 @@ async function handleQuery() {
         const response = await fetch(API_ENDPOINTS.query, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'X-Session-ID': currentSessionId || ''  // ✅ YENİ: Session header
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify(queryBody)
         });
@@ -455,16 +567,11 @@ async function handleQuery() {
         const result = await response.json();
         console.log('Query result:', result); // DEBUG LOG
         
-        // ✅ YENİ: Session ID'yi sakla
-        if (result.session_id) {
-            currentSessionId = result.session_id;
-            console.log('Session ID updated:', currentSessionId.substring(0, 8) + '...');
-        }
-        
-        // YENİ: Onay bekleyen durum kontrolü
-        if (result.durum === 'onay_bekliyor') {
-            console.log('Confirmation required for anomaly analysis');
-            displayConfirmationDialog(result);
+        // Direkt sonuç gösterimi - onay yok
+        if (result.işlem === 'anomaly_analysis' || result.işlem === 'anomaly_from_storage') {
+            console.log('Anomaly result received, displaying...');
+            displayAnomalyResults(result);
+            window.lastAnomalyResult = result; // Sakla
         } else {
             displayResult(result);
         }
@@ -479,9 +586,16 @@ async function handleQuery() {
     }
 }
 
+/*
+ * ===== DEPRECATED: Onay akışı kaldırıldı =====
+ * Bu fonksiyonlar artık kullanılmıyor
+ */
+
+/*
 /**
  * Anomali analizi için onay dialogu göster
  */
+/*
 function displayConfirmationDialog(result) {
     console.log('Displaying confirmation dialog for anomaly analysis');
     
@@ -547,10 +661,17 @@ function displayConfirmationDialog(result) {
     window.pendingAnomalyParams = result.sonuç;
 
 }
+*/
 
+/*
+ * ÖNCEKİ ONAY AKIŞ FONKSİYONLARI - KULLANILMIYOR (Onay akışı kaldırıldı)
+ */
+
+/*
 /**
  * Anomali analizini onayla
  */
+/*
 async function confirmAnomalyAnalysis() {
     console.log('User confirmed anomaly analysis');
     
@@ -574,10 +695,13 @@ async function confirmAnomalyAnalysis() {
     // Tekrar sorgu gönder
     await handleQuery();
 }
+*/
 
+/*
 /**
  * Anomali analizini iptal et
  */
+/*
 async function cancelAnomalyAnalysis() {
     console.log('User cancelled anomaly analysis');
     
@@ -590,10 +714,13 @@ async function cancelAnomalyAnalysis() {
     // Tekrar sorgu gönder
     await handleQuery();
 }
+*/
 
+/*
 /**
  * Anomali parametrelerini değiştir
  */
+/*
 function modifyAnomalyParameters() {
     console.log('User wants to modify parameters');
     
@@ -639,7 +766,7 @@ function modifyAnomalyParameters() {
     // Sonuç bölümünü temizle
     elements.resultSection.style.display = 'none';
 }
-
+*/
 
 
 
@@ -1041,6 +1168,101 @@ function displayResult(result) {
     // lastQueryWasConfirmation flag'ini resetle
     window.lastQueryWasConfirmation = false;
 }
+
+/**
+ * Chat anomali sonuçlarını göster
+ */
+function displayChatAnomalyResult(result, userQuery) {
+    console.log('Displaying chat anomaly result');
+    
+    elements.resultSection.style.display = 'block';
+    
+    let html = '<div class="chat-result">';
+    
+    // Kullanıcı sorusu
+    html += '<div class="chat-message user-message">';
+    html += '<div class="message-header">👤 Siz</div>';
+    html += `<div class="message-content">${escapeHtml(userQuery)}</div>`;
+    html += '</div>';
+    
+    // AI yanıtı
+    html += '<div class="chat-message ai-message">';
+    html += '<div class="message-header">🤖 LCWGPT Asistan</div>';
+    html += '<div class="message-content">';
+    
+    if (result.status === 'success' && result.ai_response) {
+        // AI yanıtını formatla
+        const formattedResponse = formatAIResponse(result.ai_response);
+        html += formattedResponse;
+        
+        // Meta bilgiler
+        html += '<div class="response-meta">';
+        html += `<small>📊 Toplam ${result.total_anomalies} anomali analiz edildi</small>`;
+        if (result.chunk_info) {
+            html += `<small> | ${result.chunk_info}</small>`;
+        }
+        html += '</div>';
+    } else {
+        html += `<div class="error-message">❌ ${result.message || 'Yanıt alınamadı'}</div>`;
+    }
+    
+    html += '</div>';
+    html += '</div>';
+    
+    // Daha fazla soru önerileri
+    html += '<div class="follow-up-suggestions">';
+    html += '<p>İlgili sorular:</p>';
+    html += '<div class="suggestion-chips">';
+    html += '<span class="chip" onclick="askFollowUp(\'En kritik 5 anomali nedir?\')">En kritik 5 anomali</span>';
+    html += '<span class="chip" onclick="askFollowUp(\'Hangi component en çok anomali içeriyor?\')">Component dağılımı</span>';
+    html += '<span class="chip" onclick="askFollowUp(\'Bu anomaliler için ne önerirsin?\')">Öneriler</span>';
+    html += '<span class="chip" onclick="askFollowUp(\'Anomali pattern\'leri var mı?\')">Pattern analizi</span>';
+    html += '</div>';
+    html += '</div>';
+    
+    html += '</div>';
+    
+    elements.resultContent.innerHTML = html;
+    elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+/**
+ * AI yanıtını formatla
+ */
+function formatAIResponse(response) {
+    // Markdown benzeri formatlamayı HTML'e çevir
+    let formatted = escapeHtml(response);
+    
+    // Başlıklar
+    formatted = formatted.replace(/^### (.*?)$/gm, '<h4>$1</h4>');
+    formatted = formatted.replace(/^## (.*?)$/gm, '<h3>$1</h3>');
+    formatted = formatted.replace(/^# (.*?)$/gm, '<h2>$1</h2>');
+    
+    // Bold text
+    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+    // Liste öğeleri
+    formatted = formatted.replace(/^- (.*?)$/gm, '• $1');
+    formatted = formatted.replace(/^\d+\. (.*?)$/gm, '<li>$1</li>');
+    
+    // Satır sonları
+    formatted = formatted.replace(/\n\n/g, '</p><p>');
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Sayıları vurgula
+    formatted = formatted.replace(/(\d+(?:\.\d+)?%)/g, '<span class="percentage-highlight">$1</span>');
+    formatted = formatted.replace(/(\d{2,})/g, '<span class="number-highlight">$1</span>');
+    
+    return `<p>${formatted}</p>`;
+}
+
+/**
+ * Takip sorusu sor
+ */
+window.askFollowUp = function(question) {
+    elements.queryInput.value = question;
+    handleQuery();
+};
 
 /**
  * Doğal dil anomali analizi sonuçlarını göster - AI DESTEKLİ VERSİYON
@@ -3420,7 +3642,8 @@ function updateHistoryDisplay(filter = 'all') {
     
     filteredHistory.forEach(item => {
         const date = new Date(item.timestamp);
-        const typeIcon = item.type === 'anomaly' ? '🔍' : '💬';
+        const typeIcon = item.type === 'anomaly' ? '🔍' : 
+                        item.type === 'chat-anomaly' ? '🤖' : '💬';
         
         // GENİŞLETİLMİŞ DURUM KONTROLÜ
         const statusClass = item.durum === 'tamamlandı' ? 'completed' :
@@ -5267,23 +5490,6 @@ function detectRegularPattern(hourlyData) {
     return null;
 }
 
-/**
- * Get Component Icon
- */
-function getComponentIcon(component) {
-    const iconMap = {
-        'STORAGE': '💾',
-        'NETWORK': '🌐',
-        'QUERY': '🔍',
-        'WRITE': '✏️',
-        'INDEX': '📑',
-        'REPL': '🔄',
-        'COMMAND': '⚡',
-        'ACCESS': '🔐',
-        'CONTROL': '🎛️'
-    };
-    return iconMap[component] || '📊';
-}
 
 /**
  * ML Visualization Event Listeners Ekle
@@ -6267,10 +6473,12 @@ window.toggleHistoryMessage = function(button) {
 window.replayQuery = replayQuery;
 window.showHistoryDetail = showHistoryDetail;
 
-// Anomaly fonksiyonları  
-window.confirmAnomalyAnalysis = confirmAnomalyAnalysis;
-window.cancelAnomalyAnalysis = cancelAnomalyAnalysis;
-window.modifyAnomalyParameters = modifyAnomalyParameters;
+  
+// Anomaly fonksiyonları - ONAY AKIŞI KALDIRILDI
+// window.confirmAnomalyAnalysis = confirmAnomalyAnalysis;  // DEPRECATED
+// window.cancelAnomalyAnalysis = cancelAnomalyAnalysis;    // DEPRECATED
+// window.modifyAnomalyParameters = modifyAnomalyParameters; // DEPRECATED
+
 
 // Export/Schedule fonksiyonları
 window.exportAnomalyReport = exportAnomalyReport;

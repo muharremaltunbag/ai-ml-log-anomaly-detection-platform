@@ -9999,3 +9999,87 @@ input:checked + .toggle-slider:before {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+
+
+/* Chat Result Styles */
+.chat-result {
+    max-width: 100%;
+    margin: 20px 0;
+}
+
+.chat-message {
+    margin-bottom: 20px;
+    animation: fadeIn 0.3s ease-in;
+}
+
+.user-message {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 15px;
+    margin-left: auto;
+    max-width: 70%;
+}
+
+.ai-message {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 15px;
+    max-width: 90%;
+}
+
+.message-header {
+    font-weight: bold;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.message-content {
+    line-height: 1.6;
+}
+
+.message-content h2, 
+.message-content h3, 
+.message-content h4 {
+    margin: 15px 0 10px 0;
+    color: #0047BA;
+}
+
+.response-meta {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #dee2e6;
+    color: #6c757d;
+}
+
+.follow-up-suggestions {
+    margin-top: 20px;
+    padding: 15px;
+    background: #f0f8ff;
+    border-radius: 8px;
+}
+
+.suggestion-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.suggestion-chips .chip {
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.suggestion-chips .chip:hover {
+    background: #0047BA;
+    color: white;
+    transform: scale(1.05);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}

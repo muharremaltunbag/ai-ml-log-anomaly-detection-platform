@@ -73,8 +73,9 @@ storage_lock = asyncio.Lock()
 llm_connector: Optional[Any] = None
 llm_lock = asyncio.Lock()
 
-# Onay bekleyen parametreleri saklamak için
-pending_confirmations: Dict[str, Dict[str, Any]] = {}
+
+# Onay bekleyen parametreleri saklamak için - KALDIRILDI
+# pending_confirmations: Dict[str, Dict[str, Any]] = {}  # DEPRECATED: Onay akışı kaldırıldı
 
 # Güvenli session yönetimi
 user_sessions: Dict[str, Dict[str, Any]] = {}
@@ -229,7 +230,7 @@ async def home():
 # API Endpoints
 @app.post("/api/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
-    """MongoDB sorgusunu işle"""
+    """MongoDB sorgusunu işle - Onay akışı kaldırıldı"""
     try:
         logger.info(f"Query endpoint çağrıldı - Query uzunluğu: {len(request.query)}")
         
@@ -242,104 +243,82 @@ async def process_query(request: QueryRequest):
         logger.info("Agent alınıyor...")
         mongodb_agent = await get_agent()
         
-        # YENİ: Anomali sorgusu tespiti
-        is_anomaly_query = any(keyword in request.query.lower() for keyword in [
-            'anomali', 'anomaly', 'log', 'analiz'
+        # Anomali sorgusu tespiti - GENİŞLETİLMİŞ
+        query_lower = request.query.lower()
+        is_anomaly_query = any(keyword in query_lower for keyword in [
+            'anomali', 'anomaly', 'log', 'analiz', 'analyze', 
+            'tespit', 'detect', 'sorun', 'problem', 'hata', 
+            'error', 'kritik', 'critical', 'uyarı', 'warning',
+            'bağlantı hatası', 'zaman aşımı', 'kesinti',
+            'primary değişti', 'replikasyon gecikmesi',
+            'yavaş sorgu',
+            'disk dolu', 'yüksek bellek', 'yüksek cpu',
+            'journal hatası', 'çöktü',
+            'çalışmıyor', 'yavaş', 'donuyor',
+            'bağlanamıyor', 'disk doldu', 'bellek doldu',
+            'replikasyon hatası', 'neden çalışmıyor', 'bozuldu',
+            'takılıyor', 'bağlantı', 'bağlantı sorunu',
+            'erişim', 'secondary', 'primary'
         ])
         
-        # YENİ: Onay yanıtı kontrolü
-        user_response = request.query.lower().strip()
-        # Güvenli session key yönetimi
-        session_key = request.headers.get('X-Session-ID') if hasattr(request, 'headers') else None
-        if not session_key:
-            session_key = create_session(request.api_key)
-            logger.info(f"New session created: {session_key[:8]}...")
-        else:
-            # Session'ı kontrol et
-            session = get_session(session_key)
-            if not session or session['api_key'] != request.api_key:
-                session_key = create_session(request.api_key)
-                logger.info(f"Session renewed: {session_key[:8]}...")
-        
-        if user_response in ['evet', 'onay', 'başlat', 'yes'] and session_key in pending_confirmations:
-            # Onaylanmış parametreleri al
-            logger.info("Kullanıcı onayı alındı, anomali analizi başlatılıyor")
-            saved_params = pending_confirmations.pop(session_key)
+        if is_anomaly_query:
+            logger.info("Anomali sorgusu tespit edildi - Direkt işleniyor (onay yok)")
             
-            # Anomali analizi başlat
+            # Storage-first yaklaşım
+            try:
+                storage = await get_storage_manager()
+                recent_analyses = await storage.get_anomaly_history(
+                    limit=1,
+                    include_details=True
+                )
+                
+                if recent_analyses and len(recent_analyses) > 0:
+                    logger.info("Storage'dan son analiz kullanılıyor")
+                    latest_analysis = recent_analyses[0]
+                    
+                    # Basit sonuç döndür
+                    return QueryResponse(
+                        durum="tamamlandı",
+                        işlem="anomaly_from_storage",
+                        açıklama=f"Son anomali analizi: {latest_analysis.get('anomaly_count', 0)} anomali tespit edildi ({latest_analysis.get('timestamp', 'N/A')})",
+                        sonuç={
+                            "analysis_id": latest_analysis.get("analysis_id"),
+                            "from_storage": True,
+                            "anomaly_count": latest_analysis.get("anomaly_count", 0),
+                            "total_logs": latest_analysis.get("logs_analyzed", 0)
+                        }
+                    )
+            except Exception as e:
+                logger.warning(f"Storage erişim hatası: {e}, yeni analiz başlatılıyor")
+            
+            # Storage yoksa veya hata varsa yeni analiz
+            logger.info("Yeni anomali analizi başlatılıyor (OpenSearch)")
+            
             result = mongodb_agent.process_query_with_args(
                 "MongoDB loglarında anomali analizi yap",
                 {
                     'source_type': 'opensearch',
-                    'detected_server': saved_params['server'],
-                    'detected_time_range': saved_params['time_range'],
-                    'host_filter': saved_params['server'],
                     'confirmation_required': False,
-                    'params_extracted': True
+                    'params_extracted': True,
+                    'skip_confirmation': True,
+                    'time_range': 'last_day',
+                    'host_filter': None  # Tüm hostlar için
                 }
             )
             
-            # ✅ YENİ: Anomali analizi tamamlandığında özel durum ve işlem tipi ayarla
-            if result.get('durum') == 'başarılı' and (
-                result.get('işlem') == 'anomaly_analysis' or
-                'summary' in result.get('sonuç', {}) or 
-                'ai_explanation' in result.get('sonuç', {})
-            ):
+            # Durum güncelleme
+            if result.get('durum') == 'başarılı':
                 result['durum'] = 'tamamlandı'
                 result['işlem'] = 'anomaly_analysis'
-                logger.info("Anomaly analysis completed - status updated to 'tamamlandı'")
+                logger.info("Anomaly analysis completed")
             
-            logger.info(f"Anomaly analysis result - işlem: {result.get('işlem')}")
-            logger.info(f"Anomaly analysis result - durum: {result.get('durum')}")
-            
-        elif user_response in ['hayır', 'iptal', 'dur', 'no'] and session_key in pending_confirmations:
-            # İptal edildi
-            logger.info("Kullanıcı analizi iptal etti")
-            pending_confirmations.pop(session_key, None)
-            result = {
-                "durum": "iptal",
-                "işlem": "anomali_analizi",
-                "açıklama": "Anomali analizi iptal edildi. Yeni bir sorgu girebilirsiniz.",
-                "sonuç": None
-            }
-            
-        elif is_anomaly_query:
-            # YENİ: Anomali sorgusu için özel işlem
-            logger.info("Anomali sorgusu tespit edildi, parametreler çıkarılıyor...")
-            
-            # Agent'a parametreleri çıkarması için gönder
-            result = mongodb_agent.process_query_with_args(
-                request.query,
-                {
-                    'source_type': 'opensearch',
-                    'confirmation_required': False,
-                    'params_extracted': False
-                }
-            )
-            
-            # Onay bekliyorsa parametreleri sakla
-            if result.get('durum') == 'onay_bekliyor':
-                # Session key'i güvenli şekilde al veya oluştur
-                if not session_key:
-                    session_key = create_session(request.api_key)
-                pending_confirmations[session_key] = {
-                    'server': result['sonuç']['server'],
-                    'time_range': result['sonuç']['time_range'],
-                    'timestamp': datetime.now().isoformat()
-                }
-                logger.info(f"Onay için parametreler saklandı: {pending_confirmations[session_key]}")
+            return QueryResponse(**result)
             
         else:
             # Normal sorgu işleme
             logger.info(f"Normal sorgu işleniyor: {request.query[:50]}...")
             result = mongodb_agent.process_query(request.query)
-        
-        logger.info(f"Query işlendi - Sonuç durumu: {result.get('durum', 'unknown')}")
-        
-        # Response oluştur
-        response = QueryResponse(**result)
-        response.session_id = session_key
-        return response
+            return QueryResponse(**result)
         
     except HTTPException:
         raise
@@ -347,7 +326,7 @@ async def process_query(request: QueryRequest):
         logger.error(f"Sorgu işleme hatası: {e}")
         return QueryResponse(
             durum="hata",
-            işlem="api_error",
+            işlem="api_error", 
             açıklama=f"Beklenmeyen hata: {str(e)}",
             öneriler=["Lütfen daha sonra tekrar deneyin"]
         )
@@ -849,26 +828,14 @@ async def get_detailed_anomalies(request: Dict[str, Any]):
             "anomalies": []
         }
 
-# Arka plan görevi - eski onay bekleyen parametreleri temizle
-async def cleanup_pending_confirmations():
-    """30 dakikadan eski onay bekleyen parametreleri temizle"""
+# Arka plan görevi - eski session'ları temizle
+async def cleanup_expired_sessions():
+    """30 dakikadan eski session'ları temizle"""
     while True:
         try:
             current_time = datetime.now()
-            expired_keys = []
             
-            # Pending confirmations temizliği
-            for key, data in pending_confirmations.items():
-                if 'timestamp' in data:
-                    created_time = datetime.fromisoformat(data['timestamp'])
-                    if (current_time - created_time).total_seconds() > 1800:  # 30 dakika
-                        expired_keys.append(key)
-            
-            for key in expired_keys:
-                pending_confirmations.pop(key, None)
-                logger.debug(f"Expired confirmation cleared: {key}")
-            
-            # Expired session'ları da temizle
+            # Sadece expired session'ları temizle
             expired_sessions = []
             for session_id, session_data in user_sessions.items():
                 if current_time > session_data['expires_at']:
@@ -1233,11 +1200,11 @@ def _format_anomalies_for_prompt(anomalies: list) -> str:
 @app.on_event("startup")
 async def startup_event():
     """Uygulama başlatıldığında"""
-    # Cleanup task'ı başlat
-    asyncio.create_task(cleanup_pending_confirmations())
-    logger.info("Cleanup task başlatıldı")
+    # Session cleanup task'ı başlat
+    asyncio.create_task(cleanup_expired_sessions())
+    logger.info("Session cleanup task başlatıldı")
     
-    # YENİ: StorageManager'ı başlat
+    # StorageManager'ı başlat
     try:
         storage = await get_storage_manager()
         logger.info("StorageManager initialized at startup")
