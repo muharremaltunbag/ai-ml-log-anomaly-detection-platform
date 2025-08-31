@@ -332,18 +332,27 @@ class MongoDBAnomalyDetector:
         print(f"[DEBUG] Model parameters: {params}")
         
         # Model oluştur veya mevcut modeli kullan
-        if not incremental or not self.is_trained:
-            # Yeni model oluştur
+        if not self.is_trained:
+            # İlk kez model oluştur
             if self.model_config['type'] == 'IsolationForest':
-                print(f"[DEBUG] Creating NEW IsolationForest model...")
+                print(f"[DEBUG] Creating NEW IsolationForest model (first training)...")
                 self.model = IsolationForest(**params)
             else:
                 raise ValueError(f"Unknown model type: {self.model_config['type']}")
-        else:
-            print(f"[DEBUG] Using existing model for incremental update")
-            # Mevcut model parametrelerini güncelle (contamination gibi)
+        elif incremental and self.is_trained:
+            print(f"[DEBUG] INCREMENTAL MODE: Retraining existing model with combined data")
+            print(f"[DEBUG] Model will be retrained with historical + new data")
+            # Mevcut model parametrelerini güncelle ama instance'ı değiştirme
             if hasattr(self.model, 'contamination'):
                 self.model.contamination = params.get('contamination', 0.03)
+            # NOT: IsolationForest'ın set_params metodu ile parametreleri güncelleyebiliriz
+            # ama model tekrar fit edilecek zaten, bu yüzden yeni instance oluşturmak da sorun değil
+            # Ancak historical continuity için mevcut model'i koruyoruz
+        else:
+            # Non-incremental mode ama model trained - yine de yeni model oluştur
+            print(f"[DEBUG] NON-INCREMENTAL MODE: Creating fresh model (incremental=False)")
+            if self.model_config['type'] == 'IsolationForest':
+                self.model = IsolationForest(**params)
         
         # Eğitim
         print(f"[DEBUG] Starting model fitting...")

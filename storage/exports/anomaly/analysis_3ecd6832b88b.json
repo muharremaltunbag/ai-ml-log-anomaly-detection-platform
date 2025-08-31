@@ -1,0 +1,37 @@
+{
+  "analysis_id": "analysis_3ecd6832b88b",
+  "source_info": {
+    "source_type": "test",
+    "host": "test_host",
+    "time_range": "test_range",
+    "timestamp": "2025-08-29T12:30:56.774981"
+  },
+  "result": {
+    "durum": "test",
+    "i\u015flem": "connection_test",
+    "a\u00e7\u0131klama": "Test zaman\u0131: 2025-08-29 15:30:56.774963",
+    "sonu\u00e7": {
+      "summary": {
+        "total_logs": 100,
+        "n_anomalies": 5,
+        "anomaly_rate": 5.0
+      },
+      "critical_anomalies": [
+        {
+          "message": "Test anomali 1",
+          "score": -0.8
+        },
+        {
+          "message": "Test anomali 2",
+          "score": -0.7
+        }
+      ],
+      "source": {
+        "type": "test",
+        "host": "test_host",
+        "time_range": "test_range"
+      }
+    }
+  },
+  "saved_at": "2025-08-29T12:30:56.777087"
+}

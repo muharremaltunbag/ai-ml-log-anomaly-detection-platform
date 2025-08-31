@@ -7,7 +7,12 @@ from pathlib import Path
 from datetime import datetime, timedelta 
 import asyncio
 from typing import Dict, Any, Optional, Union
-from src.storage.config import MONGODB_ENABLED, MONGODB_CONFIG
+from src.storage.config import (
+    MONGODB_ENABLED, 
+    MONGODB_CONFIG,
+    AUTO_SAVE_CONFIG,
+    FILE_STORAGE_CONFIG
+)
 from src.storage.storage_manager import StorageManager
 from src.storage.fallback_storage import FileOnlyStorageManager
 from uuid import uuid4  
@@ -29,7 +34,11 @@ from src.connectors.lcwgpt_connector import LCWGPTConnector
 from src.agents.mongodb_agent import MongoDBAgent
 from web_ui.config import *
 from dotenv import load_dotenv
+# Anomaly detector import
+from src.anomaly.anomaly_detector import MongoDBAnomalyDetector
 
+# Global anomaly detector instance
+anomaly_detector = MongoDBAnomalyDetector()
 # .env dosyasını yükle
 load_dotenv()
 
@@ -68,6 +77,10 @@ agent_lock = asyncio.Lock()
 # YENİ: Global storage manager instance
 storage_manager: Optional[StorageManager] = None
 storage_lock = asyncio.Lock()
+# Storage configuration
+ENABLE_STORAGE = AUTO_SAVE_CONFIG.get("enabled", True)
+MODEL_AUTO_LOAD = True  # Startup'ta modeli otomatik yükle
+MODEL_PATH = "models/isolation_forest.pkl"  # Default model path
 
 # Global LCWGPT connector instance
 llm_connector: Optional[Any] = None
@@ -276,16 +289,46 @@ async def process_query(request: QueryRequest):
                     logger.info("Storage'dan son analiz kullanılıyor")
                     latest_analysis = recent_analyses[0]
                     
-                    # Basit sonuç döndür
+                    # Storage'dan gelen veriyi zenginleştir
+                    # MongoDB field mapping'ini düzelt
+                    all_anomalies = (
+                        latest_analysis.get("unfiltered_anomalies", []) or
+                        latest_analysis.get("critical_anomalies_full", []) or  
+                        latest_analysis.get("critical_anomalies", []) or
+                        latest_analysis.get("critical_anomalies_display", [])
+                    )
+                    
+                    # Debug için anomali sayısını logla
+                    logger.info(f"Storage'dan alınan anomali sayısı: {len(all_anomalies)}")
+                    logger.info(f"Available fields: {list(latest_analysis.keys())}")
+                    
+                    anomaly_count = latest_analysis.get("anomaly_count", 0)
+                    anomaly_rate = latest_analysis.get("anomaly_rate", 0)
+                    
+                    # Frontend'in beklediği formatı hazırla
                     return QueryResponse(
                         durum="tamamlandı",
                         işlem="anomaly_from_storage",
-                        açıklama=f"Son anomali analizi: {latest_analysis.get('anomaly_count', 0)} anomali tespit edildi ({latest_analysis.get('timestamp', 'N/A')})",
+                        açıklama=f"📊 Önceki anomali analizi yüklendi\n\n• Toplam {anomaly_count} anomali tespit edildi\n• Analiz zamanı: {latest_analysis.get('timestamp', 'N/A')}\n• Anomali oranı: %{anomaly_rate:.2f}\n\nChat üzerinden sorularınızı sorabilirsiniz.",
                         sonuç={
                             "analysis_id": latest_analysis.get("analysis_id"),
                             "from_storage": True,
-                            "anomaly_count": latest_analysis.get("anomaly_count", 0),
-                            "total_logs": latest_analysis.get("logs_analyzed", 0)
+                            "anomaly_count": anomaly_count,
+                            "anomaly_rate": anomaly_rate,
+                            "total_logs": latest_analysis.get("logs_analyzed", 0),
+                            "critical_anomalies": all_anomalies[:30],  # İlk 30 anomali
+                            "unfiltered_anomalies": all_anomalies,  # Tüm anomaliler
+                            "storage_info": {
+                                "analysis_id": latest_analysis.get("analysis_id"),
+                                "timestamp": latest_analysis.get("timestamp"),
+                                "host": latest_analysis.get("host", "N/A"),
+                                "time_range": latest_analysis.get("time_range", "N/A")
+                            },
+                            "summary": {
+                                "n_anomalies": anomaly_count,
+                                "total_logs": latest_analysis.get("logs_analyzed", 0),
+                                "anomaly_rate": anomaly_rate
+                            }
                         }
                     )
             except Exception as e:
@@ -1096,9 +1139,15 @@ async def chat_query_anomalies(request: Dict[str, Any]):
                 "total_anomalies": len(all_anomalies)
             }
         
-        # Token limiti için chunk'lara böl (her chunk 50 anomali)
+        # ✅ Akıllı chunk processing - Token limiti ve relevance gözetilerek
         chunk_size = 50
-        first_chunk = all_anomalies[:chunk_size]
+        total_chunks = (len(all_anomalies) + chunk_size - 1) // chunk_size
+
+        # Kullanıcı sorusuna göre en relevant chunk'ı belirle
+        relevant_chunk_index = _determine_relevant_chunk(query, all_anomalies, chunk_size)
+        selected_chunk = all_anomalies[relevant_chunk_index * chunk_size:(relevant_chunk_index + 1) * chunk_size]
+
+        logger.info(f"Selected chunk {relevant_chunk_index + 1}/{total_chunks} based on query relevance")
         
         # Component ve severity dağılımı hesapla
         component_dist = {}
@@ -1140,8 +1189,8 @@ COMPONENT DAĞILIMI:
 SEVERITY DAĞILIMI:
 {_format_dict_for_prompt(severity_dist)}
 
-İLK {len(first_chunk)} ANOMALİ DETAYI:
-{_format_anomalies_for_prompt(first_chunk)}
+SEÇİLEN CHUNK ({relevant_chunk_index + 1}/{total_chunks}) - {len(selected_chunk)} ANOMALİ DETAYI:
+{_format_anomalies_for_prompt(selected_chunk)}
 
 Kullanıcının sorusunu bu veriler ışığında yanıtla."""
 
@@ -1165,7 +1214,7 @@ Kullanıcının sorusunu bu veriler ışığında yanıtla."""
             "ai_response": ai_response,
             "analysis_id": analysis.get("analysis_id"),
             "timestamp": str(analysis.get("timestamp")),
-            "chunk_info": f"1/{(len(all_anomalies) + chunk_size - 1) // chunk_size} chunk işlendi"
+            "chunk_info": f"Chunk {relevant_chunk_index + 1}/{total_chunks} işlendi (en relevant chunk seçildi)"
         }
         
     except Exception as e:
@@ -1175,6 +1224,141 @@ Kullanıcının sorusunu bu veriler ışığında yanıtla."""
             "message": str(e),
             "total_anomalies": 0
         }
+
+
+@app.post("/api/get-anomaly-chunk")
+async def get_anomaly_chunk(request: Request):
+    """
+    Belirli bir anomali chunk'ını getir ve LCWGPT ile işle
+    
+    Request body:
+    {
+        "analysis_id": "analysis_xxx",
+        "chunk_index": 0,  # 0-based index
+        "api_key": "xxx"
+    }
+    """
+    try:
+        data = await request.json()
+        analysis_id = data.get("analysis_id")
+        chunk_index = data.get("chunk_index", 0)
+        api_key = data.get("api_key")
+        
+        # API key kontrolü
+        if not await verify_api_key(api_key):
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Invalid API key"}
+            )
+        
+        logger.info(f"Getting chunk {chunk_index} for analysis {analysis_id}")
+        
+        # Storage'dan analizi al
+        storage = await get_storage_manager()
+        if storage:
+            analysis_list = await storage.get_anomaly_history(
+                filters={"analysis_id": analysis_id},
+                limit=1,
+                include_details=True
+            )
+            
+            if not analysis_list or len(analysis_list) == 0:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": "Analysis not found"}
+                )
+            
+            analysis = analysis_list[0]
+            
+            # Anomalileri al
+            if "detailed_data" in analysis:
+                anomalies = analysis["detailed_data"].get("data", {}).get("critical_anomalies", [])
+            else:
+                # Fallback to sonuç
+                anomalies = analysis.get("sonuç", {}).get("critical_anomalies", [])
+            
+            if not anomalies:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": "No anomalies found in analysis"}
+                )
+            
+            # Chunk'lara böl
+            chunk_size = 20
+            chunks = [anomalies[i:i+chunk_size] for i in range(0, len(anomalies), chunk_size)]
+            total_chunks = len(chunks)
+            
+            # Geçerli chunk index kontrolü
+            if chunk_index >= total_chunks or chunk_index < 0:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": f"Invalid chunk index. Valid range: 0-{total_chunks-1}",
+                        "total_chunks": total_chunks
+                    }
+                )
+            
+            # İstenen chunk'ı al
+            selected_chunk = chunks[chunk_index]
+            
+            # LCWGPT'ye gönder
+            logger.info(f"Processing chunk {chunk_index + 1}/{total_chunks} with {len(selected_chunk)} anomalies")
+            
+            # LCWGPT isteği hazırla
+            lcwgpt_prompt = f"""Aşağıda MongoDB anomali logları var. Bunları analiz et ve önemli pattern'leri açıkla.
+            
+            CHUNK BİLGİSİ: {chunk_index + 1}/{total_chunks}
+            Toplam {len(anomalies)} anomaliden {chunk_index * chunk_size + 1}-{min((chunk_index + 1) * chunk_size, len(anomalies))} arası gösteriliyor.
+            
+            ANOMALI LOGLARI:
+            """
+            
+            for i, anomaly in enumerate(selected_chunk, start=chunk_index * chunk_size + 1):
+                lcwgpt_prompt += f"\n{i}. [{anomaly.get('timestamp', 'N/A')}] {anomaly.get('component', 'N/A')}: {anomaly.get('message', 'N/A')[:200]}"
+            
+            # LCWGPT'ye gönder
+            llm_connector = await get_llm_connector()
+            if llm_connector:
+                try:
+                    messages = [
+                        SystemMessage(content="Sen MongoDB log analiz uzmanısın. Türkçe ve anlaşılır şekilde anomalileri açıkla."),
+                        HumanMessage(content=lcwgpt_prompt)
+                    ]
+                    response = llm_connector.invoke(messages)
+                    lcwgpt_response = response.content
+                except Exception as e:
+                    logger.error(f"LCWGPT invoke error: {e}")
+                    lcwgpt_response = f"LCWGPT analizi yapılamadı: {str(e)}"
+            else:
+                lcwgpt_response = "LCWGPT bağlantısı kurulamadı"
+            
+            # Response hazırla
+            result = {
+                "status": "success",
+                "chunk_index": chunk_index,
+                "total_chunks": total_chunks,
+                "chunk_info": f"{chunk_index + 1}/{total_chunks} chunk",
+                "anomalies_in_chunk": len(selected_chunk),
+                "total_anomalies": len(anomalies),
+                "ai_response": lcwgpt_response,
+                "has_next": chunk_index < total_chunks - 1,
+                "has_previous": chunk_index > 0
+            }
+            
+            return JSONResponse(content=result)
+            
+        else:
+            return JSONResponse(
+                status_code=503,
+                content={"error": "Storage manager not initialized"}
+            )
+            
+    except Exception as e:
+        logger.error(f"Error getting anomaly chunk: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Internal server error: {str(e)}"}
+        )
 
 # Helper fonksiyonlar (aynı dosyaya ekleyin)
 def _format_dict_for_prompt(data: dict, limit: int = None) -> str:
@@ -1195,6 +1379,86 @@ def _format_anomalies_for_prompt(anomalies: list) -> str:
         result.append(f"{i}. [{a.get('component', 'N/A')}] Score: {a.get('severity_score', 0):.1f} - {a.get('message', '')[:80]}...")
     return "\n".join(result)
 
+def _determine_relevant_chunk(query: str, all_anomalies: list, chunk_size: int) -> int:
+    """
+    Kullanıcı sorusuna göre en relevant chunk'ı belirle
+    
+    Args:
+        query: Kullanıcı sorusu
+        all_anomalies: Tüm anomaliler
+        chunk_size: Chunk boyutu
+        
+    Returns:
+        En relevant chunk'ın index'i
+    """
+    try:
+        query_lower = query.lower()
+        total_chunks = (len(all_anomalies) + chunk_size - 1) // chunk_size
+        
+        # Soruda belirtilen component'leri tespit et
+        common_components = ['repl', 'query', 'command', 'network', 'storage', 'control', 'write', 'index']
+        mentioned_components = [comp for comp in common_components if comp in query_lower]
+        
+        # Soruda belirtilen severity/önem kelimelerini tespit et  
+        severity_keywords = {
+            'kritik': ['critical', 'high'],
+            'yüksek': ['high', 'critical'], 
+            'orta': ['medium', 'moderate'],
+            'düşük': ['low', 'info']
+        }
+        mentioned_severity = None
+        for tr_key, en_values in severity_keywords.items():
+            if tr_key in query_lower or any(en_val in query_lower for en_val in en_values):
+                mentioned_severity = en_values
+                break
+        
+        # Her chunk için relevance score hesapla
+        chunk_scores = []
+        for chunk_idx in range(total_chunks):
+            start_idx = chunk_idx * chunk_size
+            end_idx = min(start_idx + chunk_size, len(all_anomalies))
+            chunk = all_anomalies[start_idx:end_idx]
+            
+            score = 0
+            
+            # Component match score
+            if mentioned_components:
+                component_matches = sum(1 for a in chunk 
+                                      if any(comp in (a.get('component', '') or '').lower() 
+                                           for comp in mentioned_components))
+                score += component_matches * 2
+            
+            # Severity match score  
+            if mentioned_severity:
+                severity_matches = sum(1 for a in chunk
+                                     if any(sev in (a.get('severity_level', '') or '').lower()
+                                          for sev in mentioned_severity))
+                score += severity_matches * 3
+            
+            # High score bias (kritik anomaliler öncelikli)
+            avg_score = sum(a.get('severity_score', 0) for a in chunk) / len(chunk) if chunk else 0
+            score += avg_score * 0.1
+            
+            # Son chunk'larda penalty (daha az relevant olma eğilimi)
+            if chunk_idx > total_chunks * 0.7:
+                score *= 0.8
+                
+            chunk_scores.append((chunk_idx, score))
+        
+        # En yüksek score'lu chunk'ı seç
+        best_chunk = max(chunk_scores, key=lambda x: x[1])
+        selected_chunk_idx = best_chunk[0]
+        
+        logger.info(f"Chunk relevance scores: {[(i, f'{s:.2f}') for i, s in chunk_scores]}")
+        logger.info(f"Selected chunk {selected_chunk_idx + 1}/{total_chunks} with score {best_chunk[1]:.2f}")
+        
+        return selected_chunk_idx
+        
+    except Exception as e:
+        logger.error(f"Error determining relevant chunk: {e}")
+        # Fallback: İlk chunk'ı döndür
+        return 0
+
 
 # Startup event'e ekle
 @app.on_event("startup")
@@ -1204,12 +1468,66 @@ async def startup_event():
     asyncio.create_task(cleanup_expired_sessions())
     logger.info("Session cleanup task başlatıldı")
     
-    # StorageManager'ı başlat
+    """API başlatıldığında çalışacak işlemler"""
+    global storage_manager, anomaly_detector
+    
+    logger.info("Starting API server...")
+    
+    # Storage Manager'ı başlat
+    if ENABLE_STORAGE:
+        storage_manager = StorageManager()
+        connected = await storage_manager.initialize()
+        
+        if connected:
+            logger.info("✅ Storage Manager initialized successfully")
+        else:
+            logger.warning("⚠️ Storage Manager initialization failed - auto-save disabled")
+            storage_manager = None
+    
+    # Model Auto-Load: Mevcut modeli kontrol et ve yükle
     try:
-        storage = await get_storage_manager()
-        logger.info("StorageManager initialized at startup")
+        model_path = Path("models/isolation_forest.pkl")
+        
+        if model_path.exists():
+            logger.info(f"📊 Found existing model at: {model_path}")
+            logger.info("Loading saved model...")
+            
+            # Model'i yükle
+            success = anomaly_detector.load_model(str(model_path))
+            
+            if success:
+                # Model bilgilerini logla
+                model_info = anomaly_detector.get_model_info()
+                logger.info("✅ Model loaded successfully!")
+                logger.info(f"   Model type: {model_info.get('model_type', 'unknown')}")
+                logger.info(f"   Features: {model_info.get('n_features', 0)}")
+                logger.info(f"   Is trained: {model_info.get('is_trained', False)}")
+                
+                # Historical buffer bilgisi
+                buffer_info = anomaly_detector.get_historical_buffer_info()
+                if buffer_info.get('enabled'):
+                    buffer_stats = buffer_info.get('buffer_stats', {})
+                    logger.info(f"   Historical buffer: {buffer_stats.get('total_samples', 0)} samples")
+                    logger.info(f"   Buffer size: {buffer_stats.get('size_mb', 0):.2f} MB")
+                    logger.info(f"   Last update: {buffer_stats.get('last_update', 'N/A')}")
+            else:
+                logger.warning("⚠️ Model file exists but could not be loaded")
+                logger.info("Will train new model on first analysis")
+        else:
+            logger.info("📊 No existing model found at startup")
+            logger.info(f"   Expected path: {model_path}")
+            logger.info("   Will train new model on first analysis")
+            
+            # models klasörünü oluştur
+            model_path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f"   Created models directory: {model_path.parent}")
+            
     except Exception as e:
         logger.error(f"Failed to initialize StorageManager: {e}")
+        logger.error(f"❌ Error during model auto-load: {e}")
+        logger.error(f"   Will train new model on first analysis")
+        import traceback
+        traceback.print_exc()
 
 # Shutdown
 @app.on_event("shutdown")

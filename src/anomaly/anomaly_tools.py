@@ -491,13 +491,19 @@ class AnomalyDetectionTools:
                     df_filtered, X_filtered = self.feature_engineer.apply_filters(df_enriched, X)
                     logger.info(f"After filtering: {len(df_filtered)} logs, {X_filtered.shape[1]} features")
                     
-                    # Model kontrolü ve tahmin
+                    # ✅ YENİ: Model yükleme mekanizması - Production continuity için KRİTİK
                     if not self.detector.is_trained:
-                        logger.info("Model not trained, will train during analysis...")
-                    else:
-                        logger.info("Model already trained, will use existing model...")
-                    
-                    # Model eğitilmemişse önce eğit
+                        logger.info("Attempting to load existing model from storage...")
+                        # Önce diskten model yüklemeyi dene
+                        model_loaded = self.detector.load_model()
+                        if model_loaded:
+                            logger.info("✅ Existing model loaded successfully from storage")
+                            logger.info(f"   📍 Model features: {len(self.detector.feature_names)} features")
+                            logger.info(f"   📍 Historical buffer: {self.detector.historical_data['metadata']['total_samples']} samples")
+                        else:
+                            logger.info("⚠️ No existing model found, will train new model")
+                            
+                    # Model kontrolü ve tahmin
                     if not self.detector.is_trained:
                         logger.info("Training model first before prediction...")
                         if hasattr(self.detector, 'train_incremental'):
@@ -505,8 +511,25 @@ class AnomalyDetectionTools:
                             self.detector.train_incremental(X_filtered, batch_id=batch_id)
                             logger.info(f"Initial training completed - Ensemble size: {len(self.detector.incremental_models)}")
                         else:
-                            self.detector.train(X_filtered)
-                            logger.info("Standard training completed")
+                            self.detector.train(X_filtered, save_model=True)  # Auto-save enabled
+                            logger.info("Standard training completed and saved")
+                    else:
+                        logger.info("✅ Using existing trained model")
+                        
+                        # ÖNEMLİ: Incremental training yaparak historical buffer'ı güncelle
+                        logger.info("📊 Performing incremental training to update historical buffer...")
+                        
+                        # Training öncesi buffer durumu
+                        buffer_before = self.detector.historical_data['metadata']['total_samples']
+                        logger.info(f"   Historical buffer before: {buffer_before} samples")
+                        
+                        # Incremental training yap
+                        training_result = self.detector.train(X_filtered, save_model=True, incremental=True)
+                        
+                        # Training sonrası buffer durumu
+                        buffer_after = self.detector.historical_data['metadata']['total_samples']
+                        logger.info(f"   Historical buffer after: {buffer_after} samples (+{buffer_after - buffer_before} new)")
+                        logger.info(f"✅ Model incrementally updated with {len(X_filtered)} new samples")
 
                     # Şimdi tahmin yap
                     predictions, anomaly_scores = self.detector.predict(X_filtered, df=df_filtered)
@@ -674,14 +697,19 @@ class AnomalyDetectionTools:
             df_filtered, X_filtered = self.feature_engineer.apply_filters(df_enriched, X)
             logger.info(f"After filtering: {len(df_filtered)} logs, {X_filtered.shape[1]} features")
             
-            # Model kontrolü
+            # ✅ YENİ: Model yükleme mekanizması - Production continuity için KRİTİK
             if not self.detector.is_trained:
-                logger.info("Model not trained, will train during analysis...")
-            else:
-                logger.info("Model already trained, will use existing model...")
+                logger.info("Attempting to load existing model from storage...")
+                # Önce diskten model yüklemeyi dene
+                model_loaded = self.detector.load_model()
+                if model_loaded:
+                    logger.info("✅ Existing model loaded successfully from storage")
+                    logger.info(f"   📍 Model features: {len(self.detector.feature_names)} features")
+                    logger.info(f"   📍 Historical buffer: {self.detector.historical_data['metadata']['total_samples']} samples")
+                else:
+                    logger.info("⚠️ No existing model found, will train new model")
             
-            # Tahmin yap
-            # Model eğitilmemişse önce eğit
+            # Model kontrolü ve tahmin
             if not self.detector.is_trained:
                 logger.info("Training model first before prediction...")
                 if hasattr(self.detector, 'train_incremental'):
@@ -828,6 +856,18 @@ class AnomalyDetectionTools:
             logger.debug(f"After filtering: {len(df_filtered)} logs, {X_filtered.shape[1]} features")
             
   
+            # ✅ YENİ: Model yükleme mekanizması - Production continuity için KRİTİK
+            if not self.detector.is_trained:
+                logger.info("Attempting to load existing model from storage...")
+                # Önce diskten model yüklemeyi dene
+                model_loaded = self.detector.load_model()
+                if model_loaded:
+                    logger.info("✅ Existing model loaded successfully from storage")
+                    logger.info(f"   📍 Model features: {len(self.detector.feature_names)} features")
+                    logger.info(f"   📍 Historical buffer: {self.detector.historical_data['metadata']['total_samples']} samples")
+                else:
+                    logger.info("⚠️ No existing model found, will train new model")
+            
             # Model kontrolü ve eğitim
             if not self.detector.is_trained:
                 logger.info("Training model first...")
@@ -1372,6 +1412,21 @@ class AnomalyDetectionTools:
         
         try:
             logger.info("Starting AI explanation generation...")
+            
+            # anomaly_tools.py içinde numpy float kontrolü ekle
+            def convert_numpy_values(data):
+                if isinstance(data, dict):
+                    return {k: convert_numpy_values(v) for k, v in data.items()}
+                elif isinstance(data, list):
+                    return [convert_numpy_values(item) for item in data]
+                elif isinstance(data, (np.float64, np.float32)):
+                    return float(data)
+                elif isinstance(data, (np.int64, np.int32)):
+                    return int(data)
+                return data
+            
+            anomaly_data = convert_numpy_values(anomaly_data)
+            
             # Summary'den büyük verileri temizle
             summary = anomaly_data.get("summary", {}).copy()
             # Sadece gerekli özet bilgileri kalsın

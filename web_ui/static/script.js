@@ -146,6 +146,28 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeEventListeners();
     checkInitialStatus();
     loadHistory(); // Geçmişi yükle
+    
+    // YENİ: Eğer localStorage'da API key varsa otomatik bağlan ve storage kontrol et
+    const savedApiKey = localStorage.getItem('mongodb_api_key');
+    if (savedApiKey && elements.apiKeyInput) {
+        elements.apiKeyInput.value = savedApiKey;
+        
+        // Otomatik bağlantı ve storage kontrolü
+        setTimeout(async () => {
+            console.log('Auto-connecting with saved API key...');
+            await handleConnect();
+            
+            // Bağlantı başarılıysa storage'dan veri yükle
+            if (isConnected) {
+                setTimeout(async () => {
+                    const loaded = await loadLastAnomalyFromStorage();
+                    if (loaded) {
+                        console.log('Previous analysis auto-loaded on page load');
+                    }
+                }, 1000);
+            }
+        }, 500);
+    }
 });
 
 /**
@@ -343,7 +365,81 @@ async function checkInitialStatus() {
         console.error('Initial status check failed:', error); // DEBUG LOG
         updateStatus('offline', 'Bağlantı hatası');
     }
-}displayConfirmationDialog
+}
+
+/**
+ * Storage'dan son anomali analizini yükle
+ * Sayfa yenilendiğinde veya ilk bağlantıda otomatik çalışır
+ */
+async function loadLastAnomalyFromStorage() {
+    // Connection durumunu bekle (max 5 saniye)
+    let retryCount = 0;
+    while ((!isConnected || !apiKey) && retryCount < 50) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        retryCount++;
+    }
+    
+    if (!isConnected || !apiKey) {
+        console.log('Not connected after retry, skipping storage load');
+        return;
+    }
+    
+    try {
+        console.log('Loading last anomaly analysis from storage...');
+        
+        // Backend'den storage kontrolü yap
+        const response = await fetch(API_ENDPOINTS.query, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                query: "son anomali analizi",  // Backend'de anomali keyword'ü tetikler
+                api_key: apiKey
+            })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            
+            // Storage'dan veri geldiyse global değişkene ata ve yapıyı düzelt
+            if (result.işlem === 'anomaly_from_storage' && result.sonuç?.from_storage) {
+                // Storage info'yu doğru yere koy
+                if (!result.storage_info && result.sonuç.storage_info) {
+                    result.storage_info = result.sonuç.storage_info;
+                }
+                window.lastAnomalyResult = result;
+                console.log('Storage anomaly loaded successfully:', {
+                    analysis_id: result.sonuç.analysis_id,
+                    anomaly_count: result.sonuç.anomaly_count,
+                    has_critical: !!(result.sonuç.critical_anomalies?.length)
+                });
+                
+                // Kullanıcıya bilgi ver
+                const anomalyCount = result.sonuç.anomaly_count || 0;
+                const timestamp = result.sonuç.storage_info?.timestamp || 'N/A';
+                showNotification(
+                    `Önceki analiz yüklendi: ${anomalyCount} anomali (${new Date(timestamp).toLocaleString('tr-TR')})`,
+                    'info'
+                );
+                
+                // Query input'a ipucu ekle
+                if (elements.queryInput) {
+                    elements.queryInput.placeholder = "Önceki analizle ilgili sorularınızı sorabilirsiniz...";
+                }
+                
+                return true;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading from storage:', error);
+    }
+    
+    console.log('No previous analysis found in storage');
+    return false;
+}
+
+// displayConfirmationDialog
 
 /**
  * API bağlantısını kur
@@ -382,6 +478,14 @@ async function handleConnect() {
             elements.connectBtn.classList.add('connected');
 
             addStorageMenuButtons();   // ✅ storage menüsünü ekle
+            
+            // YENİ: Storage'dan son anomali analizini yükle
+            setTimeout(async () => {
+                const loaded = await loadLastAnomalyFromStorage();
+                if (loaded) {
+                    console.log('Previous anomaly analysis ready for chat queries');
+                }
+            }, 1500);
             
             updateStatus('online', 'Sistem bağlantısı başarılı');
             showNotification('Başarıyla bağlandı!', 'success');
@@ -475,13 +579,55 @@ async function handleQuery() {
         console.log('Is chat anomaly query:', isChatAnomalyQuery);
         console.log('=== END DEBUG ===');
 
-        // Chat anomali sorgusu ise özel endpoint kullan
-        if (isChatAnomalyQuery && window.lastAnomalyResult) {
-            console.log('✅ Chat anomaly query CONFIRMED, using LCWGPT endpoint');
+        // Chat anomali sorgusu kontrolü
+        if (isChatAnomalyQuery) {
+            console.log('🔍 DEBUG: Chat anomaly query detected, checking lastAnomalyResult...');
+            console.log('🔍 DEBUG: window.lastAnomalyResult exists:', !!window.lastAnomalyResult);
+            
+            // Eğer lastAnomalyResult yoksa storage'dan yüklemeyi dene
+            if (!window.lastAnomalyResult) {
+                console.log('🔍 DEBUG: No lastAnomalyResult found, attempting to load from storage...');
+                console.log('🔍 DEBUG: Calling loadLastAnomalyFromStorage()...');
+                
+                try {
+                    const loaded = await loadLastAnomalyFromStorage();
+                    console.log('🔍 DEBUG: loadLastAnomalyFromStorage() returned:', loaded);
+                    console.log('🔍 DEBUG: window.lastAnomalyResult after storage load:', !!window.lastAnomalyResult);
+                    
+                    if (!loaded) {
+                        console.log('❌ DEBUG: Storage load failed, showing warning and exiting');
+                        // Storage'da da veri yoksa kullanıcıyı bilgilendir
+                        showNotification('Önce bir anomali analizi yapmanız gerekiyor', 'warning');
+                        showLoader(false);
+                        elements.queryBtn.disabled = false;
+                        return;
+                    } else {
+                        console.log('✅ DEBUG: Storage load successful, window.lastAnomalyResult now available');
+                    }
+                } catch (error) {
+                    console.error('❌ DEBUG: Error in loadLastAnomalyFromStorage():', error);
+                    showNotification('Storage yüklenirken hata oluştu', 'error');
+                    showLoader(false);
+                    elements.queryBtn.disabled = false;
+                    return;
+                }
+            } else {
+                console.log('✅ DEBUG: window.lastAnomalyResult already exists, skipping storage load');
+            }
+            
+            // Artık window.lastAnomalyResult kesinlikle var
+            if (window.lastAnomalyResult) {
+                console.log('✅ Chat anomaly query CONFIRMED, using LCWGPT endpoint');
+                console.log('🔍 DEBUG: lastAnomalyResult structure check:');
+                console.log('🔍 DEBUG: - storage_info:', !!window.lastAnomalyResult.storage_info);
+                console.log('🔍 DEBUG: - storage_id:', !!window.lastAnomalyResult.storage_id);
+                console.log('🔍 DEBUG: - analysis_id from storage_info:', window.lastAnomalyResult.storage_info?.analysis_id);
             
             // Son anomali analizinin ID'sini al
             const lastAnalysisId = window.lastAnomalyResult.storage_info?.analysis_id || 
                                   window.lastAnomalyResult.storage_id;
+            
+            console.log('🔍 DEBUG: Final analysis_id for LCWGPT:', lastAnalysisId);
             
             console.log('Analysis ID:', lastAnalysisId);
             console.log('Sending query to LCWGPT:', query);
@@ -489,6 +635,7 @@ async function handleQuery() {
             showLoader(true);
             
             try {
+                // Tek chunk gönderiliyor
                 const chatResponse = await fetch('/api/chat-query-anomalies', {
                     method: 'POST',
                     headers: {
@@ -541,6 +688,7 @@ async function handleQuery() {
                 console.error('LCWGPT error:', error);
             } finally {
                 showLoader(false);
+            }
             }
         } else {
             console.log('❌ NOT a chat anomaly query or no lastAnomalyResult');
@@ -1191,8 +1339,9 @@ function displayChatAnomalyResult(result, userQuery) {
     html += '<div class="message-content">';
     
     if (result.status === 'success' && result.ai_response) {
-        // AI yanıtını formatla
-        const formattedResponse = formatAIResponse(result.ai_response);
+        // AI yanıtını önce decode et, sonra formatla
+        const decodedResponse = decodeHtmlEntities(result.ai_response);
+        const formattedResponse = formatAIResponse(decodedResponse);
         html += formattedResponse;
         
         // Meta bilgiler
@@ -1208,6 +1357,44 @@ function displayChatAnomalyResult(result, userQuery) {
     
     html += '</div>';
     html += '</div>';
+    
+    // Chunk navigation butonları
+    if (result.chunk_info && result.total_chunks > 1) {
+        html += '<div class="chunk-navigation-controls">';
+        html += '<div class="chunk-info-display">';
+        html += `<span class="chunk-status">📊 Gösterilen: ${result.chunk_info}</span>`;
+        html += `<span class="chunk-total">Toplam ${result.total_anomalies} anomaliden ${result.anomalies_in_chunk} tanesi</span>`;
+        html += '</div>';
+        html += '<div class="chunk-buttons">';
+        
+        // Önceki chunk butonu
+        if (result.chunk_index > 0) {
+            html += `<button class="btn-chunk-nav" onclick="loadAnomalyChunk('${window.lastAnomalyResult?.storage_info?.analysis_id}', ${result.chunk_index - 1})">`;
+            html += `⬅️ Önceki Chunk (${result.chunk_index}/${result.total_chunks})`;
+            html += '</button>';
+        }
+        
+        // Sonraki chunk butonu
+        if (result.has_next) {
+            html += `<button class="btn-chunk-nav" onclick="loadAnomalyChunk('${window.lastAnomalyResult?.storage_info?.analysis_id}', ${result.chunk_index + 1})">`;
+            html += `Sonraki Chunk (${result.chunk_index + 2}/${result.total_chunks}) ➡️`;
+            html += '</button>';
+        }
+        
+        // Chunk seçici dropdown
+        if (result.total_chunks > 2) {
+            html += '<select class="chunk-selector" onchange="loadAnomalyChunk(\'' + window.lastAnomalyResult?.storage_info?.analysis_id + '\', this.value)">';
+            html += '<option value="">Chunk Seç...</option>';
+            for (let i = 0; i < result.total_chunks; i++) {
+                const selected = i === result.chunk_index ? 'selected' : '';
+                html += `<option value="${i}" ${selected}>Chunk ${i + 1}/${result.total_chunks}</option>`;
+            }
+            html += '</select>';
+        }
+        
+        html += '</div>';
+        html += '</div>';
+    }
     
     // Daha fazla soru önerileri
     html += '<div class="follow-up-suggestions">';
@@ -1227,11 +1414,41 @@ function displayChatAnomalyResult(result, userQuery) {
 }
 
 /**
+ * HTML entity'leri tam decode et (çoklu decode desteği)
+ */
+function decodeHtmlEntities(text) {
+    if (!text) return '';
+    
+    // Birden fazla kez encode edilmiş olabilir, 2 kez decode et
+    let decoded = text;
+    for (let i = 0; i < 2; i++) {
+        const textArea = document.createElement('textarea');
+        textArea.innerHTML = decoded;
+        decoded = textArea.value;
+        
+        // Eğer değişiklik yoksa döngüyü kır
+        if (decoded === text) break;
+        text = decoded;
+    }
+    return decoded;
+}
+
+/**
  * AI yanıtını formatla
  */
 function formatAIResponse(response) {
-    // Markdown benzeri formatlamayı HTML'e çevir
-    let formatted = escapeHtml(response);
+    // ÖNCE decode et
+    let decoded = response;
+    
+    // HTML entity'leri decode et (backend'den gelmiş olabilir)
+    decoded = decoded.replace(/&#039;/g, "'");
+    decoded = decoded.replace(/&quot;/g, '"');
+    decoded = decoded.replace(/&lt;/g, '<');
+    decoded = decoded.replace(/&gt;/g, '>');
+    decoded = decoded.replace(/&amp;/g, '&');
+    
+    // Sonra güvenli escape (XSS koruması)
+    let formatted = escapeHtml(decoded);
     
     // Başlıklar
     formatted = formatted.replace(/^### (.*?)$/gm, '<h4>$1</h4>');
@@ -1242,16 +1459,25 @@ function formatAIResponse(response) {
     formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     
     // Liste öğeleri
-    formatted = formatted.replace(/^- (.*?)$/gm, '• $1');
+    formatted = formatted.replace(/^• (.*?)$/gm, '<li>$1</li>');
+    formatted = formatted.replace(/^- (.*?)$/gm, '<li>$1</li>');
     formatted = formatted.replace(/^\d+\. (.*?)$/gm, '<li>$1</li>');
+    
+    // Liste bloklarını wrap et
+    formatted = formatted.replace(/(<li>.*?<\/li>\n)+/g, function(match) {
+        return '<ul>' + match + '</ul>';
+    });
     
     // Satır sonları
     formatted = formatted.replace(/\n\n/g, '</p><p>');
     formatted = formatted.replace(/\n/g, '<br>');
     
-    // Sayıları vurgula
+    // Sayıları vurgula - AMA HTML entity parçalarını değil!
+    // Önce yüzdeleri
     formatted = formatted.replace(/(\d+(?:\.\d+)?%)/g, '<span class="percentage-highlight">$1</span>');
-    formatted = formatted.replace(/(\d{2,})/g, '<span class="number-highlight">$1</span>');
+    
+    // Sonra büyük sayıları - AMA &# ile başlamayanları
+    formatted = formatted.replace(/(?<!&#?)(\b\d{2,}\b)/g, '<span class="number-highlight">$1</span>');
     
     return `<p>${formatted}</p>`;
 }
@@ -6411,6 +6637,70 @@ window.toggleMessageExpand = function(button) {
 window.investigateAnomaly = function(index) {
     console.log('Investigating anomaly at index:', index);
     showNotification('Anomali detaylı analizi başlatılıyor...', 'info');
+};
+
+/**
+ * Belirli bir anomali chunk'ını yükle
+ */
+window.loadAnomalyChunk = async function(analysisId, chunkIndex) {
+    if (!analysisId) {
+        showNotification('Analysis ID bulunamadı', 'error');
+        return;
+    }
+    
+    // Loading göster
+    showLoader(true);
+    elements.resultSection.style.display = 'block';
+    elements.resultContent.innerHTML = '<div class="loading-chunk">Chunk yükleniyor...</div>';
+    
+    try {
+        const response = await fetch('/api/get-anomaly-chunk', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                analysis_id: analysisId,
+                chunk_index: parseInt(chunkIndex),
+                api_key: apiKey
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            // Yeni chunk'ı göster
+            displayChatAnomalyResult({
+                status: 'success',
+                ai_response: result.ai_response,
+                chunk_info: result.chunk_info,
+                chunk_index: result.chunk_index,
+                total_chunks: result.total_chunks,
+                anomalies_in_chunk: result.anomalies_in_chunk,
+                total_anomalies: result.total_anomalies,
+                has_next: result.has_next,
+                has_previous: result.has_previous
+            }, `Chunk ${result.chunk_index + 1}/${result.total_chunks} gösteriliyor`);
+            
+            // Sayfayı yukarı kaydır
+            elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            
+            showNotification(`Chunk ${result.chunk_index + 1}/${result.total_chunks} yüklendi`, 'success');
+        } else {
+            throw new Error(result.error || 'Chunk yüklenemedi');
+        }
+        
+    } catch (error) {
+        console.error('Chunk yükleme hatası:', error);
+        showNotification('Chunk yüklenirken hata oluştu: ' + error.message, 'error');
+        elements.resultContent.innerHTML = '<div class="error-message">Chunk yüklenemedi. Lütfen tekrar deneyin.</div>';
+    } finally {
+        showLoader(false);
+    }
 };
 
 // Global fonksiyon tanımlamaları
