@@ -177,7 +177,7 @@ class AnomalyDetectionTools:
             }, ensure_ascii=False, indent=2)
 
     def _perform_enhanced_analysis(self, df_filtered, X_filtered, predictions, anomaly_scores, 
-                                  source_name="unknown", use_incremental=True):
+                                  source_name="unknown", use_incremental=True, server_name=None):
         """
         Tüm veri kaynakları için ortak gelişmiş analiz fonksiyonu
         
@@ -188,11 +188,15 @@ class AnomalyDetectionTools:
             anomaly_scores: Anomali skorları
             source_name: Veri kaynağı adı
             use_incremental: Incremental learning kullan
+            server_name: Sunucu adı (model yönetimi için)
         
         Returns:
             Enhanced analysis dictionary
         """
-        logger.info(f"Performing enhanced analysis for {source_name} source...")
+        if server_name:
+            logger.info(f"Performing enhanced analysis for {source_name} source, server: {server_name}...")
+        else:
+            logger.info(f"Performing enhanced analysis for {source_name} source...")
         
         # 1. Model Training/Update (eğer gerekiyorsa)
         if not self.detector.is_trained:
@@ -201,12 +205,14 @@ class AnomalyDetectionTools:
             if use_incremental and hasattr(self.detector, 'train_incremental'):
                 # Incremental training
                 batch_id = f"{source_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                if server_name:
+                    batch_id = f"{server_name}_{source_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 training_stats = self.detector.train_incremental(X_filtered, batch_id=batch_id)
                 logger.info(f"Incremental training completed - Ensemble size: {len(self.detector.incremental_models)}")
             else:
                 # Fallback to standard training
-                self.detector.train(X_filtered)
-                logger.info("Standard training completed")
+                self.detector.train(X_filtered, server_name=server_name)
+                logger.info(f"Standard training completed{f' for server: {server_name}' if server_name else ''}")
             
             # İlk training'de feature importance hesapla
             try:
@@ -492,22 +498,29 @@ class AnomalyDetectionTools:
                     logger.info(f"After filtering: {len(df_filtered)} logs, {X_filtered.shape[1]} features")
                     
                     # ✅ YENİ: Model yükleme mekanizması - Production continuity için KRİTİK
+                    # Host filter'dan sunucu adını çıkar
+                    server_for_model = None
+                    if host_filter:
+                        # FQDN'den sunucu adını çıkar (örn: lcwmongodb01n2.lcwaikiki.local -> lcwmongodb01n2)
+                        server_for_model = host_filter.split('.')[0] if '.' in host_filter else host_filter
+                        logger.info(f"Using server-specific model for: {server_for_model}")
+                    
                     if not self.detector.is_trained:
-                        logger.info("Attempting to load existing model from storage...")
+                        logger.info(f"Attempting to load existing model from storage{f' for server: {server_for_model}' if server_for_model else ''}...")
                         # Önce diskten model yüklemeyi dene
-                        model_loaded = self.detector.load_model()
+                        model_loaded = self.detector.load_model(server_name=server_for_model)
                         if model_loaded:
-                            logger.info("✅ Existing model loaded successfully from storage")
+                            logger.info(f"✅ Existing model loaded successfully from storage{f' for server: {server_for_model}' if server_for_model else ''}")
                             logger.info(f"   📍 Model features: {len(self.detector.feature_names)} features")
                             logger.info(f"   📍 Historical buffer: {self.detector.historical_data['metadata']['total_samples']} samples")
                         else:
-                            logger.info("⚠️ No existing model found, will train new model")
+                            logger.info(f"⚠️ No existing model found{f' for server: {server_for_model}' if server_for_model else ''}, will train new model")
                             
                     # Model kontrolü ve tahmin
                     if not self.detector.is_trained:
-                        logger.info("Training model first before prediction...")
+                        logger.info(f"Training model first before prediction{f' for server: {server_for_model}' if server_for_model else ''}...")
                         if hasattr(self.detector, 'train_incremental'):
-                            batch_id = f"opensearch_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                            batch_id = f"{server_for_model or 'opensearch'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                             self.detector.train_incremental(X_filtered, batch_id=batch_id)
                             logger.info(f"Initial training completed - Ensemble size: {len(self.detector.incremental_models)}")
                         else:
@@ -524,7 +537,7 @@ class AnomalyDetectionTools:
                         logger.info(f"   Historical buffer before: {buffer_before} samples")
                         
                         # Incremental training yap
-                        training_result = self.detector.train(X_filtered, save_model=True, incremental=True)
+                        training_result = self.detector.train(X_filtered, save_model=True, incremental=True, server_name=server_for_model)
                         
                         # Training sonrası buffer durumu
                         buffer_after = self.detector.historical_data['metadata']['total_samples']
@@ -535,11 +548,11 @@ class AnomalyDetectionTools:
                     predictions, anomaly_scores = self.detector.predict(X_filtered, df=df_filtered)
                     anomaly_count = sum(predictions == -1)
                     logger.info(f"Found {anomaly_count} anomalies in OpenSearch logs")
-                    
+
                     # Enhanced analiz kullan (training zaten yapıldı, tekrar yapmayacak)
                     analysis = self._perform_enhanced_analysis(
                         df_filtered, X_filtered, predictions, anomaly_scores,
-                        source_name="opensearch", use_incremental=True
+                        source_name="opensearch", use_incremental=True, server_name=server_for_model
                     )
                     
                     # YENİ: False positive filtering
@@ -592,7 +605,9 @@ class AnomalyDetectionTools:
                     
                     # Açıklama ve öneriler
                     if ai_explanation:
-                        description = f"OpenSearch'ten son {last_hours} saatteki {len(df)} log analiz edildi.\n\n" + \
+                        server_desc = f" ({server_for_model} sunucusu)" if server_for_model else ""
+                        model_desc = " ✅ Mevcut model güncellendi" if model_loaded else " 🆕 Yeni model eğitildi"
+                        description = f"OpenSearch'ten son {last_hours} saatteki {len(df)} log analiz edildi{server_desc}.{model_desc}\n\n" + \
                                     self._create_enriched_description(analysis, time_range, ai_explanation)[len("🤖 **AI DESTEKLİ ANOMALİ ANALİZİ**\n\n"):]
                         suggestions = ai_explanation.get("onerilen_aksiyonlar", [])
                         logger.info("AI-powered explanation and suggestions created for OpenSearch.")
@@ -611,6 +626,13 @@ class AnomalyDetectionTools:
                         "description": description,
                         "data": {
                             "source": "OpenSearch",
+                            "server_info": {
+                                "server_name": server_for_model or "global",
+                                "model_status": "existing" if model_loaded else "newly_trained",
+                                "model_path": f"models/isolation_forest_{server_for_model}.pkl" if server_for_model else "models/isolation_forest.pkl",
+                                "historical_buffer_size": self.detector.historical_data['metadata']['total_samples'],
+                                "last_update": self.detector.historical_data['metadata'].get('last_update', 'N/A')
+                            },
                             "logs_analyzed": len(df),
                             "filtered_logs": len(df_filtered),  # YENİ
                             "summary": analysis["summary"],
@@ -698,10 +720,13 @@ class AnomalyDetectionTools:
             logger.info(f"After filtering: {len(df_filtered)} logs, {X_filtered.shape[1]} features")
             
             # ✅ YENİ: Model yükleme mekanizması - Production continuity için KRİTİK
+            # File source için opsiyonel server_name parametresi
+            file_server_name = args_dict.get("server_name", None)
+            
             if not self.detector.is_trained:
-                logger.info("Attempting to load existing model from storage...")
+                logger.info(f"Attempting to load existing model from storage{f' for server: {file_server_name}' if file_server_name else ''}...")
                 # Önce diskten model yüklemeyi dene
-                model_loaded = self.detector.load_model()
+                model_loaded = self.detector.load_model(server_name=file_server_name)
                 if model_loaded:
                     logger.info("✅ Existing model loaded successfully from storage")
                     logger.info(f"   📍 Model features: {len(self.detector.feature_names)} features")
@@ -717,8 +742,8 @@ class AnomalyDetectionTools:
                     self.detector.train_incremental(X_filtered, batch_id=batch_id)
                     logger.info(f"Initial training completed - Ensemble size: {len(self.detector.incremental_models)}")
                 else:
-                    self.detector.train(X_filtered)
-                    logger.info("Standard training completed")
+                    self.detector.train(X_filtered, server_name=file_server_name)
+                    logger.info(f"Standard training completed{f' for server: {file_server_name}' if file_server_name else ''}")
 
             # Tahmin yap
             logger.debug("Starting anomaly prediction...")
@@ -730,7 +755,7 @@ class AnomalyDetectionTools:
             # Enhanced analiz kullan
             analysis = self._perform_enhanced_analysis(
                 df_filtered, X_filtered, predictions, anomaly_scores,
-                source_name="file", use_incremental=True
+                source_name="file", use_incremental=True, server_name=file_server_name
             )
             
             # YENİ: False positive filtering
@@ -795,6 +820,15 @@ class AnomalyDetectionTools:
                 )
                 print(f"[DEBUG] MAIN FUNCTION: After enhancement, we have {len(enhanced_analysis['critical_anomalies'])} critical anomalies")
 
+            # Server bilgisini enhanced_analysis'e ekle
+            enhanced_analysis["server_info"] = {
+                "server_name": file_server_name or "global",
+                "model_status": "existing" if self.detector.is_trained else "newly_trained",
+                "model_path": f"models/isolation_forest_{file_server_name}.pkl" if file_server_name else "models/isolation_forest.pkl",
+                "historical_buffer_size": self.detector.historical_data['metadata']['total_samples'] if self.detector.historical_data['features'] is not None else 0,
+                "last_update": self.detector.historical_data['metadata'].get('last_update', 'N/A') if self.detector.historical_data['features'] is not None else 'N/A'
+            }
+            
             result = {
                 "description": description,
                 "data": enhanced_analysis, # Enhanced analiz verisini gönder
@@ -855,12 +889,21 @@ class AnomalyDetectionTools:
             df_filtered, X_filtered = self.feature_engineer.apply_filters(df_enriched, X)
             logger.debug(f"After filtering: {len(df_filtered)} logs, {X_filtered.shape[1]} features")
             
-  
             # ✅ YENİ: Model yükleme mekanizması - Production continuity için KRİTİK
+            # Connection string'den server adını çıkarmaya çalış
+            mongodb_server_name = None
+            if connection_string:
+                # mongodb://host:port/db formatından host'u çıkar
+                import re
+                host_match = re.search(r'mongodb://([^:/?]+)', connection_string)
+                if host_match:
+                    mongodb_server_name = host_match.group(1).split('.')[0]  # FQDN'den sadece hostname
+                    logger.info(f"Extracted server name from connection: {mongodb_server_name}")
+            
             if not self.detector.is_trained:
-                logger.info("Attempting to load existing model from storage...")
+                logger.info(f"Attempting to load existing model from storage{f' for server: {mongodb_server_name}' if mongodb_server_name else ''}...")
                 # Önce diskten model yüklemeyi dene
-                model_loaded = self.detector.load_model()
+                model_loaded = self.detector.load_model(server_name=mongodb_server_name)
                 if model_loaded:
                     logger.info("✅ Existing model loaded successfully from storage")
                     logger.info(f"   📍 Model features: {len(self.detector.feature_names)} features")
@@ -875,7 +918,7 @@ class AnomalyDetectionTools:
                     batch_id = f"mongodb_direct_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                     self.detector.train_incremental(X_filtered, batch_id=batch_id)
                 else:
-                    self.detector.train(X_filtered)
+                    self.detector.train(X_filtered, server_name=mongodb_server_name)
 
             # Tahmin yap
             predictions, anomaly_scores = self.detector.predict(X_filtered, df=df_filtered)
@@ -884,7 +927,7 @@ class AnomalyDetectionTools:
             # Enhanced analiz
             analysis = self._perform_enhanced_analysis(
                 df_filtered, X_filtered, predictions, anomaly_scores,
-                source_name="mongodb_direct", use_incremental=True
+                source_name="mongodb_direct", use_incremental=True, server_name=mongodb_server_name
             )
             
             # Sonuçları sakla
@@ -904,6 +947,13 @@ class AnomalyDetectionTools:
             result = {
                 "description": description,
                 "data": {
+                    "server_info": {
+                        "server_name": mongodb_server_name or "global",
+                        "model_status": "existing" if model_loaded else "newly_trained",
+                        "model_path": f"models/isolation_forest_{mongodb_server_name}.pkl" if mongodb_server_name else "models/isolation_forest.pkl",
+                        "historical_buffer_size": self.detector.historical_data['metadata']['total_samples'],
+                        "connection_string": connection_string[:30] + "..." if len(connection_string) > 30 else connection_string
+                    },
                     "summary": analysis["summary"],
                     "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),  # Tüm kritik anomaliler - Enhanced
                     "security_alerts": analysis.get("security_alerts", {}),

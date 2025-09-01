@@ -3184,6 +3184,14 @@ function displayAnomalyResults(result) {
     html += '<h2>🔍 Anomali Analiz Sonuçları - ML Detaylı Görünüm</h2>';
     html += '</div>';
     
+    // Server bilgisini göster (eğer varsa)
+    if (result.server_info) {
+        html += `<div class="server-info-banner">
+            📍 Analiz Sunucusu: ${result.server_info.server_name || 'Bilinmiyor'}
+            ${result.server_info.model_version ? `| Model: v${result.server_info.model_version}` : ''}
+        </div>`;
+    }
+    
     // YENİ: ML Model Performans Metrikleri
     if (summary.total_logs || anomalyScoreStats.min !== undefined) {
         html += renderMLModelMetrics(summary, anomalyScoreStats);

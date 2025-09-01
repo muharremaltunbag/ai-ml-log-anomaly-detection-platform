@@ -66,6 +66,11 @@ class MongoDBAnomalyDetector:
             'update_frequency': 1000,  # Update model every N new samples
             'weight_decay': 0.95  # Eski verilere verilecek ağırlık
         })
+        
+        # YENİ: Server-specific model management
+        self.current_server = None  # Aktif sunucu adı
+        self.server_models = {}     # Her sunucu için model metadata cache
+        # Format: {'server_name': {'model_path': 'path', 'last_update': datetime, 'sample_count': int}}
 
         # Critical rules engine
         self.critical_rules = self._initialize_critical_rules()
@@ -287,7 +292,8 @@ class MongoDBAnomalyDetector:
         
         return weights
 
-    def train(self, X: pd.DataFrame, save_model: bool = None, incremental: bool = None) -> Dict[str, Any]:
+    def train(self, X: pd.DataFrame, save_model: bool = None, incremental: bool = None, 
+              server_name: str = None) -> Dict[str, Any]:
         """
         Anomali modelini eğit (Online Learning desteği ile)
         
@@ -295,12 +301,18 @@ class MongoDBAnomalyDetector:
             X: Feature matrix
             save_model: Modeli kaydet (None ise config'den al)
             incremental: Online learning kullan (None ise config'den al)
+            server_name: Sunucu adı (model yönetimi için)
             
         Returns:
             Training sonuçları
         """
         print(f"[DEBUG] Starting training - Shape: {X.shape}, Features: {list(X.columns)}")
+        if server_name:
+            print(f"[DEBUG] Training for server: {server_name}")
         logger.info(f"Training model on {X.shape[0]} samples with {X.shape[1]} features...")
+        
+        # Current server'ı güncelle
+        self.current_server = server_name
         
         # Online learning kontrolü
         if incremental is None:
@@ -369,9 +381,9 @@ class MongoDBAnomalyDetector:
             "training_time_seconds": training_time,
             "model_type": self.model_config['type'],
             "parameters": params,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "server_name": server_name  # YENİ: Sunucu bilgisi
         }
-        
         self.is_trained = True
         print(f"[DEBUG] Training completed - Model is now ready for predictions")
         logger.info(f"Model training completed in {training_time:.2f} seconds")
@@ -382,7 +394,7 @@ class MongoDBAnomalyDetector:
             
         if save_model:
             print(f"[DEBUG] Saving model...")
-            self.save_model()
+            self.save_model(server_name=server_name)  # Server bilgisini ilet
 
         # Online Learning: Historical buffer'ı güncelle
         if incremental and self.online_learning_config.get('enabled', True):
@@ -1053,12 +1065,13 @@ class MongoDBAnomalyDetector:
         
         return export_paths
     
-    def save_model(self, path: str = None) -> str:
+    def save_model(self, path: str = None, server_name: str = None) -> str:
         """
-        Modeli kaydet
+        Modeli kaydet (sunucu bazlı)
         
         Args:
             path: Model dosya yolu (None ise config'den al)
+            server_name: Sunucu adı (None ise global model)
             
         Returns:
             Kaydedilen dosya yolu
@@ -1066,8 +1079,15 @@ class MongoDBAnomalyDetector:
         if not self.is_trained:
             raise ValueError("Model is not trained yet!")
         
+        # Sunucu bazlı dosya adı oluştur
         if path is None:
-            path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
+            if server_name:
+                # Sunucu adını normalize et (özel karakterleri temizle)
+                safe_server_name = server_name.replace('.', '_').replace('/', '_')
+                path = f'models/isolation_forest_{safe_server_name}.pkl'
+                print(f"[DEBUG] Server-specific model path: {path}")
+            else:
+                path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
         
         try:
             print(f"[DEBUG] Saving model to: {path}")
@@ -1080,6 +1100,7 @@ class MongoDBAnomalyDetector:
                 'feature_names': self.feature_names,
                 'training_stats': self.training_stats,
                 'config': self.config,
+                'server_name': server_name,  # YENİ: Sunucu bilgisi
                 # Online Learning - Historical Buffer
                 'historical_data': self.historical_data if self.online_learning_config.get('enabled', True) else None,
                 'online_learning_config': self.online_learning_config,
@@ -1110,18 +1131,31 @@ class MongoDBAnomalyDetector:
             logger.error(f"Error saving model: {e}")
             raise
     
-    def load_model(self, path: str = None) -> bool:
+    def load_model(self, path: str = None, server_name: str = None) -> bool:
         """
-        Modeli yükle
+        Modeli yükle (sunucu bazlı)
         
         Args:
             path: Model dosya yolu (None ise config'den al)
+            server_name: Sunucu adı (None ise global model)
             
         Returns:
             Başarılı olup olmadığı
         """
+        # Sunucu bazlı dosya yolu oluştur
         if path is None:
-            path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
+            if server_name:
+                # Sunucu adını normalize et (özel karakterleri temizle)
+                safe_server_name = server_name.replace('.', '_').replace('/', '_')
+                path = f'models/isolation_forest_{safe_server_name}.pkl'
+                print(f"[DEBUG] Attempting to load server-specific model: {path}")
+                
+                # Eğer sunucuya özel model yoksa, global modeli dene
+                if not Path(path).exists():
+                    print(f"[DEBUG] Server-specific model not found, trying global model")
+                    path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
+            else:
+                path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
         
         try:
             print(f"[DEBUG] Loading model from: {path}")
@@ -1130,11 +1164,29 @@ class MongoDBAnomalyDetector:
                 logger.error(f"Model file not found: {path}")
                 return False
             # Model ve metadata'yı yükle
+            # Model ve metadata'yı yükle
             model_data = joblib.load(path)
             
             self.model = model_data['model']
             self.feature_names = model_data['feature_names']
             self.training_stats = model_data.get('training_stats', {})
+            
+            # YENİ: Server bilgisini kontrol et ve güncelle
+            loaded_server = model_data.get('server_name', None)
+            if server_name and loaded_server != server_name:
+                logger.warning(f"Model was trained for server '{loaded_server}' but loading for '{server_name}'")
+            
+            # Current server'ı güncelle
+            self.current_server = server_name or loaded_server
+            
+            # Server metadata'yı güncelle
+            if self.current_server:
+                self.server_models[self.current_server] = {
+                    'model_path': path,
+                    'last_update': datetime.now(),
+                    'sample_count': self.training_stats.get('n_samples', 0)
+                }
+                print(f"[DEBUG] Server model loaded for: {self.current_server}")
             
             # Online Learning - Historical Buffer'ı yükle
             model_version = model_data.get('model_version', '1.0')
