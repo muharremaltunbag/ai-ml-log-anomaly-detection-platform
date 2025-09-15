@@ -12,7 +12,7 @@ WEB_PORT = int(os.getenv("WEB_PORT", "8000"))
 
 # Güvenlik
 API_KEY = os.getenv("WEB_API_KEY", "lcw-test-2024")  # Production'da değiştirin!
-MAX_QUERY_LENGTH = 1000
+MAX_QUERY_LENGTH = 10000
 RATE_LIMIT_REQUESTS = 30
 RATE_LIMIT_MINUTES = 1
 

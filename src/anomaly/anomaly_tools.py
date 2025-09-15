@@ -600,7 +600,8 @@ class AnomalyDetectionTools:
                             "feature_importance": dict(list(analysis.get("feature_importance", {}).items())[:10])  # İlk 10 feature
                         }
                         logger.info(f"[DEBUG] Limiting AI analysis to first 20 anomalies (was {len(analysis['critical_anomalies'])})")
-                        ai_explanation = self._generate_ai_explanation(limited_analysis)
+                        
+                        ai_explanation = self._generate_ai_explanation(limited_analysis, server_name=server_for_model)
 
                     
                     # Açıklama ve öneriler
@@ -791,7 +792,8 @@ class AnomalyDetectionTools:
                     "feature_importance": dict(list(analysis.get("feature_importance", {}).items())[:10])  # İlk 10 feature
                 }
                 logger.info(f"[DEBUG] Limiting AI analysis to first 20 anomalies (was {len(analysis['critical_anomalies'])})")
-                ai_explanation = self._generate_ai_explanation(limited_analysis)
+                
+                ai_explanation = self._generate_ai_explanation(limited_analysis, server_name=file_server_name)
 
             # AI'dan başarılı bir yanıt geldiyse onu kullan, gelmediyse eskiye dön
             if ai_explanation:
@@ -1451,10 +1453,12 @@ class AnomalyDetectionTools:
         
         return suggestions
 
-    def _generate_ai_explanation(self, anomaly_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_ai_explanation(self, anomaly_data: Dict[str, Any], server_name: str = None) -> Dict[str, Any]:
         """LCWGPT kullanarak anomali verisi için zengin açıklama üret"""
         logger.info(f"=== AI EXPLANATION DEBUG ===")
         logger.info(f"LLM connected: {self.llm_connector.is_connected() if self.llm_connector else False}")
+        if server_name:
+            logger.info(f"Generating AI explanation for server: {server_name}")
         
         if not self.llm_connector or not self.llm_connector.is_connected():
             logger.warning("LLM not connected, returning basic explanation")
@@ -1515,15 +1519,16 @@ class AnomalyDetectionTools:
             system_prompt = """MongoDB anomali uzmanısın. Kısa, net, anlamlı ve aksiyona yönelik analiz yap.
 
 FORMATIN (MAX 500 kelime):
-1. ÖZET (3-4 cümle): Ne bulundu, kritik mi?
-2. TOP 5 KRİTİK SORUN: Component, sebep, risk, feature, log mesajı
-3. ACİL AKSİYONLAR: Max 3 madde, spesifik ol, rastgele verme 
+1. ÖZET (4-5 cümle): Ne bulundu, kritik mi?
+2. TOP 10 KRİTİK SORUN: Component, sebep, risk, feature, log mesajı
+3. ACİL AKSİYONLAR: Max 3 madde, spesifik ol, rastgele verme, genel geçer bilgiler sunma işe yarar öneriler ver.
 4. İZLEME ÖNERİSİ: 1 cümle
 
 Türkçe yaz. MongoDB best practice'lerini kullan. Rastgele öneri verme. Teknik ol ama anlaşılır ol. Gereksiz tekrar yapma"""
             
             # Optimize edilmiş user prompt - daha fazla context ile
-            user_prompt = f"""Analiz Özeti: {summary.get('n_anomalies', 0)} anomali / {summary.get('total_logs', 0):,} log (%{summary.get('anomaly_rate', 0):.1f})
+            server_info = f"Sunucu: {server_name}\n" if server_name else ""
+            user_prompt = f"""{server_info}Analiz Özeti: {summary.get('n_anomalies', 0)} anomali / {summary.get('total_logs', 0):,} log (%{summary.get('anomaly_rate', 0):.1f})
 Ortalama anomali skoru: {summary.get('score_range', {}).get('mean', 0):.3f}
 
 TOP 10 KRİTİK ANOMALİ:

@@ -81,11 +81,20 @@
                 </div>
             </section>
 
-            <!-- Sonuç Alanı -->
-            <section id="resultSection" class="result-section" style="display: none;">
-                <h3>Sorgu Sonucu</h3>
-                <div id="resultContent" class="result-content"></div>
-            </section>
+            <!-- Sonuç Alanı - GENİŞLETİLEBİLİR WRAPPER İLE -->
+            <div class="result-wrapper">
+                <section id="resultSection" class="result-section expandable-section" style="display: none;">
+                    <div class="section-header">
+                        <h3>Sorgu Sonucu</h3>
+                        <div class="expand-controls">
+                            <button class="btn-expand-section" onclick="toggleSectionExpand()" title="Alanı Genişlet">
+                                ⛶
+                            </button>
+                        </div>
+                    </div>
+                    <div id="resultContent" class="result-content expandable-content"></div>
+                </section>
+            </div>
 
             <!-- YENİ: Konuşma Geçmişi & Anomali Geçmişi -->
             <section class="history-section">

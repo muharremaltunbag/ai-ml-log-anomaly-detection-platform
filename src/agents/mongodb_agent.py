@@ -351,7 +351,19 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 # Parametreleri JSON string olarak ekle
                 import json
                 params_str = json.dumps(anomaly_params)
-                enhanced_input = f"{user_input} {params_str}"
+                
+                # YENİ: Sunucu bilgisini açık şekilde belirt
+                if host_filter:
+                    # Sunucu adını sorguya açık şekilde ekle
+                    server_info = f" (Sunucu: {host_filter})"
+                    enhanced_input = f"{user_input}{server_info} {params_str}"
+                    self.logger.info(f"✅ Sunucu bilgisi sorguya eklendi: {host_filter}")
+                else:
+                    # Tüm sunucular için
+                    server_info = " (Tüm MongoDB sunucuları)"
+                    enhanced_input = f"{user_input}{server_info} {params_str}"
+                    self.logger.info("📊 Tüm sunucular için analiz yapılacak")
+                
                 self.logger.debug(f"Parametrelerle genişletilmiş sorgu: {enhanced_input[:200]}...")
                 
             else:

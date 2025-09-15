@@ -146,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeEventListeners();
     checkInitialStatus();
     loadHistory(); // Geçmişi yükle
+    restoreViewMode(); // YENİ SATIR
     
     // YENİ: Eğer localStorage'da API key varsa otomatik bağlan ve storage kontrol et
     const savedApiKey = localStorage.getItem('mongodb_api_key');
@@ -513,17 +514,33 @@ async function handleConnect() {
 async function handleQuery() {
     const query = elements.queryInput.value.trim();
     
-    // DEBUG
-    console.log('Query:', query);
-    console.log('Has lastAnomalyResult:', !!window.lastAnomalyResult);
+    // ENHANCED DEBUG - Query trim sorununu tespit için
+    console.log('=== QUERY DEBUG START ===');
+    console.log('1. Original input value:', elements.queryInput.value);
+    console.log('2. After trim:', query);
+    console.log('3. Query length:', query.length);
+    console.log('4. Query bytes:', new TextEncoder().encode(query).length);
+    console.log('5. First 50 chars:', query.substring(0, 50));
+    console.log('6. Has lastAnomalyResult:', !!window.lastAnomalyResult);
     if (window.lastAnomalyResult?.storage_info) {
-        console.log('Analysis ID:', window.lastAnomalyResult.storage_info.analysis_id);
+        console.log('7. Analysis ID:', window.lastAnomalyResult.storage_info.analysis_id);
     }
-    // DEBUG END
+    console.log('=== QUERY DEBUG END ===');
         
     if (!query) {
         console.log('Query is empty'); // DEBUG LOG
         showNotification('Lütfen bir sorgu girin', 'warning');
+        return;
+    }
+    
+    // YENİ: Query uzunluk kontrolü
+    const MAX_QUERY_LENGTH = 10000; // Backend ile aynı limit
+    if (query.length > MAX_QUERY_LENGTH) {
+        console.warn(`Query too long: ${query.length} characters (max: ${MAX_QUERY_LENGTH})`);
+        showNotification(`Sorgu çok uzun! (${query.length} karakter, maksimum: ${MAX_QUERY_LENGTH})`, 'error');
+        
+        // Kullanıcıya öneride bulun
+        showNotification('Lütfen sorgunuzu kısaltın veya birden fazla sorguya bölün.', 'info');
         return;
     }
     
@@ -596,11 +613,12 @@ async function handleQuery() {
                     
                     if (!loaded) {
                         console.log('❌ DEBUG: Storage load failed, showing warning and exiting');
+                        console.log('⚠️ DEBUG: No storage data found, will proceed with normal query');
                         // Storage'da da veri yoksa kullanıcıyı bilgilendir
-                        showNotification('Önce bir anomali analizi yapmanız gerekiyor', 'warning');
+                        showNotification('Önceki analiz bulunamadı, yeni analiz yapılacak', 'info');
                         showLoader(false);
                         elements.queryBtn.disabled = false;
-                        return;
+                        //return;
                     } else {
                         console.log('✅ DEBUG: Storage load successful, window.lastAnomalyResult now available');
                     }
@@ -694,13 +712,20 @@ async function handleQuery() {
             console.log('❌ NOT a chat anomaly query or no lastAnomalyResult');
             console.log('Proceeding with normal query flow...');
         }
-        
+
         const queryBody = {
             query: query,
             api_key: apiKey
         };
         
-        console.log('Sending query to API...'); // DEBUG LOG
+        // ENHANCED DEBUG - API isteği öncesi
+        console.log('=== API REQUEST DEBUG ===');
+        console.log('1. queryBody object:', queryBody);
+        console.log('2. query field value:', queryBody.query);
+        console.log('3. query field length:', queryBody.query.length);
+        console.log('4. Stringified body:', JSON.stringify(queryBody));
+        console.log('5. Stringified length:', JSON.stringify(queryBody).length);
+        console.log('=== END API REQUEST DEBUG ===');
         
         const response = await fetch(API_ENDPOINTS.query, {
             method: 'POST',
@@ -1344,12 +1369,36 @@ function displayChatAnomalyResult(result, userQuery) {
         const formattedResponse = formatAIResponse(decodedResponse);
         html += formattedResponse;
         
-        // Meta bilgiler
-        html += '<div class="response-meta">';
-        html += `<small>📊 Toplam ${result.total_anomalies} anomali analiz edildi</small>`;
-        if (result.chunk_info) {
-            html += `<small> | ${result.chunk_info}</small>`;
+        // Meta bilgiler - GENİŞLETİLMİŞ
+        html += '<div class="response-meta enhanced">';
+        html += '<div class="meta-primary">';
+        html += `<span class="meta-item">📊 <strong>${result.total_anomalies}</strong> toplam anomali</span>`;
+
+        // Multi-chunk bilgisi ekle
+        if (result.chunks_processed && result.chunks_processed > 1) {
+            html += `<span class="meta-item">🔄 <strong>${result.chunks_processed}</strong> chunk işlendi</span>`;
+            html += `<span class="meta-item">✅ Multi-chunk aggregation uygulandı</span>`;
+        } else if (result.chunk_info) {
+            html += `<span class="meta-item">📍 ${result.chunk_info}</span>`;
         }
+
+        html += '</div>';
+
+        // Eğer aggregated response ise, hangi chunk'lar işlendiğini göster
+        if (result.processed_chunks && Array.isArray(result.processed_chunks)) {
+            html += '<div class="meta-secondary">';
+            html += '<span class="chunks-processed-label">İşlenen Chunk\'lar:</span>';
+            html += '<div class="processed-chunks-list">';
+            result.processed_chunks.forEach(chunkInfo => {
+                html += `<span class="chunk-badge" title="${chunkInfo.anomaly_count} anomali">
+                            Chunk ${chunkInfo.chunk_idx} 
+                            <small>(${chunkInfo.anomaly_count})</small>
+                         </span>`;
+            });
+            html += '</div>';
+            html += '</div>';
+        }
+
         html += '</div>';
     } else {
         html += `<div class="error-message">❌ ${result.message || 'Yanıt alınamadı'}</div>`;
@@ -1434,52 +1483,76 @@ function decodeHtmlEntities(text) {
 }
 
 /**
- * AI yanıtını formatla
+ * AI yanıtını formatla - GELİŞTİRİLMİŞ VERSİYON
  */
 function formatAIResponse(response) {
     // ÖNCE decode et
     let decoded = response;
     
-    // HTML entity'leri decode et (backend'den gelmiş olabilir)
+    // HTML entity'leri decode et
     decoded = decoded.replace(/&#039;/g, "'");
     decoded = decoded.replace(/&quot;/g, '"');
     decoded = decoded.replace(/&lt;/g, '<');
     decoded = decoded.replace(/&gt;/g, '>');
     decoded = decoded.replace(/&amp;/g, '&');
     
-    // Sonra güvenli escape (XSS koruması)
-    let formatted = escapeHtml(decoded);
-    
-    // Başlıklar
-    formatted = formatted.replace(/^### (.*?)$/gm, '<h4>$1</h4>');
-    formatted = formatted.replace(/^## (.*?)$/gm, '<h3>$1</h3>');
-    formatted = formatted.replace(/^# (.*?)$/gm, '<h2>$1</h2>');
-    
-    // Bold text
-    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    
-    // Liste öğeleri
-    formatted = formatted.replace(/^• (.*?)$/gm, '<li>$1</li>');
-    formatted = formatted.replace(/^- (.*?)$/gm, '<li>$1</li>');
-    formatted = formatted.replace(/^\d+\. (.*?)$/gm, '<li>$1</li>');
-    
-    // Liste bloklarını wrap et
-    formatted = formatted.replace(/(<li>.*?<\/li>\n)+/g, function(match) {
-        return '<ul>' + match + '</ul>';
+    // Code block'ları koru
+    const codeBlocks = [];
+    decoded = decoded.replace(/```([\s\S]*?)```/g, (match, code) => {
+        codeBlocks.push(code);
+        return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
     });
     
-    // Satır sonları
-    formatted = formatted.replace(/\n\n/g, '</p><p>');
+    // Güvenli escape (code block'lar hariç)
+    let formatted = escapeHtml(decoded);
+    
+    // Code block'ları geri koy ve formatla
+    codeBlocks.forEach((code, index) => {
+        formatted = formatted.replace(
+            `__CODE_BLOCK_${index}__`,
+            `<div class="code-block"><pre>${escapeHtml(code.trim())}</pre></div>`
+        );
+    });
+    
+    // Markdown başlıkları - ### ile başlayanlar
+    formatted = formatted.replace(/^####\s+(.*?)$/gm, '<h5 class="ai-heading">$1</h5>');
+    formatted = formatted.replace(/^###\s+(.*?)$/gm, '<h4 class="ai-heading">$1</h4>');
+    formatted = formatted.replace(/^##\s+(.*?)$/gm, '<h3 class="ai-heading">$1</h3>');
+    formatted = formatted.replace(/^#\s+(.*?)$/gm, '<h2 class="ai-heading">$1</h2>');
+    
+    // Bold text - ** veya __ ile sarılı
+    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    formatted = formatted.replace(/__(.*?)__/g, '<strong>$1</strong>');
+    
+    // Italic text
+    formatted = formatted.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    formatted = formatted.replace(/_(.*?)_/g, '<em>$1</em>');
+    
+    // Bullet listeler - tire ile başlayanlar
+    formatted = formatted.replace(/^[\s]*[-•]\s+(.*?)$/gm, '<li class="ai-list-item">$1</li>');
+    formatted = formatted.replace(/^[\s]*\d+\.\s+(.*?)$/gm, '<li class="ai-list-item numbered">$1</li>');
+    
+    // Ardışık li elementlerini ul/ol içine al
+    formatted = formatted.replace(/(<li class="ai-list-item">.*?<\/li>\n?)+/g, (match) => {
+        return '<ul class="ai-list">' + match + '</ul>';
+    });
+    formatted = formatted.replace(/(<li class="ai-list-item numbered">.*?<\/li>\n?)+/g, (match) => {
+        return '<ol class="ai-list">' + match + '</ol>';
+    });
+    
+    // Emoji ve özel karakterleri koru
+    formatted = formatted.replace(/📊/g, '<span class="emoji">📊</span>');
+    formatted = formatted.replace(/🔍/g, '<span class="emoji">🔍</span>');
+    formatted = formatted.replace(/⚠️/g, '<span class="emoji">⚠️</span>');
+    formatted = formatted.replace(/✅/g, '<span class="emoji">✅</span>');
+    formatted = formatted.replace(/💡/g, '<span class="emoji">💡</span>');
+    
+    // Satır sonları ve paragraflar
+    formatted = formatted.replace(/\n\n+/g, '</p><p class="ai-paragraph">');
     formatted = formatted.replace(/\n/g, '<br>');
     
-    // Sayıları vurgula - AMA HTML entity parçalarını değil!
-    // Önce yüzdeleri
-    formatted = formatted.replace(/(\d+(?:\.\d+)?%)/g, '<span class="percentage-highlight">$1</span>');
-    
-    // Sonra büyük sayıları - AMA &# ile başlamayanları
-    formatted = formatted.replace(/(?<!&#?)(\b\d{2,}\b)/g, '<span class="number-highlight">$1</span>');
-    
-    return `<p>${formatted}</p>`;
+    // İçeriği container'a sar
+    return `<div class="ai-response-content"><p class="ai-paragraph">${formatted}</p></div>`;
 }
 
 /**
@@ -3311,11 +3384,20 @@ function displayAnomalyResults(result) {
         html += renderSeverityDistribution(result.sonuç.severity_distribution);
     }
     
-    // Kritik anomaliler - Severity ile göster (Pagination ile)
+    // Kritik anomaliler - Severity ile göster (Pagination ile) - GENİŞLETİLMİŞ GÖRÜNÜM
     if (criticalAnomalies.length > 0) {
         console.log('[DEBUG FRONTEND] About to render critical anomalies section with', criticalAnomalies.length, 'items');
-        html += '<div class="critical-anomalies-section">';
+        html += '<div class="critical-anomalies-section expanded-view">'; // expanded-view class'ı eklendi
         html += `<h3>⚠️ Kritik Anomaliler (${criticalAnomalies.length} toplam)</h3>`;
+        
+        // YENİ: Görünüm kontrol butonları
+        html += `
+            <div class="view-controls">
+                <button class="btn-view-mode" onclick="toggleViewMode('compact')">📱 Kompakt</button>
+                <button class="btn-view-mode active" onclick="toggleViewMode('expanded')">🖥️ Geniş</button>
+                <button class="btn-view-mode" onclick="toggleViewMode('fullscreen')">⛶ Tam Ekran</button>
+            </div>
+        `;
         html += '<div class="anomaly-list" id="criticalAnomaliesList">';
         
         // İlk 20 anomaliyi göster
@@ -6476,6 +6558,74 @@ window.investigateAlertType = function(alertType) {
 window.exportAlertData = function(alertType) {
     console.log('Exporting alert data for:', alertType);
     showNotification('Alert verisi indiriliyor...', 'success');
+};
+
+/**
+ * Anomali görünüm modunu değiştir
+ */
+window.toggleViewMode = function(mode) {
+    const resultsSection = document.getElementById('resultSection');
+    const anomalySection = document.querySelector('.critical-anomalies-section');
+    
+    // Tüm modları temizle
+    resultsSection.classList.remove('compact-mode', 'expanded-mode', 'fullscreen-mode');
+    
+    // Seçilen modu ekle
+    switch(mode) {
+        case 'compact':
+            resultsSection.classList.add('compact-mode');
+            break;
+        case 'expanded':
+            resultsSection.classList.add('expanded-mode');
+            break;
+        case 'fullscreen':
+            resultsSection.classList.add('fullscreen-mode');
+            // Tam ekran için scroll
+            resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            break;
+    }
+    
+    // Aktif butonu güncelle
+    document.querySelectorAll('.btn-view-mode').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.textContent.toLowerCase().includes(mode.toLowerCase()) || 
+            (mode === 'fullscreen' && btn.textContent.includes('Tam Ekran'))) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // Kullanıcı tercihini kaydet
+    localStorage.setItem('anomalyViewMode', mode);
+};
+
+/**
+ * Section'ı genişlet/daralt
+ */
+window.toggleSectionExpand = function() {
+    const wrapper = document.querySelector('.result-wrapper');
+    const button = document.querySelector('.btn-expand-section');
+    
+    wrapper.classList.toggle('expanded');
+    
+    if (wrapper.classList.contains('expanded')) {
+        button.innerHTML = '⛶';
+        button.title = 'Normal Görünüme Dön';
+    } else {
+        button.innerHTML = '⛶';
+        button.title = 'Alanı Genişlet';
+    }
+};
+
+/**
+ * Sayfa yüklendiğinde kullanıcı tercihini geri yükle
+ */
+window.restoreViewMode = function() {
+    const savedMode = localStorage.getItem('anomalyViewMode') || 'expanded';
+    setTimeout(() => {
+        if (document.querySelector('.critical-anomalies-section')) {
+            toggleViewMode(savedMode);
+        }
+    }, 100);
 };
 
 /**

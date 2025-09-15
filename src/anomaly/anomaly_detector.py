@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
 from collections import deque
 from sklearn.preprocessing import StandardScaler
+import threading  # ✅ Thread synchronization
 
 # YENİ: Message extraction import
 from .log_reader import extract_mongodb_message
@@ -46,6 +47,10 @@ class MongoDBAnomalyDetector:
         self.is_trained = False
         self.feature_names = None
         self.training_stats = {}
+        
+        # Thread safety için lock
+        self._training_lock = threading.Lock()  
+        self._save_lock = threading.Lock()      
 
         # Online Learning - Historical Pattern Buffer
         self.historical_data = {
@@ -177,24 +182,79 @@ class MongoDBAnomalyDetector:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
                 print(f"[DEBUG] Config loaded successfully")
+                
+                # Config validation
+                self._validate_config(config)
+                
                 return config
+        except FileNotFoundError:
+            print(f"[DEBUG] Config file not found: {config_path}")
+            logger.warning(f"Config file not found, using defaults: {config_path}")
+        except json.JSONDecodeError as e:
+            print(f"[DEBUG] Config JSON parse error: {e}")
+            logger.error(f"Invalid JSON in config file: {e}")
+        except ValueError as e:
+            print(f"[DEBUG] Config validation failed: {e}")
+            logger.error(f"Config validation failed: {e}")
         except Exception as e:
-            print(f"[DEBUG] Config load failed, using defaults: {e}")
-            logger.error(f"Error loading config: {e}")
-            # Varsayılan config
-            return {
-                "anomaly_detection": {
-                    "model": {
-                        "type": "IsolationForest",
-                        "parameters": {
-                            "contamination": 0.03,
-                            "n_estimators": 300,
-                            "random_state": 42
-                        }
-                    },
-                    "output": {}
+            print(f"[DEBUG] Unexpected config error: {e}")
+            logger.error(f"Unexpected error loading config: {e}")
+            
+        # Varsayılan config
+        default_config = {
+            "anomaly_detection": {
+                "model": {
+                    "type": "IsolationForest",
+                    "parameters": {
+                        "contamination": 0.03,
+                        "n_estimators": 300,
+                        "random_state": 42
+                    }
+                },
+                "output": {},
+                "online_learning": {
+                    "enabled": True,
+                    "max_history_size": 100000
                 }
             }
+        }
+        logger.info("Using default configuration")
+        return default_config
+    
+    def _validate_config(self, config: Dict) -> None:
+        """
+        Config validation - kritik parametreleri kontrol et
+        
+        Args:
+            config: Config dictionary
+            
+        Raises:
+            ValueError: Config geçersizse
+        """
+        # Kritik anahtarları kontrol et
+        if 'anomaly_detection' not in config:
+            raise ValueError("Missing 'anomaly_detection' in config")
+        
+        ad_config = config['anomaly_detection']
+        
+        if 'model' not in ad_config:
+            raise ValueError("Missing 'model' in anomaly_detection config")
+        
+        if 'type' not in ad_config['model']:
+            raise ValueError("Missing model type in config")
+        
+        # Model tipi kontrolü
+        supported_models = ['IsolationForest']
+        if ad_config['model']['type'] not in supported_models:
+            raise ValueError(f"Unsupported model type: {ad_config['model']['type']}")
+        
+        # Contamination değeri kontrolü
+        if 'parameters' in ad_config['model']:
+            contamination = ad_config['model']['parameters'].get('contamination', 0.03)
+            if not (0 < contamination < 0.5):
+                raise ValueError(f"Invalid contamination value: {contamination} (must be between 0 and 0.5)")
+        
+        print(f"[DEBUG] Config validation passed")
 
     def _combine_with_history(self, X_new: pd.DataFrame) -> pd.DataFrame:
         """
@@ -226,7 +286,11 @@ class MongoDBAnomalyDetector:
             X_combined = pd.concat([X_historical, X_new], ignore_index=True)
             
             # Basit buffer limiti - En yeni kayıtları tut (FIFO)
-            max_buffer_samples = self.online_learning_config.get('max_buffer_samples', 100000)
+            # Config'ten max_history_size oku, yoksa default 100000 kullan
+            max_buffer_samples = self.online_learning_config.get('max_history_size', None)
+            if max_buffer_samples is None:
+                max_buffer_samples = 100000  # Default limit
+                
             if len(X_combined) > max_buffer_samples:
                 # En eski kayıtları at, en yeni max_buffer_samples kadarını tut
                 print(f"[DEBUG] Buffer size ({len(X_combined)}) exceeded limit ({max_buffer_samples})")
@@ -306,7 +370,8 @@ class MongoDBAnomalyDetector:
         Returns:
             Training sonuçları
         """
-        print(f"[DEBUG] Starting training - Shape: {X.shape}, Features: {list(X.columns)}")
+        with self._training_lock:  # Thread safety
+            print(f"[DEBUG] Starting training - Shape: {X.shape}, Features: {list(X.columns)}")
         if server_name:
             print(f"[DEBUG] Training for server: {server_name}")
         logger.info(f"Training model on {X.shape[0]} samples with {X.shape[1]} features...")
@@ -388,18 +453,18 @@ class MongoDBAnomalyDetector:
         print(f"[DEBUG] Training completed - Model is now ready for predictions")
         logger.info(f"Model training completed in {training_time:.2f} seconds")
         
+        # Online Learning: Historical buffer'ı güncelle
+        if incremental and self.online_learning_config.get('enabled', True):
+            print(f"[DEBUG] Updating historical buffer...")
+            self._update_historical_buffer(X, X_train, training_mode)  # ✅ ÖNCE GÜNCELLE
+
         # Model kaydetme
         if save_model is None:
             save_model = self.output_config.get('save_model', True)
             
         if save_model:
             print(f"[DEBUG] Saving model...")
-            self.save_model(server_name=server_name)  # Server bilgisini ilet
-
-        # Online Learning: Historical buffer'ı güncelle
-        if incremental and self.online_learning_config.get('enabled', True):
-            print(f"[DEBUG] Updating historical buffer...")
-            self._update_historical_buffer(X, X_train, training_mode)
+            self.save_model(server_name=server_name)  # ✅ SONRA KAYDET
         
         return self.training_stats
 
@@ -451,11 +516,24 @@ class MongoDBAnomalyDetector:
             print(f"[DEBUG]   Anomaly samples: {self.historical_data['metadata']['anomaly_samples']}")
             print(f"[DEBUG]   Anomaly rate: {anomaly_rate:.2f}%")
             
-            # Bellek kullanımı uyarısı
+            # Bellek kullanımı kontrolü ve yönetimi
             buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
             print(f"[DEBUG]   Buffer size: {buffer_size_mb:.2f} MB")
             
-            if buffer_size_mb > 1000:  # 1 GB'dan büyükse uyar
+            # Kritik bellek yönetimi
+            warning_threshold_mb = 1000  # 1 GB uyarı
+            critical_threshold_mb = 2000  # 2 GB kritik
+            
+            if buffer_size_mb > critical_threshold_mb:
+                # Kritik seviye - buffer'ı %50 küçült
+                logger.critical(f"Buffer critically large ({buffer_size_mb:.2f} MB), trimming to 50%...")
+                keep_samples = len(self.historical_data['features']) // 2
+                self.historical_data['features'] = self.historical_data['features'].tail(keep_samples)
+                self.historical_data['predictions'] = self.historical_data['predictions'][-keep_samples:]
+                self.historical_data['scores'] = self.historical_data['scores'][-keep_samples:]
+                new_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
+                logger.info(f"Buffer trimmed: {buffer_size_mb:.2f} MB -> {new_size_mb:.2f} MB")
+            elif buffer_size_mb > warning_threshold_mb:
                 logger.warning(f"Historical buffer size is large: {buffer_size_mb:.2f} MB")
                 
         except Exception as e:
@@ -1079,58 +1157,58 @@ class MongoDBAnomalyDetector:
         if not self.is_trained:
             raise ValueError("Model is not trained yet!")
         
-        # Sunucu bazlı dosya adı oluştur
-        if path is None:
-            if server_name:
-                # Sunucu adını normalize et (özel karakterleri temizle)
-                safe_server_name = server_name.replace('.', '_').replace('/', '_')
-                path = f'models/isolation_forest_{safe_server_name}.pkl'
-                print(f"[DEBUG] Server-specific model path: {path}")
-            else:
-                path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
-        
-        try:
-            print(f"[DEBUG] Saving model to: {path}")
-            # Klasörü oluştur
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with self._save_lock:  # Thread safety
+            # Sunucu bazlı dosya adı oluştur
+            if path is None:
+                if server_name:
+                    # Sunucu adını normalize et (özel karakterleri temizle)
+                    safe_server_name = server_name.replace('.', '_').replace('/', '_')
+                    path = f'models/isolation_forest_{safe_server_name}.pkl'
+                    print(f"[DEBUG] Server-specific model path: {path}")
+                else:
+                    path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
             
-            # Model ve metadata'yı kaydet
-            model_data = {
-                'model': self.model,
-                'feature_names': self.feature_names,
-                'training_stats': self.training_stats,
-                'config': self.config,
-                'server_name': server_name,  # YENİ: Sunucu bilgisi
-                # Online Learning - Historical Buffer
-                'historical_data': self.historical_data if self.online_learning_config.get('enabled', True) else None,
-                'online_learning_config': self.online_learning_config,
-                'model_version': '2.0'  # Version tracking for compatibility
-            }
-
-            # Historical buffer size kontrolü
-            if self.historical_data['features'] is not None:
-                buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
-                print(f"[DEBUG] Saving historical buffer: {buffer_size_mb:.2f} MB")
+            try:
+                print(f"[DEBUG] Saving model to: {path}")
+                # Klasörü oluştur
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
                 
-                # Büyük dosya uyarısı
-                if buffer_size_mb > 500:
-                    logger.warning(f"Large model file warning: Historical buffer is {buffer_size_mb:.2f} MB")
+                # Model ve metadata'yı kaydet
+                model_data = {
+                    'model': self.model,
+                    'feature_names': self.feature_names,
+                    'training_stats': self.training_stats,
+                    'config': self.config,
+                    'server_name': server_name,  # YENİ: Sunucu bilgisi
+                    # Online Learning - Historical Buffer
+                    'historical_data': self.historical_data if self.online_learning_config.get('enabled', True) else None,
+                    'online_learning_config': self.online_learning_config,
+                    'model_version': '2.0'  # Version tracking for compatibility
+                }
 
-            joblib.dump(model_data, path)
+                # Historical buffer size kontrolü
+                if self.historical_data['features'] is not None:
+                    buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
+                    print(f"[DEBUG] Saving historical buffer: {buffer_size_mb:.2f} MB")
+                    
+                    # Büyük dosya uyarısı
+                    if buffer_size_mb > 500:
+                        logger.warning(f"Large model file warning: Historical buffer is {buffer_size_mb:.2f} MB")
 
-            # Dosya boyutu bilgisi
-            file_size_mb = Path(path).stat().st_size / 1024 / 1024
-            print(f"[DEBUG] Model file saved: {file_size_mb:.2f} MB")
-            print(f"[DEBUG] Model saved successfully")
-            logger.info(f"Model saved to: {path}")
-            
-            return path
-            
-        except Exception as e:
-            print(f"[DEBUG] Error saving model: {e}")
-            logger.error(f"Error saving model: {e}")
-            raise
-    
+                joblib.dump(model_data, path)
+
+                # Dosya boyutu bilgisi
+                file_size_mb = Path(path).stat().st_size / 1024 / 1024
+                print(f"[DEBUG] Model file saved: {file_size_mb:.2f} MB")
+                print(f"[DEBUG] Model saved successfully")
+                logger.info(f"Model saved to: {path}")
+                
+                return path
+                
+            except Exception as e:
+                print(f"[DEBUG] Error saving model: {e}")
+                logger.error(f"Error saving model: {e}")
+                raise
     def load_model(self, path: str = None, server_name: str = None) -> bool:
         """
         Modeli yükle (sunucu bazlı)
