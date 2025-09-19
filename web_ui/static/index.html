@@ -227,13 +227,45 @@
                                 
                                 <!-- OpenSearch için -->
                                 <div id="opensearchSourceInputs" style="display: none;">
-                                    <label>MongoDB Sunucusu:</label>
-                                    <select id="mongodbHostSelect" class="form-select">
-                                        <option value="" disabled selected>Lütfen bir sunucu seçin</option>
-                                        <!-- Dinamik olarak doldurulacak -->
-                                    </select>
+                                    
+                                    <!-- Cluster veya Tek Sunucu Seçimi -->
+                                    <div style="margin-bottom: 15px;">
+                                        <label style="display: block; margin-bottom: 10px;">
+                                            <input type="radio" name="hostSelectionMode" value="single" checked>
+                                            🖥️ Tek Sunucu Analizi
+                                        </label>
+                                        <label style="display: block;">
+                                            <input type="radio" name="hostSelectionMode" value="cluster">
+                                            🔗 Cluster Analizi (Tüm Node'lar)
+                                        </label>
+                                    </div>
+                                    
+                                    <!-- Tek Sunucu Dropdown -->
+                                    <div id="singleHostSelection" style="margin-bottom: 15px;">
+                                        <label>MongoDB Sunucusu:</label>
+                                        <select id="mongodbHostSelect" class="form-select">
+                                            <option value="" disabled selected>Sunucu seçin...</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Cluster Dropdown (YENİ) -->
+                                    <div id="clusterSelection" style="display: none; margin-bottom: 15px;">
+                                        <label>MongoDB Cluster:</label>
+                                        <select id="clusterSelect" class="form-select">
+                                            <option value="" disabled selected>Cluster seçin...</option>
+                                        </select>
+                                        
+                                        <!-- Seçilen Cluster'ın Host Listesi (Read-only) -->
+                                        <div id="clusterHostsInfo" style="margin-top: 10px; display: none;">
+                                            <label style="font-size: 12px; color: #666;">Cluster Node'ları:</label>
+                                            <div id="clusterHostsList" style="padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px;">
+                                                <!-- Dinamik olarak doldurulacak -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
                                     <button id="refreshHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
-                                        🔄 Sunucu Listesini Yenile
+                                        🔄 Sunucu/Cluster Listesini Yenile
                                     </button>
                                 </div>
                             </div>
@@ -261,7 +293,30 @@
                                     <input type="radio" name="modalTimeRange" value="last_30d">
                                     Son 30 Gün
                                 </label>
+                                <!-- Custom Date Range Option -->
+                                <label>
+                                    <input type="radio" name="modalTimeRange" value="custom">
+                                    Özel Tarih Aralığı
+                                </label>
                             </div>
+                            
+                            <!-- Custom Date Inputs (initially hidden) -->
+                            <div id="customDateInputs" style="display: none; margin-top: 15px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div>
+                                        <label>Başlangıç:</label>
+                                        <input type="datetime-local" id="customStartTime" class="form-input">
+                                    </div>
+                                    <div>
+                                        <label>Bitiş:</label>
+                                        <input type="datetime-local" id="customEndTime" class="form-input">
+                                    </div>
+                                </div>
+                                <small style="color: #666; margin-top: 5px; display: block;">
+                                    ⏰ Zaman dilimi: UTC+3 (Türkiye Saati)
+                                </small>
+                            </div>
+                            
                             <button id="startAnalysisBtn" class="btn btn-primary" style="margin-top: 15px; width: 100%;">
                                 <span>🚀 ANALİZİ BAŞLAT</span>
                             </button>
@@ -273,7 +328,7 @@
 
         <!-- Footer -->
         <footer>
-            <p>&copy; 2024 LC Waikiki | MongoDB LangChain Assistant v1.0 | Test Ortamı</p>
+            <p>&copy; 2025 LC Waikiki | MongoDB LangChain Assistant v1.0 | Test Ortamı</p>
             <p style="font-size: 12px; margin-top: 5px;">Bu platform test amaçlıdır. Üretim ortamında kullanmayın.</p>
         </footer>
     </div>

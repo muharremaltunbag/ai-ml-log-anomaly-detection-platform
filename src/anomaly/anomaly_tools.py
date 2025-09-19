@@ -420,7 +420,15 @@ class AnomalyDetectionTools:
                 conn_string = args_dict.get("connection_string", 
                                           self.config['data_sources']['mongodb_direct']['default_connection'])
                 logger.info(f"Using MongoDB direct connection: {conn_string[:20]}...")
-                return self._analyze_mongodb_direct(conn_string, time_range, threshold)
+                
+                # YENİ: Tarih parametrelerini MongoDB Direct'e de ilet
+                return self._analyze_mongodb_direct(
+                    conn_string, 
+                    time_range, 
+                    threshold,
+                    start_time=args_dict.get('start_time'),
+                    end_time=args_dict.get('end_time')
+                )
                 
             elif source_type == "test_servers":
                 server_name = args_dict.get("server_name")
@@ -450,34 +458,71 @@ class AnomalyDetectionTools:
                             "anomaly_analysis"
                         )
                     
-                    # Zaman aralığını saat cinsine çevir
-                    if time_range == "last_hour":
-                        last_hours = 1
-                    elif time_range == "last_day":
-                        last_hours = 24
-                    elif time_range == "last_week":
-                        last_hours = 168
-                    elif time_range == "last_month":  # YENİ
-                        last_hours = 720
+                    # YENİ: Tarih parametrelerini kontrol et
+                    start_time = args_dict.get('start_time')
+                    end_time = args_dict.get('end_time')
+
+                    # Zaman aralığını belirle
+                    if start_time and end_time:
+                        # Kesin tarih aralığı verilmişse
+                        logger.info(f"Using specific date range: {start_time} to {end_time}")
+                        last_hours = None  # last_hours kullanma
                     else:
-                        last_hours = args_dict.get("last_hours", 24)
-                    
-                    # OpenSearch'ten logları oku
-                    logger.info(f"Reading logs from OpenSearch for last {last_hours} hours...")
-                    
-                    # YENİ: Host filter'a FQDN düzeltmesi uygula
+                        # Zaman aralığını saat cinsine çevir
+                        if time_range == "last_hour":
+                            last_hours = 1
+                        elif time_range == "last_day":
+                            last_hours = 24
+                        elif time_range == "last_week":
+                            last_hours = 168
+                        elif time_range == "last_month":
+                            last_hours = 720
+                        else:
+                            last_hours = args_dict.get("last_hours", 24)
+                        
+                        logger.info(f"Reading logs from OpenSearch for last {last_hours} hours...")
+
+                    # Host filter'a FQDN düzeltmesi uygula
                     host_filter = args_dict.get("host_filter", None)
+                    is_cluster_analysis = False
+                    cluster_hosts = []
+
                     if host_filter:
-                        original_host = host_filter
-                        host_filter = self._fix_mongodb_hostname_fqdn(host_filter)
-                        if original_host != host_filter:
-                            logger.info(f"Host filter FQDN correction: {original_host} -> {host_filter}")
-                
-                    df = opensearch_reader.read_logs(
-                        limit=None,  # Tüm logları al
-                        last_hours=last_hours,
-                        host_filter=host_filter  # Düzeltilmiş host filter
-                    )
+                        # Multiple host kontrolü
+                        if isinstance(host_filter, list):
+                            is_cluster_analysis = True
+                            cluster_hosts = []
+                            for h in host_filter:
+                                fixed_h = self._fix_mongodb_hostname_fqdn(h)
+                                cluster_hosts.append(fixed_h)
+                                if h != fixed_h:
+                                    logger.info(f"Host filter FQDN correction: {h} -> {fixed_h}")
+                            host_filter = cluster_hosts
+                            logger.info(f"CLUSTER ANALYSIS: {len(cluster_hosts)} hosts will be analyzed")
+                        else:
+                            original_host = host_filter
+                            host_filter = self._fix_mongodb_hostname_fqdn(host_filter)
+                            if original_host != host_filter:
+                                logger.info(f"Host filter FQDN correction: {original_host} -> {host_filter}")
+
+                    # OpenSearch'ten logları oku
+                    if start_time and end_time:
+                        # Tarih aralığı ile oku
+                        df = opensearch_reader.read_logs(
+                            limit=None,
+                            host_filter=host_filter,
+                            start_time=start_time,
+                            end_time=end_time
+                        )
+                        logger.info(f"Retrieved {len(df)} logs from OpenSearch for date range: {start_time} to {end_time}")
+                    else:
+                        # last_hours ile oku
+                        df = opensearch_reader.read_logs(
+                            limit=None,
+                            last_hours=last_hours,
+                            host_filter=host_filter
+                        )
+                        logger.info(f"Retrieved {len(df)} logs from OpenSearch for last {last_hours} hours")
                     
                     if df.empty:
                         logger.error("No logs retrieved from OpenSearch")
@@ -501,10 +546,20 @@ class AnomalyDetectionTools:
                     # Host filter'dan sunucu adını çıkar
                     server_for_model = None
                     if host_filter:
-                        # FQDN'den sunucu adını çıkar (örn: lcwmongodb01n2.lcwaikiki.local -> lcwmongodb01n2)
-                        server_for_model = host_filter.split('.')[0] if '.' in host_filter else host_filter
-                        logger.info(f"Using server-specific model for: {server_for_model}")
+                        if is_cluster_analysis:
+                            # Cluster için cluster adını kullan (örn: lcwmongodb01_cluster)
+                            # İlk host'tan cluster adını çıkar
+                            first_host = cluster_hosts[0] if cluster_hosts else host_filter[0]
+                            cluster_name = first_host.split('.')[0].rsplit('n', 1)[0]  # lcwmongodb01n2 -> lcwmongodb01
+                            server_for_model = f"{cluster_name}_cluster"
+                            logger.info(f"Using cluster model for: {server_for_model}")
+                        else:
+                            # FQDN'den sunucu adını çıkar (örn: lcwmongodb01n2.lcwaikiki.local -> lcwmongodb01n2)
+                            server_for_model = host_filter.split('.')[0] if '.' in host_filter else host_filter
+                            logger.info(f"Using server-specific model for: {server_for_model}")
                     
+                    # Model yükleme durumunu sakla
+                    model_loaded = False
                     if not self.detector.is_trained:
                         logger.info(f"Attempting to load existing model from storage{f' for server: {server_for_model}' if server_for_model else ''}...")
                         # Önce diskten model yüklemeyi dene
@@ -515,6 +570,8 @@ class AnomalyDetectionTools:
                             logger.info(f"   📍 Historical buffer: {self.detector.historical_data['metadata']['total_samples']} samples")
                         else:
                             logger.info(f"⚠️ No existing model found{f' for server: {server_for_model}' if server_for_model else ''}, will train new model")
+                    else:
+                        model_loaded = True  # Zaten yüklü
                             
                     # Model kontrolü ve tahmin
                     if not self.detector.is_trained:
@@ -606,11 +663,22 @@ class AnomalyDetectionTools:
                     
                     # Açıklama ve öneriler
                     if ai_explanation:
-                        server_desc = f" ({server_for_model} sunucusu)" if server_for_model else ""
+                        if is_cluster_analysis:
+                            server_desc = f" (CLUSTER: {', '.join([h.split('.')[0] for h in cluster_hosts])})"
+                        else:
+                            server_desc = f" ({server_for_model} sunucusu)" if server_for_model else ""
+                            
                         model_desc = " ✅ Mevcut model güncellendi" if model_loaded else " 🆕 Yeni model eğitildi"
-                        description = f"OpenSearch'ten son {last_hours} saatteki {len(df)} log analiz edildi{server_desc}.{model_desc}\n\n" + \
-                                    self._create_enriched_description(analysis, time_range, ai_explanation)[len("🤖 **AI DESTEKLİ ANOMALİ ANALİZİ**\n\n"):]
+                        # Zaman açıklamasını düzenle
+                        if start_time and end_time:
+                            time_desc = f"{start_time} - {end_time} arasındaki"
+                        else:
+                            time_desc = f"son {last_hours} saatteki"
+
+                        description = f"OpenSearch'ten {time_desc} {len(df)} log analiz edildi{server_desc}.{model_desc}\n\n" + \
+                                     self._create_enriched_description(analysis, time_range, ai_explanation)[len("🤖 **AI DESTEKLİ ANOMALİ ANALİZİ**\n\n"):]
                         suggestions = ai_explanation.get("onerilen_aksiyonlar", [])
+
                         logger.info("AI-powered explanation and suggestions created for OpenSearch.")
                     else:
                         # Fallback: AI başarısız olursa standart raporlamayı kullan
@@ -622,6 +690,17 @@ class AnomalyDetectionTools:
                     # DEBUG: OpenSearch analysis'den önce critical_anomalies sayısını logla
                     print(f"[DEBUG] OPENSEARCH: Before enhancement - analysis['critical_anomalies'] count: {len(analysis['critical_anomalies'])}")
                     logger.debug(f"OpenSearch analysis before enhancement: {len(analysis['critical_anomalies'])} critical anomalies")
+
+                    
+                    # Cluster bilgisini ekle
+                    cluster_info = {}
+                    if is_cluster_analysis:
+                        cluster_info = {
+                            "is_cluster": True,
+                            "cluster_hosts": cluster_hosts,
+                            "cluster_name": server_for_model.replace("_cluster", ""),
+                            "host_count": len(cluster_hosts)
+                        }
                     
                     result = {
                         "description": description,
@@ -632,7 +711,15 @@ class AnomalyDetectionTools:
                                 "model_status": "existing" if model_loaded else "newly_trained",
                                 "model_path": f"models/isolation_forest_{server_for_model}.pkl" if server_for_model else "models/isolation_forest.pkl",
                                 "historical_buffer_size": self.detector.historical_data['metadata']['total_samples'],
-                                "last_update": self.detector.historical_data['metadata'].get('last_update', 'N/A')
+                                "last_update": self.detector.historical_data['metadata'].get('last_update', 'N/A'),
+                                **cluster_info  # Cluster bilgisini ekle
+                            },
+                            "time_range_info": {  # YENİ
+                                "custom_range": True if (start_time and end_time) else False,
+                                "start_time": start_time,
+                                "end_time": end_time,
+                                "last_hours": last_hours if not (start_time and end_time) else None,
+                                "description": time_desc  # "2025-09-15T16:09:00Z - 2025-09-15T16:11:00Z arasındaki" gibi
                             },
                             "logs_analyzed": len(df),
                             "filtered_logs": len(df_filtered),  # YENİ
@@ -847,9 +934,15 @@ class AnomalyDetectionTools:
             logger.error(f"Anomaly analysis error: {e}", exc_info=True)
             return self._format_result({"error": str(e)}, "anomaly_analysis")
     
-    def _analyze_mongodb_direct(self, connection_string: str, time_range: str, threshold: float) -> str:
+    def _analyze_mongodb_direct(self, connection_string: str, time_range: str, threshold: float,
+                               start_time: str = None, end_time: str = None) -> str:
         """MongoDB'den doğrudan log okuyup analiz et"""
         logger.debug(f"Starting MongoDB direct analysis with time_range={time_range}, threshold={threshold}")
+        
+        # YENİ: Tarih parametrelerini logla
+        if start_time and end_time:
+            logger.info(f"Using custom date range: {start_time} to {end_time}")
+        
         try:
             logger.debug("Connecting to MongoDB...")
             client = MongoClient(connection_string)
@@ -859,9 +952,16 @@ class AnomalyDetectionTools:
             profile_collection = db.system.profile
             logger.debug("Accessing system.profile collection")
             
-            # Zaman filtresini ayarla
+            # YENİ: Zaman filtresini ayarla - tarih parametrelerini destekle
             time_filter = {}
-            if time_range == "last_hour":
+            if start_time and end_time:
+                # Custom tarih aralığı
+                from dateutil import parser
+                start_dt = parser.parse(start_time)
+                end_dt = parser.parse(end_time)
+                time_filter = {"ts": {"$gte": start_dt, "$lte": end_dt}}
+                logger.info(f"Custom time filter applied: {start_dt} to {end_dt}")
+            elif time_range == "last_hour":
                 time_filter = {"ts": {"$gte": datetime.now() - timedelta(hours=1)}}
             elif time_range == "last_day":
                 time_filter = {"ts": {"$gte": datetime.now() - timedelta(days=1)}}
@@ -1244,22 +1344,22 @@ class AnomalyDetectionTools:
         original_count = len(analysis.get('critical_anomalies', []))
         logger.info(f"Original critical anomalies: {original_count}")
         
-        # DEBUG: Gelen critical_anomalies'i kontrol et
-        print(f"[DEBUG FILTER] Input critical_anomalies count: {original_count}")
+        # Component analysis debug logs
+        logger.info(f"Input critical_anomalies count: {original_count}")
         if original_count > 0:
-            print(f"[DEBUG FILTER] First anomaly sample: {analysis['critical_anomalies'][0]}")
+            logger.info(f"First anomaly sample: {analysis['critical_anomalies'][0]}")
         
         # 1. Component-based filtering
         suspicious_components = []
         if 'component_analysis' in analysis:
-            print(f"[DEBUG FILTER] Component analysis found, checking {len(analysis['component_analysis'])} components")
+            logger.debug(f"Component analysis found, checking {len(analysis['component_analysis'])} components")
             for comp, stats in analysis['component_analysis'].items():
                 # ÖZEL DURUM: Bazı component'ler her zaman önemlidir
                 important_components = ['COMMAND', 'REPL', 'CONTROL', 'NETWORK', 'STORAGE']
                 
                 # Eğer önemli component ise filtreleme
                 if comp in important_components:
-                    print(f"[DEBUG FILTER] Component {comp} is important, skipping filter")
+                    logger.debug(f"Component {comp} is important, skipping filter")
                     continue
                     
                 # %99.5'ten fazla anomali oranı VE 100'den fazla log varsa şüpheli
@@ -1267,11 +1367,11 @@ class AnomalyDetectionTools:
                     stats.get('total_count', 0) > 100):
                     suspicious_components.append(comp)
                     logger.warning(f"Component {comp} has {stats['anomaly_rate']:.1f}% anomaly rate - marking as suspicious")
-                    print(f"[DEBUG FILTER] Component {comp} marked as suspicious")
+                    logger.warning(f"Component {comp} marked as suspicious")
         else:
-            print("[DEBUG FILTER] No component_analysis in analysis dict")
+            logger.debug("No component_analysis in analysis dict")
         
-        print(f"[DEBUG FILTER] Suspicious components: {suspicious_components}")
+        logger.info(f"Suspicious components identified: {suspicious_components}")
         
         # 2. Critical anomalies filtreleme
         if 'critical_anomalies' in analysis:
@@ -1284,7 +1384,7 @@ class AnomalyDetectionTools:
                     comp = anomaly.get('component', '')
                     if comp in suspicious_components:
                         filtered_out_count += 1
-                        print(f"[DEBUG FILTER] Anomaly {i} filtered out - suspicious component: {comp}")
+                        logger.debug(f"Anomaly {i} filtered out - suspicious component: {comp}")
                         continue
                 
                 # Gerçek kritik anomali kriterleri
@@ -1292,9 +1392,6 @@ class AnomalyDetectionTools:
                 msg = anomaly.get('message', '').lower()
                 severity_score = anomaly.get('severity_score', 0)
                 severity_level = anomaly.get('severity_level', '')
-                
-                # Debug için
-                print(f"[DEBUG FILTER] Checking anomaly: score={severity_score}, level={severity_level}, msg={msg[:50]}...")
 
                 # Kritik tipler her zaman dahil
                 critical_patterns = [
@@ -1311,17 +1408,17 @@ class AnomalyDetectionTools:
                 
                 if any(critical_patterns):
                     is_critical = True
-                    print(f"[DEBUG FILTER] Critical pattern matched!")
+                    logger.debug(f"Critical pattern matched for anomaly {i}")
                 
                 # Yüksek severity score olanlar
                 elif severity_score > 50:  # Daha yüksek threshold
                     is_critical = True
-                    print(f"[DEBUG FILTER] High severity score: {severity_score}")
+                    logger.debug(f"High severity score: {severity_score} for anomaly {i}")
                 
                 # CRITICAL veya HIGH severity level
                 elif severity_level in ['CRITICAL', 'HIGH','MEDIUM']:
                     is_critical = True
-                    print(f"[DEBUG FILTER] Severity level: {severity_level}")
+                    logger.debug(f"Severity level: {severity_level} for anomaly {i}")
 
                 # Performance kritik anomaliler
                 elif any([
@@ -1330,16 +1427,14 @@ class AnomalyDetectionTools:
                     'high_doc_scan' in anomaly.get('anomaly_type', '') and severity_score > 40
                 ]):
                     is_critical = True
-                    print(f"[DEBUG FILTER] Performance critical!")
+                    logger.debug(f"Performance critical anomaly {i}")
                 
                 if is_critical:
                     filtered_anomalies.append(anomaly)
-                    print(f"[DEBUG FILTER] Anomaly {i} kept as critical")
                 else:
                     filtered_out_count += 1
-                    print(f"[DEBUG FILTER] Anomaly {i} filtered out - not critical enough")
             
-            print(f"[DEBUG FILTER] Filtered result: {len(filtered_anomalies)} kept, {filtered_out_count} filtered out")
+            logger.info(f"Filter results: {len(filtered_anomalies)} anomalies kept, {filtered_out_count} filtered out")
             
             # Maximum 500 anomali limiti
             if len(filtered_anomalies) > 500:
@@ -1489,6 +1584,21 @@ class AnomalyDetectionTools:
             critical_anomalies = anomaly_data.get("critical_anomalies", [])[:10]
             security_alerts = anomaly_data.get("security_alerts", {})
             
+            # Numpy float tiplerini handle et
+            def clean_floats(obj):
+                import numpy as np  
+                if isinstance(obj, (np.float32, np.float64, float)):
+                    if np.isnan(obj) or np.isinf(obj):
+                        return 0.0
+                    return float(obj)
+                elif isinstance(obj, dict):
+                    return {k: clean_floats(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [clean_floats(item) for item in obj]
+                return obj
+
+            anomaly_data = clean_floats(anomaly_data)
+
             # Component analysis - sadece ilk 10 component
             component_analysis = anomaly_data.get("component_analysis", {})
             if len(component_analysis) > 10:
@@ -1528,8 +1638,16 @@ Türkçe yaz. MongoDB best practice'lerini kullan. Rastgele öneri verme. Teknik
             
             # Optimize edilmiş user prompt - daha fazla context ile
             server_info = f"Sunucu: {server_name}\n" if server_name else ""
+            
+            # Safe accessor - score_range float da olabilir dict de olabilir
+            score_range = summary.get('score_range', {})
+            if isinstance(score_range, dict):
+                mean_score = score_range.get('mean', 0)
+            else:
+                mean_score = score_range if isinstance(score_range, (int, float)) else 0
+            
             user_prompt = f"""{server_info}Analiz Özeti: {summary.get('n_anomalies', 0)} anomali / {summary.get('total_logs', 0):,} log (%{summary.get('anomaly_rate', 0):.1f})
-Ortalama anomali skoru: {summary.get('score_range', {}).get('mean', 0):.3f}
+Ortalama anomali skoru: {mean_score:.3f}
 
 TOP 10 KRİTİK ANOMALİ:
 {self._format_critical_anomalies_for_prompt(critical_anomalies[:10])}

@@ -29,10 +29,13 @@ const API_ENDPOINTS = {
     collections: '/api/collections',
     schema: '/api/schema',
     analyzeLog: '/api/analyze-uploaded-log',  // analyzeLog yerine analyze-uploaded-log
-    uploadLog: '/api/upload-log',              // YENİ
-    uploadedLogs: '/api/uploaded-logs',        // YENİ
-    deleteUploadedLog: '/api/uploaded-log',    // YENİ
-    mongodbHosts: '/api/mongodb/hosts',         // YENİ
+    uploadLog: '/api/upload-log',              
+    uploadedLogs: '/api/uploaded-logs',        
+    deleteUploadedLog: '/api/uploaded-log',    
+    mongodbHosts: '/api/mongodb/hosts',         
+    mongodbClusters: '/api/mongodb/clusters',   // CLUSTER SUPPORT
+    mongodbClusterHosts: '/api/mongodb/cluster', // CLUSTER SUPPORT
+    analyzeCluster: '/api/analyze-cluster',     // CLUSTER SUPPORT
     // YENİ STORAGE ENDPOINTS
     anomalyHistory: '/api/anomaly-history',
     anomalyDetail: '/api/anomaly-history',
@@ -258,8 +261,19 @@ function initializeEventListeners() {
     // Anomaly Modal içindeki Analizi Başlat butonu  
     document.getElementById('startAnalysisBtn').addEventListener('click', handleAnalyzeLog);
     
-    // Refresh hosts button
-    document.getElementById('refreshHostsBtn')?.addEventListener('click', loadMongoDBHosts);
+
+    // Refresh hosts button - CLUSTER DESTEĞİ İLE
+    document.getElementById('refreshHostsBtn')?.addEventListener('click', () => {
+        const hostMode = document.querySelector('input[name="hostSelectionMode"]:checked')?.value || 'single';
+        
+        if (hostMode === 'single') {
+            loadMongoDBHosts();
+            showNotification('Host listesi yenileniyor...', 'info');
+        } else if (hostMode === 'cluster') {
+            loadClusters();
+            showNotification('Cluster listesi yenileniyor...', 'info');
+        }
+    });
     
     // Örnek sorgu chip'leri
     document.querySelectorAll('.chip').forEach(chip => {
@@ -293,6 +307,93 @@ function initializeEventListeners() {
             console.log('Data source changed from', selectedDataSource, 'to', e.target.value); // DEBUG LOG
             selectedDataSource = e.target.value;
             updateSourceInputs(selectedDataSource);
+        });
+    });
+
+    // Host selection mode (Single/Cluster) değişimi için 
+    document.querySelectorAll('input[name="hostSelectionMode"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            console.log('Host selection mode changed to:', e.target.value);
+            const mode = e.target.value;
+            
+            const singleHostDiv = document.getElementById('singleHostSelection');
+            const clusterDiv = document.getElementById('clusterSelection');
+            
+            if (mode === 'single') {
+                // Single mode: host dropdown göster
+                if (singleHostDiv) singleHostDiv.style.display = 'block';
+                if (clusterDiv) clusterDiv.style.display = 'none';
+                
+                // Host'ları yükle (eğer yüklenmemişse)
+                const hostSelect = document.getElementById('mongodbHostSelect');
+                if (hostSelect && hostSelect.options.length <= 1) {
+                    loadMongoDBHosts();
+                }
+            } else if (mode === 'cluster') {
+                // Cluster mode: cluster dropdown göster
+                if (singleHostDiv) singleHostDiv.style.display = 'none';
+                if (clusterDiv) clusterDiv.style.display = 'block';
+                
+                // Cluster'ları yükle (eğer yüklenmemişse)
+                const clusterSelect = document.getElementById('clusterSelect');
+                if (clusterSelect && clusterSelect.options.length <= 1) {
+                    loadClusters();
+                }
+            }
+            
+            // Validation'ı güncelle
+            if (selectedDataSource === 'opensearch') {
+                validateAnalysisButton();
+            }
+        });
+    });
+
+    // Cluster dropdown için change event listener - YENİ
+    document.getElementById('clusterSelect')?.addEventListener('change', (e) => {
+        console.log('Cluster selected:', e.target.value);
+        const clusterId = e.target.value;
+        
+        if (clusterId) {
+            // Seçilen cluster'ın host'larını yükle ve göster
+            loadClusterHosts(clusterId);
+            
+            // Validation'ı güncelle
+            if (selectedDataSource === 'opensearch') {
+                validateAnalysisButton();
+            }
+        }
+    });
+
+    // YENİ: Custom date/time selection değişimi için  
+    document.querySelectorAll('input[name="modalTimeRange"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            console.log('Time range changed to:', e.target.value);
+            const customDateInputs = document.getElementById('customDateInputs');
+            
+            if (e.target.value === 'custom') {
+                // Custom seçildi, date input'ları göster
+                if (customDateInputs) {
+                    customDateInputs.style.display = 'block';
+                    
+                    // Test için default değerleri set et
+                    const startInput = document.getElementById('customStartTime');
+                    const endInput = document.getElementById('customEndTime');
+                    
+                    if (startInput && !startInput.value) {
+                        // Test senaryosu: 10.09.2025 16:09
+                        startInput.value = '2025-09-10T16:09';
+                    }
+                    if (endInput && !endInput.value) {
+                        // Test senaryosu: 10.09.2025 16:11
+                        endInput.value = '2025-09-10T16:11';
+                    }
+                }
+            } else {
+                // Diğer seçenekler, custom date'i gizle
+                if (customDateInputs) {
+                    customDateInputs.style.display = 'none';
+                }
+            }
         });
     });
     
@@ -2809,7 +2910,24 @@ function updateSourceInputs(source) {
         case 'opensearch':
             console.log('Showing OpenSearch source inputs');
             document.getElementById('opensearchSourceInputs').style.display = 'block';
-            loadMongoDBHosts(); // MongoDB sunucularını yükle
+            
+            // Default olarak single mode seçili olsun
+            const singleModeRadio = document.querySelector('input[name="hostSelectionMode"][value="single"]');
+            if (singleModeRadio) {
+                singleModeRadio.checked = true;
+            }
+            
+            // Single mode UI'ını göster
+            document.getElementById('singleHostSelection').style.display = 'block';
+            document.getElementById('clusterSelection').style.display = 'none';
+            
+            // MongoDB sunucularını yükle (single mode için)
+            loadMongoDBHosts();
+            
+            // Cluster listesini de arka planda yükle (kullanıcı değiştirirse hazır olsun)
+            setTimeout(() => {
+                loadClusters();
+            }, 500);
             break;
         default:
             console.log('Unknown source type:', source); // DEBUG LOG
@@ -2866,6 +2984,91 @@ async function loadMongoDBHosts() {
 }
 
 /**
+ * MongoDB cluster'larını yükle
+ */
+async function loadClusters() {
+    console.log('Loading MongoDB clusters from backend...');
+    
+    try {
+        const response = await fetch(`${API_ENDPOINTS.mongodbClusters}?api_key=${apiKey}`);
+        const data = await response.json();
+        
+        console.log('Clusters response:', data);
+        
+        const clusterSelect = document.getElementById('clusterSelect');
+        if (!clusterSelect) return;
+        
+        // Mevcut seçenekleri temizle
+        clusterSelect.innerHTML = '<option value="" disabled selected>Cluster seçin...</option>';
+        
+        // ✅ Object olarak gelen clusters'ı kontrol et ve işle
+        if (data.clusters && Object.keys(data.clusters).length > 0) {
+            // Object.entries ile Object'i Array'e çevir
+            Object.entries(data.clusters).forEach(([clusterId, cluster]) => {
+                const option = document.createElement('option');
+                option.value = cluster.cluster_id || clusterId;
+                option.textContent = cluster.display_name || cluster.cluster_id || clusterId;
+                option.dataset.hostCount = cluster.node_count || cluster.hosts?.length || 0;
+                clusterSelect.appendChild(option);
+            });
+            
+            console.log(`Loaded ${Object.keys(data.clusters).length} MongoDB clusters`);
+        } else {
+            console.log('No clusters found');
+        }
+    } catch (error) {
+        console.error('Error loading clusters:', error);
+        showNotification('Cluster listesi yüklenemedi', 'error');
+    }
+}
+
+/**
+ * Seçilen cluster'ın host'larını yükle ve göster
+ */
+async function loadClusterHosts(clusterId) {
+    if (!clusterId) return;
+    
+    console.log(`Loading hosts for cluster: ${clusterId}`);
+    
+    try {
+        const response = await fetch(`${API_ENDPOINTS.mongodbClusterHosts}/${clusterId}/hosts?api_key=${apiKey}`);
+        const data = await response.json();
+        
+        console.log('Cluster hosts response:', data);
+        
+        const hostsInfo = document.getElementById('clusterHostsInfo');
+        const hostsList = document.getElementById('clusterHostsList');
+        
+        if (hostsInfo && hostsList) {
+            if (data.hosts && data.hosts.length > 0) {
+                hostsInfo.style.display = 'block';
+                
+                // Host listesini göster
+                let hostsHtml = data.hosts.map(host => `
+                    <span class="host-badge" style="
+                        display: inline-block;
+                        background: #e3f2fd;
+                        color: #1976d2;
+                        padding: 2px 8px;
+                        border-radius: 4px;
+                        margin: 2px;
+                        font-size: 11px;
+                    ">${host}</span>
+                `).join('');
+                
+                hostsList.innerHTML = hostsHtml;
+                console.log(`Showing ${data.hosts.length} hosts for cluster ${clusterId}`);
+            } else {
+                hostsInfo.style.display = 'none';
+                console.log('No hosts found for cluster');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading cluster hosts:', error);
+    }
+}
+
+/**
  * Analiz butonu validasyonu
  */
 function validateAnalysisButton() {
@@ -2900,9 +3103,20 @@ function validateAnalysisButton() {
             console.log('Test servers source - selected server:', selectedServer, 'isValid:', isValid); // DEBUG LOG
             break;
         case 'opensearch':
-            const selectedHost = document.getElementById('mongodbHostSelect').value;
-            isValid = selectedHost && selectedHost.length > 0;
-            console.log('OpenSearch source - selected host:', selectedHost, 'isValid:', isValid); // DEBUG LOG
+            // Single/Cluster mode kontrolü
+            const hostMode = document.querySelector('input[name="hostSelectionMode"]:checked')?.value || 'single';
+            
+            if (hostMode === 'cluster') {
+                // Cluster mode validation - CLUSTER DROPDOWN DESTEĞİ
+                const selectedCluster = document.getElementById('clusterSelect')?.value;
+                isValid = selectedCluster && selectedCluster.length > 0;
+                console.log('OpenSearch cluster mode - selected cluster:', selectedCluster, 'isValid:', isValid);
+            } else {
+                // Single mode validation
+                const selectedHost = document.getElementById('mongodbHostSelect')?.value;
+                isValid = selectedHost && selectedHost.length > 0;
+                console.log('OpenSearch single mode - selected host:', selectedHost, 'isValid:', isValid);
+            }
             break;
         default:
             console.log('Unknown data source for validation:', selectedDataSource); // DEBUG LOG
@@ -2922,22 +3136,44 @@ async function handleAnalyzeLog() {
     console.log('Time Range:', timeRange); // DEBUG LOG
     console.log('Selected Data Source:', selectedDataSource); // DEBUG LOG
     
-    // Zaman aralığını backend formatına çevir
-    let backendTimeRange = timeRange;
-    if (timeRange === 'last_24h') {
-        backendTimeRange = 'last_day';
-    } else if (timeRange === 'last_7d') {
-        backendTimeRange = 'last_week';
-    } else if (timeRange === 'last_30d') {
-        backendTimeRange = 'last_month';
-    }
-    
     // Veri kaynağına göre parametreleri hazırla
     let requestData = {
         api_key: apiKey,
-        time_range: backendTimeRange,
         source_type: selectedDataSource
     };
+    
+    // YENİ: Custom date kontrolü
+    if (timeRange === 'custom') {
+        const startTime = document.getElementById('customStartTime')?.value;
+        const endTime = document.getElementById('customEndTime')?.value;
+        
+        if (!startTime || !endTime) {
+            alert('Lütfen başlangıç ve bitiş zamanlarını seçin!');
+            return;
+        }
+        
+        // ISO formatına çevir ve backend'e gönder
+        // Backend 'start_time' ve 'end_time' parametrelerini bekliyor
+        requestData.start_time = new Date(startTime).toISOString();
+        requestData.end_time = new Date(endTime).toISOString();
+        requestData.time_range = 'custom';
+        
+        console.log('Custom date range:', {
+            start: requestData.custom_start_time,
+            end: requestData.custom_end_time
+        });
+    } else {
+        // Normal time range dönüşümü
+        let backendTimeRange = timeRange;
+        if (timeRange === 'last_24h') {
+            backendTimeRange = 'last_day';
+        } else if (timeRange === 'last_7d') {
+            backendTimeRange = 'last_week';
+        } else if (timeRange === 'last_30d') {
+            backendTimeRange = 'last_month';
+        }
+        requestData.time_range = backendTimeRange;
+    }
     
     // Kaynağa özel parametreler
     switch(selectedDataSource) {
@@ -2970,23 +3206,115 @@ async function handleAnalyzeLog() {
             break;
             
         case 'opensearch':
-            const selectedHost = document.getElementById('mongodbHostSelect').value;
-            console.log('SELECTED HOST VALUE:', selectedHost);
-            console.log('OpenSearch Analysis - Selected Host Debug:', selectedHost);
-            console.log('Host Select Element:', document.getElementById('mongodbHostSelect'));
-            console.log('Host Select Element Value:', document.getElementById('mongodbHostSelect')?.value);
-            console.log('Host Select Element Selected Index:', document.getElementById('mongodbHostSelect')?.selectedIndex);
+            // Single/Cluster mode kontrolü
+            const hostMode = document.querySelector('input[name="hostSelectionMode"]:checked')?.value || 'single';
+            console.log('Host selection mode:', hostMode);
             
-            requestData.file_path = 'opensearch';  // Dummy değer
-            if (selectedHost) {
-                requestData.host_filter = selectedHost;
-                console.log('Using OpenSearch with host filter:', selectedHost);
-                console.log('Request data with host filter:', JSON.stringify(requestData, null, 2));
+            if (hostMode === 'cluster') {
+                // Cluster mode: cluster dropdown'dan seç
+                const selectedCluster = document.getElementById('clusterSelect')?.value;
+                
+                if (!selectedCluster) {
+                    alert('Lütfen bir cluster seçin!');
+                    return;
+                }
+                
+                // Backend'e cluster_id gönder
+                requestData.cluster_id = selectedCluster;
+                requestData.analysis_mode = 'cluster';
+                requestData.file_path = 'opensearch';
+                
+                console.log('Cluster mode - selected cluster:', selectedCluster);
+                
+                // Cluster analizi için özel endpoint kullan
+                // Backend /api/analyze-cluster endpoint'ini kullanacak
+                
+                showLoader(true);
+                closeAnomalyModal();
+                
+                try {
+                    const clusterResponse = await fetch(API_ENDPOINTS.analyzeCluster, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            cluster_id: selectedCluster,
+                            api_key: apiKey,
+                            time_range: requestData.time_range,
+                            start_time: requestData.start_time,
+                            end_time: requestData.end_time
+                        })
+                    });
+                    
+                    const clusterResult = await clusterResponse.json();
+                    console.log('Cluster analysis result:', clusterResult);
+                    
+                    // Cluster sonuçlarını normal anomaly formatına dönüştür
+                    displayAnomalyResults({
+                        durum: 'tamamlandı',
+                        işlem: 'anomaly_analysis',
+                        açıklama: `Cluster ${selectedCluster} analizi tamamlandı`,
+                        sonuç: {
+                            summary: {
+                                n_anomalies: clusterResult.total_anomalies,
+                                total_logs: clusterResult.total_logs_analyzed,
+                                anomaly_rate: clusterResult.anomaly_rate
+                            },
+                            critical_anomalies: clusterResult.top_anomalies,
+                            host_breakdown: clusterResult.host_breakdown,
+                            cluster_info: {
+                                cluster_id: selectedCluster,
+                                hosts_analyzed: clusterResult.hosts_analyzed,
+                                successful_hosts: clusterResult.successful_hosts,
+                                failed_hosts: clusterResult.failed_hosts
+                            }
+                        }
+                    });
+                    
+                    // Storage ID varsa sakla
+                    if (clusterResult.storage_id) {
+                        window.lastAnomalyResult = {
+                            storage_info: {
+                                analysis_id: clusterResult.storage_id
+                            }
+                        };
+                    }
+                    
+                    return; // Fonksiyondan erken çık
+                } catch (error) {
+                    console.error('Cluster analysis error:', error);
+                    alert('Cluster analizi sırasında hata oluştu: ' + error.message);
+                    return;
+                } finally {
+                    showLoader(false);
+                }
+                
             } else {
-                console.log('WARNING: No host selected for OpenSearch analysis!');
-                console.log('This should not happen - validation should prevent this');
-                console.log('Available options in select:', Array.from(document.getElementById('mongodbHostSelect').options).map(opt => opt.value));
+                // Single mode: dropdown'dan seç
+                const hostFilter = document.getElementById('mongodbHostSelect')?.value;
+                
+                if (!hostFilter) {
+                    alert('Lütfen bir MongoDB sunucusu seçin!');
+                    return;
+                }
+                
+                requestData.host_filter = hostFilter;
+                requestData.analysis_mode = 'single';
+                requestData.file_path = 'opensearch';
+                
+                console.log('Single mode - selected host:', hostFilter);
             }
+            
+            console.log('OpenSearch Analysis Configuration:', {
+                mode: hostMode,
+                hosts: hostFilter,
+                hostCount: hostFilter.split(',').length,
+                timeRange: requestData.time_range,
+                customStartTime: requestData.custom_start_time || 'N/A',
+                customEndTime: requestData.custom_end_time || 'N/A'
+            });
+            
             break;
             
         default:

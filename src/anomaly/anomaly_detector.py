@@ -32,7 +32,6 @@ class MongoDBAnomalyDetector:
         Args:
             config_path: Konfigürasyon dosyası yolu
         """
-        print(f"[DEBUG] Initializing anomaly detector with config: {config_path}")
         self.config = self._load_config(config_path)
         self.model_config = self.config['anomaly_detection']['model']
         self.output_config = self.config['anomaly_detection']['output']
@@ -96,8 +95,8 @@ class MongoDBAnomalyDetector:
         self.is_scaler_fitted = False
         self.rule_stats = {'total_overrides': 0, 'rule_hits': {}}
         
-        print(f"[DEBUG] Model config loaded: {self.model_config['type']}")
-        print(f"[DEBUG] Ensemble mode: {self.ensemble_config.get('enabled', False)}")
+        
+        
         logger.info(f"Anomaly detector initialized with {self.model_config['type']} model")
     
     def _initialize_critical_rules(self) -> Dict[str, Any]:
@@ -107,7 +106,6 @@ class MongoDBAnomalyDetector:
         Returns:
             Rule dictionary
         """
-        print(f"[DEBUG] Initializing critical anomaly rules...")
         
         rules = {
             # Sistem kritik hatalar
@@ -172,32 +170,25 @@ class MongoDBAnomalyDetector:
             }
         }
         
-        print(f"[DEBUG] Initialized {len(rules)} critical rules")
         return rules
 
     def _load_config(self, config_path: str) -> Dict:
         """Config dosyasını yükle"""
         try:
-            print(f"[DEBUG] Loading config from: {config_path}")
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-                print(f"[DEBUG] Config loaded successfully")
                 
                 # Config validation
                 self._validate_config(config)
                 
                 return config
         except FileNotFoundError:
-            print(f"[DEBUG] Config file not found: {config_path}")
             logger.warning(f"Config file not found, using defaults: {config_path}")
         except json.JSONDecodeError as e:
-            print(f"[DEBUG] Config JSON parse error: {e}")
             logger.error(f"Invalid JSON in config file: {e}")
         except ValueError as e:
-            print(f"[DEBUG] Config validation failed: {e}")
             logger.error(f"Config validation failed: {e}")
         except Exception as e:
-            print(f"[DEBUG] Unexpected config error: {e}")
             logger.error(f"Unexpected error loading config: {e}")
             
         # Varsayılan config
@@ -254,7 +245,6 @@ class MongoDBAnomalyDetector:
             if not (0 < contamination < 0.5):
                 raise ValueError(f"Invalid contamination value: {contamination} (must be between 0 and 0.5)")
         
-        print(f"[DEBUG] Config validation passed")
 
     def _combine_with_history(self, X_new: pd.DataFrame) -> pd.DataFrame:
         """
@@ -266,7 +256,7 @@ class MongoDBAnomalyDetector:
         Returns:
             Birleştirilmiş feature matrix
         """
-        print(f"[DEBUG] Combining new data with historical buffer...")
+        logger.debug(f"Combining new data with historical buffer...")
         
         try:
             # Historical features'ı al
@@ -274,9 +264,7 @@ class MongoDBAnomalyDetector:
             
             # Feature uyumluluğunu kontrol et
             if list(X_historical.columns) != list(X_new.columns):
-                print(f"[DEBUG] WARNING: Feature mismatch detected!")
-                print(f"[DEBUG] Historical features: {list(X_historical.columns)}")
-                print(f"[DEBUG] New features: {list(X_new.columns)}")
+                logger.warning("Feature mismatch detected between historical and new data")
                 # Ortak feature'ları kullan
                 common_features = list(set(X_historical.columns) & set(X_new.columns))
                 X_historical = X_historical[common_features]
@@ -293,34 +281,25 @@ class MongoDBAnomalyDetector:
                 
             if len(X_combined) > max_buffer_samples:
                 # En eski kayıtları at, en yeni max_buffer_samples kadarını tut
-                print(f"[DEBUG] Buffer size ({len(X_combined)}) exceeded limit ({max_buffer_samples})")
+                logger.info(f"Buffer size ({len(X_combined)}) exceeded limit ({max_buffer_samples}), trimming to {max_buffer_samples}")
                 X_combined = X_combined.tail(max_buffer_samples)
-                print(f"[DEBUG] Buffer trimmed to last {len(X_combined)} samples")
-                
-                # Bellek kullanımını logla
-                buffer_size_mb = X_combined.memory_usage(deep=True).sum() / 1024 / 1024
-                print(f"[DEBUG] Current buffer size: {buffer_size_mb:.2f} MB")
 
-            # Duplicate kontrolü 
+            # Duplicate kontrolü - SADECE tamamen aynı olan kayıtları kaldır
             initial_size = len(X_combined)
+
+            # Opsiyon 1: Duplicate kontrolünü tamamen kapat
+            # X_combined = X_combined  # Hiç duplicate kontrolü yapma
+
+            # Opsiyon 2: Sadece TAMAMEN aynı olan satırları kaldır (tüm feature'lar aynıysa)
             X_combined = X_combined.drop_duplicates()
+
             if initial_size != len(X_combined):
-                print(f"[DEBUG] Removed {initial_size - len(X_combined)} duplicate samples")
+                logger.debug(f"Removed {initial_size - len(X_combined)} duplicate samples ({(initial_size - len(X_combined))/initial_size*100:.1f}%)")
             
-            # İstatistikleri logla
-            print(f"[DEBUG] Historical samples: {len(X_historical)}")
-            print(f"[DEBUG] New samples: {len(X_new)}")
-            print(f"[DEBUG] Combined samples: {len(X_combined)}")
-            
-            # Anomaly oranını hesapla (bilgi amaçlı)
-            if self.historical_data['predictions'] is not None:
-                historical_anomaly_rate = (self.historical_data['predictions'] == -1).mean() * 100
-                print(f"[DEBUG] Historical anomaly rate: {historical_anomaly_rate:.2f}%")
             
             return X_combined
             
         except Exception as e:
-            print(f"[DEBUG] Error combining with history: {e}")
             logger.error(f"Failed to combine with historical data: {e}")
             # Hata durumunda sadece yeni veriyi kullan
             return X_new
@@ -352,7 +331,6 @@ class MongoDBAnomalyDetector:
         # Combine weights
         weights = np.concatenate([historical_weights, new_weights])
         
-        print(f"[DEBUG] Sample weights - Historical: {weight_decay}, New: 1.0")
         
         return weights
 
@@ -370,11 +348,12 @@ class MongoDBAnomalyDetector:
         Returns:
             Training sonuçları
         """
+        
         with self._training_lock:  # Thread safety
-            print(f"[DEBUG] Starting training - Shape: {X.shape}, Features: {list(X.columns)}")
-        if server_name:
-            print(f"[DEBUG] Training for server: {server_name}")
-        logger.info(f"Training model on {X.shape[0]} samples with {X.shape[1]} features...")
+            
+            if server_name:
+                logger.debug(f"Training for server: {server_name}")
+            logger.info(f"Training model on {X.shape[0]} samples with {X.shape[1]} features...")
         
         # Current server'ı güncelle
         self.current_server = server_name
@@ -385,40 +364,56 @@ class MongoDBAnomalyDetector:
         
         # Feature isimlerini sakla
         self.feature_names = list(X.columns)
-        print(f"[DEBUG] Feature names stored: {len(self.feature_names)} features")
+        
         
         # Historical data ile birleştir
         X_train = X.copy()
         training_mode = "new"
         
         if incremental and self.is_trained and self.historical_data['features'] is not None:
-            print(f"[DEBUG] Online Learning Mode: Combining with historical data")
-            print(f"[DEBUG] Historical samples: {len(self.historical_data['features'])}")
-            print(f"[DEBUG] New samples: {len(X)}")
+            
+            
+            
             
             # Historical data ile birleştir
             X_train = self._combine_with_history(X)
             training_mode = "incremental"
             
-            print(f"[DEBUG] Combined dataset size: {X_train.shape}")
+            
         else:
-            print(f"[DEBUG] Standard training mode (no historical data)")
+            logger.debug("Standard training mode (no historical data)")
         
         # Model parametreleri
         params = self.model_config['parameters'].copy()
-        print(f"[DEBUG] Model parameters: {params}")
+        
+        # ÇÖZÜM: Combined dataset boyutuna göre max_samples'ı dinamik ayarla
+        if incremental and self.is_trained and X_train.shape[0] < params.get('max_samples', 512) * 2:
+            original_max_samples = params.get('max_samples', 512)
+            # Dataset'in %80'ini kullan veya 256 (hangisi küçükse)
+            new_max_samples = min(int(X_train.shape[0] * 0.8), 256)
+            
+            # Minimum 10 sample kontrolü
+            if new_max_samples < 10:
+                logger.debug(f"WARNING: Very few samples after deduplication ({X_train.shape[0]})")
+                params['max_samples'] = 'auto'  # sklearn'ün otomatik hesaplamasına bırak
+            else:
+                params['max_samples'] = new_max_samples
+            
+            logger.debug(f"Adjusted max_samples from {original_max_samples} to {params['max_samples']} (dataset size: {X_train.shape[0]})")
+        
+        
         
         # Model oluştur veya mevcut modeli kullan
         if not self.is_trained:
             # İlk kez model oluştur
             if self.model_config['type'] == 'IsolationForest':
-                print(f"[DEBUG] Creating NEW IsolationForest model (first training)...")
+                logger.debug("Creating NEW IsolationForest model (first training)...")
                 self.model = IsolationForest(**params)
             else:
                 raise ValueError(f"Unknown model type: {self.model_config['type']}")
         elif incremental and self.is_trained:
-            print(f"[DEBUG] INCREMENTAL MODE: Retraining existing model with combined data")
-            print(f"[DEBUG] Model will be retrained with historical + new data")
+            logger.debug("INCREMENTAL MODE: Retraining existing model with combined data")
+            
             # Mevcut model parametrelerini güncelle ama instance'ı değiştirme
             if hasattr(self.model, 'contamination'):
                 self.model.contamination = params.get('contamination', 0.03)
@@ -427,16 +422,16 @@ class MongoDBAnomalyDetector:
             # Ancak historical continuity için mevcut model'i koruyoruz
         else:
             # Non-incremental mode ama model trained - yine de yeni model oluştur
-            print(f"[DEBUG] NON-INCREMENTAL MODE: Creating fresh model (incremental=False)")
+            
             if self.model_config['type'] == 'IsolationForest':
                 self.model = IsolationForest(**params)
         
         # Eğitim
-        print(f"[DEBUG] Starting model fitting...")
+        
         start_time = datetime.now()
         self.model.fit(X)
         training_time = (datetime.now() - start_time).total_seconds()
-        print(f"[DEBUG] Model fitting completed in {training_time:.2f} seconds")
+        
         
         # Eğitim istatistikleri
         self.training_stats = {
@@ -450,12 +445,12 @@ class MongoDBAnomalyDetector:
             "server_name": server_name  # YENİ: Sunucu bilgisi
         }
         self.is_trained = True
-        print(f"[DEBUG] Training completed - Model is now ready for predictions")
+        logger.debug(f"Training completed - Model is now ready for predictions")
         logger.info(f"Model training completed in {training_time:.2f} seconds")
         
         # Online Learning: Historical buffer'ı güncelle
         if incremental and self.online_learning_config.get('enabled', True):
-            print(f"[DEBUG] Updating historical buffer...")
+            logger.debug(f"Updating historical buffer...")
             self._update_historical_buffer(X, X_train, training_mode)  # ✅ ÖNCE GÜNCELLE
 
         # Model kaydetme
@@ -463,7 +458,7 @@ class MongoDBAnomalyDetector:
             save_model = self.output_config.get('save_model', True)
             
         if save_model:
-            print(f"[DEBUG] Saving model...")
+            
             self.save_model(server_name=server_name)  # ✅ SONRA KAYDET
         
         return self.training_stats
@@ -479,7 +474,7 @@ class MongoDBAnomalyDetector:
             training_mode: 'new' veya 'incremental'
         """
         try:
-            print(f"[DEBUG] Updating historical buffer - Mode: {training_mode}")
+            logger.debug(f"Updating historical buffer - Mode: {training_mode}")
             
             # İlk training ise veya yeni training mode
             if training_mode == "new" or self.historical_data['features'] is None:
@@ -511,14 +506,14 @@ class MongoDBAnomalyDetector:
             
             # İstatistikleri logla
             anomaly_rate = (self.historical_data['predictions'] == -1).mean() * 100
-            print(f"[DEBUG] Historical buffer updated:")
-            print(f"[DEBUG]   Total samples: {self.historical_data['metadata']['total_samples']}")
-            print(f"[DEBUG]   Anomaly samples: {self.historical_data['metadata']['anomaly_samples']}")
-            print(f"[DEBUG]   Anomaly rate: {anomaly_rate:.2f}%")
+            
+            logger.debug(f"  Total samples: {self.historical_data['metadata']['total_samples']}")
+            logger.debug(f"  Anomaly samples: {self.historical_data['metadata']['anomaly_samples']}")
+            
             
             # Bellek kullanımı kontrolü ve yönetimi
             buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
-            print(f"[DEBUG]   Buffer size: {buffer_size_mb:.2f} MB")
+            logger.debug(f"  Buffer size: {buffer_size_mb:.2f} MB")
             
             # Kritik bellek yönetimi
             warning_threshold_mb = 1000  # 1 GB uyarı
@@ -538,7 +533,7 @@ class MongoDBAnomalyDetector:
                 
         except Exception as e:
             logger.error(f"Error updating historical buffer: {e}")
-            print(f"[DEBUG] ERROR: Failed to update historical buffer: {e}")
+            logger.debug(f"ERROR: Failed to update historical buffer: {e}")
     def predict(self, X: pd.DataFrame, df: Optional[pd.DataFrame] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         Anomali tahminleri yap (Ensemble model ile)
@@ -550,30 +545,30 @@ class MongoDBAnomalyDetector:
         Returns:
             (predictions, anomaly_scores): -1=anomaly, 1=normal ve anomaly skorları
         """
-        print(f"[DEBUG] Starting prediction - Input shape: {X.shape}")
+        
         if not self.is_trained:
             raise ValueError("Model is not trained yet!")
         
         # Feature sıralamasını kontrol et
         if list(X.columns) != self.feature_names:
-            print(f"[DEBUG] Feature mismatch detected - reordering columns")
+            
             logger.warning("Feature names mismatch, reordering...")
             X = X[self.feature_names]
-            print(f"[DEBUG] Features reordered successfully")
+            
         
         # Incremental ensemble varsa onu kullan
         if self.incremental_models and self.incremental_config['enabled']:
-            print(f"[DEBUG] Using incremental ensemble prediction...")
+            
             predictions, anomaly_scores = self.predict_ensemble(X)
         else:
             # Legacy single model prediction
-            print(f"[DEBUG] Using single model prediction...")
+            
             predictions = self.model.predict(X)
             anomaly_scores = self.model.score_samples(X)
         
         # Ensemble mode: Critical rules override
         if self.ensemble_config.get('enabled', True) and df is not None:
-            print(f"[DEBUG] Applying ensemble rules...")
+            
             predictions, anomaly_scores = self._apply_critical_rules(
                 predictions, anomaly_scores, X, df
             )
@@ -581,7 +576,7 @@ class MongoDBAnomalyDetector:
         n_anomalies = (predictions == -1).sum()
         anomaly_rate = n_anomalies / len(predictions) * 100
         
-        print(f"[DEBUG] Final prediction results: {n_anomalies}/{len(predictions)} anomalies ({anomaly_rate:.1f}%)")
+        
         logger.info(f"Predictions completed: {n_anomalies} anomalies ({anomaly_rate:.1f}%)")
         
         return predictions, anomaly_scores
@@ -599,7 +594,7 @@ class MongoDBAnomalyDetector:
         Returns:
             Updated (predictions, anomaly_scores)
         """
-        print(f"[DEBUG] Applying critical rules to {len(predictions)} predictions")
+        
         
         # Kopya oluştur
         ensemble_predictions = predictions.copy()
@@ -630,13 +625,13 @@ class MongoDBAnomalyDetector:
                                 self.rule_stats['rule_hits'][rule_name] = 0
                             self.rule_stats['rule_hits'][rule_name] += 1
                             
-                            print(f"[DEBUG] Rule override at idx {idx}: {rule_name} - {rule_config['description']}")
+                            
                             
                 except Exception as e:
                     logger.warning(f"Error applying rule {rule_name}: {e}")
         
         self.rule_stats['total_overrides'] += rule_overrides
-        print(f"[DEBUG] Total rule overrides in this batch: {rule_overrides}")
+        
         
         return ensemble_predictions, ensemble_scores
         
@@ -654,7 +649,7 @@ class MongoDBAnomalyDetector:
         Returns:
             Analiz sonuçları
         """
-        print(f"[DEBUG] Starting anomaly analysis...")
+        
 
         # ÖNEMLİ: security_alerts ve performance_alerts'i BAŞTA tanımla!
         security_alerts = {
@@ -673,7 +668,7 @@ class MongoDBAnomalyDetector:
         anomaly_data = X[anomaly_mask]
         normal_data = X[~anomaly_mask]
         
-        print(f"[DEBUG] Anomaly mask created - {anomaly_mask.sum()} anomalies found")
+        
         analysis = {
             "summary": {
                 "total_logs": len(predictions),
@@ -691,17 +686,17 @@ class MongoDBAnomalyDetector:
         
         # Temporal analiz
         if 'hour_of_day' in X.columns:
-            print(f"[DEBUG] Analyzing temporal patterns...")
+            
             anomaly_hours = df[anomaly_mask]['hour_of_day'].value_counts().sort_index()
             analysis["temporal_analysis"]["hourly_distribution"] = {
                 int(hour): int(count) for hour, count in anomaly_hours.items()
             }
             analysis["temporal_analysis"]["peak_hours"] = list(anomaly_hours.nlargest(3).index.astype(int))
-            print(f"[DEBUG] Temporal analysis completed - Peak hours: {analysis['temporal_analysis']['peak_hours']}")
+            logger.debug(f"Temporal analysis completed - Peak hours: {analysis['temporal_analysis']['peak_hours']}")
         
         
         # En kritik anomaliler - SEVERITY SKORUNA GÖRE SIRALA
-        print(f"[DEBUG] Identifying critical anomalies with severity scores...")
+        
 
         # Tüm anomalilerin severity skorlarını hesapla
         anomaly_indices = np.where(anomaly_mask)[0]
@@ -750,8 +745,8 @@ class MongoDBAnomalyDetector:
         # Severity skoruna göre sırala ve top 20'yi al
         anomaly_severities.sort(key=lambda x: x['severity_score'], reverse=True)
         
-        print(f"[DEBUG] Total anomaly_severities before filtering: {len(anomaly_severities)}")
-        print(f"[DEBUG] Top 5 scores: {[a['severity_score'] for a in anomaly_severities[:5]]}")
+        
+        
         
         # YENİ: İki aşamalı akıllı filtreleme
         # 1. Aşama: Yüksek severity score veya kritik tip
@@ -775,24 +770,24 @@ class MongoDBAnomalyDetector:
             if a['severity_score'] > 50 or is_critical_type:
                 critical_only.append(a)
 
-        print(f"[DEBUG] critical_only after smart filter: {len(critical_only)}")
+        
 
         # 2. Aşama: Maximum limit uygula 
         if len(critical_only) > 500:
-            print(f"[DEBUG] Limiting from {len(critical_only)} to 500 most critical anomalies")
+            
             critical_only = critical_only[:500]
 
-        print(f"[DEBUG] Selected {len(critical_only)} anomalies for critical list")
+        
 
         # Kritik anomalileri göster
         analysis["critical_anomalies"] = critical_only
-        print(f"[DEBUG] DETECTOR: Setting analysis['critical_anomalies'] to {len(critical_only)} items")
-        logger.debug(f"Critical anomalies assigned to analysis: {len(critical_only)}")
-        print(f"[DEBUG] DETECTOR: Final critical_anomalies count: {len(analysis['critical_anomalies'])}")
-        print(f"[DEBUG] DETECTOR: First 10 critical anomaly indices: {[a.get('index', 'N/A') for a in analysis['critical_anomalies'][:10]]}")
         
-        print(f"[DEBUG] Filtered to {len(critical_only)} critical anomalies (severity > 10)")
-        print(f"[DEBUG] Showing {len(critical_only)} critical anomalies (no limit)")
+        logger.debug(f"Critical anomalies assigned to analysis: {len(critical_only)}")
+        
+        
+        
+        
+        
 
         # Severity distribution ekle
         severity_dist = {
@@ -804,10 +799,10 @@ class MongoDBAnomalyDetector:
         }
         analysis["severity_distribution"] = severity_dist
 
-        print(f"[DEBUG] Severity analysis completed - Distribution: {severity_dist}")
+        logger.debug(f"Severity analysis completed - Distribution: {severity_dist}")
         
         # Performance critical logs analysis
-        print(f"[DEBUG] Analyzing performance critical logs...")
+        
         performance_alerts = {}
         
         # COLLSCAN analysis
@@ -875,7 +870,7 @@ class MongoDBAnomalyDetector:
         # Add performance alerts to analysis
         if performance_alerts:
             analysis["performance_alerts"] = performance_alerts
-            print(f"[DEBUG] Performance analysis completed - {len(performance_alerts)} alert types found")
+            logger.debug(f"Performance analysis completed - {len(performance_alerts)} alert types found")
             
         
         # Shutdown detection
@@ -941,7 +936,7 @@ class MongoDBAnomalyDetector:
         # Add security alerts to analysis
         if security_alerts:
             analysis["security_alerts"] = security_alerts
-            print(f"[DEBUG] Security analysis completed - {len(security_alerts)} alert types found")
+            logger.debug(f"Security analysis completed - {len(security_alerts)} alert types found")
 
         # Ensemble stats'i summary içine ekle (frontend buradan alıyor)
         if self.ensemble_config:
@@ -953,7 +948,7 @@ class MongoDBAnomalyDetector:
             }
             print("[DEBUG] Ensemble stats added to summary")
 
-        print(f"[DEBUG] Anomaly analysis completed")
+        logger.debug(f"Anomaly analysis completed")
         return analysis
     def calculate_severity_score(self, anomaly_idx: int, anomaly_score: float, 
                                row_features: Dict, df_row: pd.Series) -> Dict[str, Any]:
@@ -1164,12 +1159,12 @@ class MongoDBAnomalyDetector:
                     # Sunucu adını normalize et (özel karakterleri temizle)
                     safe_server_name = server_name.replace('.', '_').replace('/', '_')
                     path = f'models/isolation_forest_{safe_server_name}.pkl'
-                    print(f"[DEBUG] Server-specific model path: {path}")
+                    
                 else:
                     path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
             
             try:
-                print(f"[DEBUG] Saving model to: {path}")
+                
                 # Klasörü oluştur
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
                 
@@ -1189,7 +1184,7 @@ class MongoDBAnomalyDetector:
                 # Historical buffer size kontrolü
                 if self.historical_data['features'] is not None:
                     buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
-                    print(f"[DEBUG] Saving historical buffer: {buffer_size_mb:.2f} MB")
+                    logger.debug(f"Saving historical buffer: {buffer_size_mb:.2f} MB")
                     
                     # Büyük dosya uyarısı
                     if buffer_size_mb > 500:
@@ -1199,8 +1194,8 @@ class MongoDBAnomalyDetector:
 
                 # Dosya boyutu bilgisi
                 file_size_mb = Path(path).stat().st_size / 1024 / 1024
-                print(f"[DEBUG] Model file saved: {file_size_mb:.2f} MB")
-                print(f"[DEBUG] Model saved successfully")
+                
+                
                 logger.info(f"Model saved to: {path}")
                 
                 return path
@@ -1226,19 +1221,19 @@ class MongoDBAnomalyDetector:
                 # Sunucu adını normalize et (özel karakterleri temizle)
                 safe_server_name = server_name.replace('.', '_').replace('/', '_')
                 path = f'models/isolation_forest_{safe_server_name}.pkl'
-                print(f"[DEBUG] Attempting to load server-specific model: {path}")
+                
                 
                 # Eğer sunucuya özel model yoksa, global modeli dene
                 if not Path(path).exists():
-                    print(f"[DEBUG] Server-specific model not found, trying global model")
+                    
                     path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
             else:
                 path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
         
         try:
-            print(f"[DEBUG] Loading model from: {path}")
+            
             if not Path(path).exists():
-                print(f"[DEBUG] Model file not found: {path}")
+                
                 logger.error(f"Model file not found: {path}")
                 return False
             # Model ve metadata'yı yükle
@@ -1264,27 +1259,27 @@ class MongoDBAnomalyDetector:
                     'last_update': datetime.now(),
                     'sample_count': self.training_stats.get('n_samples', 0)
                 }
-                print(f"[DEBUG] Server model loaded for: {self.current_server}")
+                
             
             # Online Learning - Historical Buffer'ı yükle
             model_version = model_data.get('model_version', '1.0')
-            print(f"[DEBUG] Loading model version: {model_version}")
+            
             
             if model_version >= '2.0' and 'historical_data' in model_data:
                 if model_data['historical_data'] is not None:
                     self.historical_data = model_data['historical_data']
-                    print(f"[DEBUG] Historical buffer loaded:")
-                    print(f"[DEBUG]   Total samples: {self.historical_data['metadata']['total_samples']}")
-                    print(f"[DEBUG]   Last update: {self.historical_data['metadata']['last_update']}")
+                    
+                    logger.debug(f"  Total samples: {self.historical_data['metadata']['total_samples']}")
+                    
                     
                     # Buffer size info
                     if self.historical_data['features'] is not None:
                         buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
-                        print(f"[DEBUG]   Buffer size: {buffer_size_mb:.2f} MB")
+                        logger.debug(f"  Buffer size: {buffer_size_mb:.2f} MB")
                 else:
-                    print(f"[DEBUG] No historical buffer found in model file")
+                    logger.debug(f"No historical buffer found in model file")
             else:
-                print(f"[DEBUG] Legacy model format - no historical buffer")
+                logger.debug(f"Legacy model format - no historical buffer")
                 # Legacy model için boş buffer initialize et
                 self.historical_data = {
                     'features': None,
@@ -1303,7 +1298,7 @@ class MongoDBAnomalyDetector:
                 self.online_learning_config.update(model_data['online_learning_config'])
             
             self.is_trained = True
-            print(f"[DEBUG] Model loaded successfully - Features: {len(self.feature_names)}")
+            
             logger.info(f"Model loaded from: {path}")
             
             return True
@@ -1390,7 +1385,7 @@ class MongoDBAnomalyDetector:
             Başarılı olup olmadığı
         """
         try:
-            print(f"[DEBUG] Clearing historical buffer...")
+            logger.debug(f"Clearing historical buffer...")
             
             # Buffer'ı sıfırla
             self.historical_data = {
@@ -1405,12 +1400,12 @@ class MongoDBAnomalyDetector:
                 }
             }
             
-            print(f"[DEBUG] Historical buffer cleared successfully")
+            
             logger.info("Historical buffer cleared")
             return True
             
         except Exception as e:
-            print(f"[DEBUG] Error clearing historical buffer: {e}")
+            logger.debug(f"Error clearing historical buffer: {e}")
             logger.error(f"Error clearing historical buffer: {e}")
             return False
 
@@ -1502,14 +1497,14 @@ class MongoDBAnomalyDetector:
         """
         sys.setrecursionlimit(10000)  # Recursion limitini artır
         
-        print(f"[DEBUG] Calculating feature importance for {len(X)} samples...")
+        logger.debug(f"Calculating feature importance for {len(X)} samples...")
         
         if not self.is_trained:
             raise ValueError("Model must be trained before calculating feature importance!")
         
         # Sample size kontrolü (büyük veri setleri için)
         if sample_size and len(X) > sample_size:
-            print(f"[DEBUG] Sampling {sample_size} from {len(X)} for importance calculation")
+            logger.debug(f"Sampling {sample_size} from {len(X)} for importance calculation")
             X_sample = X.sample(n=sample_size, random_state=42)
         else:
             X_sample = X
@@ -1555,7 +1550,7 @@ class MongoDBAnomalyDetector:
         
         # Her feature için permutation importance
         for feature in X_sample.columns:
-            print(f"[DEBUG] Calculating importance for feature: {feature}")
+            
             
             importance_scores = []
             for _ in range(n_repeats):
@@ -1584,8 +1579,8 @@ class MongoDBAnomalyDetector:
         feature_importance = dict(sorted(feature_importance.items(), 
                                        key=lambda x: x[1], reverse=True))
         
-        print(f"[DEBUG] Feature importance calculation completed")
-        print(f"[DEBUG] Top 5 features: {list(feature_importance.keys())[:5]}")
+        
+        
         
         return feature_importance
     
@@ -1601,7 +1596,7 @@ class MongoDBAnomalyDetector:
         Returns:
             (dead_features, low_impact_features) tuple'ı
         """
-        print(f"[DEBUG] Detecting dead features with threshold: {threshold}")
+        
         
         dead_features = []
         low_impact_features = []
@@ -1609,13 +1604,13 @@ class MongoDBAnomalyDetector:
         for feature, score in importance_scores.items():
             if score < threshold:
                 dead_features.append(feature)
-                print(f"[DEBUG] Dead feature detected: {feature} (score: {score:.4f})")
+                
             elif score < threshold * 5:  # Low impact threshold
                 low_impact_features.append(feature)
-                print(f"[DEBUG] Low impact feature: {feature} (score: {score:.4f})")
+                
         
-        print(f"[DEBUG] Dead features: {len(dead_features)}")
-        print(f"[DEBUG] Low impact features: {len(low_impact_features)}")
+        
+        
         
         return dead_features, low_impact_features
     
@@ -1633,7 +1628,7 @@ class MongoDBAnomalyDetector:
         Returns:
             Optimization sonuçları ve önerileri
         """
-        print(f"[DEBUG] Starting feature optimization analysis...")
+        
         
         results = {
             "current_features": list(X.columns),
@@ -1643,18 +1638,18 @@ class MongoDBAnomalyDetector:
         }
         
         # Feature importance hesapla
-        print(f"[DEBUG] Step 1: Calculating feature importance...")
+        
         importance_scores = self.calculate_feature_importance(X, sample_size=min(5000, len(X)))
         results["feature_importance"] = importance_scores
         
         # Dead features tespit et
-        print(f"[DEBUG] Step 2: Detecting dead features...")
+        
         dead_features, low_impact_features = self.detect_dead_features(importance_scores)
         results["dead_features"] = dead_features
         results["low_impact_features"] = low_impact_features
         
         # Correlation analizi
-        print(f"[DEBUG] Step 3: Analyzing feature correlations...")
+        
         correlation_matrix = X.corr()
         
         # Yüksek korelasyonlu feature çiftlerini bul
@@ -1666,12 +1661,12 @@ class MongoDBAnomalyDetector:
                     feature2 = correlation_matrix.columns[j]
                     corr_value = correlation_matrix.iloc[i, j]
                     high_corr_pairs.append((feature1, feature2, corr_value))
-                    print(f"[DEBUG] High correlation: {feature1} <-> {feature2} ({corr_value:.3f})")
+                    
         
         results["high_correlation_pairs"] = high_corr_pairs
         
         # Top N feature önerisi
-        print(f"[DEBUG] Step 4: Selecting top {top_n} features...")
+        
         top_features = list(importance_scores.keys())[:top_n]
         
         # Dead features'ı çıkar
@@ -1685,7 +1680,7 @@ class MongoDBAnomalyDetector:
         }
         
         # Model performans tahmini
-        print(f"[DEBUG] Step 5: Estimating performance impact...")
+        
         
         # Sadece recommended features ile mini test
         X_optimized = X[recommended_features]
@@ -1725,7 +1720,7 @@ class MongoDBAnomalyDetector:
         print(f"\nDead Features to Remove:")
         for feature in dead_features[:10]:  # İlk 10'u göster
             print(f"  - {feature}")
-        print(f"[DEBUG] ===================================================\n")
+        
         
         # Config güncelleme önerisi
         if save_config:
@@ -1736,7 +1731,7 @@ class MongoDBAnomalyDetector:
                 "optimization_stats": results["performance_comparison"]
             }
             results["config_update"] = config_update
-            print(f"[DEBUG] Config update prepared (not saved yet)")
+            
         
         return results
 
@@ -1754,7 +1749,7 @@ class MongoDBAnomalyDetector:
         Returns:
             (X_validation, y_validation): Validation features ve labels
         """
-        print(f"[DEBUG] Creating validation dataset using {method} method...")
+        
         
         # Başlangıç label'ları (0: normal, 1: anomaly)
         y_validation = np.zeros(len(X))
@@ -1762,7 +1757,7 @@ class MongoDBAnomalyDetector:
         
         # Method 1: Rule-based labeling (yüksek güvenilirlik)
         if method in ['rule_based', 'combined']:
-            print(f"[DEBUG] Applying rule-based labeling...")
+            
             
             # Kritik anomaliler (kesin anomaly)
             critical_conditions = [
@@ -1779,14 +1774,14 @@ class MongoDBAnomalyDetector:
                     mask = X[feature] == 1
                     y_validation[mask] = 1
                     confidence_scores[mask] = np.maximum(confidence_scores[mask], confidence)
-                    print(f"[DEBUG]   {feature}: {mask.sum()} anomalies marked (confidence: {confidence})")
+                    
             
             # Performans anomalileri
             if 'is_collscan' in X.columns and 'docs_examined_count' in X.columns:
                 perf_mask = (X['is_collscan'] == 1) & (X['docs_examined_count'] > 100000)
                 y_validation[perf_mask] = 1
                 confidence_scores[perf_mask] = np.maximum(confidence_scores[perf_mask], 0.75)
-                print(f"[DEBUG]   Performance anomalies: {perf_mask.sum()}")
+                
             
             # Kesin normal patterns (yüksek güvenilirlik)
             normal_conditions = []
@@ -1796,11 +1791,11 @@ class MongoDBAnomalyDetector:
                 normal_mask = df['is_normal_replication'] == 1
                 y_validation[normal_mask] = 0
                 confidence_scores[normal_mask] = 0.95
-                print(f"[DEBUG]   Normal replication: {normal_mask.sum()} marked as normal")
+                
         
         # Method 2: Statistical outliers (orta güvenilirlik)
         if method in ['statistical', 'combined']:
-            print(f"[DEBUG] Applying statistical labeling...")
+            
             
             # Z-score based outliers for numeric features
             numeric_features = ['query_duration_ms', 'docs_examined_count', 
@@ -1820,18 +1815,18 @@ class MongoDBAnomalyDetector:
                         confidence_scores[stat_anomalies] = np.maximum(
                             confidence_scores[stat_anomalies], 0.6
                         )
-                        print(f"[DEBUG]   {feature}: {stat_anomalies.sum()} statistical outliers")
+                        
         
         # Validation istatistikleri
         n_anomalies = (y_validation == 1).sum()
         n_normal = (y_validation == 0).sum()
         n_confident = (confidence_scores > 0.7).sum()
         
-        print(f"[DEBUG] Validation dataset created:")
-        print(f"[DEBUG]   Total samples: {len(y_validation)}")
-        print(f"[DEBUG]   Anomalies: {n_anomalies} ({n_anomalies/len(y_validation)*100:.1f}%)")
-        print(f"[DEBUG]   Normal: {n_normal} ({n_normal/len(y_validation)*100:.1f}%)")
-        print(f"[DEBUG]   High confidence labels: {n_confident} ({n_confident/len(y_validation)*100:.1f}%)")
+        
+        logger.debug(f"  Total samples: {len(y_validation)}")
+        
+        
+        
         
         # Confidence score'a göre filtreleme (opsiyonel)
         high_confidence_mask = confidence_scores > 0.7
@@ -1851,7 +1846,7 @@ class MongoDBAnomalyDetector:
         Returns:
             Evaluation metrikleri
         """
-        print(f"[DEBUG] Starting model evaluation...")
+        
         
         if not self.is_trained:
             raise ValueError("Model must be trained before evaluation!")
@@ -1861,14 +1856,14 @@ class MongoDBAnomalyDetector:
             if df is None:
                 raise ValueError("Either y_true or df must be provided for evaluation!")
             
-            print(f"[DEBUG] No labels provided, creating validation dataset...")
+            
             X, y_true, confidence = self.create_validation_dataset(X, df, method='combined')
             
             # Sadece yüksek güvenilirlikli samples'ı kullan
             high_conf_mask = confidence > 0.7
             X = X[high_conf_mask]
             y_true = y_true[high_conf_mask]
-            print(f"[DEBUG] Using {len(X)} high-confidence samples for evaluation")
+            logger.debug(f"Using {len(X)} high-confidence samples for evaluation")
         
         # Model predictions
         predictions = self.model.predict(X)
@@ -1901,7 +1896,7 @@ class MongoDBAnomalyDetector:
             f1_score, accuracy_score, roc_auc_score
         )
         
-        print(f"[DEBUG] Calculating performance metrics...")
+        
         
         # Confusion matrix
         tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
@@ -1956,12 +1951,12 @@ class MongoDBAnomalyDetector:
             mcc = mcc_numerator / mcc_denominator if mcc_denominator > 0 else 0
             metrics["matthews_correlation"] = float(mcc)
         
-        print(f"[DEBUG] Metrics calculated:")
-        print(f"[DEBUG]   Precision: {precision:.3f}")
-        print(f"[DEBUG]   Recall: {recall:.3f}")
-        print(f"[DEBUG]   F1-Score: {f1:.3f}")
-        print(f"[DEBUG]   FPR: {fpr:.3f}")
-        print(f"[DEBUG]   FNR: {fnr:.3f}")
+        
+        
+        
+        
+        
+        
         
         return metrics
     
@@ -1978,7 +1973,7 @@ class MongoDBAnomalyDetector:
         Returns:
             Evaluation report
         """
-        print(f"[DEBUG] Generating comprehensive evaluation report...")
+        
         
         report = {
             "timestamp": datetime.now().isoformat(),
@@ -1991,12 +1986,12 @@ class MongoDBAnomalyDetector:
         }
         
         # Model performance metrics
-        print(f"[DEBUG] Step 1: Evaluating model performance...")
+        
         metrics = self.evaluate_model(X, df=df)
         report["performance_metrics"] = metrics
         
         # Feature importance analysis
-        print(f"[DEBUG] Step 2: Analyzing feature importance...")
+        
         if len(X) > 10000:
             importance = self.calculate_feature_importance(X, sample_size=5000)
         else:
@@ -2008,7 +2003,7 @@ class MongoDBAnomalyDetector:
         }
         
         # Rule engine statistics
-        print(f"[DEBUG] Step 3: Collecting rule engine statistics...")
+        
         report["ensemble_statistics"] = {
             "rules_enabled": self.ensemble_config.get('enabled', False),
             "total_overrides": self.rule_stats['total_overrides'],
@@ -2016,7 +2011,7 @@ class MongoDBAnomalyDetector:
         }
         
         # Historical buffer stats
-        print(f"[DEBUG] Step 4: Gathering historical buffer info...")
+        logger.debug(f"Step 4: Gathering historical buffer info...")
         report["online_learning"] = self.get_historical_buffer_info()
         
         # Performance assessment
@@ -2085,7 +2080,7 @@ class MongoDBAnomalyDetector:
             with open(report_path, 'w', encoding='utf-8') as f:
                 json.dump(report, f, indent=2, ensure_ascii=False)
             
-            print(f"[DEBUG] Evaluation report saved to: {report_path}")
+            
             report["report_path"] = report_path
         
         # Print summary
@@ -2101,7 +2096,7 @@ class MongoDBAnomalyDetector:
             print(f"\nRecommendations:")
             for rec in report["assessment"]["recommendations"]:
                 print(f"  • {rec}")
-        print(f"[DEBUG] ===============================================\n")
+        
         
         return report
 
@@ -2116,9 +2111,9 @@ class MongoDBAnomalyDetector:
         Returns:
             Training sonuçları
         """
-        print(f"[DEBUG] Starting INCREMENTAL training on batch {batch_id}...")
-        print(f"[DEBUG] Batch size: {len(X)} samples")
-        print(f"[DEBUG] Current ensemble size: {len(self.incremental_models)} models")
+        
+        logger.debug(f"Batch size: {len(X)} samples")
+        logger.debug(f"Current ensemble size: {len(self.incremental_models)} models")
         
         # Feature isimlerini sakla
         if self.feature_names is None:
@@ -2181,8 +2176,8 @@ class MongoDBAnomalyDetector:
             self.model_metadata.pop(0)
             self.model_weights.pop(0)
         
-        # Ana model olarak ensemble'ı kullan
-        self.model = self  # Self'i model olarak kullan (predict override edilecek)
+        # Ana model olarak ensemble'ı kullan - self.model'i None yaparak ensemble mode'u işaretle
+        self.model = None  # None = ensemble mode aktif
         self.is_trained = True
         
         # Training stats
@@ -2196,11 +2191,11 @@ class MongoDBAnomalyDetector:
             'anomaly_ratio': anomaly_ratio
         }
         
-        print(f"[DEBUG] Incremental training completed:")
-        print(f"[DEBUG]   New mini-model added (weight: {model_weight:.3f})")
-        print(f"[DEBUG]   Ensemble size: {len(self.incremental_models)} models")
-        print(f"[DEBUG]   Model weights: {[f'{w:.3f}' for w in self.model_weights]}")
-        print(f"[DEBUG]   Anomaly ratio in batch: {anomaly_ratio:.3f}")
+        logger.debug(f"Incremental training completed:")
+        
+        logger.debug(f"  Ensemble size: {len(self.incremental_models)} models")
+        
+        
         
         return training_stats
     
@@ -2217,7 +2212,7 @@ class MongoDBAnomalyDetector:
         if not self.incremental_models:
             raise ValueError("No incremental models available!")
         
-        print(f"[DEBUG] Ensemble prediction with {len(self.incremental_models)} models...")
+        
         
         # Feature normalization
         if self.is_scaler_fitted:
@@ -2239,7 +2234,7 @@ class MongoDBAnomalyDetector:
                 all_scores.append(scores * weight)  # Weighted scores
                 
             except Exception as e:
-                print(f"[DEBUG] Warning: Model {i} prediction failed: {e}")
+                
                 continue
         
         if not all_predictions:
@@ -2256,7 +2251,7 @@ class MongoDBAnomalyDetector:
         final_scores = weighted_scores / len(self.incremental_models)
         
         n_anomalies = (final_predictions == -1).sum()
-        print(f"[DEBUG] Ensemble prediction: {n_anomalies}/{len(X)} anomalies ({n_anomalies/len(X)*100:.1f}%)")
+        
         
         return final_predictions, final_scores
     
@@ -2276,7 +2271,7 @@ class MongoDBAnomalyDetector:
         
         threshold = threshold or self.incremental_config['drift_threshold']
         
-        print(f"[DEBUG] Checking for model drift...")
+        
         
         # Feature normalization
         if self.is_scaler_fitted:
@@ -2320,9 +2315,8 @@ class MongoDBAnomalyDetector:
         
         if drift_detected:
             drift_analysis['recommendation'] = "High drift detected. Consider retraining or adjusting parameters."
-            print(f"[DEBUG] ⚠️ MODEL DRIFT DETECTED! Average drift: {avg_ratio_diff:.3f}")
         else:
-            print(f"[DEBUG] ✅ No significant drift. Average drift: {avg_ratio_diff:.3f}")
+            drift_analysis['recommendation'] = "No significant drift detected. Model is stable."
         
         return drift_analysis
     
@@ -2382,11 +2376,30 @@ class MongoDBAnomalyDetector:
         if not self.is_trained:
             raise ValueError("Model is not trained yet!")
         
-        # Use the primary model for scoring
-        if hasattr(self, 'model') and self.model is not None:
+        # Ensemble mode aktifse ensemble scoring kullan
+        if self.incremental_models and self.incremental_config['enabled']:
+            # Ensemble scoring - tüm modellerin weighted average'ı
+            if self.is_scaler_fitted:
+                X_scaled = self.scaler.transform(X)
+                X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
+            else:
+                X_scaled_df = X
+                
+            all_scores = []
+            for i, (model, weight) in enumerate(zip(self.incremental_models, self.model_weights)):
+                try:
+                    scores = model.score_samples(X_scaled_df)
+                    all_scores.append(scores * weight)
+                except Exception as e:
+                    continue
+            
+            if all_scores:
+                return np.sum(all_scores, axis=0)
+            else:
+                raise ValueError("No successful scoring from ensemble!")
+                
+        # Single model mode
+        elif hasattr(self, 'model') and self.model is not None:
             return self.model.score_samples(X)
-        elif self.incremental_models:
-            # Use first model in ensemble for scoring
-            return self.incremental_models[0]['model'].score_samples(X)
         else:
             raise ValueError("No model available for scoring!")

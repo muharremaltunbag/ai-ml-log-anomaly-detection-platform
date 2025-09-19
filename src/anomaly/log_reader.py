@@ -22,6 +22,7 @@ from datetime import timezone
 from dotenv import load_dotenv
 load_dotenv()
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -717,7 +718,6 @@ class OpenSearchProxyReader:
     def _make_request(self, path: str, method: str = "GET", body: dict = None) -> dict:
         """Proxy API üzerinden request yap"""
         try:
-            print(f"[DEBUG] Making request - path: {path}, method: {method}")
             # URL encode path
             from urllib.parse import quote
             # Sadece özel karakterleri encode et, / karakterini koru
@@ -739,8 +739,6 @@ class OpenSearchProxyReader:
                 data=data,
                 timeout=120  # YENİ: Büyük veri setleri için timeout artırıldı
             )
-            
-            print(f"[DEBUG] Request response status: {response.status_code}")
             
             if response.status_code == 200:
                 return response.json()
@@ -832,20 +830,24 @@ class OpenSearchProxyReader:
             print(f"[DEBUG] Connection test failed: {e}")
             return False
     
-    def read_logs(self, limit: int = None, last_hours: int = 24, host_filter: str = None) -> pd.DataFrame:
+    def read_logs(self, limit: int = None, last_hours: int = 24, host_filter: Union[str, List[str]] = None,
+                  start_time: str = None, end_time: str = None) -> pd.DataFrame:
         """
         OpenSearch'ten MongoDB loglarını oku
         
         Args:
             limit: Maksimum log sayısı
-            last_hours: Son N saatteki loglar
+            last_hours: Son N saatteki loglar (start_time/end_time yoksa kullanılır)
             host_filter: Sadece belirli bir host'tan logları filtrele
+            start_time: Başlangıç zamanı (ISO format: "2025-09-15T16:09:00Z")
+            end_time: Bitiş zamanı (ISO format: "2025-09-15T16:11:00Z")
             
         Returns:
             pd.DataFrame: Log verileri
         """
         try:
             print(f"[DEBUG] Reading logs from OpenSearch - limit: {limit}, last_hours: {last_hours}, host_filter: {host_filter}")
+            print(f"[DEBUG] Date range - start_time: {start_time}, end_time: {end_time}")
             
             # Limit yoksa scroll API kullan
             if limit is None:
@@ -857,29 +859,73 @@ class OpenSearchProxyReader:
                 "size": limit,
                 "query": {
                     "bool": {
-                        "must": [
-                            {
-                                "range": {
-                                    "@timestamp": {
-                                        "gte": f"now-{last_hours}h"
-                                    }
-                                }
-                            }
-                        ]
+                        "must": []
                     }
                 },
                 "sort": [
                     {"@timestamp": {"order": "desc"}}
                 ]
             }
+
+            # YENİ: Spesifik tarih aralığı desteği
+            if start_time and end_time:
+                # Kesin tarih aralığı verilmişse onu kullan
+                print(f"[DEBUG] Using specific date range: {start_time} to {end_time}")
+                query["query"]["bool"]["must"].append({
+                    "range": {
+                        "@timestamp": {
+                            "gte": start_time,
+                            "lte": end_time
+                        }
+                    }
+                })
+            elif start_time:  # Sadece başlangıç verilmişse
+                print(f"[DEBUG] Using start_time only: {start_time}")
+                query["query"]["bool"]["must"].append({
+                    "range": {
+                        "@timestamp": {
+                            "gte": start_time
+                        }
+                    }
+                })
+            elif end_time:  # Sadece bitiş verilmişse
+                print(f"[DEBUG] Using end_time only: {end_time}")
+                query["query"]["bool"]["must"].append({
+                    "range": {
+                        "@timestamp": {
+                            "lte": end_time
+                        }
+                    }
+                })
+            else:
+                # Tarih parametresi yoksa last_hours kullan
+                print(f"[DEBUG] Using last_hours: {last_hours}")
+                query["query"]["bool"]["must"].append({
+                    "range": {
+                        "@timestamp": {
+                            "gte": f"now-{last_hours}h"
+                        }
+                    }
+                })
             
             # Eğer host_filter varsa, query'ye ekle
             if host_filter:
-                query["query"]["bool"]["must"].append({
-                    "term": {
-                        "host.name": host_filter
-                    }
-                })
+                if isinstance(host_filter, list):
+                    # Multiple hosts için "terms" query
+                    query["query"]["bool"]["must"].append({
+                        "terms": {
+                            "host.name": host_filter
+                        }
+                    })
+                    logger.info(f"Filtering for multiple hosts: {host_filter}")
+                else:
+                    # Tek host için "term" query
+                    query["query"]["bool"]["must"].append({
+                        "term": {
+                            "host.name": host_filter
+                        }
+                    })
+                    logger.info(f"Filtering for single host: {host_filter}")
             
             # Search path
             search_path = f"{self.index_pattern}/_search"
@@ -958,7 +1004,8 @@ class OpenSearchProxyReader:
             print(f"[DEBUG] Error reading logs from OpenSearch: {e}")
             return pd.DataFrame()
     
-    def _read_logs_with_scroll(self, last_hours: int, host_filter: str = None) -> pd.DataFrame:
+    def _read_logs_with_scroll(self, last_hours: int, host_filter: Union[str, List[str]] = None,
+                              start_time: str = None, end_time: str = None) -> pd.DataFrame:
         """Timestamp-based slicing ile büyük veri setlerini oku"""
         try:
             logger.info(f"Starting timestamp-sliced read for last {last_hours} hours")
@@ -967,10 +1014,16 @@ class OpenSearchProxyReader:
             all_logs = []
             batch_size = 10000  # OpenSearch limiti
             
-            # Zaman aralığını hesapla
             # Zaman aralığını hesapla - UTC kullan
-            end_time = datetime.now(timezone.utc)  # UTC zamanı al
-            start_time = end_time - timedelta(hours=last_hours)
+            if start_time and end_time:
+                # String'leri datetime'a çevir
+                from dateutil import parser
+                start_dt = parser.parse(start_time) if isinstance(start_time, str) else start_time
+                end_dt = parser.parse(end_time) if isinstance(end_time, str) else end_time
+            else:
+                # last_hours kullan
+                end_dt = datetime.now(timezone.utc)
+                start_dt = end_dt - timedelta(hours=last_hours)
             
             # Zaman dilimlerini belirle
             # Eğer 24 saatten az ise 1 saatlik dilimler, 
@@ -984,10 +1037,10 @@ class OpenSearchProxyReader:
                 slice_hours = 12
                 
             time_slices = []
-            current_time = start_time
+            current_time = start_dt
             
-            while current_time < end_time:
-                slice_end = min(current_time + timedelta(hours=slice_hours), end_time)
+            while current_time < end_dt:
+                slice_end = min(current_time + timedelta(hours=slice_hours), end_dt)
                 time_slices.append((current_time, slice_end))
                 current_time = slice_end
             
@@ -1016,35 +1069,21 @@ class OpenSearchProxyReader:
             
             if total_result and 'hits' in total_result:
                 total_expected = total_result['hits']['total']['value']
-                logger.info(f"Total logs to retrieve: {total_expected}")
-                print(f"[DEBUG] Total logs to retrieve: {total_expected}")
+                pass
             else:
                 total_expected = 0
             
             # Her zaman dilimi için ayrı sorgular çalıştır
             for slice_idx, (slice_start, slice_end) in enumerate(time_slices):
-                logger.info(f"Processing slice {slice_idx+1}/{len(time_slices)}: {slice_start.strftime('%Y-%m-%d %H:%M')} to {slice_end.strftime('%Y-%m-%d %H:%M')}")
-                print(f"[DEBUG] Processing time slice {slice_idx+1}/{len(time_slices)}")
-                
                 # Bu zaman dilimi için tüm logları çek
                 slice_logs = self._read_time_slice(slice_start, slice_end, batch_size, host_filter)
                 all_logs.extend(slice_logs)
                 
-                logger.info(f"Slice {slice_idx+1} completed: {len(slice_logs)} logs retrieved")
-                print(f"[DEBUG] Slice {slice_idx+1}: {len(slice_logs)} logs")
-                
                 # Progress update
                 if len(all_logs) % 50000 == 0 and len(all_logs) > 0:
-                    logger.info(f"Progress: {len(all_logs)} logs retrieved so far ({len(all_logs)/total_expected*100:.1f}% of total)")
-                    print(f"[DEBUG] Progress update: {len(all_logs)} logs retrieved")
-            
-            logger.info(f"Timestamp-sliced read completed. Total logs: {len(all_logs)}")
-            print(f"[DEBUG] Total logs retrieved: {len(all_logs)}")
-            
+                    pass
             if total_expected > 0:
                 retrieval_rate = (len(all_logs) / total_expected) * 100
-                logger.info(f"Retrieved {retrieval_rate:.1f}% of available logs")
-                print(f"[DEBUG] Retrieved {retrieval_rate:.1f}% of available logs")
             
             if len(all_logs) == 0:
                 logger.warning("No logs retrieved. Check time range and filters.")
@@ -1071,7 +1110,7 @@ class OpenSearchProxyReader:
                 return pd.DataFrame()
                 
     def _read_time_slice(self, start_time: datetime, end_time: datetime, 
-                     batch_size: int, host_filter: str = None) -> List[Dict]:
+                     batch_size: int, host_filter: Union[str, List[str]] = None) -> List[Dict]:
         """Belirli bir zaman dilimi için logları oku"""
         slice_logs = []
         
@@ -1113,13 +1152,6 @@ class OpenSearchProxyReader:
         # Search yap
         search_path = f"{self.index_pattern}/_search"
         early_result = self._make_request(search_path, "GET", early_check_query)
-        
-        # DEBUG: Response'u kontrol et
-        print(f"[DEBUG TIME_SLICE] Query: {json.dumps(early_check_query, indent=2)}")
-        print(f"[DEBUG TIME_SLICE] Result keys: {early_result.keys() if early_result else 'None'}")
-        if early_result and 'hits' in early_result:
-            print(f"[DEBUG TIME_SLICE] Total hits: {early_result['hits']['total']}")
-            print(f"[DEBUG TIME_SLICE] Returned hits: {len(early_result['hits']['hits'])}")
         
         if early_result and 'hits' in early_result:
             total_available = early_result['hits']['total']['value']
@@ -1438,7 +1470,6 @@ class OpenSearchProxyReader:
             for key, value in matches:
                 log_entry['attr'][key] = value
 
-
 def get_available_mongodb_hosts(last_hours: int = 24) -> List[str]:
     """
     OpenSearch'teki mevcut MongoDB sunucularını listele
@@ -1461,4 +1492,214 @@ def get_available_mongodb_hosts(last_hours: int = 24) -> List[str]:
         
     except Exception as e:
         logger.error(f"Error getting MongoDB hosts: {e}")
+        return []
+
+
+def load_cluster_mapping() -> Dict[str, Any]:
+    """
+    cluster_mapping.json dosyasını yükle
+    
+    Returns:
+        Dict: Cluster mapping verisi
+    """
+    import json
+    from pathlib import Path
+    
+    try:
+        mapping_file = Path(__file__).parent.parent.parent / "config" / "cluster_mapping.json"
+        
+        if mapping_file.exists():
+            with open(mapping_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            logger.warning("cluster_mapping.json bulunamadı")
+            return {
+                "cluster_mappings": {},
+                "cluster_display_names": {},
+                "standalone_hosts": []
+            }
+    except Exception as e:
+        logger.error(f"Error loading cluster mapping: {e}")
+        return {"cluster_mappings": {}, "cluster_display_names": {}, "standalone_hosts": []}
+
+
+def normalize_hostname(host: str) -> str:
+    """
+    Hostname'i normalize et (suffix temizleme, uppercase)
+    
+    Args:
+        host: Host adı
+        
+    Returns:
+        str: Normalize edilmiş host adı
+    """
+    # .lcwaikiki.local, .lcwecommerce.com gibi suffix'leri temizle
+    normalized = host.replace('.lcwaikiki.local', '').replace('.lcwecommerce.com', '')
+    
+    # Uppercase yap (karşılaştırma için)
+    normalized = normalized.upper()
+    
+    return normalized
+
+
+def get_cluster_for_host(host_name: str) -> Optional[str]:
+    """
+    Host için cluster adını bul
+    
+    Args:
+        host_name: Sunucu adı
+        
+    Returns:
+        str: Cluster adı veya None
+    """
+    mapping = load_cluster_mapping()
+    
+    if mapping and 'cluster_mappings' in mapping:
+        # Host'u normalize et
+        host_normalized = normalize_hostname(host_name)
+        
+        # Her cluster'ı kontrol et
+        for cluster_name, hosts in mapping['cluster_mappings'].items():
+            # Cluster'daki host'ları normalize et ve karşılaştır
+            normalized_hosts = [normalize_hostname(h) for h in hosts]
+            if host_normalized in normalized_hosts:
+                return cluster_name
+        
+        # Standalone hosts kontrolü
+        if 'standalone_hosts' in mapping:
+            standalone_normalized = [normalize_hostname(h) for h in mapping['standalone_hosts']]
+            if host_normalized in standalone_normalized:
+                return "standalone"
+    
+    return None
+
+
+def get_available_clusters_with_hosts(last_hours: int = 24) -> Dict[str, Any]:
+    """
+    OpenSearch'ten cluster bazlı host gruplandırması
+    
+    Args:
+        last_hours: Son N saatteki aktif sunucular
+        
+    Returns:
+        Dict: Cluster ve host bilgileri
+    """
+    try:
+        logger.info(f"Getting clusters with hosts from last {last_hours} hours")
+        
+        # Tüm host'ları al
+        all_hosts = get_available_mongodb_hosts(last_hours)
+        
+        # Cluster mapping'i yükle
+        mapping = load_cluster_mapping()
+        
+        # Sonuç yapısını hazırla
+        result = {
+            "clusters": {},
+            "standalone": [],
+            "unmapped": [],  # Mapping'de olmayan host'lar
+            "summary": {
+                "total_hosts": len(all_hosts),
+                "cluster_count": 0,
+                "standalone_count": 0,
+                "unmapped_count": 0
+            }
+        }
+        
+        # Her host'u ilgili cluster'a ata
+        for host in all_hosts:
+            cluster = get_cluster_for_host(host)
+            
+            if cluster:
+                if cluster == "standalone":
+                    result["standalone"].append(host)
+                else:
+                    # Cluster'ı result'a ekle (ilk kez görülüyorsa)
+                    if cluster not in result["clusters"]:
+                        display_name = mapping.get("cluster_display_names", {}).get(cluster, cluster)
+                        
+                        # Environment tespiti
+                        environment = "production"  # Default
+                        env_mapping = mapping.get("environment_mapping", {})
+                        for env, clusters in env_mapping.items():
+                            if cluster in clusters:
+                                environment = env
+                                break
+                        
+                        result["clusters"][cluster] = {
+                            "cluster_id": cluster,
+                            "display_name": display_name,
+                            "hosts": [],
+                            "environment": environment,
+                            "node_count": 0
+                        }
+                    
+                    # Host'u cluster'a ekle
+                    result["clusters"][cluster]["hosts"].append(host)
+            else:
+                # Mapping'de bulunamayan host
+                result["unmapped"].append(host)
+                logger.warning(f"Host not found in cluster mapping: {host}")
+        
+        # Node count'ları güncelle ve host'ları sırala
+        for cluster_id in result["clusters"]:
+            cluster = result["clusters"][cluster_id]
+            cluster["node_count"] = len(cluster["hosts"])
+            cluster["hosts"].sort()
+        
+        # Summary'yi güncelle
+        result["summary"]["cluster_count"] = len(result["clusters"])
+        result["summary"]["standalone_count"] = len(result["standalone"])
+        result["summary"]["unmapped_count"] = len(result["unmapped"])
+        
+        # Host'ları sırala
+        result["standalone"].sort()
+        result["unmapped"].sort()
+        
+        logger.info(f"Found {result['summary']['cluster_count']} clusters, "
+                   f"{result['summary']['standalone_count']} standalone, "
+                   f"{result['summary']['unmapped_count']} unmapped hosts")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting clusters with hosts: {e}")
+        return {
+            "clusters": {},
+            "standalone": [],
+            "unmapped": [],
+            "summary": {"total_hosts": 0, "cluster_count": 0, "standalone_count": 0, "unmapped_count": 0}
+        }
+
+
+def get_cluster_hosts(cluster_id: str) -> List[str]:
+    """
+    Belirli bir cluster'ın host listesini getir
+    
+    Args:
+        cluster_id: Cluster ID
+        
+    Returns:
+        List[str]: Host listesi
+    """
+    try:
+        mapping = load_cluster_mapping()
+        
+        if mapping and 'cluster_mappings' in mapping:
+            hosts = mapping['cluster_mappings'].get(cluster_id, [])
+            # OpenSearch'teki gerçek host adlarıyla eşleştir
+            available_hosts = get_available_mongodb_hosts(last_hours=24)
+            
+            # Normalize ederek karşılaştır
+            cluster_hosts = []
+            for available_host in available_hosts:
+                if get_cluster_for_host(available_host) == cluster_id:
+                    cluster_hosts.append(available_host)
+            
+            return sorted(cluster_hosts)
+        
+        return []
+        
+    except Exception as e:
+        logger.error(f"Error getting cluster hosts for {cluster_id}: {e}")
         return []

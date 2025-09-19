@@ -136,6 +136,8 @@ class AnalyzeLogsRequest(BaseModel):
     connection_string: Optional[str] = Field(None, description="MongoDB connection string (mongodb_direct için)")
     server_name: Optional[str] = Field(None, description="Test sunucu adı (test_servers için)")
     host_filter: Optional[str] = Field(None, description="Belirli bir MongoDB sunucusu (OpenSearch için)")
+    start_time: Optional[str] = Field(None, description="Başlangıç zamanı (ISO format: 2025-09-15T16:09:00Z)")
+    end_time: Optional[str] = Field(None, description="Bitiş zamanı (ISO format: 2025-09-15T16:11:00Z)")
 
 # Session yönetimi fonksiyonları
 def create_session(api_key: str) -> str:
@@ -490,6 +492,219 @@ async def get_mongodb_hosts(api_key: str):
         logger.error(f"MongoDB hosts alınırken hata: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/mongodb/clusters")
+async def get_mongodb_clusters(api_key: str):
+    """MongoDB cluster'larını ve host'larını listele"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        from src.anomaly.log_reader import get_available_clusters_with_hosts
+        cluster_data = get_available_clusters_with_hosts(last_hours=24)
+        
+        return {
+            "status": "success",
+            "clusters": cluster_data["clusters"],
+            "standalone_hosts": cluster_data["standalone"],
+            "unmapped_hosts": cluster_data.get("unmapped", []),
+            "summary": cluster_data["summary"]
+        }
+    except Exception as e:
+        logger.error(f"MongoDB clusters alınırken hata: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mongodb/cluster/{cluster_id}/hosts")
+async def get_cluster_hosts(cluster_id: str, api_key: str):
+    """Belirli bir cluster'ın host'larını getir"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    
+    try:
+        from src.anomaly.log_reader import get_cluster_hosts
+        hosts = get_cluster_hosts(cluster_id)
+        
+        if hosts:
+            return {
+                "status": "success",
+                "cluster_id": cluster_id,
+                "hosts": hosts,
+                "count": len(hosts)
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"Cluster '{cluster_id}' bulunamadı veya host'ları yok")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cluster hosts alınırken hata: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/analyze-cluster")
+async def analyze_cluster(request: Dict[str, Any]):
+    """Cluster bazlı anomali analizi - tüm node'ları paralel analiz et"""
+    try:
+        cluster_id = request.get("cluster_id")
+        api_key = request.get("api_key")
+        time_range = request.get("time_range", "last_24h")
+        start_time = request.get("start_time")
+        end_time = request.get("end_time")
+        
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        # Cluster host'larını al
+        from src.anomaly.log_reader import get_cluster_hosts
+        cluster_hosts = get_cluster_hosts(cluster_id)
+        
+        if not cluster_hosts:
+            raise HTTPException(status_code=404, detail=f"Cluster '{cluster_id}' bulunamadı veya host'ları yok")
+        
+        logger.info(f"Starting cluster analysis for {cluster_id} with {len(cluster_hosts)} hosts")
+        
+        # Her host için paralel analiz
+        from src.anomaly.anomaly_tools import AnomalyDetectionTools
+        anomaly_tools = AnomalyDetectionTools(environment='production')
+        
+        # Paralel analiz için task'ları hazırla
+        async def analyze_single_host(host):
+            """Tek bir host için anomali analizi - Error handling ile"""
+            try:
+                params = {
+                    "source_type": "opensearch",
+                    "host_filter": host,
+                    "time_range": time_range,
+                    "start_time": start_time,
+                    "end_time": end_time
+                }
+                
+                logger.info(f"Analyzing host: {host}")
+                
+                # Sync fonksiyonu async ortamda çalıştır
+                result = await asyncio.to_thread(
+                    anomaly_tools.analyze_mongodb_logs,
+                    params
+                )
+                
+                logger.info(f"Host {host} analysis completed successfully")
+                return (host, result)
+                
+            except Exception as e:
+                logger.error(f"Host {host} analysis failed: {e}")
+                # Hata durumunda da tuple döndür
+                return (host, {
+                    "durum": "hata",
+                    "açıklama": f"Analysis failed: {str(e)}",
+                    "sonuç": None
+                })
+        
+        # Tüm host'ları paralel analiz et - Exception handling ile
+        tasks = [analyze_single_host(host) for host in cluster_hosts]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Exception olan task'ları logla
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                host = cluster_hosts[i]
+                logger.error(f"Task exception for host {host}: {result}")
+                # Exception'ı normal hata formatına çevir
+                results[i] = (host, {
+                    "durum": "hata",
+                    "açıklama": f"Task failed: {str(result)}",
+                    "sonuç": None
+                })
+        
+        # Sonuçları birleştir
+        import json
+        combined_anomalies = []
+        total_logs = 0
+        host_results = {}
+        failed_hosts = []
+        
+        for host, result_str in results:
+            try:
+                result = json.loads(result_str) if isinstance(result_str, str) else result_str
+                
+                if result.get('durum') == 'başarılı' and 'sonuç' in result:
+                    data = result['sonuç']
+                    host_anomalies = data.get('critical_anomalies', [])
+                    
+                    # Her anomaliye host bilgisi ekle
+                    for anomaly in host_anomalies:
+                        anomaly['source_host'] = host
+                        anomaly['cluster_id'] = cluster_id
+                    
+                    combined_anomalies.extend(host_anomalies)
+                    total_logs += data.get('total_logs', 0)
+                    
+                    host_results[host] = {
+                        'status': 'success',
+                        'anomaly_count': len(host_anomalies),
+                        'logs_analyzed': data.get('total_logs', 0),
+                        'anomaly_rate': data.get('anomaly_rate', 0)
+                    }
+                else:
+                    failed_hosts.append(host)
+                    host_results[host] = {
+                        'status': 'failed',
+                        'error': result.get('açıklama', 'Unknown error')
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Error processing results for host {host}: {e}")
+                failed_hosts.append(host)
+                host_results[host] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+        
+        # Anomalileri severity'ye göre sırala
+        combined_anomalies.sort(key=lambda x: x.get('severity_score', 0), reverse=True)
+        
+        # Storage'a kaydet
+        if ENABLE_STORAGE and combined_anomalies:
+            storage = await get_storage_manager()
+            save_result = await storage.save_anomaly_analysis(
+                analysis_result={
+                    'durum': 'tamamlandı',
+                    'işlem': 'cluster_analysis',
+                    'sonuç': {
+                        'critical_anomalies': combined_anomalies,
+                        'unfiltered_anomalies': combined_anomalies,
+                        'anomaly_count': len(combined_anomalies),
+                        'total_logs': total_logs,
+                        'anomaly_rate': (len(combined_anomalies) / total_logs * 100) if total_logs > 0 else 0
+                    }
+                },
+                source_type='opensearch_cluster',
+                host=f"cluster:{cluster_id}",
+                time_range=time_range
+            )
+            
+            logger.info(f"Cluster analysis saved with ID: {save_result.get('analysis_id')}")
+        
+        return {
+            "status": "success",
+            "cluster_id": cluster_id,
+            "hosts_analyzed": len(cluster_hosts),
+            "successful_hosts": len(cluster_hosts) - len(failed_hosts),
+            "failed_hosts": failed_hosts,
+            "total_anomalies": len(combined_anomalies),
+            "total_logs_analyzed": total_logs,
+            "anomaly_rate": (len(combined_anomalies) / total_logs * 100) if total_logs > 0 else 0,
+            "host_breakdown": host_results,
+            "top_anomalies": combined_anomalies[:10],  # İlk 10 kritik anomali
+            "storage_id": save_result.get('analysis_id') if 'save_result' in locals() else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cluster analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/upload-log", response_model=LogUploadResponse)
 async def upload_log_file(
     file: UploadFile = File(...),
@@ -649,8 +864,15 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
             "source_type": request.source_type,
             "connection_string": request.connection_string,
             "server_name": request.server_name,
-            "host_filter": request.host_filter
+            "host_filter": request.host_filter,
+            "start_time": request.start_time,  # YENİ
+            "end_time": request.end_time        # YENİ
         }
+        
+        # YENİ: Eğer start_time ve end_time verilmişse, time_range'i override et
+        if request.start_time and request.end_time:
+            analysis_params["time_range"] = "custom"  # Custom time range indicator
+            logger.info(f"Using custom date range: {request.start_time} to {request.end_time}")
 
         # OpenSearch için özel parametreler ekle
         if request.source_type == "opensearch":
@@ -683,12 +905,21 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
             anomaly_tools = AnomalyDetectionTools(environment='production')
             
             # Direkt analyze_mongodb_logs fonksiyonunu çağır
-            tool_result = anomaly_tools.analyze_mongodb_logs({
+            tool_params = {
                 "source_type": "opensearch",
                 "host_filter": request.host_filter,
                 "time_range": request.time_range,
                 "last_hours": analysis_params.get("last_hours", 24)
-            })
+            }
+
+            # YENİ: Custom date range parametrelerini ekle
+            if request.start_time and request.end_time:
+                tool_params["start_time"] = request.start_time
+                tool_params["end_time"] = request.end_time
+                logger.info(f"OpenSearch query with date range: {request.start_time} - {request.end_time}")
+
+            
+            tool_result = anomaly_tools.analyze_mongodb_logs(tool_params)
             
             # Tool sonucunu parse et
             import json
@@ -2086,6 +2317,211 @@ async def debug_server_validation(api_key: str):
         
     except Exception as e:
         logger.error(f"Server validation debug error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dba/analyze-specific-time")
+async def dba_analyze_specific_time(
+    host: str = Query(..., description="MongoDB sunucu adı (virgülle ayrılmış multiple host destekler)"),
+    start_time: str = Query(..., description="Başlangıç zamanı (ISO format)"),
+    end_time: str = Query(..., description="Bitiş zamanı (ISO format)"),
+    api_key: str = Query(..., description="API anahtarı"),
+    auto_explain: bool = Query(True, description="LCWGPT ile otomatik açıklama")
+):
+    """
+    DBA'lar için spesifik zaman aralığı anomali analizi
+    
+    Örnek kullanım:
+    /api/dba/analyze-specific-time?host=LCWMONGODB01&start_time=2025-09-15T16:09:00Z&end_time=2025-09-15T16:11:00Z&api_key=xxx
+    """
+    try:
+        # API key kontrolü
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        # Multiple host desteği kontrolü
+        hosts_list = []
+        is_cluster = False
+
+        if ',' in host:
+            # Multiple hosts - virgülle ayrılmış
+            hosts_list = [h.strip() for h in host.split(',')]
+            is_cluster = True
+            logger.info(f"DBA CLUSTER analysis request: {hosts_list} from {start_time} to {end_time}")
+        else:
+            # Tek host
+            hosts_list = [host]
+            logger.info(f"DBA analysis request: {host} from {start_time} to {end_time}")
+        
+        # Tarih formatı validasyonu
+        from dateutil import parser
+        try:
+            start_dt = parser.parse(start_time)
+            end_dt = parser.parse(end_time)
+            
+            # Zaman aralığı kontrolü (max 24 saat)
+            time_diff = (end_dt - start_dt).total_seconds() / 3600
+            if time_diff > 24:
+                logger.warning(f"Time range too large: {time_diff} hours")
+                # Uyarı ver ama devam et
+                
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Geçersiz tarih formatı: {e}")
+        
+        # Anomaly tools'u çağır
+        from src.anomaly.anomaly_tools import AnomalyDetectionTools
+        anomaly_tools = AnomalyDetectionTools(environment='production')
+
+        if is_cluster:
+            # Cluster analizi - paralel işleme
+            import asyncio
+            
+            async def analyze_single_host(single_host):
+                """Tek bir host için analiz yap"""
+                result = anomaly_tools.analyze_mongodb_logs({
+                    "source_type": "opensearch",
+                    "host_filter": single_host,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "time_range": "custom"
+                })
+                return result
+            
+            # Paralel analiz başlat
+            logger.info(f"Starting parallel analysis for {len(hosts_list)} hosts...")
+            
+            # Asyncio.to_thread kullanarak sync fonksiyonu async çalıştır
+            tasks = []
+            for h in hosts_list:
+                tasks.append(asyncio.to_thread(
+                    anomaly_tools.analyze_mongodb_logs,
+                    {
+                        "source_type": "opensearch",
+                        "host_filter": h,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "time_range": "custom"
+                    }
+                ))
+            
+            # Tüm analizleri bekle
+            results = await asyncio.gather(*tasks)
+            
+            # Sonuçları birleştir
+            import json
+            combined_anomalies = []
+            total_logs = 0
+            host_results = {}
+            
+            for i, res_str in enumerate(results):
+                res = json.loads(res_str) if isinstance(res_str, str) else res_str
+                host_name = hosts_list[i]
+                
+                if res.get('durum') == 'başarılı' and 'sonuç' in res:
+                    data = res['sonuç']
+                    # Her host'un anomalilerini topla
+                    host_anomalies = data.get('critical_anomalies', [])
+                    for anomaly in host_anomalies:
+                        anomaly['source_host'] = host_name  # Host bilgisi ekle
+                    combined_anomalies.extend(host_anomalies)
+                    
+                    # İstatistikleri topla
+                    total_logs += data.get('total_logs', 0)
+                    
+                    # Host bazlı sonuçları sakla
+                    host_results[host_name] = {
+                        'anomaly_count': len(host_anomalies),
+                        'logs_analyzed': data.get('total_logs', 0),
+                        'anomaly_rate': data.get('anomaly_rate', 0)
+                    }
+            
+            # Birleştirilmiş sonucu hazırla
+            tool_result = {
+                'durum': 'başarılı',
+                'işlem': 'cluster_anomaly_analysis',
+                'açıklama': f'{len(hosts_list)} sunucu için cluster analizi tamamlandı',
+                'sonuç': {
+                    'is_cluster': True,
+                    'hosts_analyzed': hosts_list,
+                    'total_logs': total_logs,
+                    'critical_anomalies': combined_anomalies,
+                    'anomaly_count': len(combined_anomalies),
+                    'anomaly_rate': (len(combined_anomalies) / total_logs * 100) if total_logs > 0 else 0,
+                    'host_breakdown': host_results
+                }
+            }
+            
+        else:
+            # Tek host analizi (mevcut kod)
+            tool_result = anomaly_tools.analyze_mongodb_logs({
+                "source_type": "opensearch",
+                "host_filter": host,
+                "start_time": start_time,
+                "end_time": end_time,
+                "time_range": "custom"
+            })
+        
+        # Sonucu parse et
+        import json
+        if isinstance(tool_result, str):
+            result = json.loads(tool_result)
+        else:
+            result = tool_result
+        
+        # Kritik anomalileri al
+        critical_anomalies = result.get('sonuç', {}).get('critical_anomalies', [])
+        anomaly_count = len(critical_anomalies)
+        
+        # LCWGPT ile otomatik açıklama
+        ai_explanation = None
+        if auto_explain and anomaly_count > 0:
+            llm_connector = await get_llm_connector()
+            if llm_connector:
+                # Özet prompt hazırla
+                prompt = f"""
+                {host} sunucusunda {start_time} - {end_time} arasında {anomaly_count} anomali tespit edildi.
+                
+                En kritik 5 anomali:
+                """
+                for i, anomaly in enumerate(critical_anomalies[:5], 1):
+                    prompt += f"\n{i}. [{anomaly.get('severity_level')}] {anomaly.get('message', '')[:100]}"
+                
+                prompt += "\n\nBu anomalileri özetle ve olası root cause'u belirt."
+                
+                try:
+                    messages = [
+                        SystemMessage(content="Sen MongoDB DBA uzmanısın. Kısa ve net özetler yap."),
+                        HumanMessage(content=prompt)
+                    ]
+                    response = llm_connector.invoke(messages)
+                    ai_explanation = response.content
+                except Exception as e:
+                    logger.error(f"LCWGPT error: {e}")
+        
+        # Response hazırla
+        return {
+            "status": "success",
+            "host": host,
+            "time_range": {
+                "start": start_time,
+                "end": end_time,
+                "duration_hours": time_diff
+            },
+            "results": {
+                "total_logs_analyzed": result.get('sonuç', {}).get('total_logs', 0),
+                "anomaly_count": anomaly_count,
+                "anomaly_rate": result.get('sonuç', {}).get('anomaly_rate', 0),
+                "critical_anomalies": critical_anomalies[:10],  # İlk 10 kritik
+                "ai_summary": ai_explanation
+            },
+            "storage_id": result.get('storage_info', {}).get('analysis_id'),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"DBA analysis error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
