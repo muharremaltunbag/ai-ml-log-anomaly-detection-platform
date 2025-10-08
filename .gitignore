@@ -4,3 +4,7 @@ __pycache__/
 logs/
 *.pyc
 temp_logs/
+.venv/
+models/*.pkl
+models/*.pkl.*
+models/*.pkl*
