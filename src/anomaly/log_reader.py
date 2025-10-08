@@ -37,25 +37,25 @@ class MongoDBLogReader:
             log_path: Log dosyası yolu
             format: Log formatı ("json", "text", "auto")
         """
-        print(f"[DEBUG] MongoDBLogReader init started - log_path: {log_path}, format: {format}")
+
         self.log_path = log_path or self._find_mongod_log()
-        print(f"[DEBUG] Final log_path: {self.log_path}")
+
         self.format = format
         self.encoding = 'utf-8'
         self.buffer_size = 8192
         
         # Format otomatik tespit
         if self.format == "auto":
-            print("[DEBUG] Auto-detecting log format...")
+
             self.format = self._detect_log_format()
             print(f"[DEBUG] Detected format: {self.format}")
             
         logger.info(f"Log reader initialized - Path: {self.log_path}, Format: {self.format}")
-        print(f"[DEBUG] MongoDBLogReader init completed")
+
     
     def _find_mongod_log(self) -> str:
         """MongoDB log dosyasını otomatik bul"""
-        print("[DEBUG] Searching for MongoDB log file...")
+
         possible_paths = [
             # Linux/Production
             Path("/var/log/mongodb/mongod.log"),
@@ -66,7 +66,7 @@ class MongoDBLogReader:
         ]
         
         for path in possible_paths:
-            print(f"[DEBUG] Checking path: {path}")
+
             if path.exists():
                 print(f"[DEBUG] Found log file at: {path}")
                 return str(path)
@@ -88,12 +88,12 @@ class MongoDBLogReader:
                 # JSON formatı kontrolü
                 if first_line.startswith('{') and '"t":' in first_line:
                     logger.debug("Detected JSON format")
-                    print("[DEBUG] Format detected as JSON")
+
                     return "json"
                 # Legacy text format kontrolü (timestamp ile başlar)
                 elif re.match(r'^\d{4}-\d{2}-\d{2}T', first_line):
                     logger.debug("Detected text format")
-                    print("[DEBUG] Format detected as text")
+
                     return "text"
                 else:
                     logger.warning("Log format could not be detected, defaulting to text")
@@ -119,10 +119,10 @@ class MongoDBLogReader:
         """
         print(f"[DEBUG] read_logs called - limit: {limit}, last_hours: {last_hours}, format: {self.format}")
         if self.format == "json":
-            print("[DEBUG] Using JSON log reader")
+
             return self._read_json_logs(limit, last_hours)
         else:
-            print("[DEBUG] Using text log reader")
+
             return self._read_text_logs(limit, last_hours)
     
     def _read_json_logs(self, limit: int = None, last_hours: int = None) -> pd.DataFrame:
@@ -132,7 +132,7 @@ class MongoDBLogReader:
         parse_errors = 0
         
         logger.debug(f"Starting JSON log reading - limit: {limit}, last_hours: {last_hours}")
-        print(f"[DEBUG] Starting JSON log reading - limit: {limit}, last_hours: {last_hours}")
+
         
         try:
             print(f"[DEBUG] Opening JSON log file: {self.log_path}")
@@ -157,21 +157,21 @@ class MongoDBLogReader:
                         
                         if count % 10000 == 0:
                             logger.debug(f"Processed {count} JSON log entries")
-                            print(f"[DEBUG] Processed {count} JSON log entries")
+
                         
                     except json.JSONDecodeError:
                         parse_errors += 1
                         if parse_errors <= 5:  # Log only first 5 errors
                             logger.debug(f"JSON parse error at line {line_num}: {line[:100]}...")
-                            print(f"[DEBUG] JSON parse error at line {line_num}")
+
                         continue
                     except Exception as e:
                         logger.warning(f"Error parsing log line {line_num}: {e}")
-                        print(f"[DEBUG] Error parsing log line {line_num}: {e}")
+
                         continue
             
             logger.info(f"Read {len(logs)} JSON log entries")
-            print(f"[DEBUG] Completed JSON reading: {len(logs)} entries, {parse_errors} errors")
+
             if parse_errors > 0:
                 logger.debug(f"Total JSON parse errors: {parse_errors}")
             return pd.DataFrame(logs)
@@ -179,7 +179,7 @@ class MongoDBLogReader:
         except Exception as e:
             logger.error(f"Error reading JSON logs: {e}")
             logger.debug("JSON log reading failed", exc_info=True)
-            print(f"[DEBUG] JSON log reading failed: {e}")
+
             return pd.DataFrame()
     
     def _read_text_logs(self, limit: int = None, last_hours: int = None) -> pd.DataFrame:
@@ -189,7 +189,7 @@ class MongoDBLogReader:
         parse_errors = 0
         
         logger.debug(f"Starting text log reading - limit: {limit}, last_hours: {last_hours}")
-        print(f"[DEBUG] Starting text log reading - limit: {limit}, last_hours: {last_hours}")
+
         
         # Text log pattern
         # Format: 2025-06-22T06:25:06.125+0300 I  ACCESS   [conn1661946] message...
@@ -206,7 +206,7 @@ class MongoDBLogReader:
             with open(self.log_path, 'r', encoding=self.encoding) as f:
                 for line_num, line in enumerate(f, 1):
                     if limit and count >= limit:
-                        print(f"[DEBUG] Limit reached: {count}")
+                        
                         break
                     
                     match = pattern.match(line.strip())
@@ -238,15 +238,15 @@ class MongoDBLogReader:
                         
                         if count % 10000 == 0:
                             logger.debug(f"Processed {count} text log entries")
-                            print(f"[DEBUG] Processed {count} text log entries")
+
                     else:
                         parse_errors += 1
                         if parse_errors <= 5:  # Log only first 5 errors
                             logger.debug(f"Text pattern mismatch at line {line_num}: {line[:100]}...")
-                            print(f"[DEBUG] Text pattern mismatch at line {line_num}")
+
             
             logger.info(f"Read {len(logs)} text log entries")
-            print(f"[DEBUG] Completed text reading: {len(logs)} entries, {parse_errors} errors")
+
             if parse_errors > 0:
                 logger.debug(f"Total text parse errors: {parse_errors}")
             return pd.DataFrame(logs)
@@ -254,7 +254,7 @@ class MongoDBLogReader:
         except Exception as e:
             logger.error(f"Error reading text logs: {e}")
             logger.debug("Text log reading failed", exc_info=True)
-            print(f"[DEBUG] Text log reading failed: {e}")
+
             return pd.DataFrame()
     
     def read_logs_parallel(self, limit: int = None, max_workers: int = 4) -> pd.DataFrame:
@@ -1382,14 +1382,14 @@ class OpenSearchProxyReader:
             
             if len(mongodb_hosts) != len(hosts):
                 logger.info(f"Filtered to {len(mongodb_hosts)} MongoDB-specific hosts")
-                print(f"[DEBUG] Filtered to {len(mongodb_hosts)} MongoDB-specific hosts")
+
                 return sorted(mongodb_hosts)
             
             return sorted(hosts)
             
         except Exception as e:
             logger.error(f"Error getting available hosts: {e}")
-            print(f"[DEBUG] Error getting available hosts: {e}")
+
             return []
 
     def get_host_log_stats(self, host_name: str, last_hours: int = 24) -> Dict[str, Any]:
@@ -1405,7 +1405,7 @@ class OpenSearchProxyReader:
         """
         try:
             logger.debug(f"Getting log stats for host: {host_name}")
-            print(f"[DEBUG] Getting log stats for host: {host_name}")
+
             
             query = {
                 "size": 0,
@@ -1446,16 +1446,14 @@ class OpenSearchProxyReader:
                     "status": "active"
                 }
                 
-                logger.debug(f"Host {host_name} has {stats['total_logs']} logs")
-                print(f"[DEBUG] Host {host_name} has {stats['total_logs']} logs")
+
                 
                 return stats
             
             return {"host_name": host_name, "total_logs": 0, "status": "not_found"}
             
         except Exception as e:
-            logger.error(f"Error getting host stats: {e}")
-            print(f"[DEBUG] Error getting host stats: {e}")
+
             return {"host_name": host_name, "error": str(e)}
 
     def _parse_text_message_attributes(self, log_entry: Dict[str, Any]):

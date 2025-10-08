@@ -296,6 +296,8 @@ class MongoDBAnomalyDetector:
             if initial_size != len(X_combined):
                 logger.debug(f"Removed {initial_size - len(X_combined)} duplicate samples ({(initial_size - len(X_combined))/initial_size*100:.1f}%)")
             
+            # IndexError'ı önlemek için index'i reset et
+            X_combined = X_combined.reset_index(drop=True)
             
             return X_combined
             
@@ -403,6 +405,9 @@ class MongoDBAnomalyDetector:
         
         
         
+        # Index'i reset et (sklearn için kritik!)
+        X_train = X_train.reset_index(drop=True)
+        
         # Model oluştur veya mevcut modeli kullan
         if not self.is_trained:
             # İlk kez model oluştur
@@ -427,9 +432,9 @@ class MongoDBAnomalyDetector:
                 self.model = IsolationForest(**params)
         
         # Eğitim
-        
         start_time = datetime.now()
-        self.model.fit(X)
+        # X yerine X_train kullan (reset edilmiş index ile)
+        self.model.fit(X_train)
         training_time = (datetime.now() - start_time).total_seconds()
         
         
@@ -479,7 +484,7 @@ class MongoDBAnomalyDetector:
             # İlk training ise veya yeni training mode
             if training_mode == "new" or self.historical_data['features'] is None:
                 # Direkt yeni veriyi historical olarak sakla
-                self.historical_data['features'] = X_new.copy()
+                self.historical_data['features'] = X_new.copy().reset_index(drop=True)  # Index reset
                 
                 # Predictions ve scores'u hesapla ve sakla
                 predictions = self.model.predict(X_new)

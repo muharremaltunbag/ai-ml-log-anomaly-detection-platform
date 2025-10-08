@@ -85,6 +85,9 @@ class StorageManager:
                 logger.info("✅ MongoDB bağlantısı BAŞARILI!")
                 logger.info(f"   📍 Database: {self.mongodb.database}")
                 logger.info(f"   📍 Collections: anomaly_results, model_registry")
+                
+                # Disk alanı kontrolü
+                await self.check_and_cleanup_by_size()
             
             # Verify file storage paths
             for name, path in self.storage_paths.items():
@@ -141,6 +144,9 @@ class StorageManager:
             if not auto_save:
                 logger.debug("Auto-save disabled, skipping")
                 return {}
+            
+            # Disk alanı kontrolü - her kayıt öncesi
+            await self.check_and_cleanup_by_size()
             
             # Prepare source info
             source_info = {
@@ -291,7 +297,7 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Error getting anomaly history: {e}")
             return []
-    
+            
     async def get_latest_analysis(self, 
                                  host: str = None,
                                  source_type: str = None) -> Optional[Dict[str, Any]]:
@@ -326,6 +332,75 @@ class StorageManager:
             logger.error(f"Error getting latest analysis: {e}")
             return None
     
+    async def get_dba_analysis_history(self, source_type: str = "opensearch_dba", limit: int = 10, days_back: int = 30) -> List[Dict[str, Any]]:
+        """
+        Get DBA-specific anomaly analysis history from MongoDB
+        
+        Args:
+            source_type: Source type filter (default: 'opensearch_dba')
+            limit: Maximum number of results to return
+            days_back: How many days back to search (default: 30)
+            
+        Returns:
+            List of DBA analysis summaries with essential fields for UI display
+        """
+        try:
+            # Build filter with date range
+            from datetime import datetime, timedelta
+            cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+            
+            filters = {
+                "source.type": source_type,
+                "timestamp": {"$gte": cutoff_date}
+            }
+            
+            analyses = await self.mongodb.get_anomaly_history(
+                filters=filters,
+                limit=limit,
+                skip=0
+            )
+            
+            # Format specifically for DBA UI display
+            dba_history = []
+            for doc in analyses:
+                # Extract nested fields safely
+                analysis_result = doc.get("analysis_result", {})
+                sonuc = analysis_result.get("sonuç", {})
+                source_info = doc.get("source", {})
+                
+                # ✅ TYPE KONTROLÜ - source_info string mi dict mi?
+                if isinstance(source_info, str):
+                    # String ise default değerler kullan
+                    source_info = {"type": source_type, "host": "Unknown", "time_range": ""}
+                elif not isinstance(source_info, dict):
+                    # Ne string ne dict ise boş dict yap
+                    source_info = {}
+                
+                # Build DBA-friendly summary
+                dba_entry = {
+                    "_id": str(doc.get("_id", "")),
+                    "analysis_id": doc.get("analysis_id", ""),
+                    "host": doc.get("host", source_info.get("host", "Unknown") if isinstance(source_info, dict) else "Unknown"),
+                    "timestamp": doc.get("timestamp"),
+                    "anomaly_count": sonuc.get("anomaly_count", sonuc.get("n_anomalies", 0)),
+                    "total_logs": sonuc.get("total_logs", sonuc.get("logs_analyzed", 0)),
+                    "anomaly_rate": sonuc.get("anomaly_rate", 0),
+                    "time_range": doc.get("time_range", source_info.get("time_range", "") if isinstance(source_info, dict) else ""),
+                    "source_type": source_info.get("type", source_type) if isinstance(source_info, dict) else source_type,
+                    "has_ai_explanation": "ai_explanation" in analysis_result,
+                    "storage_id": doc.get("analysis_id", str(doc.get("_id", "")))
+                }
+                dba_history.append(dba_entry)
+            
+            logger.info(f"✅ Retrieved {len(dba_history)} DBA analyses from last {days_back} days")
+            return dba_history
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get DBA analysis history: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+            
     async def get_statistics(self, days: int = 30) -> Dict[str, Any]:
         """
         Get storage and analysis statistics
@@ -370,9 +445,17 @@ class StorageManager:
         try:
             cleanup_stats = {
                 "files_deleted": 0,
-                "space_freed_mb": 0
+                "space_freed_mb": 0,
+                "mongodb_deleted": 0,
+                "total_freed_gb": 0
             }
             
+            # MongoDB boyut bazlı temizlik
+            if self.mongodb and self.mongodb.is_connected:
+                max_size_gb = STORAGE_LIMITS.get("max_database_size_gb", 10.0)
+                deleted_count = await self.mongodb.cleanup_by_size(max_size_gb)
+                cleanup_stats["mongodb_deleted"] = deleted_count
+                logger.info(f"MongoDB cleanup: {deleted_count} documents deleted")
             # MongoDB cleanup is handled automatically by TTL
             
             # File system cleanup
@@ -655,6 +738,126 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Error calculating storage usage: {e}")
             return {}
+    
+    async def check_and_cleanup_by_size(self, warning_threshold: float = 0.8) -> Dict[str, Any]:
+        """
+        Check storage size and cleanup if necessary
+        
+        Args:
+            warning_threshold: Warning when usage exceeds this percentage (0.8 = 80%)
+            
+        Returns:
+            Storage status and cleanup results
+        """
+        try:
+            status = {
+                "checked_at": datetime.utcnow().isoformat(),
+                "mongodb_size_gb": 0,
+                "file_size_gb": 0,
+                "total_size_gb": 0,
+                "limit_gb": STORAGE_LIMITS.get("max_total_size_gb", 10.0),
+                "usage_percent": 0,
+                "cleaned_up": False,
+                "deleted_count": 0
+            }
+            
+            # MongoDB boyutu
+            if self.mongodb and self.mongodb.is_connected:
+                size_info = await self.mongodb.check_database_size()
+                status["mongodb_size_gb"] = size_info.get("total_size_gb", 0)
+                
+                # Detaylı MongoDB bilgileri
+                status["mongodb_details"] = {
+                    "data_size_gb": size_info.get("data_size_gb", 0),
+                    "index_size_gb": size_info.get("index_size_gb", 0),
+                    "collections": size_info.get("collections", 0),
+                    "documents": size_info.get("objects", 0)
+                }
+            
+            # File storage boyutu
+            storage_stats = await self._calculate_storage_usage()
+            status["file_size_gb"] = storage_stats.get("total_size_mb", 0) / 1024
+            
+            # Toplam boyut
+            status["total_size_gb"] = status["mongodb_size_gb"] + status["file_size_gb"]
+            status["usage_percent"] = (status["total_size_gb"] / status["limit_gb"]) * 100
+            
+            # Limit kontrolü
+            if status["total_size_gb"] > status["limit_gb"]:
+                logger.warning(f"⚠️ Storage limit exceeded: {status['total_size_gb']:.2f} GB > {status['limit_gb']} GB")
+                
+                # FIFO temizlik - en eski kayıtları sil
+                cleanup_result = await self.cleanup_old_data(force=True)
+                status["cleaned_up"] = True
+                status["deleted_count"] = cleanup_result.get("mongodb_deleted", 0)
+                
+                # MongoDB'de agresif temizlik
+                if status["mongodb_size_gb"] > status["limit_gb"] * 0.7:  # MongoDB %70'ten fazla kullanıyorsa
+                    logger.warning("MongoDB using >70% of limit, aggressive cleanup...")
+                    deleted = await self.mongodb.cleanup_by_size(status["limit_gb"] * 0.5)  # %50'ye düşür
+                    status["deleted_count"] += deleted
+                    
+                logger.info(f"✅ Cleanup completed: {status['deleted_count']} items deleted")
+                
+            elif status["usage_percent"] > (warning_threshold * 100):
+                logger.warning(f"⚠️ Storage usage high: {status['usage_percent']:.1f}%")
+                
+                # Soft cleanup - 30 günden eski kayıtları temizle
+                if self.mongodb:
+                    cutoff = datetime.utcnow() - timedelta(days=30)
+                    collection = self.mongodb.db[self.mongodb.collections["anomaly_history"]]
+                    result = await collection.delete_many({"timestamp": {"$lt": cutoff}})
+                    status["deleted_count"] = result.deleted_count
+                    logger.info(f"Soft cleanup: {result.deleted_count} old records deleted")
+            else:
+                logger.info(f"✅ Storage usage normal: {status['usage_percent']:.1f}%")
+            
+            # İstatistikleri sakla
+            self.stats["last_size_check"] = status
+            
+            return status
+            
+        except Exception as e:
+            logger.error(f"Error checking storage size: {e}")
+            return {
+                "error": str(e),
+                "checked_at": datetime.utcnow().isoformat()
+            }
+
+    async def get_storage_status(self) -> Dict[str, Any]:
+        """
+        Get comprehensive storage status
+        
+        Returns:
+            Detailed storage status
+        """
+        try:
+            # Boyut kontrolü yap
+            size_status = await self.check_and_cleanup_by_size()
+            
+            # İstatistikleri al
+            stats = await self.get_statistics(days=7)
+            
+            return {
+                "size": size_status,
+                "statistics": stats,
+                "limits": {
+                    "max_total_gb": STORAGE_LIMITS.get("max_total_size_gb", 10.0),
+                    "max_mongodb_gb": STORAGE_LIMITS.get("max_database_size_gb", 5.0),
+                    "max_file_gb": STORAGE_LIMITS.get("max_file_size_gb", 5.0),
+                    "retention_days": AUTO_SAVE_CONFIG.get("retention_days", 90)
+                },
+                "health": {
+                    "mongodb_connected": self.mongodb.is_connected if self.mongodb else False,
+                    "auto_save_enabled": self.auto_save_enabled,
+                    "last_cleanup": self.stats.get("last_cleanup"),
+                    "cache_size": len(self._analysis_cache)
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting storage status: {e}")
+            return {"error": str(e)}
     
     def _normalize_analysis_result(self, analysis_result: Any, source_info: Dict[str, Any]) -> Dict[str, Any]:
         """

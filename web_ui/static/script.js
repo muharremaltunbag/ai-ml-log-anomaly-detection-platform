@@ -14,7 +14,8 @@
 let apiKey = '';
 let isConnected = false;
 let selectedDataSource = 'upload';  // Varsayılan veri kaynağı
-let currentSessionId = null;  // ✅ YENİ: Session ID için
+let currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`; // Session ID tanımı
+console.log('Session initialized:', currentSessionId);
 
 // Konuşma geçmişi için sabitler
 const HISTORY_KEY = 'mongodb_query_history';
@@ -38,10 +39,10 @@ const API_ENDPOINTS = {
     analyzeCluster: '/api/analyze-cluster',     // CLUSTER SUPPORT
     // YENİ STORAGE ENDPOINTS
     anomalyHistory: '/api/anomaly-history',
-    anomalyDetail: '/api/anomaly-history',
-    modelRegistry: '/api/model-registry',
     storageStats: '/api/storage-stats',
+    modelRegistry: '/api/model-registry',
     storageCleanup: '/api/storage-cleanup',
+    anomalyDetail: '/api/anomaly-history',
     exportAnalysis: '/api/export-analysis'
 };
 // DOM elementleri
@@ -143,34 +144,61 @@ window.viewStoredAnalysis = async function(analysisId) {
         showNotification('Analiz detayı yüklenemedi', 'error');
     }
 };
-
 // Sayfa yüklendiğinde
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Session ID oluştur
+    if (!window.currentSessionId) {
+        window.currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        console.log('📍 Session initialized:', window.currentSessionId);
+    }
+    
     initializeEventListeners();
     checkInitialStatus();
-    loadHistory(); // Geçmişi yükle
-    restoreViewMode(); // YENİ SATIR
+    restoreViewMode();
     
-    // YENİ: Eğer localStorage'da API key varsa otomatik bağlan ve storage kontrol et
-    const savedApiKey = localStorage.getItem('mongodb_api_key');
+    // İlk yükleme - boş başla
+    loadHistory();
+    
+    // API key localStorage'dan kontrol et (güvenlik için optional)
+    const savedApiKey = localStorage.getItem('saved_api_key');
     if (savedApiKey && elements.apiKeyInput) {
+        console.log('📌 Found saved API key, auto-connecting...');
         elements.apiKeyInput.value = savedApiKey;
         
-        // Otomatik bağlantı ve storage kontrolü
-        setTimeout(async () => {
-            console.log('Auto-connecting with saved API key...');
-            await handleConnect();
+        // Otomatik bağlan
+        await handleConnect();
+        
+        // Bağlantı başarılıysa TÜM MongoDB verilerini yükle
+        if (isConnected) {
+            console.log('📊 Loading all data from MongoDB...');
+            showNotification('MongoDB\'den veriler yükleniyor...', 'info');
             
-            // Bağlantı başarılıysa storage'dan veri yükle
-            if (isConnected) {
-                setTimeout(async () => {
-                    const loaded = await loadLastAnomalyFromStorage();
-                    if (loaded) {
-                        console.log('Previous analysis auto-loaded on page load');
-                    }
-                }, 1000);
+            try {
+                // Paralel olarak tüm verileri yükle
+                const results = await Promise.all([
+                    loadHistory(),                    // Query history
+                    loadAnomalyHistoryFromMongoDB({limit: 50}),  // Anomaly history (mevcut fonksiyon)
+                    loadAndMergeDBAHistory(),         // DBA analyses (mevcut fonksiyon)
+                    checkStorageSize()                // Storage durumu
+                ]);
+                
+                console.log('✅ All MongoDB data loaded successfully');
+                console.log(`   📝 Query History: ${queryHistory.length} items`);
+                console.log(`   🔍 Anomaly History: ${results[1]?.length || 0} items`);
+                console.log(`   📊 DBA History merged`);
+                
+                showNotification('Tüm veriler MongoDB\'den yüklendi', 'success');
+                
+                // History display'i güncelle
+                updateHistoryDisplay();
+                
+            } catch (error) {
+                console.error('Error loading MongoDB data:', error);
+                showNotification('Bazı veriler yüklenemedi', 'warning');
             }
-        }, 500);
+        }
+    } else {
+        console.log('ℹ️ No saved API key, manual connection required');
     }
 });
 
@@ -197,9 +225,7 @@ function initializeEventListeners() {
     });
     
     // Hızlı işlem butonları
-    document.getElementById('collectionsBtn').addEventListener('click', handleCollections);
     document.getElementById('statusBtn').addEventListener('click', handleStatus);
-    document.getElementById('clearBtn').addEventListener('click', handleClear);
     
     // Log Yükle butonu
     document.getElementById('logUploadBtn').addEventListener('click', () => {
@@ -256,7 +282,32 @@ function initializeEventListeners() {
             document.querySelector('input[name="dataSource"][value="upload"]').checked = true;
             updateSourceInputs('upload');
         }
+        // YENİ: OpenSearch seçiliyse listeleri yükle
+        else if (selectedDataSource === 'opensearch' && isConnected) {
+            document.querySelector('input[name="dataSource"][value="opensearch"]').checked = true;
+            updateSourceInputs('opensearch');
+            setTimeout(() => {
+                loadMongoDBHosts();
+                loadClusters();
+            }, 200);
+        }
     });
+
+    // DBA Analizi butonu - YENİ
+    document.getElementById('dbaAnalysisBtn').addEventListener('click', () => {
+        console.log('DBA Analysis Button clicked!');
+        openDBAAnalysisModal();
+    });
+    
+    // Event delegation for dynamically loaded buttons
+    document.addEventListener('click', function(e) {
+        if (e.target && e.target.id === 'dbaAnalysisBtn') {
+            console.log('DBA TAVSİYE SİSTEMİ clicked via delegation!');
+            e.preventDefault();
+            openDBAAnalysisModal();
+        }
+    });
+    
     
     // Anomaly Modal içindeki Analizi Başlat butonu  
     document.getElementById('startAnalysisBtn').addEventListener('click', handleAnalyzeLog);
@@ -304,9 +355,17 @@ function initializeEventListeners() {
     // Veri kaynağı seçimi değiştiğinde
     document.querySelectorAll('input[name="dataSource"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
-            console.log('Data source changed from', selectedDataSource, 'to', e.target.value); // DEBUG LOG
+            console.log('Data source changed from', selectedDataSource, 'to', e.target.value);
             selectedDataSource = e.target.value;
             updateSourceInputs(selectedDataSource);
+            
+            // YENİ: OpenSearch seçildiğinde listeleri otomatik yükle
+            if (e.target.value === 'opensearch' && isConnected) {
+                setTimeout(() => {
+                    loadMongoDBHosts();  // Host listesini yükle
+                    loadClusters();      // Cluster listesini yükle
+                }, 100);
+            }
         });
     });
 
@@ -859,188 +918,6 @@ async function handleQuery() {
         elements.queryBtn.disabled = false;
     }
 }
-
-/*
- * ===== DEPRECATED: Onay akışı kaldırıldı =====
- * Bu fonksiyonlar artık kullanılmıyor
- */
-
-/*
-/**
- * Anomali analizi için onay dialogu göster
- */
-/*
-function displayConfirmationDialog(result) {
-    console.log('Displaying confirmation dialog for anomaly analysis');
-    
-    // İlk sorguyu geçmişe ekle ve ID'sini sakla
-    const parentId = Date.now();
-    window.pendingAnomalyQueryId = parentId;
-    localStorage.setItem('pendingAnomalyQueryId', parentId);
-
-    console.log('Parent ID set to:', parentId);
-    console.log('window.pendingAnomalyQueryId:', window.pendingAnomalyQueryId);
-
-    // Onay bekleyen sorguyu geçmişe ekle
-    const historyItem = {
-        id: parentId,
-        timestamp: new Date().toISOString(),
-        query: elements.queryInput.value,
-        type: 'anomaly',  // ✅ Her zaman anomaly
-        category: 'anomaly', // ✅ Açıkça belirt
-        result: result,
-        durum: result.durum,
-        işlem: 'parametre_onayı',
-        isAnomalyParent: true,
-        childResultId: null,
-        hasResult: false,
-        awaitingConfirmation: true,
-        originalQuery: elements.queryInput.value // ✅ Orijinal sorguyu sakla
-    };
-
-    queryHistory.unshift(historyItem);
-    if (queryHistory.length > MAX_HISTORY_ITEMS) {
-        queryHistory = queryHistory.slice(0, MAX_HISTORY_ITEMS);
-    }
-    saveHistory();
-    updateHistoryDisplay();
-
-    const confirmationHtml = `
-        <div class="confirmation-dialog">
-            <div class="confirmation-header">
-                <h3>🔍 Anomali Analizi Onayı</h3>
-            </div>
-            <div class="confirmation-body">
-                ${result.açıklama}
-            </div>
-            <div class="confirmation-actions">
-                <button class="btn btn-primary" onclick="confirmAnomalyAnalysis()">
-                    ✅ Onayla ve Başlat
-                </button>
-                <button class="btn btn-secondary" onclick="cancelAnomalyAnalysis()">
-                    ❌ İptal Et
-                </button>
-                <button class="btn btn-info" onclick="modifyAnomalyParameters()">
-                    ✏️ Parametreleri Değiştir
-                </button>
-            </div>
-        </div>
-    `;
-    
-    // Sonuç bölümünde göster
-    elements.resultSection.style.display = 'block';
-    elements.resultContent.innerHTML = confirmationHtml;
-    
-    // Parametreleri sakla
-    window.pendingAnomalyParams = result.sonuç;
-
-}
-*/
-
-/*
- * ÖNCEKİ ONAY AKIŞ FONKSİYONLARI - KULLANILMIYOR (Onay akışı kaldırıldı)
- */
-
-/*
-/**
- * Anomali analizini onayla
- */
-/*
-async function confirmAnomalyAnalysis() {
-    console.log('User confirmed anomaly analysis');
-    
-    // Onay bekleyen parent'ı güncelle
-    if (window.pendingAnomalyQueryId) {
-        const parentIndex = queryHistory.findIndex(h => h.id === window.pendingAnomalyQueryId);
-        if (parentIndex !== -1) {
-            queryHistory[parentIndex].awaitingConfirmation = false;
-            queryHistory[parentIndex].durum = 'işleniyor'; // ✅ Ara durum
-            saveHistory();
-            updateHistoryDisplay();
-        }
-    }
-    
-    // Query input'a onay yazısı koy
-    elements.queryInput.value = 'evet';
-    
-    // Onay sorgusu olduğunu işaretle
-    window.isConfirmationQuery = true;
-    
-    // Tekrar sorgu gönder
-    await handleQuery();
-}
-*/
-
-/*
-/**
- * Anomali analizini iptal et
- */
-/*
-async function cancelAnomalyAnalysis() {
-    console.log('User cancelled anomaly analysis');
-    
-    // Query input'a iptal yazısı koy
-    elements.queryInput.value = 'hayır';
-    
-    // İptal de bir onay sorgusu olduğunu işaretle
-    window.isConfirmationQuery = true;
-
-    // Tekrar sorgu gönder
-    await handleQuery();
-}
-*/
-
-/*
-/**
- * Anomali parametrelerini değiştir
- */
-/*
-function modifyAnomalyParameters() {
-    console.log('User wants to modify parameters');
-    
-    // Modal'ı aç ve parametreleri doldur
-    const anomalyModal = document.getElementById('anomalyModal');
-    if (anomalyModal) {
-        // OpenSearch veri kaynağını seç
-        document.querySelector('input[name="dataSource"][value="opensearch"]').checked = true;
-        selectedDataSource = 'opensearch';
-        updateSourceInputs('opensearch');
-        
-        // Eğer sunucu tespit edildiyse, dropdown'da seç
-        if (window.pendingAnomalyParams && window.pendingAnomalyParams.server) {
-            setTimeout(() => {
-                const hostSelect = document.getElementById('mongodbHostSelect');
-                if (hostSelect) {
-                    // Önce host listesini yükle
-                    loadMongoDBHosts().then(() => {
-                        // Sonra seçimi yap
-                        hostSelect.value = window.pendingAnomalyParams.server;
-                    });
-                }
-            }, 500);
-        }
-        
-        // Zaman aralığını seç
-        if (window.pendingAnomalyParams && window.pendingAnomalyParams.time_range) {
-            const timeMapping = {
-                'last_hour': 'last_24h',
-                'last_day': 'last_24h',
-                'last_week': 'last_7d',
-                'last_month': 'last_30d'
-            };
-            const radioValue = timeMapping[window.pendingAnomalyParams.time_range] || 'last_24h';
-            const timeRadio = document.querySelector(`input[name="modalTimeRange"][value="${radioValue}"]`);
-            if (timeRadio) timeRadio.checked = true;
-        }
-        
-        // Modal'ı göster
-        anomalyModal.style.display = 'block';
-    }
-    
-    // Sonuç bölümünü temizle
-    elements.resultSection.style.display = 'none';
-}
-*/
 
 
 
@@ -2990,7 +2867,7 @@ async function loadClusters() {
     console.log('Loading MongoDB clusters from backend...');
     
     try {
-        const response = await fetch(`${API_ENDPOINTS.mongodbClusters}?api_key=${apiKey}`);
+        const response = await fetch(`/api/mongodb/clusters?api_key=${apiKey}`);
         const data = await response.json();
         
         console.log('Clusters response:', data);
@@ -3209,29 +3086,31 @@ async function handleAnalyzeLog() {
             // Single/Cluster mode kontrolü
             const hostMode = document.querySelector('input[name="hostSelectionMode"]:checked')?.value || 'single';
             console.log('Host selection mode:', hostMode);
-            
+
+            let hostFilter = ''; 
+
             if (hostMode === 'cluster') {
                 // Cluster mode: cluster dropdown'dan seç
                 const selectedCluster = document.getElementById('clusterSelect')?.value;
-                
+
                 if (!selectedCluster) {
                     alert('Lütfen bir cluster seçin!');
                     return;
                 }
-                
+
                 // Backend'e cluster_id gönder
                 requestData.cluster_id = selectedCluster;
                 requestData.analysis_mode = 'cluster';
                 requestData.file_path = 'opensearch';
-                
+
                 console.log('Cluster mode - selected cluster:', selectedCluster);
-                
+
                 // Cluster analizi için özel endpoint kullan
                 // Backend /api/analyze-cluster endpoint'ini kullanacak
-                
+
                 showLoader(true);
                 closeAnomalyModal();
-                
+
                 try {
                     const clusterResponse = await fetch(API_ENDPOINTS.analyzeCluster, {
                         method: 'POST',
@@ -3246,10 +3125,10 @@ async function handleAnalyzeLog() {
                             end_time: requestData.end_time
                         })
                     });
-                    
+
                     const clusterResult = await clusterResponse.json();
                     console.log('Cluster analysis result:', clusterResult);
-                    
+
                     // Cluster sonuçlarını normal anomaly formatına dönüştür
                     displayAnomalyResults({
                         durum: 'tamamlandı',
@@ -3271,7 +3150,7 @@ async function handleAnalyzeLog() {
                             }
                         }
                     });
-                    
+
                     // Storage ID varsa sakla
                     if (clusterResult.storage_id) {
                         window.lastAnomalyResult = {
@@ -3280,7 +3159,7 @@ async function handleAnalyzeLog() {
                             }
                         };
                     }
-                    
+
                     return; // Fonksiyondan erken çık
                 } catch (error) {
                     console.error('Cluster analysis error:', error);
@@ -3289,32 +3168,32 @@ async function handleAnalyzeLog() {
                 } finally {
                     showLoader(false);
                 }
-                
+
             } else {
                 // Single mode: dropdown'dan seç
-                const hostFilter = document.getElementById('mongodbHostSelect')?.value;
-                
+                hostFilter = document.getElementById('mongodbHostSelect')?.value; // ✅ const yerine sadece atama
+
                 if (!hostFilter) {
                     alert('Lütfen bir MongoDB sunucusu seçin!');
                     return;
                 }
-                
+
                 requestData.host_filter = hostFilter;
                 requestData.analysis_mode = 'single';
                 requestData.file_path = 'opensearch';
-                
+
                 console.log('Single mode - selected host:', hostFilter);
             }
-            
+
             console.log('OpenSearch Analysis Configuration:', {
                 mode: hostMode,
-                hosts: hostFilter,
-                hostCount: hostFilter.split(',').length,
+                hosts: hostFilter,  
+                hostCount: hostFilter ? hostFilter.split(',').length : 0,  // ✅ Güvenli kontrol ekledik
                 timeRange: requestData.time_range,
                 customStartTime: requestData.custom_start_time || 'N/A',
                 customEndTime: requestData.custom_end_time || 'N/A'
             });
-            
+
             break;
             
         default:
@@ -4126,32 +4005,34 @@ function formatJSON(obj) {
 }
 
 // ===== KONUŞMA GEÇMİŞİ YÖNETİMİ =====
-
 /**
  * Geçmişi yükle - MongoDB entegrasyonu ile
  */
 async function loadHistory() {
     try {
-        // Önce localStorage'dan yükle (offline destek)
-        const saved = localStorage.getItem(HISTORY_KEY);
-        if (saved) {
-            queryHistory = JSON.parse(saved);
-            updateHistoryDisplay();
-        }
-        
-        // MongoDB'den de kontrol et (eğer bağlıysa)
+        // SADECE MongoDB'den yükle
         if (isConnected && apiKey) {
-            const mongoHistory = await loadAnomalyHistoryFromMongoDB({
-                limit: 20
-            });
+            console.log('Loading query history from MongoDB...');
             
-            if (mongoHistory && mongoHistory.length > 0) {
-                // MongoDB'den gelen verileri entegre et
-                mergeHistoryWithMongoDB(mongoHistory);
+            const response = await fetch(`/api/query-history/load?api_key=${apiKey}&limit=50`);
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.status === 'success' && data.history) {
+                    queryHistory = data.history;
+                    console.log(`✅ Loaded ${data.count} items from MongoDB`);
+                    updateHistoryDisplay();
+                    return;
+                }
             }
+        } else {
+            // MongoDB bağlantısı yoksa boş başla
+            queryHistory = [];
+            console.log('⚠️ MongoDB not connected, starting with empty history');
         }
     } catch (e) {
-        console.error('Geçmiş yüklenemedi:', e);
+        console.error('MongoDB yükleme hatası:', e);
         queryHistory = [];
     }
 }
@@ -4160,31 +4041,80 @@ async function loadHistory() {
  * MongoDB geçmişini local history ile birleştir
  */
 function mergeHistoryWithMongoDB(mongoHistory) {
+    console.log('Merging MongoDB history, items:', mongoHistory.length);
+    
+    if (!mongoHistory || mongoHistory.length === 0) {
+        console.log('No MongoDB history to merge');
+        return;
+    }
+    
     mongoHistory.forEach(mongoItem => {
+        // Debug için veri yapısını logla
+        console.log('Processing MongoDB item:', mongoItem.analysis_id);
+        
         // Local history'de yoksa ekle
         const exists = queryHistory.find(h => 
             h.storage_id === mongoItem.analysis_id ||
-            h.timestamp === mongoItem.timestamp
+            (h.timestamp && mongoItem.timestamp && 
+             new Date(h.timestamp).getTime() === new Date(mongoItem.timestamp).getTime())
         );
         
         if (!exists) {
+            // Summary ve source verilerini çıkar
+            const summary = mongoItem.summary || {};
+            const source = mongoItem.source || {};
+            
+            // ✅ ÖNEMLİ: Doğru anomali alanlarını kullan
+            const criticalAnomalies = mongoItem.critical_anomalies_full || 
+                                     mongoItem.critical_anomalies || 
+                                     mongoItem.critical_anomalies_display || 
+                                     [];
+            
+            const unfilteredAnomalies = mongoItem.unfiltered_anomalies || 
+                                        mongoItem.critical_anomalies_full || 
+                                        [];
+            
             // MongoDB verisini local format'a çevir
             const historyItem = {
                 id: Date.now() + Math.random(),
                 timestamp: mongoItem.timestamp,
-                query: mongoItem.source_info?.query || 'MongoDB Anomaly Analysis',
+                query: source.host ? 
+                    `Anomali Analizi: ${source.host}` : 
+                    'MongoDB Anomaly Analysis',
                 type: 'anomaly',
                 category: 'anomaly',
                 result: {
                     durum: 'tamamlandı',
                     işlem: 'anomaly_analysis',
-                    sonuç: mongoItem
+                    sonuç: {
+                        critical_anomalies: criticalAnomalies,
+                        unfiltered_anomalies: unfilteredAnomalies,
+                        anomaly_count: summary.n_anomalies || mongoItem.anomaly_count || 0,
+                        total_logs: summary.total_logs || mongoItem.logs_analyzed || 0,
+                        anomaly_rate: summary.anomaly_rate || mongoItem.anomaly_rate || 0,
+                        summary: summary
+                    }
+                },
+                // ✅ childResult ekle (showHistoryDetail için)
+                childResult: {
+                    durum: 'tamamlandı',
+                    işlem: 'anomaly_analysis',
+                    sonuç: {
+                        critical_anomalies: criticalAnomalies,
+                        summary: summary
+                    }
                 },
                 storage_id: mongoItem.analysis_id,
-                fromMongoDB: true
+                fromMongoDB: true,
+                hasResult: true,
+                host: source.host || mongoItem.host,
+                source_type: source.type || source.source_type
             };
             
             queryHistory.push(historyItem);
+            console.log(`Added MongoDB item to history: ${historyItem.query} (${criticalAnomalies.length} anomalies)`);
+        } else {
+            console.log('Item already exists in history:', mongoItem.analysis_id);
         }
     });
     
@@ -4196,79 +4126,543 @@ function mergeHistoryWithMongoDB(mongoHistory) {
         queryHistory = queryHistory.slice(0, MAX_HISTORY_ITEMS);
     }
     
-    saveHistory();
+    // saveHistory(); // localStorage kullanmıyoruz
     updateHistoryDisplay();
+    console.log('History merge complete. Total items:', queryHistory.length);
 }
 
 /**
  * Geçmişe yeni sorgu ekle
  */
-function addToHistory(query, result, type = 'chatbot') {
+async function addToHistory(query, result, type = 'chatbot') {
     // Kategori doğrulaması yap
     if (type === 'anomaly') {
         console.log('Adding ANOMALY query to history:', query);
     } else {
         console.log('Adding CHATBOT query to history:', query);
     }
+    
     const historyItem = {
         id: Date.now(),
         timestamp: new Date().toISOString(),
         query: query,
         type: type,
-        category: type, // ✅ Aynı değeri category olarak da sakla
+        category: type,
         result: result,
         durum: result.durum,
         işlem: result.işlem,
-        // ML verilerini sakla
+        
+        // Ekstra metadata
+        executionTime: result.executionTime || null,
         mlData: result.sonuç?.data || null,
         aiExplanation: result.sonuç?.ai_explanation || result.ai_explanation || null,
-        hasVisualization: !!(result.sonuç?.data?.summary || result.sonuç?.data?.component_analysis)
+        hasVisualization: !!(result.sonuç?.data?.summary || result.sonuç?.data?.component_analysis),
+        hasResult: !!result.sonuç,
+        
+        // Browser metadata
+        user_agent: navigator.userAgent,
+        screen_resolution: `${window.screen.width}x${window.screen.height}`,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        
+        // Session tracking
+        session_id: currentSessionId,
+        page_load_time: window.performance?.timing?.loadEventEnd - window.performance?.timing?.navigationStart,
+        
+        // Anomaly tracking
+        isAnomalyQuery: type === 'anomaly' || result.işlem === 'anomaly_analysis',
+        anomalyCount: result.sonuç?.critical_anomalies?.length || 0
     };
     
     // En başa ekle
     queryHistory.unshift(historyItem);
     
-    // Maksimum sayıyı aş
+    // Maksimum sayıyı kontrol et
     if (queryHistory.length > MAX_HISTORY_ITEMS) {
         queryHistory = queryHistory.slice(0, MAX_HISTORY_ITEMS);
     }
     
-    // localStorage'a kaydet
-    saveHistory();
+    // MongoDB'ye kaydet
+    await saveHistory();
     
     // Görüntüyü güncelle
     updateHistoryDisplay();
+    
+    // Storage boyutu kontrolü
+    checkStorageSize();
+    
+    console.log('✅ History item added with full metadata');
 }
-
 /**
- * Geçmişi localStorage'a kaydet
+ * Geçmişi MongoDB'ye kaydet
  */
-function saveHistory() {
+async function saveHistory(retryCount = 0) {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 1000; // 1 saniye
+    
     try {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(queryHistory));
+        // Session ID kontrolü
+        if (!window.currentSessionId) {
+            window.currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        }
+        
+        if (isConnected && apiKey && queryHistory.length > 0) {
+            const lastItem = queryHistory[0];
+            
+            // Zaten MongoDB'den geldiyse kaydetme
+            if (lastItem.fromMongoDB) {
+                return true;
+            }
+            
+            // Kayıt öncesi veriyi validate et
+            if (!lastItem.query || !lastItem.timestamp) {
+                console.warn('Invalid history item, skipping save:', lastItem);
+                return false;
+            }
+            
+            const response = await fetch('/api/query-history/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    ...lastItem,
+                    api_key: apiKey,
+                    session_id: window.currentSessionId,
+                    save_timestamp: new Date().toISOString() // Kayıt zamanı
+                })
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                
+                // MongoDB ID'yi kaydet
+                lastItem.id = result.query_id;
+                lastItem.fromMongoDB = true;
+                lastItem.mongoSaveTime = new Date().toISOString();
+                
+                console.log('✅ Saved to MongoDB:', result.query_id);
+                
+                // Başarılı kayıt sonrası verify et
+                await verifyMongoDBSave(result.query_id);
+                
+                return true;
+            } else {
+                throw new Error(`Save failed: ${response.status}`);
+            }
+        }
+        
+        return false;
+        
     } catch (e) {
-        console.error('Geçmiş kaydedilemedi:', e);
+        console.error(`MongoDB save error (attempt ${retryCount + 1}/${MAX_RETRIES}):`, e);
+        
+        // Retry logic
+        if (retryCount < MAX_RETRIES - 1) {
+            console.log(`Retrying save in ${RETRY_DELAY}ms...`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+            return saveHistory(retryCount + 1);
+        }
+        
+        // Son deneme de başarısız olduysa kullanıcıyı bilgilendir
+        showNotification('Veri MongoDB\'ye kaydedilemedi. Bağlantıyı kontrol edin.', 'error');
+        return false;
     }
 }
 
 /**
- * Geçmiş görüntüsünü güncelle
+ * MongoDB'ye kaydın başarılı olduğunu doğrula
+ */
+async function verifyMongoDBSave(queryId) {
+    try {
+        // Kısa bir gecikme
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // MongoDB'den kaydı kontrol et
+        const response = await fetch(`/api/query-history/verify/${queryId}?api_key=${apiKey}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.exists) {
+                console.log('✅ MongoDB save verified:', queryId);
+                return true;
+            }
+        }
+        
+        console.warn('⚠️ MongoDB save could not be verified:', queryId);
+        return false;
+        
+    } catch (error) {
+        console.error('Verification error:', error);
+        return false;
+    }
+}
+
+/**
+ * Kayıtlı olmayan history item'ları bul ve kaydet
+ */
+async function syncUnsavedHistoryItems() {
+    if (!isConnected || !apiKey) return;
+    
+    console.log('🔄 Syncing unsaved history items to MongoDB...');
+    
+    const unsavedItems = queryHistory.filter(item => !item.fromMongoDB);
+    
+    if (unsavedItems.length === 0) {
+        console.log('✅ All items already saved to MongoDB');
+        return;
+    }
+    
+    console.log(`Found ${unsavedItems.length} unsaved items`);
+    
+    let savedCount = 0;
+    for (const item of unsavedItems) {
+        try {
+            const response = await fetch('/api/query-history/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    ...item,
+                    api_key: apiKey,
+                    session_id: window.currentSessionId
+                })
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                item.id = result.query_id;
+                item.fromMongoDB = true;
+                savedCount++;
+                console.log(`✅ Synced item ${savedCount}/${unsavedItems.length}:`, result.query_id);
+            }
+            
+        } catch (error) {
+            console.error('Failed to sync item:', error);
+        }
+        
+        // Rate limiting - her kayıt arası 100ms bekle
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    console.log(`✅ Sync complete: ${savedCount}/${unsavedItems.length} items saved`);
+    
+    if (savedCount > 0) {
+        showNotification(`${savedCount} kayıt MongoDB\'ye senkronize edildi`, 'success');
+    }
+}
+
+// Sayfa yüklendiğinde veya bağlantı kurulduğunda sync'i çalıştır
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        if (isConnected) {
+            syncUnsavedHistoryItems();
+        }
+    }, 5000); // 5 saniye sonra sync
+});
+
+
+/**
+ * Geçmiş görüntüsünü güncelle - MongoDB desteği ile
  */
 function updateHistoryDisplay(filter = 'all') {
     const historyContent = document.getElementById('historyContent');
     if (!historyContent) return;
     
+    // MongoDB'den gelen veri sayısını göster
+    console.log(`📊 Updating history display - Total items: ${queryHistory.length}`);
+    console.log(`   Filter: ${filter}`);
+    console.log(`   MongoDB items: ${queryHistory.filter(h => h.fromMongoDB).length}`);
+    console.log(`   Anomaly items: ${queryHistory.filter(h => h.type === 'anomaly').length}`);
+    console.log(`   Chatbot items: ${queryHistory.filter(h => h.type === 'chatbot').length}`);
+    
+    // Filtreleme - DÜZELTME BURADA
+    let filteredHistory = [];
+    
+    if (filter === 'all') {
+        filteredHistory = queryHistory;
+    } 
+    else if (filter === 'chatbot') {
+        filteredHistory = queryHistory.filter(item => {
+            // Sadece chatbot type ve anomaly category'si OLMAYANLAR
+            return item.type === 'chatbot' && 
+                   item.category !== 'anomaly' && 
+                   item.subType !== 'DBA';
+        });
+    } 
+    else if (filter === 'anomaly') {
+        filteredHistory = queryHistory.filter(item => {
+            // Anomaly veya DBA olan her şey
+            return item.type === 'anomaly' || 
+                   item.category === 'anomaly' ||
+                   item.subType === 'DBA' ||
+                   item.isAnomalyParent === true;
+        });
+    }
+    
+    console.log(`   Filtered items: ${filteredHistory.length}`);
+    
+    // MongoDB sync durumunu göster
+    const unsyncedCount = queryHistory.filter(h => !h.fromMongoDB).length;
+    if (unsyncedCount > 0) {
+        console.warn(`⚠️ ${unsyncedCount} items not synced to MongoDB`);
+    }
+    
+    if (filteredHistory.length === 0) {
+        historyContent.innerHTML = `
+            <div class="history-empty">
+                <p>Bu kategoride geçmiş bulunmuyor.</p>
+                <small>${isConnected ? 'MongoDB\'den veri yükleniyor...' : 'MongoDB bağlantısı bekleniyor...'}</small>
+                ${isConnected ? '<button class="btn-small" onclick="reloadAllHistory()">🔄 Yeniden Yükle</button>' : ''}
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '<div class="history-list">';
+    
+    // MongoDB sync durumu göstergesi
+    if (isConnected) {
+        const syncedCount = filteredHistory.filter(h => h.fromMongoDB).length;
+        const totalCount = filteredHistory.length;
+        const syncPercentage = totalCount > 0 ? ((syncedCount / totalCount) * 100).toFixed(0) : 0;
+        
+        html += `
+            <div class="mongodb-sync-status">
+                <span class="sync-indicator ${syncPercentage == 100 ? 'synced' : 'partial'}">
+                    💾 MongoDB Sync: ${syncedCount}/${totalCount} (${syncPercentage}%)
+                </span>
+                ${unsyncedCount > 0 ? `
+                    <button class="btn-sync" onclick="syncUnsavedHistoryItems()">
+                        🔄 Sync Now
+                    </button>
+                ` : ''}
+            </div>
+        `;
+    }
+    
+    // History item'ları göster
+    filteredHistory.forEach(item => {
+        const date = new Date(item.timestamp);
+        const typeIcon = item.subType === 'DBA' ? '🕐' : 
+                        item.type === 'anomaly' ? '🔍' : 
+                        item.type === 'chat-anomaly' ? '🤖' : '💬';
+        
+        // MongoDB durumu
+        const mongoIcon = item.fromMongoDB ? '✅' : '⏳';
+        const mongoTitle = item.fromMongoDB ? 'MongoDB\'de kayıtlı' : 'MongoDB\'ye kaydedilecek';
+        
+        // Durum kontrolü
+        const statusClass = item.durum === 'tamamlandı' ? 'completed' :
+                           item.durum === 'başarılı' ? 'success' : 
+                           item.durum === 'hata' ? 'error' :
+                           item.durum === 'onay_bekliyor' ? 'pending' : 
+                           item.durum === 'iptal' ? 'cancelled' : 'warning';
+        
+        const statusIcon = item.durum === 'tamamlandı' ? '✅' :
+                          item.durum === 'onay_bekliyor' ? '⏳' :
+                          item.durum === 'başarılı' ? '✔️' :
+                          item.durum === 'iptal' ? '❌' : '⚠️';
+        
+        const itemClass = item.isAnomalyParent ? 'history-item anomaly-parent' : 'history-item';
+        const resultIndicator = item.hasResult && item.childResult ? 
+            '<span class="result-indicator">✅ Analiz Tamamlandı</span>' : 
+            item.awaitingConfirmation && item.durum === 'onay_bekliyor' ? 
+            '<span class="result-indicator pending animated">⏳ Onay Bekliyor</span>' : 
+            item.durum === 'iptal' ?
+            '<span class="result-indicator cancelled">❌ İptal Edildi</span>' : '';
+        
+        html += `
+            <div class="${itemClass}" data-id="${item.id}" data-has-result="${item.hasResult || false}" data-from-mongodb="${item.fromMongoDB}">
+                <div class="history-item-header">
+                    <span class="history-type">${typeIcon}</span>
+                    <span class="history-time">${date.toLocaleString('tr-TR')}</span>
+                    <span class="mongodb-status" title="${mongoTitle}">${mongoIcon}</span>
+                    ${resultIndicator}
+                    <span class="history-status ${statusClass}">${statusIcon} ${item.durum}</span>
+                    ${item.executionTime ? `<span class="execution-time">⏱️ ${(item.executionTime/1000).toFixed(1)}s</span>` : ''}
+                </div>
+                <div class="history-query">${escapeHtml(item.query)}</div>
+                ${item.id ? `<div class="history-id">ID: ${item.id}</div>` : ''}
+                <div class="history-actions">
+                    ${!item.parentId ? `
+                        <button class="btn-small" onclick="window.replayQuery('${item.id.replace(/'/g, "\\'")}')" >
+                            🔄 Tekrar Çalıştır
+                        </button>
+                    ` : ''}
+                    <button class="btn-small" onclick="window.showHistoryDetail('${item.id}')">
+                        ${item.hasResult && item.childResult ? '📊 Sonuçları Göster' : '👁️ Detay'}
+                    </button>
+                    ${!item.fromMongoDB ? `
+                        <button class="btn-small" onclick="syncSingleItem('${item.id}')">
+                            💾 MongoDB'ye Kaydet
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    historyContent.innerHTML = html;
+}
+
+/**
+ * Tüm history'yi MongoDB'den yeniden yükle
+ */
+async function reloadAllHistory() {
+    console.log('🔄 Reloading all history from MongoDB...');
+    showLoader(true);
+    
+    try {
+        // Önce mevcut history'yi temizle
+        queryHistory = [];
+        
+        // MongoDB'den tüm verileri yükle
+        await Promise.all([
+            loadHistory(),
+            loadAnomalyHistoryFromMongoDB({limit: 100}),
+            loadAndMergeDBAHistory()
+        ]);
+        
+        console.log(`✅ Reloaded ${queryHistory.length} items from MongoDB`);
+        showNotification('Tüm veriler MongoDB\'den yeniden yüklendi', 'success');
+        
+        // UI'ı güncelle
+        updateHistoryDisplay();
+        
+    } catch (error) {
+        console.error('Reload error:', error);
+        showNotification('Veriler yüklenirken hata oluştu', 'error');
+    } finally {
+        showLoader(false);
+    }
+}
+
+/**
+ * Tek bir item'ı MongoDB'ye kaydet
+ */
+async function syncSingleItem(itemId) {
+    const item = queryHistory.find(h => h.id === itemId);
+    if (!item || item.fromMongoDB) return;
+    
+    try {
+        const response = await fetch('/api/query-history/save', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                ...item,
+                api_key: apiKey,
+                session_id: window.currentSessionId
+            })
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            item.id = result.query_id;
+            item.fromMongoDB = true;
+            
+            console.log(`✅ Item synced to MongoDB: ${result.query_id}`);
+            showNotification('MongoDB\'ye kaydedildi', 'success');
+            
+            // UI'ı güncelle
+            updateHistoryDisplay();
+        }
+    } catch (error) {
+        console.error('Sync error:', error);
+        showNotification('Kayıt başarısız', 'error');
+    }
+}
+
+// ========== DBA HISTORY ENTEGRASYONU ==========
+
+/**
+ * MongoDB'den DBA analizlerini çek ve history'e ekle
+ */
+async function loadAndMergeDBAHistory() {
+    try {
+        // MongoDB'den DBA analizlerini çek
+        const response = await fetch(`/api/dba/analysis-history?limit=20&days_back=30&api_key=${apiKey}`);
+        const data = await response.json();
+        
+        if (data.status === 'success' && data.analyses && data.analyses.length > 0) {
+            console.log(`Loaded ${data.analyses.length} DBA analyses from MongoDB`);
+            
+            // Her DBA analizini history formatına çevir
+            data.analyses.forEach(analysis => {
+                // Zaten history'de var mı kontrol et (storage_id ile)
+                const exists = queryHistory.find(h => h.storage_id === analysis._id);
+                if (!exists) {
+                    // History item formatına çevir
+                    const historyItem = {
+                        id: Date.now() + Math.random(), // Unique ID
+                        timestamp: analysis.timestamp,
+                        query: `DBA Analizi: ${analysis.host} - ${analysis.time_range || 'Custom time range'}`,
+                        type: 'anomaly',
+                        category: 'anomaly',
+                        subType: 'DBA', // DBA olduğunu belirtmek için
+                        storage_id: analysis._id,
+                        result: {
+                            durum: 'tamamlandı',
+                            işlem: 'dba_analysis'
+                        },
+                        // DBA spesifik veriler
+                        dbaData: {
+                            host: analysis.host,
+                            anomaly_count: analysis.anomaly_count,
+                            total_logs: analysis.total_logs,
+                            anomaly_rate: analysis.anomaly_rate,
+                            time_range: analysis.time_range,
+                            has_ai_explanation: analysis.has_ai_explanation
+                        },
+                        hasVisualization: true,
+                        fromMongoDB: true // MongoDB'den geldiğini işaretle
+                    };
+                    
+                    // History'e ekle
+                    queryHistory.unshift(historyItem);
+                }
+            });
+            
+            // Tarihe göre sırala
+            queryHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            // Fazla kayıtları temizle
+            if (queryHistory.length > MAX_HISTORY_ITEMS) {
+                queryHistory = queryHistory.slice(0, MAX_HISTORY_ITEMS);
+            }
+            
+            // LocalStorage'a kaydet
+            saveHistory();
+            
+            // Display'i güncelle
+            updateHistoryDisplayWithDBA();
+        }
+    } catch (error) {
+        console.error('Failed to load DBA history from MongoDB:', error);
+    }
+}
+
+/**
+ * History display'i DBA desteğiyle güncelle
+ */
+function updateHistoryDisplayWithDBA(filter = 'all') {
+    const historyContent = document.getElementById('historyContent');
+    if (!historyContent) return;
+    
     // Filtreleme
     let filteredHistory = queryHistory;
-    if (filter === 'chatbot') {
-        filteredHistory = queryHistory.filter(item => 
-            item.type === 'chatbot' || (!item.type && item.category === 'chatbot')
-        );
-    } else if (filter === 'anomaly') {
+    if (filter === 'anomaly') {
         filteredHistory = queryHistory.filter(item => 
             item.type === 'anomaly' || 
             item.category === 'anomaly' ||
             item.isAnomalyParent === true
+        );
+    } else if (filter === 'chatbot') {
+        filteredHistory = queryHistory.filter(item => 
+            item.type === 'chatbot' && item.subType !== 'DBA'
         );
     }
     
@@ -4286,60 +4680,141 @@ function updateHistoryDisplay(filter = 'all') {
     
     filteredHistory.forEach(item => {
         const date = new Date(item.timestamp);
-        const typeIcon = item.type === 'anomaly' ? '🔍' : 
+        
+        // DBA için özel ikon ve renk
+        const typeIcon = item.subType === 'DBA' ? '🕐' : 
+                        item.type === 'anomaly' ? '🔍' : 
                         item.type === 'chat-anomaly' ? '🤖' : '💬';
         
-        // GENİŞLETİLMİŞ DURUM KONTROLÜ
+        const borderColor = item.subType === 'DBA' ? '#0047BA' : '#e67e22';
+        
         const statusClass = item.durum === 'tamamlandı' ? 'completed' :
                            item.durum === 'başarılı' ? 'success' : 
-                           item.durum === 'hata' ? 'error' :
-                           item.durum === 'onay_bekliyor' ? 'pending' : 
-                           item.durum === 'iptal' ? 'cancelled' : 'warning';
+                           item.durum === 'hata' ? 'error' : 'warning';
         
-        // Durum ikonu
         const statusIcon = item.durum === 'tamamlandı' ? '✅' :
-                          item.durum === 'onay_bekliyor' ? '⏳' :
-                          item.durum === 'başarılı' ? '✔️' :
-                          item.durum === 'iptal' ? '❌' : '⚠️';
+                          item.durum === 'başarılı' ? '✔️' : '⚠️';
         
-        // Parent sorgu için özel stil
-        // Parent-child ilişkisini daha net göster
-        const itemClass = item.isAnomalyParent ? 'history-item anomaly-parent' : 'history-item';
-
-        // Eğer bu bir anomali parent ise ve sonucu varsa, özel işaretleme ekle
-        const resultIndicator = item.hasResult && item.childResult ? 
-            '<span class="result-indicator">✅ Analiz Tamamlandı</span>' : 
-            item.awaitingConfirmation && item.durum === 'onay_bekliyor' ? 
-            '<span class="result-indicator pending animated">⏳ Onay Bekliyor</span>' : 
-            item.durum === 'iptal' ?
-            '<span class="result-indicator cancelled">❌ İptal Edildi</span>' : '';
         html += `
-            <div class="${itemClass}" data-id="${item.id}" data-has-result="${item.hasResult || false}">
+            <div class="history-item ${item.subType === 'DBA' ? 'dba-item' : ''}" 
+                 data-id="${item.id}" 
+                 style="border-left: 4px solid ${borderColor};">
                 <div class="history-item-header">
                     <span class="history-type">${typeIcon}</span>
+                    ${item.subType === 'DBA' ? '<span class="dba-badge" style="background: #0047BA; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px;">DBA</span>' : ''}
                     <span class="history-time">${date.toLocaleString('tr-TR')}</span>
-                    ${resultIndicator}
+                    ${item.fromMongoDB ? '<span class="mongodb-indicator" title="MongoDB\'den yüklendi">💾</span>' : ''}
                     <span class="history-status ${statusClass}">${statusIcon} ${item.durum}</span>
-                    ${item.executionTime ? `<span class="execution-time">⏱️ ${(item.executionTime/1000).toFixed(1)}s</span>` : ''}
                 </div>
                 <div class="history-query">${escapeHtml(item.query)}</div>
-                <div class="history-actions">
-                ${!item.parentId ? `
-                    <button class="btn-small" onclick="replayQuery(${item.id})">
-                        🔄 Tekrar Çalıştır
-                    </button>
+                ${item.dbaData ? `
+                    <div class="dba-summary" style="margin-top: 5px; font-size: 12px; color: #666;">
+                        📊 ${item.dbaData.anomaly_count} anomali | 
+                        📄 ${(item.dbaData.total_logs || 0).toLocaleString('tr-TR')} log | 
+                        📈 %${(item.dbaData.anomaly_rate || 0).toFixed(2)}
+                    </div>
                 ` : ''}
-                <button class="btn-small" onclick="window.showHistoryDetail(${item.id})">
-                    ${item.hasResult && item.childResult ? '📊 Sonuçları Göster' : '👁️ Detay'}
-                </button>
+                <div class="history-actions">
+                    ${item.subType === 'DBA' && item.storage_id ? `
+                        <button class="btn-small" onclick="loadHistoricalDBAAnalysis('${item.storage_id}')">
+                            📊 Sonuçları Göster
+                        </button>
+                    ` : `
+                        <button class="btn-small" onclick="showHistoryDetail(${item.id})">
+                            👁️ Detay
+                        </button>
+                    `}
+                    ${!item.fromMongoDB ? `
+                        <button class="btn-small" onclick="replayQuery(${item.id})">
+                            🔄 Tekrar
+                        </button>
+                    ` : ''}
+                </div>
             </div>
-        </div>
-    `;
-});
+        `;
+    });
     
     html += '</div>';
     historyContent.innerHTML = html;
 }
+
+/**
+ * Geçmişten DBA analizini yükle ve göster
+ */
+async function loadHistoricalDBAAnalysis(analysisId) {
+    try {
+        showLoader(true);
+        
+        const response = await fetch(`/api/dba/analysis/${analysisId}?api_key=${apiKey}`);
+        const data = await response.json();
+        
+        if (data.status === 'success' && data.analysis) {
+            const analysis = data.analysis;
+            const result = analysis.analysis_result || {};
+            const sonuc = result.sonuç || {};
+            
+            // DBA sonuçlarını formatla
+            const formattedResult = {
+                status: 'success',
+                results: {
+                    critical_anomalies: sonuc.critical_anomalies || [],
+                    total_logs_analyzed: sonuc.total_logs || 0,
+                    anomaly_count: sonuc.anomaly_count || 0,
+                    anomaly_rate: sonuc.anomaly_rate || 0,
+                    ai_summary: result.ai_explanation
+                },
+                host: analysis.host,
+                time_range: analysis.time_range,
+                storage_id: analysisId
+            };
+            
+            // Pagination'ı resetle
+            window.dbaCurrentPage = 1;
+            
+            // Sonuçları görüntüle
+            displayDBAAnalysisResults(
+                formattedResult,
+                analysis.host || 'Unknown',
+                analysis.time_range ? analysis.time_range.split(' to ')[0] : '',
+                analysis.time_range ? analysis.time_range.split(' to ')[1] : ''
+            );
+            
+            showNotification('DBA analizi yüklendi', 'success');
+        }
+    } catch (error) {
+        console.error('Failed to load DBA analysis:', error);
+        showNotification('DBA analizi yüklenemedi', 'error');
+    } finally {
+        showLoader(false);
+    }
+}
+
+// Sayfa yüklendiğinde ve API bağlandığında DBA geçmişini yükle
+document.addEventListener('DOMContentLoaded', function() {
+    // Mevcut tab event listener'larına ek olarak
+    const originalUpdateDisplay = updateHistoryDisplay;
+    
+    // updateHistoryDisplay'i override et
+    window.updateHistoryDisplay = function(filter = 'all') {
+        // Önce DBA history'i yükle
+        if (apiKey) {
+            loadAndMergeDBAHistory().then(() => {
+                updateHistoryDisplayWithDBA(filter);
+            });
+        } else {
+            originalUpdateDisplay(filter);
+        }
+    };
+});
+
+// API bağlandığında otomatik yükle
+window.addEventListener('apiConnected', function() {
+    loadAndMergeDBAHistory();
+});
+
+// Global fonksiyonları tanımla
+window.loadHistoricalDBAAnalysis = loadHistoricalDBAAnalysis;
+window.loadAndMergeDBAHistory = loadAndMergeDBAHistory;
 
 /**
  * Geçmiş detayını göster
@@ -4635,12 +5110,65 @@ function replayQuery(id) {
 /**
  * Geçmişı temizle
  */
-function clearHistory() {
+async function clearHistory() {
     if (confirm('Tüm sorgu geçmişini silmek istediğinizden emin misiniz?')) {
-        queryHistory = [];
-        saveHistory();
-        updateHistoryDisplay();
-        showNotification('Geçmiş temizlendi', 'success');
+        try {
+            // MongoDB'den temizle
+            if (isConnected && apiKey) {
+                const response = await fetch('/api/query-history/clear', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        api_key: apiKey,
+                        session_id: currentSessionId
+                    })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log(`✅ Cleared ${result.deleted_count} items from MongoDB`);
+                }
+            }
+            
+            // Local değişkeni temizle
+            queryHistory = [];
+            
+            // localStorage TEMİZLEMESİ YOK
+            
+            updateHistoryDisplay();
+            showNotification('Geçmiş temizlendi', 'success');
+        } catch (e) {
+            console.error('Geçmiş temizleme hatası:', e);
+            showNotification('Geçmiş temizlenirken hata oluştu', 'error');
+        }
+    }
+}
+
+/**
+ * Storage boyutunu kontrol et ve gerekirse temizlik yap
+ */
+async function checkStorageSize() {
+    if (!isConnected || !apiKey) return;
+    
+    try {
+        const response = await fetch(`/api/storage/check-size?api_key=${apiKey}`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            if (data.is_over_limit) {
+                console.warn(`⚠️ Storage limit exceeded: ${data.size_info.total_size_gb.toFixed(2)} GB`);
+                
+                if (data.deleted_count > 0) {
+                    console.log(`🧹 Cleaned up ${data.deleted_count} old records`);
+                    showNotification(`Disk alanı temizlendi: ${data.deleted_count} eski kayıt silindi`, 'info');
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Storage size check failed:', e);
     }
 }
 
@@ -5853,6 +6381,569 @@ window.exportComponentAnalysis = function() {
     
     showNotification('Component analizi başarıyla indirildi', 'success');
 };
+
+// ========== DBA ANALİZ FONKSİYONLARI ==========
+
+/**
+ * DBA Analiz modalını aç
+ */
+async function openDBAAnalysisModal() {
+    // Modal içeriğini oluştur
+    const modalContent = `
+        <div class="dba-analysis-modal">
+            <h4>🕐 DBA Spesifik Zaman Analizi</h4>
+            <p>MongoDB loglarında belirli bir zaman aralığındaki anomalileri tespit edin.</p>
+            
+            <div class="dba-time-selection">
+                <div style="margin-bottom: 15px;">
+                    <label>Cluster Seçin:</label>
+                    <select id="dbaClusterSelect" class="form-select" style="width: 100%; padding: 8px;">
+                        <option value="">Yükleniyor...</option>
+                    </select>
+                </div>
+                
+                <div style="margin-top: 15px;">
+                    <label>Başlangıç Zamanı (Türkiye Saati):</label>
+                    <input type="datetime-local" id="dbaStartTime" class="form-input" style="width: 100%; padding: 8px;">
+                    <small style="color: #888;">Örnek: Outbox rollback için 10.09.2025 16:09</small>
+                </div>
+                
+                <div style="margin-top: 10px;">
+                    <label>Bitiş Zamanı (Türkiye Saati):</label>
+                    <input type="datetime-local" id="dbaEndTime" class="form-input" style="width: 100%; padding: 8px;">
+                    <small style="color: #888;">Örnek: Outbox rollback için 10.09.2025 16:11 (2 dakikalık aralık)</small>
+                </div>
+                
+                <small style="color: #666; margin-top: 10px; display: block;">
+                    💡 İpucu: Spesifik olaylar için dar zaman aralıkları seçin:
+                    <ul style="margin: 5px 0; padding-left: 20px;">
+                        <li>Outbox rollback: 2-3 dakika</li>
+                        <li>Performance issue: 10-15 dakika</li>
+                        <li>Connection drop: 5-10 dakika</li>
+                    </ul>
+                </small>
+                
+                <button class="btn btn-primary" style="width: 100%; margin-top: 20px;" onclick="startDBAAnalysis()">
+                    🚀 DBA Analizini Başlat
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Modal'ı göster
+    showModal('DBA Zaman Bazlı Anomali Analizi', modalContent);
+    
+    // Cluster listesini yükle
+    if (!apiKey || !isConnected) {
+        console.error('API key not available or not connected');
+        const clusterSelect = document.getElementById('dbaClusterSelect');
+        if (clusterSelect) {
+            clusterSelect.innerHTML = '<option value="">Önce bağlantı kurmanız gerekiyor</option>';
+        }
+        return;
+    }
+
+    try {
+        console.log('Loading clusters for DBA analysis, API key:', apiKey ? 'present' : 'missing');
+        const response = await fetch(`${API_ENDPOINTS.mongodbClusters}?api_key=${apiKey}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('DBA clusters loaded:', data);
+        
+        const clusterSelect = document.getElementById('dbaClusterSelect');
+        if (clusterSelect) {
+            // Mevcut seçenekleri temizle
+            clusterSelect.innerHTML = '<option value="" disabled selected>Cluster seçin...</option>';
+            
+            // Cluster'ları ekle
+            if (data.clusters && Object.keys(data.clusters).length > 0) {
+                Object.entries(data.clusters).forEach(([clusterId, cluster]) => {
+                    const option = document.createElement('option');
+                    option.value = cluster.cluster_id || clusterId;
+                    option.textContent = cluster.display_name || cluster.cluster_id || clusterId;
+                    
+                    // Host listesini dataset'e ekle
+                    if (cluster.hosts && Array.isArray(cluster.hosts)) {
+                        option.dataset.hosts = cluster.hosts.join(',');
+                        option.dataset.hostCount = cluster.hosts.length;
+                    } else {
+                        option.dataset.hostCount = cluster.node_count || 0;
+                    }
+                    
+                    clusterSelect.appendChild(option);
+                });
+                console.log(`Loaded ${Object.keys(data.clusters).length} clusters for DBA analysis`);
+            }
+        }
+    } catch (error) {
+        console.error('Error loading clusters for DBA analysis:', error);
+        const clusterSelect = document.getElementById('dbaClusterSelect');
+        if (clusterSelect) {
+            clusterSelect.innerHTML = '<option value="">Cluster listesi yüklenemedi</option>';
+        }
+    }
+    
+    // Default değerleri set et
+    // DBA için daha spesifik: son 15 dakika (tipik incident window)
+    const now = new Date();
+    const fifteenMinutesAgo = new Date(now - 15 * 60 * 1000);
+    
+    // Türkiye saat dilimine göre formatla (datetime-local input için)
+    const formatDateTimeLocal = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    };
+    
+    document.getElementById('dbaStartTime').value = formatDateTimeLocal(fifteenMinutesAgo);
+    document.getElementById('dbaEndTime').value = formatDateTimeLocal(now);
+}
+
+/**
+ * DBA analizi başlat
+ */
+async function startDBAAnalysis() {
+    const clusterSelect = document.getElementById('dbaClusterSelect');
+    const cluster = clusterSelect.value;
+    const startTimeLocal = document.getElementById('dbaStartTime').value;
+    const endTimeLocal = document.getElementById('dbaEndTime').value;
+    
+    if (!cluster || !startTimeLocal || !endTimeLocal) {
+        showNotification('Lütfen tüm alanları doldurun', 'error');
+        return;
+    }
+    
+    // Cluster'ın host listesini al (multiple host desteği için)
+    let hostParam = cluster;  // Default: cluster adı
+    
+    // Cluster'ın host listesini dataset'ten al
+    const selectedOption = clusterSelect.options[clusterSelect.selectedIndex];
+    if (selectedOption && selectedOption.dataset.hosts) {
+        // API'den gelen host listesini kullan
+        hostParam = selectedOption.dataset.hosts;
+        console.log(`Using hosts from API: ${hostParam}`);
+    } else {
+        // Host listesi yoksa sadece cluster adını kullan
+        // Backend tek host olarak işleyecek
+        console.warn(`No host list for cluster ${cluster}, using cluster name as single host`);
+        hostParam = cluster;
+    }
+    
+    console.log('DBA Analysis - Cluster:', cluster, 'Hosts:', hostParam);
+    
+    // Local time'ı UTC ISO formatına çevir (backend için)
+    // Türkiye UTC+3 olduğu için 3 saat çıkarmamız gerekiyor
+    const convertToUTC = (localDateTimeStr) => {
+        const localDate = new Date(localDateTimeStr);
+        // Türkiye offset'i (UTC+3)
+        const turkeyOffset = 3 * 60 * 60 * 1000; // 3 saat in milliseconds
+        const utcDate = new Date(localDate.getTime() - turkeyOffset);
+        return utcDate.toISOString();
+    };
+    
+    const startTimeUTC = convertToUTC(startTimeLocal);
+    const endTimeUTC = convertToUTC(endTimeLocal);
+    
+    console.log('DBA Analysis Time Range:');
+    console.log('Local Start:', startTimeLocal);
+    console.log('UTC Start:', startTimeUTC);
+    console.log('Local End:', endTimeLocal);
+    console.log('UTC End:', endTimeUTC);
+    
+    closeModal();
+    showLoader(true);
+    
+    try {
+        // URL parametrelerini hazırla
+        const params = new URLSearchParams({
+            host: hostParam,  // backend 'host' parametresi bekliyor, cluster_id değil
+            start_time: startTimeUTC,
+            end_time: endTimeUTC,
+            api_key: apiKey,
+            auto_explain: 'true'
+        });
+        
+        const response = await fetch(`/api/dba/analyze-specific-time?${params}`, {
+            method: 'POST',  // Backend POST bekliyor
+            headers: {
+                'Content-Type': 'application/json',
+            }
+            // Body yok, parametreler URL'de
+        });
+        const result = await response.json();
+        console.log('DBA analysis result:', result);
+        
+        // Sonuçları görüntüle
+        displayDBAAnalysisResults(result, cluster, startTimeLocal, endTimeLocal);
+        
+        // ✅ YENİ: History'e ekle
+        if (result.status === 'success') {
+            const queryText = `DBA Analizi: ${cluster} (${new Date(startTimeLocal).toLocaleDateString('tr-TR')} ${new Date(startTimeLocal).toLocaleTimeString('tr-TR')} - ${new Date(endTimeLocal).toLocaleTimeString('tr-TR')})`;
+            
+            addToHistory(queryText, {
+                durum: 'tamamlandı',
+                işlem: 'dba_analysis',
+                açıklama: `Toplam ${result.results?.anomaly_count || 0} anomali tespit edildi. Anomali oranı: %${(result.results?.anomaly_rate || 0).toFixed(2)}`,
+                sonuç: result.results || {},
+                storage_id: result.storage_id,
+                host: cluster,
+                time_range: `${startTimeLocal} - ${endTimeLocal}`
+            }, 'anomaly');
+        }
+        
+    } catch (error) {
+        console.error('DBA analysis error:', error);
+        showNotification('DBA analizi sırasında hata oluştu', 'error');
+    } finally {
+        showLoader(false);
+    }
+}
+
+/**
+ * DBA analiz sonuçlarını görüntüle
+ */
+function displayDBAAnalysisResults(result, cluster, startTime, endTime) {
+    console.log('Displaying DBA analysis results:', result);
+    
+    let html = '<div class="dba-analysis-results">';
+    html += '<div class="dba-header">';
+    html += '<h2>🕐 DBA Zaman Bazlı Anomali Analiz Sonuçları</h2>';
+    html += `<p class="time-range-info">
+        <strong>Cluster:</strong> ${cluster} | 
+        <strong>Zaman Aralığı:</strong> ${new Date(startTime).toLocaleString('tr-TR')} - ${new Date(endTime).toLocaleString('tr-TR')}
+    </p>`;
+    html += '</div>';
+    
+    // Hata durumu kontrolü
+    if (result.status === 'error' || result.error) {
+        html += '<div class="dba-error">';
+        html += '<h3>❌ Analiz Hatası</h3>';
+        html += `<p>${escapeHtml(result.error || result.message || 'Analiz sırasında bir hata oluştu')}</p>`;
+        html += '</div>';
+        html += '</div>';
+        
+        elements.resultContent.innerHTML = html;
+        elements.resultSection.style.display = 'block';
+        return;
+    }
+    
+    // Özet bilgiler
+    if (result.results) {
+        const summary = {
+            total_logs: result.results.total_logs_analyzed,
+            total_anomalies: result.results.anomaly_count,
+            anomaly_rate: result.results.anomaly_rate,
+            hosts_analyzed: result.hosts ? result.hosts.split(',').length : 1
+        };
+        html += renderDBAAnalysisSummary(summary);
+    }
+    
+    // Host bazlı breakdown
+    if (result.host_breakdown && Object.keys(result.host_breakdown).length > 0) {
+        html += renderDBAHostBreakdown(result.host_breakdown);
+    }
+    
+    // Kritik anomaliler
+    if (result.results && result.results.critical_anomalies && result.results.critical_anomalies.length > 0) {
+        html += renderDBACriticalAnomalies(result.results.critical_anomalies);
+    }
+    
+    // AI açıklaması (LCWGPT)
+    if (result.results && result.results.ai_summary) {
+        html += renderDBAExplanation(result.results.ai_summary);
+    }
+    
+    // Aksiyonlar
+    html += '<div class="dba-actions">';
+    html += '<button class="btn btn-primary" onclick="saveDBAAnalysis()">💾 Analizi Kaydet</button>';
+    html += '<button class="btn btn-secondary" onclick="exportDBAResults()">📥 Rapor İndir</button>';
+    html += '<button class="btn btn-info" onclick="shareDBAResults()">📤 Paylaş</button>';
+    html += '</div>';
+    
+    html += '</div>';
+    
+    // Sonuçları göster - TAM GENİŞLİKTE AMA SAYFA AKIŞINDA VE PADDING'Lİ
+    elements.resultContent.innerHTML = html;
+    elements.resultSection.style.display = 'block';
+
+    // Normal akışta tut, padding ekle
+    elements.resultSection.style.position = 'relative';
+    elements.resultSection.style.width = 'calc(100% - 40px)';  // Sol-sağ 20px'er boşluk
+    elements.resultSection.style.maxWidth = '100%';
+    elements.resultSection.style.margin = '20px auto';  // Üst-alt margin ve ortalama
+    elements.resultSection.style.marginLeft = '20px';  // Sol boşluk
+    elements.resultSection.style.marginRight = '20px';  // Sağ boşluk
+    elements.resultSection.style.padding = '30px';  // İç padding
+    elements.resultSection.style.maxHeight = '80vh';
+    elements.resultSection.style.overflowY = 'auto';
+    elements.resultSection.style.backgroundColor = '#ffffff';
+    elements.resultSection.style.borderRadius = '8px';  // Köşeleri yuvarla
+    elements.resultSection.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+    elements.resultSection.style.marginBottom = '30px';  // History section'dan ayır
+
+    // Parent wrapper kontrolü - genişliği koru ama padding ekle
+    const resultWrapper = elements.resultSection.parentElement;
+    if (resultWrapper && resultWrapper.classList.contains('result-wrapper')) {
+        resultWrapper.style.width = '100%';
+        resultWrapper.style.padding = '0 20px';  // Wrapper'a da yan padding
+        resultWrapper.style.boxSizing = 'border-box';
+    }
+
+    // İçerik genişliğini ayarla
+    const resultContentDiv = elements.resultContent.querySelector('.dba-analysis-results');
+    if (resultContentDiv) {
+        resultContentDiv.style.maxWidth = '100%';
+        resultContentDiv.style.width = '100%';
+        resultContentDiv.style.margin = '0 auto';
+        resultContentDiv.style.padding = '0 10px';  // İçeriğe de hafif padding
+    }
+
+    // Smooth scroll
+    elements.resultSection.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'start',
+        inline: 'nearest'
+    });
+    
+    // Global değişkene kaydet
+    window.lastDBAResult = {
+        result: result,
+        cluster: cluster,
+        startTime: startTime,
+        endTime: endTime,
+        timestamp: new Date().toISOString()
+    };
+    
+    // ✅ YENİ: DBA analizini chat geçmişine ekle
+    if (result.status === 'success' && result.results) {
+        const queryDescription = `DBA Analizi: ${cluster} - ${new Date(startTime).toLocaleString('tr-TR')} - ${new Date(endTime).toLocaleString('tr-TR')}`;
+        
+        // History'e ekle
+        addToHistory(queryDescription, {
+            durum: 'tamamlandı',
+            işlem: 'dba_analysis',
+            açıklama: `${result.results.anomaly_count || 0} anomali tespit edildi`,
+            sonuç: {
+                summary: {
+                    total_logs: result.results.total_logs_analyzed || 0,
+                    n_anomalies: result.results.anomaly_count || 0,
+                    anomaly_rate: result.results.anomaly_rate || 0
+                },
+                critical_anomalies: result.results.critical_anomalies || [],
+                ai_explanation: result.results.ai_summary || null
+            },
+            storage_id: result.storage_id
+        }, 'anomaly');  // 'anomaly' tipinde kaydet
+        
+
+    }
+}
+
+/**
+ * DBA özet bilgileri render et
+ */
+function renderDBAAnalysisSummary(summary) {
+    let html = '<div class="dba-summary-section">';
+    html += '<h3>📊 Analiz Özeti</h3>';
+    html += '<div class="dba-metrics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">';
+    
+    const totalAnomalies = summary.total_anomalies || 0;
+    const anomalyRate = summary.anomaly_rate || 0;
+    const criticalityClass = anomalyRate > 5 ? 'critical' : 
+                           anomalyRate > 2 ? 'warning' : 'normal';
+    
+    html += `
+        <div class="dba-metric-card" style="padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #0047BA;">
+            <div class="metric-icon" style="font-size: 24px;">📄</div>
+            <div class="metric-value" style="font-size: 28px; font-weight: bold; color: #333;">${(summary.total_logs || 0).toLocaleString('tr-TR')}</div>
+            <div class="metric-label" style="color: #666;">Toplam Log</div>
+        </div>
+        
+        <div class="dba-metric-card ${criticalityClass}" style="padding: 15px; background: ${criticalityClass === 'critical' ? '#fff5f5' : criticalityClass === 'warning' ? '#fffaf0' : '#f0f9ff'}; border-radius: 8px; border-left: 4px solid ${criticalityClass === 'critical' ? '#e74c3c' : criticalityClass === 'warning' ? '#f39c12' : '#3498db'};">
+            <div class="metric-icon" style="font-size: 24px;">🚨</div>
+            <div class="metric-value" style="font-size: 28px; font-weight: bold; color: ${criticalityClass === 'critical' ? '#e74c3c' : criticalityClass === 'warning' ? '#f39c12' : '#333'};">${totalAnomalies}</div>
+            <div class="metric-label" style="color: #666;">Anomali Tespit</div>
+        </div>
+        
+        <div class="dba-metric-card" style="padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #0047BA;">
+            <div class="metric-icon" style="font-size: 24px;">📊</div>
+            <div class="metric-value" style="font-size: 28px; font-weight: bold; color: #333;">%${anomalyRate.toFixed(2)}</div>
+            <div class="metric-label" style="color: #666;">Anomali Oranı</div>
+        </div>
+        
+        <div class="dba-metric-card" style="padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #0047BA;">
+            <div class="metric-icon" style="font-size: 24px;">🖥️</div>
+            <div class="metric-value" style="font-size: 28px; font-weight: bold; color: #333;">${summary.hosts_analyzed || 0}</div>
+            <div class="metric-label" style="color: #666;">Analiz Edilen Host</div>
+        </div>
+    `;
+    
+    html += '</div>';
+    
+    // Eğer hiç anomali yoksa başarı mesajı
+    if (totalAnomalies === 0) {
+        html += '<div style="margin-top: 20px; padding: 15px; background: #d4edda; color: #155724; border-radius: 8px;">';
+        html += '✅ Bu zaman aralığında anomali tespit edilmedi. Sistem normal çalışıyor.';
+        html += '</div>';
+    }
+    
+    html += '</div>';
+    return html;
+}
+
+/**
+ * Host bazlı breakdown render et
+ */
+function renderDBAHostBreakdown(hostBreakdown) {
+    let html = '<div class="dba-host-breakdown">';
+    html += '<h3>🖥️ Host Bazlı Anomali Dağılımı</h3>';
+    html += '<div class="host-breakdown-grid" style="display: grid; gap: 10px;">';
+    
+    // Host'ları anomali sayısına göre sırala
+    const sortedHosts = Object.entries(hostBreakdown)
+        .sort(([,a], [,b]) => b.anomaly_count - a.anomaly_count);
+    
+    sortedHosts.forEach(([host, data]) => {
+        const anomalyRate = data.anomaly_rate || 0;
+        const criticalityClass = anomalyRate > 5 ? 'critical' : 
+                               anomalyRate > 2 ? 'warning' : 'normal';
+        
+        const barColor = criticalityClass === 'critical' ? '#e74c3c' : 
+                        criticalityClass === 'warning' ? '#f39c12' : '#3498db';
+        
+        html += `
+            <div class="host-breakdown-card" style="padding: 12px; background: #fff; border: 1px solid #dee2e6; border-radius: 6px;">
+                <div class="host-info" style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="host-name" style="font-weight: 600; color: #333;">${host}</div>
+                    <div class="host-stats" style="display: flex; gap: 15px; font-size: 14px;">
+                        <span style="color: ${barColor}; font-weight: 600;">Anomali: ${data.anomaly_count}</span>
+                        <span style="color: #666;">Toplam: ${data.total_logs}</span>
+                        <span style="color: #333; font-weight: 600;">%${anomalyRate.toFixed(2)}</span>
+                    </div>
+                </div>
+                <div class="host-bar" style="margin-top: 8px; height: 6px; background: #e9ecef; border-radius: 3px; overflow: hidden;">
+                    <div style="width: ${Math.min(anomalyRate * 10, 100)}%; height: 100%; background: ${barColor};"></div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div></div>';
+    return html;
+}
+
+/**
+ * Kritik anomalileri render et
+ */
+function renderDBACriticalAnomalies(anomalies) {
+    // Pagination değişkenleri - DÜZELTME: undefined kontrolü
+    const itemsPerPage = 30;
+    const currentPage = window.dbaCurrentPage || 1;  
+    const totalPages = Math.ceil(anomalies.length / itemsPerPage);
+    
+    // Mevcut sayfadaki anomalileri al
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const pageAnomalies = anomalies.slice(startIndex, endIndex);
+    
+    // Debug log ekle
+    console.log('Rendering page:', currentPage, 'Items:', startIndex, '-', endIndex, 'Total:', anomalies.length);
+    let html = '<div class="dba-critical-anomalies">';
+    html += `<h3>⚡ Kritik Anomaliler (${anomalies.length} toplam)</h3>`;
+    
+    // Pagination controls
+    html += '<div class="pagination-controls" style="margin-bottom: 15px;">';
+    html += `<button onclick="changeDBAPage(${currentPage-1})" ${currentPage === 1 ? 'disabled' : ''}>← Önceki</button>`;
+    html += `<span style="margin: 0 15px;">Sayfa ${currentPage} / ${totalPages}</span>`;
+    html += `<button onclick="changeDBAPage(${currentPage+1})" ${currentPage === totalPages ? 'disabled' : ''}>Sonraki →</button>`;
+    html += '</div>';
+    
+    html += '<div class="dba-anomaly-list" style="max-height: 500px; overflow-y: auto; padding: 10px; border: 1px solid #dee2e6; border-radius: 4px; background: #fff;">';
+    
+    pageAnomalies.forEach((anomaly, index) => {
+        const globalIndex = startIndex + index + 1;
+        const severityColor = anomaly.severity_color || '#e74c3c';
+        
+        html += `
+            <div class="dba-anomaly-item" style="padding: 20px; margin-bottom: 15px; background: #fff; border-left: 4px solid ${severityColor}; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: 100%; box-sizing: border-box;">
+                <div class="anomaly-header" style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <div style="display: flex; gap: 15px; align-items: center;">
+                        <span class="anomaly-rank" style="background: ${severityColor}; color: white; padding: 2px 8px; border-radius: 4px; font-weight: 600;">#${globalIndex}</span>
+                        <span class="anomaly-time" style="background: #ffd700; color: #000; font-weight: bold; font-size: 14px; padding: 4px 10px; border-radius: 4px; border: 1px solid #000; text-transform: uppercase; letter-spacing: 0.5px;">${new Date(anomaly.timestamp).toLocaleString('tr-TR')}</span>
+                        <span class="anomaly-host" style="background: #ffd700; color: #000; font-weight: bold; font-size: 14px; padding: 4px 10px; border-radius: 4px; border: 1px solid #000; text-transform: uppercase; letter-spacing: 0.5px;">${anomaly.source_host || anomaly.host || 'N/A'}</span>
+                    </div>
+                    <span class="anomaly-score" style="color: ${severityColor}; font-weight: 600;">Score: ${anomaly.anomaly_score?.toFixed(3) || anomaly.score?.toFixed(3) || 'N/A'}</span>
+                </div>
+                <div class="anomaly-message" style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 15px; font-weight: bold; word-break: break-word; white-space: pre-wrap; line-height: 1.5; width: 100%; box-sizing: border-box; overflow-x: auto;">
+                    ${escapeHtml(anomaly.message || anomaly.full_message || 'No message available')}
+                </div>
+                ${anomaly.component ? `<div style="margin-top: 8px; font-size: 12px; color: #666;">Component: ${anomaly.component}</div>` : ''}
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    
+    // Alt pagination
+    if (totalPages > 1) {
+        html += '<div class="pagination-info" style="text-align: center; margin-top: 20px; color: #666;">';
+        html += `Gösterilen: ${startIndex + 1}-${Math.min(endIndex, anomalies.length)} / Toplam: ${anomalies.length} anomali`;
+        html += '</div>';
+    }
+    
+    html += '</div>';
+    
+    // Anomalileri global değişkende sakla
+    window.dbaAnomalies = anomalies;
+    
+    return html;
+}
+
+// Sayfa değiştirme fonksiyonu
+window.changeDBAPage = function(page) {
+    window.dbaCurrentPage = page;
+    // Sonuçları yeniden render et
+    if (window.lastDBAResult) {
+        displayDBAAnalysisResults(
+            window.lastDBAResult.result,
+            window.lastDBAResult.cluster,
+            window.lastDBAResult.startTime,
+            window.lastDBAResult.endTime
+        );
+    }
+};
+
+/**
+ * AI açıklamasını render et
+ */
+function renderDBAExplanation(explanation) {
+    let html = '<div class="dba-ai-explanation" style="margin-top: 30px; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px;">';
+    html += '<h3 style="margin-bottom: 15px;">🤖 LCWGPT Analizi</h3>';
+    html += '<div class="ai-explanation-content" style="background: rgba(255,255,255,0.95); color: #333; padding: 15px; border-radius: 6px;">';
+    
+    // formatAIResponse fonksiyonunu kullan (mevcut fonksiyon)
+    html += typeof formatAIResponse === 'function' ? formatAIResponse(explanation) : escapeHtml(explanation);
+    
+    html += '</div>';
+    html += '</div>';
+    return html;
+}
+
+// Global fonksiyonları tanımla
+window.openDBAAnalysisModal = openDBAAnalysisModal;
+window.startDBAAnalysis = startDBAAnalysis;
+window.displayDBAAnalysisResults = displayDBAAnalysisResults;
+window.saveDBAAnalysis = function() { showNotification('Analiz kaydediliyor...', 'info'); };
+window.exportDBAResults = function() { showNotification('Rapor indiriliyor...', 'info'); };
+window.shareDBAResults = function() { showNotification('Paylaşım linki oluşturuluyor...', 'info'); };
+
 /**
  * Temporal Analysis Render Et - SADELEŞTİRİLMİŞ VERSİYON
  */

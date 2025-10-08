@@ -10837,3 +10837,353 @@ input:checked + .toggle-slider:before {
 .log-warning { color: #ffc107; }
 .log-info { color: #4dabf7; }
 .log-debug { color: #868e96; }
+
+/* ========== DBA ANALYSIS STYLES ========== */
+
+/* DBA Analysis Modal */
+.dba-analysis-modal {
+    padding: 20px;
+}
+
+.dba-analysis-modal h4 {
+    color: #0047BA;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.dba-time-selection {
+    margin-top: 20px;
+}
+
+.dba-time-selection label {
+    display: block;
+    margin-bottom: 5px;
+    color: #333;
+    font-weight: 500;
+}
+
+.dba-time-selection input[type="datetime-local"],
+.dba-time-selection select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+}
+
+.dba-time-selection input[type="datetime-local"]:focus,
+.dba-time-selection select:focus {
+    outline: none;
+    border-color: #0047BA;
+    box-shadow: 0 0 0 2px rgba(0, 71, 186, 0.1);
+}
+
+.dba-time-selection small {
+    display: block;
+    margin-top: 5px;
+    color: #6c757d;
+    font-size: 12px;
+}
+
+.dba-time-selection ul {
+    margin: 5px 0;
+    padding-left: 20px;
+    font-size: 12px;
+    color: #6c757d;
+}
+
+/* DBA Results */
+.dba-analysis-results {
+    padding: 20px;
+    background: #fff;
+    border-radius: 8px;
+}
+
+.dba-header {
+    border-bottom: 2px solid #0047BA;
+    padding-bottom: 15px;
+    margin-bottom: 30px;
+}
+
+.dba-header h2 {
+    color: #0047BA;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.time-range-info {
+    color: #6c757d;
+    font-size: 14px;
+    background: #f8f9fa;
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-top: 10px;
+}
+
+/* DBA Metrics Grid */
+.dba-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.dba-metric-card {
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #0047BA;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.dba-metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.dba-metric-card.critical {
+    background: #fff5f5;
+    border-left-color: #e74c3c;
+}
+
+.dba-metric-card.warning {
+    background: #fffaf0;
+    border-left-color: #f39c12;
+}
+
+.dba-metric-card.normal {
+    background: #f0f9ff;
+    border-left-color: #3498db;
+}
+
+.dba-metric-card .metric-icon {
+    font-size: 24px;
+    margin-bottom: 5px;
+}
+
+.dba-metric-card .metric-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #333;
+    margin: 5px 0;
+}
+
+.dba-metric-card .metric-label {
+    color: #6c757d;
+    font-size: 14px;
+}
+
+/* Host Breakdown */
+.dba-host-breakdown {
+    margin-top: 30px;
+}
+
+.dba-host-breakdown h3 {
+    color: #333;
+    margin-bottom: 20px;
+}
+
+.host-breakdown-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.host-breakdown-card {
+    padding: 12px;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    transition: background-color 0.2s;
+}
+
+.host-breakdown-card:hover {
+    background: #f8f9fa;
+}
+
+.host-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.host-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.host-stats {
+    display: flex;
+    gap: 15px;
+    font-size: 14px;
+}
+
+.host-bar {
+    margin-top: 8px;
+    height: 6px;
+    background: #e9ecef;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+/* Critical Anomalies */
+.dba-critical-anomalies {
+    margin-top: 30px;
+}
+
+.dba-critical-anomalies h3 {
+    color: #333;
+    margin-bottom: 20px;
+}
+
+.dba-anomaly-list {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.dba-anomaly-item {
+    padding: 15px;
+    margin-bottom: 10px;
+    background: #fff;
+    border-left: 4px solid #e74c3c;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    transition: box-shadow 0.2s;
+}
+
+.dba-anomaly-item:hover {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.anomaly-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.anomaly-rank {
+    background: #e74c3c;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.anomaly-time {
+    color: #6c757d;
+    font-size: 14px;
+}
+
+.anomaly-host {
+    background: #e9ecef;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.anomaly-score {
+    color: #e74c3c;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.anomaly-message {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    word-break: break-all;
+}
+
+/* AI Explanation */
+.dba-ai-explanation {
+    margin-top: 30px;
+    padding: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.dba-ai-explanation h3 {
+    margin-bottom: 15px;
+    color: white;
+}
+
+.ai-explanation-content {
+    background: rgba(255,255,255,0.95);
+    color: #333;
+    padding: 15px;
+    border-radius: 6px;
+}
+
+/* DBA Actions */
+.dba-actions {
+    margin-top: 30px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.dba-actions button {
+    padding: 10px 20px;
+    font-size: 14px;
+}
+
+/* DBA Error State */
+.dba-error {
+    padding: 20px;
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 8px;
+    color: #721c24;
+    margin-top: 20px;
+}
+
+.dba-error h3 {
+    color: #721c24;
+    margin-bottom: 10px;
+}
+
+/* Loading state for DBA */
+.dba-loading {
+    text-align: center;
+    padding: 40px;
+    color: #6c757d;
+}
+
+.dba-loading .spinner {
+    margin: 0 auto 20px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .dba-metrics-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .dba-actions {
+        flex-direction: column;
+    }
+    
+    .dba-actions button {
+        width: 100%;
+    }
+    
+    .host-info {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .host-stats {
+        margin-top: 8px;
+    }
+}

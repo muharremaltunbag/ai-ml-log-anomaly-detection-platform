@@ -48,12 +48,18 @@
         <main id="mainContent" style="display: none;">
             <!-- Hızlı İşlemler -->
             <section class="quick-actions">
-                <button id="collectionsBtn" class="btn btn-secondary">KOLEKSİYONLAR</button>
-                <button id="statusBtn" class="btn btn-secondary">SİSTEM DURUMU</button>
-                <button id="clearBtn" class="btn btn-secondary">TEMİZLE</button>
-                <button id="logUploadBtn" class="btn btn-secondary">📁 LOG YÜKLE</button>
                 <button id="anomalyAnalysisBtn" class="btn btn-primary">🔍 ANOMALİ ANALİZİ</button>
+                <button id="dbaAnalysisBtn" class="btn btn-primary">🕐 DBA TAVSİYE SİSTEMİ</button>
+                <button id="logUploadBtn" class="btn btn-secondary">📁 LOG YÜKLE</button>
+                <button id="statusBtn" class="btn btn-secondary">SİSTEM DURUMU</button>
+
             </section>
+
+            <!-- Yükleme Göstergesi -->
+            <div id="loader" class="loader" style="display: none;">
+                <div class="spinner"></div>
+                <p>Sorgu işleniyor, lütfen bekleyin...</p>
+            </div>
 
             <!-- Sorgu Alanı -->
             <section class="query-section">
@@ -151,11 +157,6 @@
                 </div>
             </section>
 
-            <!-- Yükleme Göstergesi -->
-            <div id="loader" class="loader" style="display: none;">
-                <div class="spinner"></div>
-                <p>Sorgu işleniyor, lütfen bekleyin...</p>
-            </div>
         </main>
 
         <!-- Anomali Analiz Modal -->

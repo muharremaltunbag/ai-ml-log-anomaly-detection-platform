@@ -59,10 +59,11 @@ RETENTION_POLICY = {
 
 # Storage Limits
 STORAGE_LIMITS = {
-    "max_anomaly_records": 1_000_000,
-    "max_model_size_mb": 500,
-    "max_cache_size_gb": 10,
-    "batch_size": 1000
+    "max_total_size_gb": 10.0,      # Toplam limit: 10GB
+    "max_database_size_gb": 5.0,     # MongoDB limit: 5GB
+    "max_file_size_gb": 5.0,         # File storage limit: 5GB
+    "cleanup_threshold": 0.8,        # %80'e ulaşınca uyar
+    "aggressive_cleanup": 0.9        # %90'a ulaşınca agresif temizlik
 }
 
 # Auto-save Configuration

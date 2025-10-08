@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta 
 import asyncio
+import json
+from dateutil import parser
 from typing import Dict, Any, Optional, Union
 from src.storage.config import (
     MONGODB_ENABLED, 
@@ -617,7 +619,7 @@ async def analyze_cluster(request: Dict[str, Any]):
                 })
         
         # Sonuçları birleştir
-        import json
+
         combined_anomalies = []
         total_logs = 0
         host_results = {}
@@ -922,7 +924,7 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
             tool_result = anomaly_tools.analyze_mongodb_logs(tool_params)
             
             # Tool sonucunu parse et
-            import json
+
             if isinstance(tool_result, str):
                 try:
                     parsed_result = json.loads(tool_result)
@@ -966,7 +968,7 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                                 
                                 # String ise JSON olarak parse et
                                 if isinstance(tool_output, str):
-                                    import json
+
                                     parsed_output = json.loads(tool_output)
                                     if 'sonuç' in parsed_output:
                                         # ML verilerini ekle
@@ -983,7 +985,7 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                         # String ise JSON olarak parse et
                         if isinstance(tool_output, str):
                             try:
-                                import json
+
                                 parsed_output = json.loads(tool_output)
                                 if 'sonuç' in parsed_output:
                                     # ML verilerini ekle
@@ -2348,10 +2350,14 @@ async def dba_analyze_specific_time(
             hosts_list = [h.strip() for h in host.split(',')]
             is_cluster = True
             logger.info(f"DBA CLUSTER analysis request: {hosts_list} from {start_time} to {end_time}")
+            
+            # ✅ DEBUG: Her host'u ayrı ayrı logla
+            for idx, h in enumerate(hosts_list):
+                logger.info(f"Host {idx + 1}/{len(hosts_list)}: '{h}'")
         else:
             # Tek host
             hosts_list = [host]
-            logger.info(f"DBA analysis request: {host} from {start_time} to {end_time}")
+            logger.info(f"DBA single host analysis request: {host}")
         
         # Tarih formatı validasyonu
         from dateutil import parser
@@ -2387,7 +2393,7 @@ async def dba_analyze_specific_time(
                 })
                 return result
             
-            # Paralel analiz başlat
+            # Paralel analiz başla
             logger.info(f"Starting parallel analysis for {len(hosts_list)} hosts...")
             
             # Asyncio.to_thread kullanarak sync fonksiyonu async çalıştır
@@ -2407,12 +2413,21 @@ async def dba_analyze_specific_time(
             # Tüm analizleri bekle
             results = await asyncio.gather(*tasks)
             
+            # ✅ DEBUG: Her host'un sonucunu logla
+            for i, res_str in enumerate(results):
+                res = json.loads(res_str) if isinstance(res_str, str) else res_str
+                host_name = hosts_list[i]
+                logger.info(f"Host '{host_name}' result status: {res.get('durum', 'UNKNOWN')}")
+                if res.get('durum') == 'başarılı':
+                    data = res.get('sonuç', {})
+                    logger.info(f"Host '{host_name}': {data.get('total_logs', 0)} logs, {len(data.get('critical_anomalies', []))} anomalies")
+                else:
+                    logger.error(f"Host '{host_name}' analysis failed: {res.get('açıklama', 'No error message')}")
+            
             # Sonuçları birleştir
-            import json
             combined_anomalies = []
             total_logs = 0
             host_results = {}
-            
             for i, res_str in enumerate(results):
                 res = json.loads(res_str) if isinstance(res_str, str) else res_str
                 host_name = hosts_list[i]
@@ -2462,7 +2477,7 @@ async def dba_analyze_specific_time(
             })
         
         # Sonucu parse et
-        import json
+
         if isinstance(tool_result, str):
             result = json.loads(tool_result)
         else:
@@ -2472,31 +2487,160 @@ async def dba_analyze_specific_time(
         critical_anomalies = result.get('sonuç', {}).get('critical_anomalies', [])
         anomaly_count = len(critical_anomalies)
         
-        # LCWGPT ile otomatik açıklama
+
+        # LCWGPT ile her anomaliyi tek tek açıklama (30 anomali, chunk bazlı)
         ai_explanation = None
         if auto_explain and anomaly_count > 0:
             llm_connector = await get_llm_connector()
             if llm_connector:
-                # Özet prompt hazırla
-                prompt = f"""
-                {host} sunucusunda {start_time} - {end_time} arasında {anomaly_count} anomali tespit edildi.
-                
-                En kritik 5 anomali:
-                """
-                for i, anomaly in enumerate(critical_anomalies[:5], 1):
-                    prompt += f"\n{i}. [{anomaly.get('severity_level')}] {anomaly.get('message', '')[:100]}"
-                
-                prompt += "\n\nBu anomalileri özetle ve olası root cause'u belirt."
-                
                 try:
-                    messages = [
-                        SystemMessage(content="Sen MongoDB DBA uzmanısın. Kısa ve net özetler yap."),
-                        HumanMessage(content=prompt)
-                    ]
-                    response = llm_connector.invoke(messages)
-                    ai_explanation = response.content
+                    # İlk 20 anomaliyi al
+                    anomalies_to_analyze = critical_anomalies[:20]
+                    chunk_size = 5
+                    all_anomaly_explanations = []
+                    
+                    logger.info(f"Analyzing {len(anomalies_to_analyze)} anomalies individually in chunks of {chunk_size}")
+                    
+                    # Her chunk'ı işle
+                    for chunk_idx, chunk_start in enumerate(range(0, len(anomalies_to_analyze), chunk_size)):
+                        chunk_end = min(chunk_start + chunk_size, len(anomalies_to_analyze))
+                        chunk = anomalies_to_analyze[chunk_start:chunk_end]
+                        
+                        chunk_prompt = f"""
+                        MongoDB sisteminde tespit edilen {len(chunk)} anomaliyi analiz et.
+                        Sunucu: {host}
+                        
+                        Her bir anomali için ayrı ayrı:
+                        1. Ne tür bir sorun olduğunu açıkla
+                        2. Olası nedenleri mantıklı bir şekilde belirt
+                        3. Sistem üzerindeki etkisini değerlendir veya açıkla
+                        4. Spesifik çözüm önerisi sun, genel geçer bir çözüm kesinlikle önerme.
+                        5. Analiz edilen anomali loglarını baz alarak gerçekçi ve uygulanabilir çözüm önerisi yap
+                        6. Tüm log mesajlarını dikkatlice incele ve analiz et
+                        
+                        ANOMALİLER:
+                        """
+                        
+                        # Her anomaliyi detaylı ekle
+                        for i, anomaly in enumerate(chunk, 1):
+                            anomaly_number = chunk_start + i
+                            chunk_prompt += f"""
+                        
+                        === ANOMALİ #{anomaly_number} ===
+                        Timestamp: {anomaly.get('timestamp', 'N/A')}
+                        Component: {anomaly.get('component', 'UNKNOWN')}
+                        Severity: {anomaly.get('severity_level', 'MEDIUM')}
+                        Anomaly Score: {anomaly.get('anomaly_score', 0):.4f}
+                        Host: {anomaly.get('source_host', anomaly.get('host', 'N/A'))}
+                        
+                        Log Mesajı:
+                        {anomaly.get('message', 'No message available')[:500]}
+                        
+                        ---
+                        """
+                        
+                        chunk_prompt += """
+                        
+                        YANIT FORMATI:
+                        Her anomali için şu formatta yanıt ver:
+                        
+                        **Anomali #X (Timestamp: [Timestamp] ve Açıklayıcı kısa başlık):**
+                        📌 **Sorun:** [Kısa açıklama]
+                        🔍 **Detay:** [Teknik detaylar]
+                        ⚠️ **Etki:** [Sistem üzerindeki etkisi]
+                        💡 **Çözüm:** [Gerçekçi ve uygulanabilir çözüm önerisi]
+                        
+                        Türkçe, teknik ve net ifadeler kullan.
+                        """
+                        
+                        try:
+                            messages = [
+                                SystemMessage(content="""Sen uzman bir MongoDB DBA'sin. 
+                                Her anomaliyi detaylı analiz edip, spesifik çözümler öneriyorsun. Analiz edilen anomali loglarını baz alarak çözüm önerisi yap.
+                                Yanıtların kısa, net ve aksiyona yönelik olmalı."""),
+                                HumanMessage(content=chunk_prompt)
+                            ]
+                            
+                            response = llm_connector.invoke(messages)
+                            all_anomaly_explanations.append({
+                                'chunk_idx': chunk_idx,
+                                'start_idx': chunk_start + 1,
+                                'end_idx': chunk_start + len(chunk),
+                                'content': response.content
+                            })
+                            
+                            logger.info(f"Chunk {chunk_idx + 1}: Anomalies {chunk_start + 1}-{chunk_start + len(chunk)} analyzed")
+                            
+                        except Exception as e:
+                            logger.error(f"Error analyzing chunk {chunk_idx + 1}: {e}")
+                            all_anomaly_explanations.append({
+                                'chunk_idx': chunk_idx,
+                                'start_idx': chunk_start + 1,
+                                'end_idx': chunk_start + len(chunk),
+                                'content': f"Bu anomaliler analiz edilemedi: {str(e)}"
+                            })
+                    
+                    # Tüm açıklamaları birleştir
+                    if all_anomaly_explanations:
+                        ai_explanation = f"""
+## 🔍 DETAYLI ANOMALİ ANALİZİ
+
+**Analiz Özeti:**
+- 📅 Zaman Aralığı: {start_time} - {end_time}
+- 🖥️ Sunucu: {host}
+- 📊 Toplam Anomali: {anomaly_count}
+- 🔎 Detaylı İncelenen: {len(anomalies_to_analyze)}
+
+---
+
+### 📋 HER ANOMALİNİN DETAYLI ANALİZİ:
+
+"""
+                        # Her chunk'ın içeriğini ekle
+                        for explanation in all_anomaly_explanations:
+                            ai_explanation += f"\n{explanation['content']}\n"
+                            if explanation != all_anomaly_explanations[-1]:
+                                ai_explanation += "\n---\n"
+                        
+                        ai_explanation += f"""
+
+---
+
+*Not: Toplam {anomaly_count} anomaliden ilk {len(anomalies_to_analyze)} tanesi detaylı analiz edilmiştir.*
+"""
+                        
+                        logger.info(f"✅ Complete individual anomaly analysis for {len(anomalies_to_analyze)} anomalies")
+                        
                 except Exception as e:
-                    logger.error(f"LCWGPT error: {e}")
+                    logger.error(f"LCWGPT analysis error: {e}")
+                    ai_explanation = f"Anomali analizi sırasında hata: {str(e)}"
+        # Storage'a kaydet
+        storage_id = None
+        if ENABLE_STORAGE and anomaly_count > 0:
+            try:
+                storage = await get_storage_manager()
+                save_result = await storage.save_anomaly_analysis(
+                    analysis_result={
+                        'durum': 'başarılı',
+                        'işlem': 'dba_analysis',
+                        'sonuç': {
+                            'critical_anomalies': critical_anomalies[:500],  # UI için özet
+                            'unfiltered_anomalies': critical_anomalies,  
+                            'critical_anomalies_full': critical_anomalies,  
+                            'total_logs': total_logs if is_cluster else result.get('sonuç', {}).get('total_logs', 0),
+                            'anomaly_count': anomaly_count,
+                            'anomaly_rate': result.get('sonuç', {}).get('anomaly_rate', 0),
+                            'host_breakdown': host_results if is_cluster else None
+                        }
+                    },
+                    source_type='opensearch_dba',
+                    host=host,
+                    time_range=f"{start_time} to {end_time}"
+                )
+                storage_id = save_result.get('analysis_id')
+                logger.info(f"✅ DBA analysis saved with ID: {storage_id}")
+            except Exception as e:
+                logger.error(f"Failed to save DBA analysis: {e}")
         
         # Response hazırla
         return {
@@ -2508,13 +2652,13 @@ async def dba_analyze_specific_time(
                 "duration_hours": time_diff
             },
             "results": {
-                "total_logs_analyzed": result.get('sonuç', {}).get('total_logs', 0),
+                "total_logs_analyzed": total_logs if is_cluster else result.get('sonuç', {}).get('total_logs', 0),
                 "anomaly_count": anomaly_count,
                 "anomaly_rate": result.get('sonuç', {}).get('anomaly_rate', 0),
-                "critical_anomalies": critical_anomalies[:10],  # İlk 10 kritik
+                "critical_anomalies": critical_anomalies,  # TÜM anomaliler UI pagination için
                 "ai_summary": ai_explanation
             },
-            "storage_id": result.get('storage_info', {}).get('analysis_id'),
+            "storage_id": storage_id or result.get('storage_info', {}).get('analysis_id'),
             "timestamp": datetime.now().isoformat()
         }
         
@@ -2524,6 +2668,455 @@ async def dba_analyze_specific_time(
         logger.error(f"DBA analysis error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/dba/analysis-history")
+async def get_dba_analysis_history(
+    limit: int = Query(20, le=50, description="Maksimum sonuç sayısı"),
+    days_back: int = Query(30, le=90, description="Kaç gün geriye bakılacak"),
+    api_key: str = Query(..., description="API anahtarı")
+):
+    """
+    DBA analiz geçmişini MongoDB'den getir
+    
+    Returns:
+        Son yapılan DBA analizlerinin özeti
+    """
+    try:
+        # API key kontrolü
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        # Storage Manager'ı al
+        storage = await get_storage_manager()
+        if not storage:
+            logger.warning("Storage Manager not available, returning empty history")
+            return {
+                "status": "success", 
+                "analyses": [],
+                "message": "Storage not available",
+                "count": 0
+            }
+        
+        # MongoDB'den DBA analizlerini çek
+        logger.info(f"Fetching DBA analysis history: limit={limit}, days_back={days_back}")
+        
+        analyses = await storage.get_dba_analysis_history(
+            source_type="opensearch_dba",
+            limit=limit,
+            days_back=days_back
+        )
+        
+        # Başarılı response
+        logger.info(f"✅ Retrieved {len(analyses)} DBA analyses from history")
+        
+        return {
+            "status": "success",
+            "analyses": analyses,
+            "count": len(analyses),
+            "query_params": {
+                "limit": limit,
+                "days_back": days_back
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to get DBA analysis history: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Geçmiş yüklenirken hata: {str(e)}")
+
+@app.get("/api/dba/analysis/{analysis_id}")
+async def get_dba_analysis_details(
+    analysis_id: str,
+    api_key: str = Query(..., description="API anahtarı")
+):
+    """
+    Belirli bir DBA analizinin detaylarını getir
+    
+    Args:
+        analysis_id: MongoDB'deki analysis ID
+        
+    Returns:
+        Analizin tüm detayları
+    """
+    try:
+        # API key kontrolü
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        # Storage Manager'ı al
+        storage = await get_storage_manager()
+        if not storage:
+            raise HTTPException(status_code=503, detail="Storage not available")
+        
+        # Analizi getir
+        logger.info(f"Fetching DBA analysis details for ID: {analysis_id}")
+        
+        filters = {"analysis_id": analysis_id}
+        analyses = await storage.get_anomaly_history(
+            filters=filters,
+            limit=1,
+            include_details=True
+        )
+        
+        if not analyses:
+            raise HTTPException(status_code=404, detail="Analiz bulunamadı")
+        
+        analysis = analyses[0]
+        
+        # Response hazırla
+        return {
+            "status": "success",
+            "analysis": analysis,
+            "analysis_id": analysis_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get analysis details: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============= QUERY HISTORY ENDPOINTS =============
+@app.post("/api/query-history/save")
+async def save_query_history(request: Dict[str, Any]):
+    """
+    Save query to MongoDB history - METADATA DAHİL HER ŞEY
+    """
+    try:
+        api_key = request.get("api_key")
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        storage = await get_storage_manager()
+        if not storage or not storage.mongodb:
+            raise HTTPException(status_code=503, detail="Storage not available")
+        
+        # TÜM metadata'yı dahil et
+        query_item = {
+            # Temel bilgiler
+            "query": request.get("query", ""),
+            "type": request.get("type", "chatbot"),
+            "category": request.get("category", "chatbot"),
+            "durum": request.get("durum", "tamamlandı"),
+            "işlem": request.get("işlem", ""),
+            
+            # Metadata
+            "user_id": request.get("user_id"),
+            "session_id": request.get("session_id"),
+            "timestamp": request.get("timestamp"),
+            "executionTime": request.get("executionTime"),
+            
+            # Sonuç verileri (sadece özet)
+            "result_summary": {
+                "durum": request.get("result", {}).get("durum"),
+                "işlem": request.get("result", {}).get("işlem"),
+                "has_anomalies": bool(request.get("result", {}).get("sonuç", {}).get("critical_anomalies")),
+                "anomaly_count": len(request.get("result", {}).get("sonuç", {}).get("critical_anomalies", [])),
+                "total_logs": request.get("result", {}).get("sonuç", {}).get("total_logs", 0)
+            },
+            
+            # Referanslar
+            "storage_id": request.get("storage_id"),
+            "analysis_id": request.get("analysis_id"),
+            "parent_id": request.get("parentId"),
+            
+            # Flags
+            "hasVisualization": request.get("hasVisualization", False),
+            "hasResult": request.get("hasResult", False),
+            "isAnomalyParent": request.get("isAnomalyParent", False),
+            "fromMongoDB": True,  # Artık her şey MongoDB'de
+            
+            # AI/ML metadata
+            "has_ml_data": bool(request.get("mlData")),
+            "has_ai_explanation": bool(request.get("aiExplanation")),
+            
+            # Browser info (opsiyonel) - ✅ DÜZELTİLDİ
+            "user_agent": request.get("user_agent"),
+            "screen_resolution": request.get("screen_resolution"),
+            "timezone": request.get("timezone")
+        }
+        
+        # Büyük verileri ayrı collection'a kaydet (opsiyonel)
+        if request.get("result", {}).get("sonuç", {}).get("critical_anomalies"):
+            # Anomali detayları için referans oluştur
+            query_item["has_detailed_data"] = True
+            query_item["anomaly_details_ref"] = request.get("storage_id")
+        
+        # MongoDB'ye kaydet
+        query_id = await storage.mongodb.save_query_history(query_item)
+        
+        if query_id:
+            logger.info(f"✅ Query metadata saved to MongoDB: {query_id}")
+            logger.info(f"   Type: {query_item['type']}")
+            logger.info(f"   Category: {query_item['category']}")
+            logger.info(f"   Has Result: {query_item['hasResult']}")
+            logger.info(f"   Session: {query_item['session_id']}")
+            
+            return {
+                "status": "success",
+                "query_id": query_id,
+                "message": "Query and metadata saved to MongoDB",
+                "saved_fields": len(query_item),
+                "metadata_complete": True
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save query")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving query history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/query-history/load")
+async def load_query_history(
+    api_key: str,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    limit: int = Query(default=50, le=200),  # Maksimum 200 olarak düzelt
+    query_type: Optional[str] = None
+):
+    """
+    Load query history from MongoDB
+    Frontend localStorage yerine MongoDB'den yükleme
+    """
+    try:
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        storage = await get_storage_manager()
+        if not storage or not storage.mongodb:
+            logger.warning("Storage not available, returning empty history")
+            return {
+                "status": "success",
+                "history": [],
+                "count": 0,
+                "source": "none"
+            }
+        
+        # MongoDB'den query history al
+        history = await storage.mongodb.get_query_history(
+            user_id=user_id,
+            session_id=session_id,
+            limit=limit,
+            query_type=query_type
+        )
+        
+        # Frontend formatına dönüştür
+        formatted_history = []
+        for item in history:
+            # MongoDB'den gelen veriyi frontend formatına çevir
+            formatted_item = {
+                "id": item.get("query_id", ""),
+                "timestamp": item.get("timestamp").isoformat() if item.get("timestamp") else None,
+                "query": item.get("query", ""),
+                "type": item.get("query_type", "chatbot"),
+                "category": item.get("category", "chatbot"),
+                "result": item.get("result", {}),
+                "durum": item.get("durum", "tamamlandı"),
+                "işlem": item.get("işlem", ""),
+                "executionTime": item.get("execution_time"),
+                "hasVisualization": item.get("has_visualization", False),
+                "mlData": item.get("ml_data"),
+                "aiExplanation": item.get("ai_explanation"),
+                "storage_id": item.get("storage_id"),
+                "childResult": item.get("result", {}),  # Compatibility
+                "hasResult": True if item.get("result") else False,
+                "fromMongoDB": True  # MongoDB'den geldiğini işaretle
+            }
+            formatted_history.append(formatted_item)
+        
+        logger.info(f"✅ Loaded {len(formatted_history)} items from MongoDB query history")
+        
+        return {
+            "status": "success",
+            "history": formatted_history,
+            "count": len(formatted_history),
+            "source": "mongodb"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error loading query history: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "history": [],
+            "count": 0
+        }
+
+
+@app.delete("/api/query-history/{query_id}")
+async def delete_query_history_item(query_id: str, api_key: str):
+    """
+    Delete a specific query from history
+    """
+    try:
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        storage = await get_storage_manager()
+        if not storage or not storage.mongodb:
+            raise HTTPException(status_code=503, detail="Storage not available")
+        
+        success = await storage.mongodb.delete_query_history_item(query_id)
+        
+        if success:
+            logger.info(f"✅ Query {query_id} deleted from MongoDB")
+            return {
+                "status": "success",
+                "message": f"Query {query_id} deleted"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Query not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/storage/check-size")
+async def check_storage_size(api_key: str):
+    """
+    Check MongoDB storage size and trigger cleanup if needed
+    """
+    try:
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        storage = await get_storage_manager()
+        if not storage or not storage.mongodb:
+            raise HTTPException(status_code=503, detail="Storage not available")
+        
+        # MongoDB boyutunu kontrol et
+        size_info = await storage.mongodb.check_database_size()
+        
+        # Boyut limiti kontrolü (10GB varsayılan)
+        max_size_gb = 10.0
+        current_size = size_info.get("total_size_gb", 0)
+        
+        # Eğer limit aşıldıysa temizlik yap
+        deleted_count = 0
+        if current_size > max_size_gb:
+            logger.warning(f"⚠️ Storage limit exceeded: {current_size:.2f} GB > {max_size_gb} GB")
+            deleted_count = await storage.mongodb.cleanup_by_size(max_size_gb)
+            
+            # Temizlik sonrası yeni boyut
+            size_info = await storage.mongodb.check_database_size()
+        
+        return {
+            "status": "success",
+            "size_info": size_info,
+            "max_size_gb": max_size_gb,
+            "is_over_limit": current_size > max_size_gb,
+            "deleted_count": deleted_count,
+            "message": f"Storage: {size_info.get('total_size_gb', 0):.2f} GB / {max_size_gb} GB"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking storage size: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/query-history/clear")
+async def clear_query_history(request: Dict[str, Any]):
+    """
+    Clear all query history for a user/session
+    """
+    try:
+        api_key = request.get("api_key")
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        user_id = request.get("user_id")
+        session_id = request.get("session_id")
+        
+        if not user_id and not session_id:
+            raise HTTPException(status_code=400, detail="user_id or session_id required")
+        
+        storage = await get_storage_manager()
+        if not storage or not storage.mongodb:
+            raise HTTPException(status_code=503, detail="Storage not available")
+        
+        # Get all items to delete
+        history = await storage.mongodb.get_query_history(
+            user_id=user_id,
+            session_id=session_id,
+            limit=1000  # Max items to delete
+        )
+        
+        deleted_count = 0
+        for item in history:
+            if await storage.mongodb.delete_query_history_item(item.get("query_id")):
+                deleted_count += 1
+        
+        logger.info(f"✅ Cleared {deleted_count} query history items")
+        
+        return {
+            "status": "success",
+            "deleted_count": deleted_count,
+            "message": f"Cleared {deleted_count} items from history"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error clearing query history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/query-history/verify/{query_id}")
+async def verify_query_history_item(query_id: str, api_key: str):
+    """
+    Verify if a query exists in MongoDB
+    Used for data consistency checks
+    """
+    try:
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+        
+        storage = await get_storage_manager()
+        if not storage or not storage.mongodb:
+            return {"exists": False, "message": "Storage not available"}
+        
+        # MongoDB'de query_id ile arama yap
+        collection = storage.mongodb.db[storage.mongodb.collections.get("query_history", "query_history")]
+        
+        # Query ID ile kayıt ara
+        document = await collection.find_one({"query_id": query_id})
+        
+        if document:
+            logger.info(f"✅ Query verified in MongoDB: {query_id}")
+            return {
+                "exists": True,
+                "query_id": query_id,
+                "timestamp": document.get("timestamp").isoformat() if document.get("timestamp") else None,
+                "query": document.get("query", "")[:50] + "...",  # İlk 50 karakter
+                "message": "Query found in MongoDB"
+            }
+        else:
+            logger.warning(f"⚠️ Query not found in MongoDB: {query_id}")
+            return {
+                "exists": False,
+                "query_id": query_id,
+                "message": "Query not found"
+            }
+            
+    except Exception as e:
+        logger.error(f"Error verifying query: {e}")
+        return {
+            "exists": False,
+            "error": str(e),
+            "message": "Verification failed"
+        }
 
 # Startup event'e ekle
 @app.on_event("startup")

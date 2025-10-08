@@ -38,6 +38,11 @@ class MongoDBHandler:
         self.connection_string = connection_string or MONGODB_CONFIG["connection_string"]
         self.database_name = database or MONGODB_CONFIG["database"]
         self.collections = MONGODB_CONFIG["collections"]
+        # Query history collection ekleniyor
+        if "query_history" not in self.collections:
+            self.collections["query_history"] = "query_history"
+        if "user_preferences" not in self.collections:
+            self.collections["user_preferences"] = "user_preferences"
         
         self.client = None
         self.db = None
@@ -87,7 +92,6 @@ class MongoDBHandler:
             self.client.close()
             self._connected = False
             logger.info("MongoDB connection closed")
-    
     async def _create_indexes(self):
         """Create necessary indexes for optimal performance"""
         try:
@@ -107,6 +111,17 @@ class MongoDBHandler:
             await model_collection.create_index([("version", DESCENDING)])
             await model_collection.create_index([("created_at", DESCENDING)])
             await model_collection.create_index([("is_active", ASCENDING)])
+            
+            # Query history indexes
+            query_collection = self.db[self.collections.get("query_history", "query_history")]
+            await query_collection.create_index([("timestamp", DESCENDING)])
+            await query_collection.create_index([("user_id", ASCENDING)])
+            await query_collection.create_index([("query_type", ASCENDING)])
+            await query_collection.create_index([("session_id", ASCENDING)])
+
+            # User preferences indexes
+            prefs_collection = self.db[self.collections.get("user_preferences", "user_preferences")]
+            await prefs_collection.create_index([("user_id", ASCENDING)])
             
             logger.debug("MongoDB indexes created successfully")
             
@@ -535,3 +550,228 @@ class MongoDBHandler:
         Needed by external components expecting 'database' attribute
         """
         return self.db
+
+    async def save_query_history(self, query_item: Dict[str, Any]) -> str:
+        """
+        Save user query to history
+        
+        Args:
+            query_item: Query data including query, result, type, etc.
+            
+        Returns:
+            Query ID
+        """
+        try:
+            collection = self.db[self.collections.get("query_history", "query_history")]
+            
+            # Generate unique query ID
+            query_id = f"query_{hashlib.md5(str(datetime.utcnow().timestamp()).encode()).hexdigest()[:12]}"
+            
+            # Build document
+            document = {
+                "query_id": query_id,
+                "timestamp": datetime.utcnow(),
+                "query": query_item.get("query", ""),
+                "query_type": query_item.get("type", "chatbot"),
+                "category": query_item.get("category", "chatbot"),
+                "result": query_item.get("result", {}),
+                "durum": query_item.get("durum", "tamamlandı"),
+                "işlem": query_item.get("işlem", ""),
+                "user_id": query_item.get("user_id"),
+                "session_id": query_item.get("session_id"),
+                "execution_time": query_item.get("executionTime"),
+                "has_visualization": query_item.get("hasVisualization", False),
+                "storage_id": query_item.get("storage_id"),
+                "ttl_date": datetime.utcnow() + timedelta(days=90)
+            }
+            
+            # ML data varsa ekle
+            if "mlData" in query_item:
+                document["ml_data"] = query_item["mlData"]
+            if "aiExplanation" in query_item:
+                document["ai_explanation"] = query_item["aiExplanation"]
+            
+            # Insert to MongoDB
+            await collection.insert_one(document)
+            logger.info(f"Query saved with ID: {query_id}")
+            
+            return query_id
+            
+        except Exception as e:
+            logger.error(f"Error saving query history: {e}")
+            return ""
+
+    async def get_query_history(self, user_id: str = None, session_id: str = None, 
+                               limit: int = 50, query_type: str = None) -> List[Dict[str, Any]]:
+        """
+        Get user query history
+        
+        Args:
+            user_id: Optional user ID filter
+            session_id: Optional session ID filter
+            limit: Maximum results
+            query_type: Filter by query type (chatbot/anomaly)
+            
+        Returns:
+            List of query history items
+        """
+        try:
+            collection = self.db[self.collections.get("query_history", "query_history")]
+            
+            # Build query
+            query = {}
+            if user_id:
+                query["user_id"] = user_id
+            if session_id:
+                query["session_id"] = session_id
+            if query_type:
+                query["query_type"] = query_type
+            
+            # Execute query
+            cursor = collection.find(query).sort("timestamp", DESCENDING).limit(limit)
+            
+            results = []
+            async for document in cursor:
+                document["_id"] = str(document["_id"])
+                results.append(document)
+            
+            logger.info(f"Retrieved {len(results)} query history items")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error retrieving query history: {e}")
+            return []
+
+    async def get_query_by_id(self, query_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific query by its ID
+        
+        Args:
+            query_id: Unique query ID
+            
+        Returns:
+            Query document or None if not found
+        """
+        try:
+            collection = self.db[self.collections.get("query_history", "query_history")]
+            
+            # Query ID ile ara
+            document = await collection.find_one({"query_id": query_id})
+            
+            if document:
+                # ObjectId'yi string'e çevir
+                document["_id"] = str(document["_id"])
+                logger.debug(f"Found query: {query_id}")
+                return document
+            
+            logger.debug(f"Query not found: {query_id}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting query by ID: {e}")
+            return None
+
+    async def delete_query_history_item(self, query_id: str) -> bool:
+        """
+        Delete a specific query from history
+        
+        Args:
+            query_id: Query ID to delete
+            
+        Returns:
+            Success status
+        """
+        try:
+            collection = self.db[self.collections.get("query_history", "query_history")]
+            result = await collection.delete_one({"query_id": query_id})
+            
+            if result.deleted_count > 0:
+                logger.info(f"Query {query_id} deleted")
+                return True
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error deleting query: {e}")
+            return False
+
+    async def check_database_size(self) -> Dict[str, float]:
+        """
+        Check MongoDB database size
+        
+        Returns:
+            Dictionary with size information in GB
+        """
+        try:
+            # Get database stats
+            stats = await self.db.command("dbStats")
+            
+            size_info = {
+                "data_size_gb": stats.get("dataSize", 0) / (1024**3),
+                "storage_size_gb": stats.get("storageSize", 0) / (1024**3),
+                "index_size_gb": stats.get("indexSize", 0) / (1024**3),
+                "total_size_gb": (stats.get("dataSize", 0) + stats.get("indexSize", 0)) / (1024**3),
+                "collections": stats.get("collections", 0),
+                "objects": stats.get("objects", 0)
+            }
+            
+            logger.info(f"Database size: {size_info['total_size_gb']:.2f} GB")
+            return size_info
+            
+        except Exception as e:
+            logger.error(f"Error checking database size: {e}")
+            return {}
+
+    async def cleanup_by_size(self, max_size_gb: float = 10.0) -> int:
+        """
+        Clean up old data if database exceeds size limit
+        
+        Args:
+            max_size_gb: Maximum database size in GB
+            
+        Returns:
+            Number of deleted documents
+        """
+        try:
+            size_info = await self.check_database_size()
+            current_size = size_info.get("total_size_gb", 0)
+            
+            if current_size > max_size_gb:
+                logger.warning(f"Database size ({current_size:.2f} GB) exceeds limit ({max_size_gb} GB)")
+                
+                # Delete oldest records first (FIFO)
+                deleted_count = 0
+                
+                # Start with query history (least important)
+                query_collection = self.db[self.collections.get("query_history", "query_history")]
+                
+                # Delete oldest 20%
+                total_queries = await query_collection.count_documents({})
+                to_delete = int(total_queries * 0.2)
+                
+                if to_delete > 0:
+                    # Get oldest documents
+                    oldest = await query_collection.find({}).sort("timestamp", ASCENDING).limit(to_delete).to_list(to_delete)
+                    ids_to_delete = [doc["_id"] for doc in oldest]
+                    
+                    result = await query_collection.delete_many({"_id": {"$in": ids_to_delete}})
+                    deleted_count += result.deleted_count
+                    logger.info(f"Deleted {result.deleted_count} old query history items")
+                
+                # If still over limit, delete old anomaly records
+                if current_size - (deleted_count * 0.001) > max_size_gb:  # Rough estimate
+                    anomaly_collection = self.db[self.collections["anomaly_history"]]
+                    
+                    # Delete records older than 30 days
+                    cutoff = datetime.utcnow() - timedelta(days=30)
+                    result = await anomaly_collection.delete_many({"timestamp": {"$lt": cutoff}})
+                    deleted_count += result.deleted_count
+                    logger.info(f"Deleted {result.deleted_count} old anomaly records")
+                
+                return deleted_count
+            
+            logger.info(f"Database size ({current_size:.2f} GB) is within limit")
+            return 0
+            
+        except Exception as e:
+            logger.error(f"Error during size-based cleanup: {e}")
+            return 0
