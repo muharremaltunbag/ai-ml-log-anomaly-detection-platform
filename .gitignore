@@ -8,3 +8,6 @@ temp_logs/
 models/*.pkl
 models/*.pkl.*
 models/*.pkl*
+# Log dosyaları hariç tutulsun
+temp_logs/
+*.log
