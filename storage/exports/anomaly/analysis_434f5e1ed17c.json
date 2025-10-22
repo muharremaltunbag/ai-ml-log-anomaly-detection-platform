@@ -1,0 +1,402 @@
+{
+  "analysis_id": "analysis_434f5e1ed17c",
+  "source_info": {
+    "source_type": "opensearch",
+    "host": "lcwmongodb01n2.lcwaikiki.local",
+    "time_range": "last_day",
+    "timestamp": "2025-10-21T04:58:48.526782"
+  },
+  "result": {
+    "durum": "tamamland\u0131",
+    "i\u015flem": "anomaly_analysis",
+    "a\u00e7\u0131klama": "OpenSearch'ten son 24 saatteki 69247 log analiz edildi (lcwmongodb01n2 sunucusu). \u2705 Mevcut model g\u00fcncellendi\n\n\ud83d\udd0d **NE TESP\u0130T ED\u0130LD\u0130?**\n\u2022 Toplam 66,943 log i\u00e7inde 7 anomali tespit edildi (%0.0)\n\u2022 QUERY bile\u015feninde 30 anomali (%100.0)\n\u2022 INDEX bile\u015feninde 4 anomali (%100.0)\n\u2022 ELECTION bile\u015feninde 7 anomali (%100.0)\n\u2022 En kritik anomali skoru: 0.000 (REPL bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 14, 13, 15 aras\u0131nda yo\u011funla\u015fm\u0131\u015f\n\n\u26a0\ufe0f **POTANS\u0130YEL ETK\u0130LER:**\n\u2022 Sistem performans\u0131 %0.0 oran\u0131nda etkilenebilir\n\u2022 En kritik 9 bile\u015fende sorun tespit edildi\n\u2022 Ortalama anomali skoru -0.419 seviyesinde\n\n\ud83c\udfaf **MUHTEMEL NEDENLER:**\n\u2022 Yo\u011fun kullan\u0131m veya sistem sorunu\n\u2022 Saat 14 civar\u0131nda artan y\u00fck\n\u2022 En y\u00fcksek anomali oran\u0131 %100.0 ile tespit edildi\n\n\ud83d\udca1 **\u00d6NER\u0130LEN AKS\u0130YONLAR:**\n1. 7 anomaliyi detayl\u0131 inceleyin\n2. \u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n\n3. Skor de\u011feri -0.741 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn\n\n\ud83d\udcca **\u0130STAT\u0130ST\u0130K \u00d6ZET\u0130:**\n\u2022 Toplam Log: 66,943\n\u2022 Anomali Say\u0131s\u0131: 7 (%0.0)\n\u2022 Ortalama Anomali Skoru: -0.419\n",
+    "sonu\u00e7": {
+      "source": "OpenSearch",
+      "server_info": {
+        "server_name": "lcwmongodb01n2",
+        "model_status": "existing",
+        "model_path": "models/isolation_forest_lcwmongodb01n2.pkl",
+        "historical_buffer_size": 21443,
+        "last_update": "2025-10-21T07:58:25.343582"
+      },
+      "time_range_info": {
+        "custom_range": false,
+        "start_time": null,
+        "end_time": null,
+        "last_hours": 24,
+        "description": "son 24 saatteki"
+      },
+      "logs_analyzed": 69247,
+      "filtered_logs": 66943,
+      "summary": {
+        "total_logs": 66943,
+        "n_anomalies": 7,
+        "anomaly_rate": 0.010456657156088015,
+        "score_range": {
+          "min": -0.7409892315928848,
+          "max": -0.3835049494571955,
+          "mean": -0.4187679277379167
+        },
+        "ensemble_stats": {
+          "total_rule_overrides": 0,
+          "rules_active": 6,
+          "ensemble_method": "override",
+          "rule_hits": {}
+        },
+        "false_positive_filtered": {
+          "original_count": 7,
+          "filtered_count": 7,
+          "false_positive_rate": 0.0
+        }
+      },
+      "critical_anomalies": [
+        {
+          "index": 47227,
+          "severity_score": 53.72183540035071,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6680458850087677,
+          "timestamp": "2025-10-20 21:48:57.404000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-10-20 21:48:57) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 46670,
+          "severity_score": 53.71399327710314,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6678498319275785,
+          "timestamp": "2025-10-20 21:30:09.014000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-10-20 21:30:09) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 66632,
+          "severity_score": 53.66474206511552,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.666618551627888,
+          "timestamp": "2025-10-21 07:51:43.744000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-10-21 07:51:43) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 29960,
+          "severity_score": 53.60410199021821,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6651025497554552,
+          "timestamp": "2025-10-20 14:49:02.253000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-10-20 14:49:02) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 55014,
+          "severity_score": 51.77835950296816,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.669458987574204,
+          "timestamp": "2025-10-21 01:41:59.566000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-10-21 01:41:59) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 62282,
+          "severity_score": 51.688487105104564,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6672121776276141,
+          "timestamp": "2025-10-21 05:45:45.877000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-10-21 05:45:45) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 52801,
+          "severity_score": 51.66979264526759,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6667448161316899,
+          "timestamp": "2025-10-21 00:37:25.903000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd04 Replikasyon sorunu tespit edildi (2025-10-21 00:37:25) - REPL bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) \u2192 Replica set durumunu kontrol edin",
+          "anomaly_type": "replication_issue",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        }
+      ],
+      "unfiltered_anomalies": [
+        {
+          "index": 47227,
+          "severity_score": 53.72183540035071,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6680458850087677,
+          "timestamp": "2025-10-20 21:48:57.404000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null
+        },
+        {
+          "index": 46670,
+          "severity_score": 53.71399327710314,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6678498319275785,
+          "timestamp": "2025-10-20 21:30:09.014000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null
+        },
+        {
+          "index": 66632,
+          "severity_score": 53.66474206511552,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.666618551627888,
+          "timestamp": "2025-10-21 07:51:43.744000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null
+        },
+        {
+          "index": 29960,
+          "severity_score": 53.60410199021821,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6651025497554552,
+          "timestamp": "2025-10-20 14:49:02.253000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null
+        },
+        {
+          "index": 55014,
+          "severity_score": 51.77835950296816,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.669458987574204,
+          "timestamp": "2025-10-21 01:41:59.566000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null
+        },
+        {
+          "index": 62282,
+          "severity_score": 51.688487105104564,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6672121776276141,
+          "timestamp": "2025-10-21 05:45:45.877000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null
+        },
+        {
+          "index": 52801,
+          "severity_score": 51.66979264526759,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6667448161316899,
+          "timestamp": "2025-10-21 00:37:25.903000+03:00",
+          "severity": "I",
+          "component": "REPL",
+          "message": "Canceling catchup takeover callback",
+          "severity_factors": null
+        }
+      ],
+      "unfiltered_count": 7,
+      "security_alerts": {
+        "drop_operations": {
+          "count": 0,
+          "indices": []
+        },
+        "out_of_memory": {
+          "count": 0,
+          "indices": []
+        },
+        "restarts": {
+          "count": 0,
+          "indices": []
+        },
+        "memory_limits": {
+          "count": 0,
+          "indices": []
+        },
+        "shutdowns": {
+          "count": 0,
+          "indices": []
+        },
+        "assertions": {
+          "count": 0,
+          "indices": []
+        },
+        "fatal_errors": {
+          "count": 0,
+          "indices": []
+        }
+      },
+      "temporal_analysis": {
+        "hourly_distribution": {
+          "0": 4,
+          "1": 3,
+          "3": 1,
+          "5": 2,
+          "7": 2,
+          "8": 3,
+          "9": 3,
+          "10": 4,
+          "11": 2,
+          "12": 5,
+          "13": 13,
+          "14": 22,
+          "15": 10,
+          "16": 9,
+          "17": 4,
+          "18": 4,
+          "20": 2,
+          "21": 6,
+          "22": 2,
+          "23": 4
+        },
+        "peak_hours": [
+          14,
+          13,
+          15
+        ]
+      },
+      "component_analysis": {
+        "QUERY": {
+          "total_count": 30,
+          "anomaly_count": 30,
+          "anomaly_rate": 100.0
+        },
+        "INDEX": {
+          "total_count": 4,
+          "anomaly_count": 4,
+          "anomaly_rate": 100.0
+        },
+        "ELECTION": {
+          "total_count": 7,
+          "anomaly_count": 7,
+          "anomaly_rate": 100.0
+        },
+        "REPL": {
+          "total_count": 7,
+          "anomaly_count": 7,
+          "anomaly_rate": 100.0
+        },
+        "COMMAND": {
+          "total_count": 5355,
+          "anomaly_count": 22,
+          "anomaly_rate": 0.4108309990662932
+        },
+        "NETWORK": {
+          "total_count": 55139,
+          "anomaly_count": 35,
+          "anomaly_rate": 0.06347594261774787
+        },
+        "-": {
+          "total_count": 4522,
+          "anomaly_count": 0,
+          "anomaly_rate": 0.0
+        },
+        "STORAGE": {
+          "total_count": 1459,
+          "anomaly_count": 0,
+          "anomaly_rate": 0.0
+        },
+        "ACCESS": {
+          "total_count": 420,
+          "anomaly_count": 0,
+          "anomaly_rate": 0.0
+        }
+      },
+      "feature_importance": {
+        "attr_key_count": 1.0,
+        "is_slow_query": 0.7825095019809576,
+        "has_many_attrs": 0.47276753143129735,
+        "component_encoded": 0.4245960081991353,
+        "component_changed": 0.33951313487150475,
+        "extreme_burst_flag": 0.21822182388843245,
+        "hour_of_day": 0.05300684836673469,
+        "has_error_key": 0.042319266202858405,
+        "burst_density": 0.04118901779323534,
+        "is_rare_message": 0.0037174373892572723
+      },
+      "anomaly_score_stats": {
+        "min": -0.7409892315928848,
+        "max": -0.3835049494571955,
+        "mean": -0.4187679277379167
+      },
+      "ai_explanation": {
+        "ne_tespit_edildi": "\u2022 Toplam 66,943 log i\u00e7inde 7 anomali tespit edildi (%0.0)\n\u2022 QUERY bile\u015feninde 30 anomali (%100.0)\n\u2022 INDEX bile\u015feninde 4 anomali (%100.0)\n\u2022 ELECTION bile\u015feninde 7 anomali (%100.0)\n\u2022 En kritik anomali skoru: 0.000 (REPL bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 14, 13, 15 aras\u0131nda yo\u011funla\u015fm\u0131\u015f",
+        "potansiyel_etkiler": [
+          "Sistem performans\u0131 %0.0 oran\u0131nda etkilenebilir",
+          "En kritik 9 bile\u015fende sorun tespit edildi",
+          "Ortalama anomali skoru -0.419 seviyesinde"
+        ],
+        "muhtemel_nedenler": [
+          "Yo\u011fun kullan\u0131m veya sistem sorunu",
+          "Saat 14 civar\u0131nda artan y\u00fck",
+          "En y\u00fcksek anomali oran\u0131 %100.0 ile tespit edildi"
+        ],
+        "onerilen_aksiyonlar": [
+          "7 anomaliyi detayl\u0131 inceleyin",
+          "\u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+          "Skor de\u011feri -0.741 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+        ]
+      }
+    },
+    "\u00f6neriler": [
+      "7 anomaliyi detayl\u0131 inceleyin",
+      "\u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+      "Skor de\u011feri -0.741 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+    ]
+  },
+  "saved_at": "2025-10-21T04:58:48.563454"
+}

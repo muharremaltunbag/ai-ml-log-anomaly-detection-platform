@@ -1,0 +1,282 @@
+{
+  "analysis_id": "analysis_b9773c5d7c5f",
+  "source_info": {
+    "source_type": "opensearch",
+    "host": "lcwmongodb01n2.lcwaikiki.local",
+    "time_range": "last_week",
+    "timestamp": "2025-10-21T04:46:46.644597"
+  },
+  "result": {
+    "durum": "tamamland\u0131",
+    "i\u015flem": "anomaly_analysis",
+    "a\u00e7\u0131klama": "OpenSearch'ten son 168 saatteki 1526 log analiz edildi (lcwmongodb01n2 sunucusu). \u2705 Mevcut model g\u00fcncellendi\n\n\ud83d\udd0d **NE TESP\u0130T ED\u0130LD\u0130?**\n\u2022 Toplam 1,459 log i\u00e7inde 4 anomali tespit edildi (%0.3)\n\u2022 STORAGE bile\u015feninde 28 anomali (%100.0)\n\u2022 COMMAND bile\u015feninde 5 anomali (%100.0)\n\u2022 ACCESS bile\u015feninde 2 anomali (%100.0)\n\u2022 En kritik anomali skoru: 0.000 (COMMAND bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 3 aras\u0131nda yo\u011funla\u015fm\u0131\u015f\n\n\u26a0\ufe0f **POTANS\u0130YEL ETK\u0130LER:**\n\u2022 Sistem performans\u0131 %0.3 oran\u0131nda etkilenebilir\n\u2022 En kritik 6 bile\u015fende sorun tespit edildi\n\u2022 Ortalama anomali skoru -0.422 seviyesinde\n\n\ud83c\udfaf **MUHTEMEL NEDENLER:**\n\u2022 Yo\u011fun kullan\u0131m veya sistem sorunu\n\u2022 Saat 3 civar\u0131nda artan y\u00fck\n\u2022 En y\u00fcksek anomali oran\u0131 %100.0 ile tespit edildi\n\n\ud83d\udca1 **\u00d6NER\u0130LEN AKS\u0130YONLAR:**\n1. 4 anomaliyi detayl\u0131 inceleyin\n2. \u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n\n3. Skor de\u011feri -0.698 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn\n\n\ud83d\udcca **\u0130STAT\u0130ST\u0130K \u00d6ZET\u0130:**\n\u2022 Toplam Log: 1,459\n\u2022 Anomali Say\u0131s\u0131: 4 (%0.3)\n\u2022 Ortalama Anomali Skoru: -0.422\n",
+    "sonu\u00e7": {
+      "source": "OpenSearch",
+      "server_info": {
+        "server_name": "lcwmongodb01n2",
+        "model_status": "existing",
+        "model_path": "models/isolation_forest_lcwmongodb01n2.pkl",
+        "historical_buffer_size": 13316,
+        "last_update": "2025-10-21T07:39:01.482336"
+      },
+      "time_range_info": {
+        "custom_range": false,
+        "start_time": null,
+        "end_time": null,
+        "last_hours": 168,
+        "description": "son 168 saatteki"
+      },
+      "logs_analyzed": 1526,
+      "filtered_logs": 1459,
+      "summary": {
+        "total_logs": 1459,
+        "n_anomalies": 4,
+        "anomaly_rate": 0.2741603838245374,
+        "score_range": {
+          "min": -0.6980211868580326,
+          "max": -0.40205844513353545,
+          "mean": -0.42198159195230056
+        },
+        "ensemble_stats": {
+          "total_rule_overrides": 0,
+          "rules_active": 6,
+          "ensemble_method": "override",
+          "rule_hits": {}
+        },
+        "false_positive_filtered": {
+          "original_count": 4,
+          "filtered_count": 4,
+          "false_positive_rate": 0.0
+        }
+      },
+      "critical_anomalies": [
+        {
+          "index": 90,
+          "severity_score": 50.854442961950085,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6463610740487521,
+          "timestamp": "2025-10-17 03:01:02.642000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Slow query on 'salestransactionapi.FiscalizationStatus' took 1647ms - FULL TABLE SCAN detected (needs index) (scanned 1,089,872 docs)",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udc0c Yava\u015f sorgu tespit edildi (2025-10-17 03:01:02) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - 1647ms (yava\u015f) \u2192 Index optimizasyonu yap\u0131n",
+          "anomaly_type": "slow_query",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 89,
+          "severity_score": 50.58459859847555,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6396149649618889,
+          "timestamp": "2025-10-17 03:01:02.638000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Slow query on 'salestransactionapi.FiscalizationStatus' took 1734ms - FULL TABLE SCAN detected (needs index) (scanned 1,089,872 docs)",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udc0c Yava\u015f sorgu tespit edildi (2025-10-17 03:01:02) - COMMAND bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - 1734ms (yava\u015f) \u2192 Index optimizasyonu yap\u0131n",
+          "anomaly_type": "slow_query",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 752,
+          "severity_score": 50.226785003170036,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6806696250792509,
+          "timestamp": "2025-10-17 03:15:51.314000+03:00",
+          "severity": "I",
+          "component": "ACCESS",
+          "message": "Authentication failed",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd10 Kimlik do\u011frulama hatas\u0131 tespit edildi (2025-10-17 03:15:51) - ACCESS bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - Eri\u015fim loglar\u0131 kontrol edilmeli \u2192 G\u00fcvenlik loglar\u0131n\u0131 inceleyin",
+          "anomaly_type": "auth_failure",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        },
+        {
+          "index": 553,
+          "severity_score": 49.2378863122865,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6559471578071625,
+          "timestamp": "2025-10-17 03:11:49.853000+03:00",
+          "severity": "I",
+          "component": "ACCESS",
+          "message": "Authentication failed",
+          "severity_factors": null,
+          "formatted_message": "\ud83d\udd10 Kimlik do\u011frulama hatas\u0131 tespit edildi (2025-10-17 03:11:49) - ACCESS bile\u015feni | \ud83d\udfe2 D\u00dc\u015e\u00dcK (Skor: 0.000) - Eri\u015fim loglar\u0131 kontrol edilmeli \u2192 G\u00fcvenlik loglar\u0131n\u0131 inceleyin",
+          "anomaly_type": "auth_failure",
+          "risk_category": "low",
+          "risk_level": "\ud83d\udfe2 D\u00dc\u015e\u00dcK"
+        }
+      ],
+      "unfiltered_anomalies": [
+        {
+          "index": 90,
+          "severity_score": 50.854442961950085,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6463610740487521,
+          "timestamp": "2025-10-17 03:01:02.642000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Slow query on 'salestransactionapi.FiscalizationStatus' took 1647ms - FULL TABLE SCAN detected (needs index) (scanned 1,089,872 docs)",
+          "severity_factors": null
+        },
+        {
+          "index": 89,
+          "severity_score": 50.58459859847555,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6396149649618889,
+          "timestamp": "2025-10-17 03:01:02.638000+03:00",
+          "severity": "I",
+          "component": "COMMAND",
+          "message": "Slow query on 'salestransactionapi.FiscalizationStatus' took 1734ms - FULL TABLE SCAN detected (needs index) (scanned 1,089,872 docs)",
+          "severity_factors": null
+        },
+        {
+          "index": 752,
+          "severity_score": 50.226785003170036,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6806696250792509,
+          "timestamp": "2025-10-17 03:15:51.314000+03:00",
+          "severity": "I",
+          "component": "ACCESS",
+          "message": "Authentication failed",
+          "severity_factors": null
+        },
+        {
+          "index": 553,
+          "severity_score": 49.2378863122865,
+          "severity_level": "MEDIUM",
+          "severity_color": "#f39c12",
+          "anomaly_score": -0.6559471578071625,
+          "timestamp": "2025-10-17 03:11:49.853000+03:00",
+          "severity": "I",
+          "component": "ACCESS",
+          "message": "Authentication failed",
+          "severity_factors": null
+        }
+      ],
+      "unfiltered_count": 4,
+      "security_alerts": {
+        "drop_operations": {
+          "count": 0,
+          "indices": []
+        },
+        "out_of_memory": {
+          "count": 0,
+          "indices": []
+        },
+        "restarts": {
+          "count": 0,
+          "indices": []
+        },
+        "memory_limits": {
+          "count": 0,
+          "indices": []
+        },
+        "shutdowns": {
+          "count": 0,
+          "indices": []
+        },
+        "assertions": {
+          "count": 0,
+          "indices": []
+        },
+        "fatal_errors": {
+          "count": 0,
+          "indices": []
+        }
+      },
+      "temporal_analysis": {
+        "hourly_distribution": {
+          "3": 36
+        },
+        "peak_hours": [
+          3
+        ]
+      },
+      "component_analysis": {
+        "STORAGE": {
+          "total_count": 28,
+          "anomaly_count": 28,
+          "anomaly_rate": 100.0
+        },
+        "COMMAND": {
+          "total_count": 5,
+          "anomaly_count": 5,
+          "anomaly_rate": 100.0
+        },
+        "ACCESS": {
+          "total_count": 2,
+          "anomaly_count": 2,
+          "anomaly_rate": 100.0
+        },
+        "QUERY": {
+          "total_count": 1,
+          "anomaly_count": 1,
+          "anomaly_rate": 100.0
+        },
+        "NETWORK": {
+          "total_count": 1307,
+          "anomaly_count": 0,
+          "anomaly_rate": 0.0
+        },
+        "-": {
+          "total_count": 116,
+          "anomaly_count": 0,
+          "anomaly_rate": 0.0
+        }
+      },
+      "feature_importance": {
+        "attr_key_count": 1.0,
+        "component_changed": 0.6778871756913596,
+        "component_encoded": 0.6652959488850996,
+        "is_rare_message": 0.1868521011509429,
+        "has_error_key": 0.07804611852235147,
+        "has_many_attrs": 0.0737038692225281,
+        "severity_W": 0.04841089692608587,
+        "is_slow_query": 0.03421541163978321,
+        "is_rare_combo": 0.01946707449210775,
+        "burst_density": 0.0020667535271086898
+      },
+      "anomaly_score_stats": {
+        "min": -0.6980211868580326,
+        "max": -0.40205844513353545,
+        "mean": -0.42198159195230056
+      },
+      "ai_explanation": {
+        "ne_tespit_edildi": "\u2022 Toplam 1,459 log i\u00e7inde 4 anomali tespit edildi (%0.3)\n\u2022 STORAGE bile\u015feninde 28 anomali (%100.0)\n\u2022 COMMAND bile\u015feninde 5 anomali (%100.0)\n\u2022 ACCESS bile\u015feninde 2 anomali (%100.0)\n\u2022 En kritik anomali skoru: 0.000 (COMMAND bile\u015feni)\n\u2022 Anomaliler en \u00e7ok saat 3 aras\u0131nda yo\u011funla\u015fm\u0131\u015f",
+        "potansiyel_etkiler": [
+          "Sistem performans\u0131 %0.3 oran\u0131nda etkilenebilir",
+          "En kritik 6 bile\u015fende sorun tespit edildi",
+          "Ortalama anomali skoru -0.422 seviyesinde"
+        ],
+        "muhtemel_nedenler": [
+          "Yo\u011fun kullan\u0131m veya sistem sorunu",
+          "Saat 3 civar\u0131nda artan y\u00fck",
+          "En y\u00fcksek anomali oran\u0131 %100.0 ile tespit edildi"
+        ],
+        "onerilen_aksiyonlar": [
+          "4 anomaliyi detayl\u0131 inceleyin",
+          "\u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+          "Skor de\u011feri -0.698 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+        ]
+      }
+    },
+    "\u00f6neriler": [
+      "4 anomaliyi detayl\u0131 inceleyin",
+      "\u00d6zellikle %100.0 anomali oran\u0131na sahip bile\u015fenlere odaklan\u0131n",
+      "Skor de\u011feri -0.698 alt\u0131ndaki kritik anomalileri \u00f6ncelikle \u00e7\u00f6z\u00fcn"
+    ]
+  },
+  "saved_at": "2025-10-21T04:46:46.676929"
+}
