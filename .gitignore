@@ -3,6 +3,9 @@ venv/
 __pycache__/
 logs/
 *.pyc
+*_report_*.json
+config_patch.json
+host_inventory_report.json
 temp_logs/
 .venv/
 models/*.pkl
@@ -10,4 +13,6 @@ models/*.pkl.*
 models/*.pkl*
 # Log dosyaları hariç tutulsun
 temp_logs/
+storage/exports/anomaly/*.json
+storage/temp/*.json
 *.log

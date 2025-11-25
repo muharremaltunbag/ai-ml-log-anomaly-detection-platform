@@ -35,6 +35,9 @@ class MongoDBAnomalyDetector:
         self.config = self._load_config(config_path)
         self.model_config = self.config['anomaly_detection']['model']
         self.output_config = self.config['anomaly_detection']['output']
+
+        # MODEL VERSION — Tek merkez
+        self.model_version = self.config.get("model_version", "2.0")
         # Ensemble config
         self.ensemble_config = self.config['anomaly_detection'].get('ensemble', {
             'enabled': True,
@@ -263,12 +266,26 @@ class MongoDBAnomalyDetector:
             X_historical = self.historical_data['features']
             
             # Feature uyumluluğunu kontrol et
-            if list(X_historical.columns) != list(X_new.columns):
-                logger.warning("Feature mismatch detected between historical and new data")
-                # Ortak feature'ları kullan
-                common_features = list(set(X_historical.columns) & set(X_new.columns))
-                X_historical = X_historical[common_features]
-                X_new = X_new[common_features]
+            # === STRICT FEATURE SAFETY BEFORE CONCAT (NEW) ===
+            hist_cols = list(X_historical.columns)
+            new_cols = list(X_new.columns)
+
+            if hist_cols != new_cols:
+                # Set-based farklar
+                missing = set(hist_cols) - set(new_cols)
+                extra   = set(new_cols) - set(hist_cols)
+
+                if missing or extra:
+                    # Kritik hata - model tutarsızlığı oluşmasın
+                    raise ValueError(
+                        f"[FEATURE MISMATCH] Historical buffer and new data have inconsistent "
+                        f"feature sets. Missing: {missing} | Extra: {extra}. "
+                        f"Retraining required."
+                    )
+
+                # Sadece order mismatch varsa düzelt
+                logger.warning("Feature order mismatch between historical and new data. Reordering new data.")
+                X_new = X_new[hist_cols]
 
             # Full History Strategy - Tüm historical data'yı koru
             X_combined = pd.concat([X_historical, X_new], ignore_index=True)
@@ -407,6 +424,36 @@ class MongoDBAnomalyDetector:
         
         # Index'i reset et (sklearn için kritik!)
         X_train = X_train.reset_index(drop=True)
+
+        # === STRICT FEATURE ORDER ALIGNMENT BEFORE MODEL FIT ===
+
+        # 1) Eğer geçmiş feature_names varsa, önce onlarla hizala
+        if self.feature_names and list(X_train.columns) != self.feature_names:
+            missing = set(self.feature_names) - set(X_train.columns)
+            extra   = set(X_train.columns) - set(self.feature_names)
+            if missing or extra:
+                raise ValueError(
+                    f"[TRAIN MISMATCH] X_train columns do not match saved feature_names. "
+                    f"Missing: {missing} | Extra: {extra}"
+                )
+            # Saved feature order'a göre sıralama
+            X_train = X_train[self.feature_names]
+            logger.debug("Reordered X_train to match saved feature_names before fit().")
+
+        # 2) Eğer incremental retraining ve mevcut model sklearn feature_names_in_ içeriyorsa, onunla hizala
+        if hasattr(self.model, 'feature_names_in_'):
+            sklearn_cols = list(self.model.feature_names_in_)
+            if sklearn_cols != list(X_train.columns):
+                missing = set(sklearn_cols) - set(X_train.columns)
+                extra   = set(X_train.columns) - set(sklearn_cols)
+                if missing or extra:
+                    raise ValueError(
+                        f"[SKLEARN MISMATCH] X_train columns mismatch with model.feature_names_in_. "
+                        f"Missing: {missing} | Extra: {extra}"
+                    )
+                # sklearn'ün iç order'ına göre sıralama
+                X_train = X_train[sklearn_cols]
+                logger.debug("Reordered X_train to sklearn feature_names_in_ before fit().")
         
         # Model oluştur veya mevcut modeli kullan
         if not self.is_trained:
@@ -443,11 +490,16 @@ class MongoDBAnomalyDetector:
             "n_samples": X.shape[0],
             "n_features": X.shape[1],
             "feature_names": self.feature_names,
+            "feature_schema": {
+                "names": self.feature_names,
+                "count": len(self.feature_names),
+            },
             "training_time_seconds": training_time,
             "model_type": self.model_config['type'],
             "parameters": params,
             "timestamp": datetime.now().isoformat(),
-            "server_name": server_name  # YENİ: Sunucu bilgisi
+            "server_name": server_name,  # YENİ: Sunucu bilgisi
+            "model_version": self.model_version  # MODEL VERSION EKLENDİ
         }
         self.is_trained = True
         logger.debug(f"Training completed - Model is now ready for predictions")
@@ -469,7 +521,7 @@ class MongoDBAnomalyDetector:
         return self.training_stats
 
     def _update_historical_buffer(self, X_new: pd.DataFrame, X_train: pd.DataFrame, 
-                             training_mode: str) -> None:
+                                  training_mode: str) -> None:
         """
         Training sonrası historical buffer'ı güncelle
         
@@ -480,52 +532,67 @@ class MongoDBAnomalyDetector:
         """
         try:
             logger.debug(f"Updating historical buffer - Mode: {training_mode}")
-            
+
             # İlk training ise veya yeni training mode
             if training_mode == "new" or self.historical_data['features'] is None:
                 # Direkt yeni veriyi historical olarak sakla
-                self.historical_data['features'] = X_new.copy().reset_index(drop=True)  # Index reset
-                
+                self.historical_data['features'] = X_new.copy().reset_index(drop=True)
+
                 # Predictions ve scores'u hesapla ve sakla
                 predictions = self.model.predict(X_new)
                 scores = self.model.score_samples(X_new)
-                
+
                 self.historical_data['predictions'] = predictions
                 self.historical_data['scores'] = scores
-                
+
             else:  # incremental mode
-                # Full history strategy - tüm combined data'yı sakla
-                self.historical_data['features'] = X_train.copy()
-                
-                # Yeni predictions ve scores hesapla
-                predictions = self.model.predict(X_train)
-                scores = self.model.score_samples(X_train)
-                
+                # DÜZELTME: Mevcut buffer ile yeni veriyi FIFO mantığıyla birleştir
+                current_buffer = self.historical_data['features']
+
+                # Yeni veriyi ekle
+                combined_buffer = pd.concat([current_buffer, X_new], ignore_index=True)
+
+                # Buffer limit kontrolü
+                max_buffer_size = self.config.get('max_historical_buffer', 50000)
+
+                if len(combined_buffer) > max_buffer_size:
+                    # FIFO: En eski verileri at, en yenileri tut
+                    logger.info(f"Buffer size ({len(combined_buffer)}) exceeds limit ({max_buffer_size})")
+                    logger.info(f"Applying FIFO: keeping last {max_buffer_size} samples")
+
+                    # Son max_buffer_size kadar sample'ı tut
+                    self.historical_data['features'] = combined_buffer.tail(max_buffer_size).reset_index(drop=True)
+                else:
+                    self.historical_data['features'] = combined_buffer
+
+                # Yeni predictions ve scores hesapla (güncel buffer için)
+                predictions = self.model.predict(self.historical_data['features'])
+                scores = self.model.score_samples(self.historical_data['features'])
+
                 self.historical_data['predictions'] = predictions
                 self.historical_data['scores'] = scores
-            
+
             # Metadata güncelle
             self.historical_data['metadata']['total_samples'] = len(self.historical_data['features'])
             self.historical_data['metadata']['anomaly_samples'] = int((self.historical_data['predictions'] == -1).sum())
             self.historical_data['metadata']['last_update'] = datetime.now().isoformat()
-            
+
             # İstatistikleri logla
             anomaly_rate = (self.historical_data['predictions'] == -1).mean() * 100
-            
-            logger.debug(f"  Total samples: {self.historical_data['metadata']['total_samples']}")
-            logger.debug(f"  Anomaly samples: {self.historical_data['metadata']['anomaly_samples']}")
-            
-            
-            # Bellek kullanımı kontrolü ve yönetimi
+
+            logger.info(f"Historical buffer updated:")
+            logger.info(f"  Total samples: {self.historical_data['metadata']['total_samples']}")
+            logger.info(f"  Anomaly samples: {self.historical_data['metadata']['anomaly_samples']} ({anomaly_rate:.1f}%)")
+
+            # Bellek kullanımı kontrolü
             buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
-            logger.debug(f"  Buffer size: {buffer_size_mb:.2f} MB")
-            
-            # Kritik bellek yönetimi
-            warning_threshold_mb = 1000  # 1 GB uyarı
-            critical_threshold_mb = 2000  # 2 GB kritik
-            
+            logger.info(f"  Buffer size: {buffer_size_mb:.2f} MB")
+
+            # Kritik bellek yönetimi kısmı aynı kalabilir
+            warning_threshold_mb = 1000
+            critical_threshold_mb = 2000
+
             if buffer_size_mb > critical_threshold_mb:
-                # Kritik seviye - buffer'ı %50 küçült
                 logger.critical(f"Buffer critically large ({buffer_size_mb:.2f} MB), trimming to 50%...")
                 keep_samples = len(self.historical_data['features']) // 2
                 self.historical_data['features'] = self.historical_data['features'].tail(keep_samples)
@@ -535,10 +602,10 @@ class MongoDBAnomalyDetector:
                 logger.info(f"Buffer trimmed: {buffer_size_mb:.2f} MB -> {new_size_mb:.2f} MB")
             elif buffer_size_mb > warning_threshold_mb:
                 logger.warning(f"Historical buffer size is large: {buffer_size_mb:.2f} MB")
-                
+
         except Exception as e:
             logger.error(f"Error updating historical buffer: {e}")
-            logger.debug(f"ERROR: Failed to update historical buffer: {e}")
+
     def predict(self, X: pd.DataFrame, df: Optional[pd.DataFrame] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         Anomali tahminleri yap (Ensemble model ile)
@@ -553,12 +620,74 @@ class MongoDBAnomalyDetector:
         
         if not self.is_trained:
             raise ValueError("Model is not trained yet!")
+
+        # ====== STABILIZER EKLENECEK ======
+        try:
+            if hasattr(self, "feature_engineer") and self.feature_engineer:
+                X = self.feature_engineer.stabilize_features_for_model(
+                    X,
+                    self.training_stats.get("feature_schema")
+                )
+                logger.debug("FeatureEngineer stabilizer applied successfully before prediction.")
+        except Exception as e:
+            logger.error(f"Feature stabilizer failed before prediction: {e}")
+        # =======================================
         
-        # Feature sıralamasını kontrol et
-        if list(X.columns) != self.feature_names:
-            
-            logger.warning("Feature names mismatch, reordering...")
-            X = X[self.feature_names]
+        # Feature isimleri ve sırasını güvenli şekilde hizala
+        if self.feature_names is None or not len(self.feature_names):
+            # Modelde feature bilgisi yoksa, ilk gelen X'i referans al
+            logger.warning(
+                "Model feature_names is empty/None. "
+                "Setting feature_names from current input columns."
+            )
+            self.feature_names = list(X.columns)
+        else:
+            input_features = list(X.columns)
+
+            # Aynı feature set'i var mı?
+            input_set = set(input_features)
+            model_set = set(self.feature_names)
+
+            missing_features = [f for f in self.feature_names if f not in input_set]
+            extra_features = [f for f in input_features if f not in model_set]
+
+            if missing_features or extra_features:
+                # Burada hard fail veriyoruz, çünkü IsolationForest feature sayısına hassas
+                logger.error(
+                    "Feature mismatch between trained model and input data. "
+                    f"Missing in input: {missing_features} | "
+                    f"Extra in input: {extra_features}"
+                )
+                raise ValueError(
+                    "Feature mismatch between trained model and input data. "
+                    "Check feature engineering pipeline and retrain the model if necessary."
+                )
+
+            # Sadece sıra farklıysa reorder et
+            # 1) Column presence check (en kritik guard)
+            missing = set(self.model.feature_names_in_) - set(X.columns)
+            if missing:
+                raise ValueError(
+                    f"Missing required features for prediction: {missing}. "
+                    "Prediction aborted."
+                )
+
+            # 2) Training feature order vs input order mismatch
+            input_features = list(X.columns)
+            if input_features != self.feature_names:
+                logger.warning(
+                    "Feature names order mismatch. Reordering input columns "
+                    "to match training feature order."
+                )
+                X = X[self.feature_names]
+
+            # 3) ZORUNLU sklearn hizalaması (kesin sıra)
+            if hasattr(self.model, "feature_names_in_"):
+                logger.debug(
+                    f"Applying sklearn feature_names_in_ ordering "
+                    f"({len(self.model.feature_names_in_)} features)"
+                )
+                X = X[self.model.feature_names_in_]
             
         
         # Incremental ensemble varsa onu kullan
@@ -1183,7 +1312,8 @@ class MongoDBAnomalyDetector:
                     # Online Learning - Historical Buffer
                     'historical_data': self.historical_data if self.online_learning_config.get('enabled', True) else None,
                     'online_learning_config': self.online_learning_config,
-                    'model_version': '2.0'  # Version tracking for compatibility
+                    # Version tracking: config kontrollü, default 2.0
+                    'model_version': self.model_version
                 }
 
                 # Historical buffer size kontrolü
@@ -1248,6 +1378,14 @@ class MongoDBAnomalyDetector:
             self.model = model_data['model']
             self.feature_names = model_data['feature_names']
             self.training_stats = model_data.get('training_stats', {})
+
+            # === FEATURE NAME ALIGNMENT STABILIZER ===
+            if hasattr(self.model, "feature_names_in_"):
+                # sklearn modelinin kendi garantili feature sırasını kullan
+                self.feature_names = list(self.model.feature_names_in_)
+            elif not self.feature_names:
+                # Eski model / eksik metadata → predict() ilk X ile dolduracak
+                logger.warning("Loaded model has no feature_names. Will set on first prediction.")
             
             # YENİ: Server bilgisini kontrol et ve güncelle
             loaded_server = model_data.get('server_name', None)
@@ -1267,16 +1405,27 @@ class MongoDBAnomalyDetector:
                 
             
             # Online Learning - Historical Buffer'ı yükle
-            model_version = model_data.get('model_version', '1.0')
-            
-            
-            if model_version >= '2.0' and 'historical_data' in model_data:
+            model_version = model_data.get('model_version')
+
+            if model_version is None:
+                # Eğer eski model dosyasıysa - kesin olarak legacy işaretle
+                model_version = "legacy-1.x"
+                logger.warning("Loaded model has no version info. Marked as legacy model.")
+            else:
+                # String or numeric → normalize to string
+                model_version = str(model_version).strip()
+
+            # Runtime state
+            self.loaded_model_version = model_version
+            self.training_stats["model_version"] = model_version
+
+            logger.info(f"Loaded model version: {model_version}")
+
+            if (model_version >= '2.0') and ('historical_data' in model_data):
                 if model_data['historical_data'] is not None:
                     self.historical_data = model_data['historical_data']
-                    
                     logger.debug(f"  Total samples: {self.historical_data['metadata']['total_samples']}")
-                    
-                    
+
                     # Buffer size info
                     if self.historical_data['features'] is not None:
                         buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
@@ -1457,6 +1606,21 @@ class MongoDBAnomalyDetector:
             # Feature consistency kontrolü
             if self.feature_names:
                 buffer_features = set(self.historical_data['features'].columns)
+                model_features = set(self.feature_names)
+                # === FEATURE SAFETY CHECK (NEW) ===
+                if hasattr(self.model, "feature_names_in_"):
+                    model_set = set(self.model.feature_names_in_)
+                    if buffer_features != model_set:
+                        missing = model_set - buffer_features
+                        extra = buffer_features - model_set
+                        if missing:
+                            validation_results["warnings"].append(
+                                f"Historical buffer missing model features: {missing}"
+                            )
+                        if extra:
+                            validation_results["warnings"].append(
+                                f"Buffer contains extra unused features: {extra}"
+                            )
                 model_features = set(self.feature_names)
                 
                 missing_features = model_features - buffer_features

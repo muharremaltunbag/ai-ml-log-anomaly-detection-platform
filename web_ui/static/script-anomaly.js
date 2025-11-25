@@ -94,9 +94,19 @@ function updateParentAnomalyQuery(result) {
 /**
  * Chat anomali sonuçlarını göster
  */
-function displayChatAnomalyResult(result, userQuery) {
-    console.log('Displaying chat anomaly result');
+function displayAnomalyResults(result) {
+    console.log('displayAnomalyResults called with result:', result);
     
+    // YENİ: ML Panel'i otomatik güncelle
+    if (window.MLPanel && window.MLPanel.autoUpdate) {
+        try {
+            window.MLPanel.autoUpdate(result);
+            console.log('✅ ML Panel auto-updated with anomaly results');
+        } catch (error) {
+            console.error('ML Panel update error:', error);
+        }
+    }
+
     const elements = window.elements;
     elements.resultSection.style.display = 'block';
     
@@ -318,6 +328,16 @@ window.askFollowUp = function(question) {
  */
 function displayAnomalyAnalysisResult(result) {
     console.log('Displaying AI-enhanced anomaly analysis result');
+    
+    // YENİ: ML Panel'i otomatik güncelle
+    if (window.MLPanel && window.MLPanel.autoUpdate) {
+        try {
+            window.MLPanel.autoUpdate(result);
+            console.log('✅ ML Panel auto-updated with AI-enhanced analysis');
+        } catch (error) {
+            console.error('ML Panel update error:', error);
+        }
+    }
     
     const elements = window.elements;
     
@@ -2167,7 +2187,7 @@ async function loadAnomalyChunk(analysisId, chunkIndex) {
 // GLOBAL ERİŞİM İÇİN WINDOW'A ATAMA
 // ============================================
 window.updateParentAnomalyQuery = updateParentAnomalyQuery;
-window.displayChatAnomalyResult = displayChatAnomalyResult;
+window.displayChatAnomalyResult = displayAnomalyResults;  // Mevcut fonksiyona yönlendir
 window.decodeHtmlEntities = decodeHtmlEntities;
 window.formatAIResponse = formatAIResponse;
 window.displayAnomalyAnalysisResult = displayAnomalyAnalysisResult;

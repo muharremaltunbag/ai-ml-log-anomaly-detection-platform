@@ -78,7 +78,22 @@ window.initializeElements = function() {
         statusText: document.querySelector('.status-text'),
         modal: document.getElementById('modal'),
         modalTitle: document.getElementById('modalTitle'),
-        modalBody: document.getElementById('modalBody')
+        modalBody: document.getElementById('modalBody'),
+        // ML Panel Elementleri - YENİ
+        mlPanel: document.getElementById('mlPanel'),
+        mlPanelMinimizeBtn: document.getElementById('panelMinimizeBtn'),
+        modelAccuracy: document.getElementById('modelAccuracy'),
+        modelF1: document.getElementById('modelF1'),
+        modelPrecision: document.getElementById('modelPrecision'),
+        modelRecall: document.getElementById('modelRecall'),
+        totalLogs: document.getElementById('totalLogs'),
+        detectedAnomalies: document.getElementById('detectedAnomalies'),
+        anomalyRate: document.getElementById('anomalyRate'),
+        modelVersion: document.getElementById('modelVersion'),
+        lastTrainingDate: document.getElementById('lastTrainingDate'),
+        sampleLogInput: document.getElementById('sampleLogInput'),
+        validateLogBtn: document.getElementById('validateLogBtn'),
+        validationResult: document.getElementById('validationResult')
     };
     console.log('✅ DOM elements initialized');
     return window.elements;

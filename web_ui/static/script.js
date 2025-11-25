@@ -39,11 +39,14 @@ var viewStoredAnalysis = window.viewStoredAnalysis;
 
 // Sayfa yüklendiğinde
 document.addEventListener('DOMContentLoaded', async () => {
-    // DOM element referanslarını initialize et (script-core.js'den)
+    // DOM element referanslarını initialize et
     window.initializeElements();
-    
-    // Local alias'ları güncelle
     elements = window.elements;
+    
+    // YENİ: ML Panel'i initialize et
+    if (window.MLPanel) {
+        window.MLPanel.initialize();
+    }
     
     // Session ID oluştur
     if (!window.currentSessionId) {
@@ -55,51 +58,116 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkInitialStatus();
     restoreViewMode();
     
-    // İlk yükleme - boş başla
-    loadHistory();
+    // ✅ YENİ: Önce MongoDB'den otomatik yüklemeyi dene
+    console.log('🚀 Attempting auto-load from MongoDB storage...');
+    let dataLoaded = false;
     
-    // API key localStorage'dan kontrol et (güvenlik için optional)
-    const savedApiKey = localStorage.getItem('saved_api_key');
-    if (savedApiKey && elements.apiKeyInput) {
-        console.log('📌 Found saved API key, auto-connecting...');
-        elements.apiKeyInput.value = savedApiKey;
+    try {
+        // autoLoadHistoryOnStartup MongoDB'den API key'i de yükleyecek
+        dataLoaded = await window.autoLoadHistoryOnStartup();
         
-        // Otomatik bağlan
-        await handleConnect();
-        
-        // Bağlantı başarılıysa TÜM MongoDB verilerini yükle
-        if (isConnected) {
-            console.log('📊 Loading all data from MongoDB...');
-            showNotification('MongoDB\'den veriler yükleniyor...', 'info');
+        if (dataLoaded) {
+            console.log('✅ Data successfully auto-loaded from MongoDB');
             
-            try {
-                // Paralel olarak tüm verileri yükle
-                const results = await Promise.all([
-                    loadHistory(),                    // Query history
-                    loadAnomalyHistoryFromMongoDB({limit: 50}),  // Anomaly history (mevcut fonksiyon)
-                    loadAndMergeDBAHistory(),         // DBA analyses (mevcut fonksiyon)
-                    checkStorageSize()                // Storage durumu
-                ]);
-                
-                console.log('✅ All MongoDB data loaded successfully');
-                console.log(`   📝 Query History: ${queryHistory.length} items`);
-                console.log(`   🔍 Anomaly History: ${results[1]?.length || 0} items`);
-                console.log(`   📊 DBA History merged`);
-                
-                showNotification('Tüm veriler MongoDB\'den yüklendi', 'success');
-                
-                // History display'i güncelle
-                updateHistoryDisplay();
-                
-            } catch (error) {
-                console.error('Error loading MongoDB data:', error);
-                showNotification('Bazı veriler yüklenemedi', 'warning');
+            // API key elementi varsa güncelle
+            if (window.apiKey && elements.apiKeyInput) {
+                elements.apiKeyInput.value = window.apiKey;
+            }
+            
+            // UI durumunu güncelle
+            if (window.isConnected) {
+                updateStatus(true, window.apiKey);
             }
         }
-    } else {
-        console.log('ℹ️ No saved API key, manual connection required');
+    } catch (error) {
+        console.error('Auto-load error:', error);
+    }
+    
+    // Auto-load başarısızsa mevcut mantıkla devam et
+    if (!dataLoaded) {
+        // Boş history ile başla
+        loadHistory();
+        
+        // LocalStorage'dan API key kontrolü
+        const savedApiKey = localStorage.getItem('saved_api_key');
+        
+        if (savedApiKey && elements.apiKeyInput) {
+            console.log('📌 Found saved API key in localStorage, auto-connecting...');
+            elements.apiKeyInput.value = savedApiKey;
+            
+            // Otomatik bağlan
+            await handleConnect();
+            
+            // Bağlantı başarılıysa MongoDB verilerini yükle
+            if (window.isConnected) {
+                console.log('📊 Loading all data from MongoDB...');
+                showNotification('MongoDB\'den veriler yükleniyor...', 'info');
+                
+                try {
+                    // Paralel olarak tüm verileri yükle
+                    const results = await Promise.all([
+                        loadHistory(),                    
+                        loadAnomalyHistoryFromMongoDB({limit: 50}),  
+                        loadAndMergeDBAHistory(),         
+                        checkStorageSize()                
+                    ]);
+                    
+                    console.log('✅ All MongoDB data loaded successfully');
+                    console.log(`   📝 Query History: ${queryHistory.length} items`);
+                    console.log(`   🔍 Anomaly History: ${results[1]?.length || 0} items`);
+                    console.log(`   📊 DBA History merged`);
+                    
+                    showNotification('Tüm veriler MongoDB\'den yüklendi', 'success');
+                    
+                    // History display'i güncelle
+                    updateHistoryDisplay();
+                    
+                    // ✅ YENİ: Son anomaly analizini göster
+                    if (window.displayLastAnomalyAnalysis) {
+                        await window.displayLastAnomalyAnalysis();
+                    }
+                    
+                } catch (error) {
+                    console.error('Error loading MongoDB data:', error);
+                    showNotification('Bazı veriler yüklenemedi', 'warning');
+                }
+            }
+        } else {
+            console.log('ℹ️ No saved API key, manual connection required');
+            
+            // ✅ YENİ: Development ortamında test API key ile otomatik bağlan
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                console.log('🔧 Development mode - auto-connecting with test API key...');
+                
+                const testApiKey = 'lcw-test-2024';
+                if (elements.apiKeyInput) {
+                    elements.apiKeyInput.value = testApiKey;
+                    await handleConnect();
+                    
+                    // Test bağlantısı başarılıysa veri yükle
+                    if (window.isConnected) {
+                        try {
+                            await Promise.all([
+                                loadHistory(),
+                                loadAnomalyHistoryFromMongoDB({limit: 50}),
+                                loadAndMergeDBAHistory()
+                            ]);
+                            updateHistoryDisplay();
+                            
+                            // Son anomaly analizini göster
+                            if (window.displayLastAnomalyAnalysis) {
+                                await window.displayLastAnomalyAnalysis();
+                            }
+                        } catch (error) {
+                            console.error('Test data loading error:', error);
+                        }
+                    }
+                }
+            }
+        }
     }
 });
+
 
 /**
  * Event listener'ları başlat
@@ -446,29 +514,56 @@ async function handleConnect() {
     
     elements.connectBtn.disabled = true;
     elements.connectBtn.textContent = 'BAĞLANIYOR...';
-    
+
     try {
         console.log('Attempting to connect to API...'); // DEBUG LOG
         // Test için collections endpoint'ini kullan
         const response = await fetch(`${API_ENDPOINTS.collections}?api_key=${key}`);
         
         console.log('API response status:', response.status); // DEBUG LOG
-        
+
         if (response.ok) {
             // Global değişkenleri güncelle (helper fonksiyonlar ile)
             window.updateApiKey(key);
             window.updateConnectionStatus(true);
-            
+
+            // ✅ YENİ: API key'i hem localStorage hem MongoDB'ye kaydet
+            localStorage.setItem('saved_api_key', key);
+            console.log('✅ API key saved to localStorage');
+
+            // MongoDB'ye de kaydet
+            if (typeof saveApiKeyToMongoDB === 'function') {
+                try {
+                    await saveApiKeyToMongoDB(key);
+                    console.log('✅ API key sent to MongoDB via backend endpoint');
+                } catch (e) {
+                    console.warn('❌ API key MongoDB\'ye kaydedilemedi:', e);
+                }
+            } else {
+                console.warn('saveApiKeyToMongoDB fonksiyonu tanımlı değil!');
+            }
+
             console.log('Connection successful, updating UI...'); // DEBUG LOG
             
             // UI'yi güncelle
             elements.mainContent.style.display = 'block';
             elements.apiKeyInput.disabled = true;
+
+            // YENİ: ML Paneli görünür yap ve metrikleri yükle
+            // YENİ: ML Panel modülünü kullan
+            if (window.MLPanel) {
+                window.MLPanel.show();
+                setTimeout(() => {
+                    window.MLPanel.loadMetrics();
+                }, 500);
+            } else {
+                console.warn('ML Panel module not loaded');
+            }
             elements.connectBtn.textContent = 'BAĞLANDI';
             elements.connectBtn.classList.add('connected');
 
             addStorageMenuButtons();   // ✅ storage menüsünü ekle
-            
+
             // YENİ: Storage'dan son anomali analizini yükle
             setTimeout(async () => {
                 const loaded = await loadLastAnomalyFromStorage();

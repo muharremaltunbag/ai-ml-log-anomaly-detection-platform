@@ -20,6 +20,56 @@ console.log('📚 Loading script-history.js...');
 // ===== KONUŞMA GEÇMİŞİ YÖNETİMİ =====
 
 /**
+ * API key'i MongoDB'ye kaydet
+ */
+async function saveApiKeyToMongoDB(apiKey) {
+    try {
+        const response = await fetch('/api/config/save-api-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_key: apiKey,
+                user_id: 'default',
+                session_id: window.currentSessionId
+            })
+        });
+        
+        if (response.ok) {
+            console.log('✅ API key saved to MongoDB storage');
+            return true;
+        }
+    } catch (error) {
+        console.error('Failed to save API key to MongoDB:', error);
+    }
+    return false;
+}
+
+/**
+ * MongoDB'den API key'i al
+ */
+async function loadApiKeyFromMongoDB() {
+    try {
+        const response = await fetch('/api/config/get-api-key?user_id=default');
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            if (data.status === 'success' && data.api_key) {
+                console.log('✅ API key loaded from MongoDB');
+                
+                // localStorage'a da kaydet (cache)
+                localStorage.setItem('saved_api_key', data.api_key);
+                
+                return data.api_key;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load API key from MongoDB:', error);
+    }
+    return null;
+}
+
+/**
  * Geçmişi yükle - MongoDB entegrasyonu ile
  */
 async function loadHistory() {
@@ -48,6 +98,172 @@ async function loadHistory() {
     } catch (e) {
         console.error('MongoDB yükleme hatası:', e);
         window.queryHistory = [];
+    }
+}
+/**
+ * Uygulama başlatıldığında otomatik history yükleme
+ * Mevcut fonksiyonları kullanarak MongoDB'den tüm verileri yükler
+ */
+async function autoLoadHistoryOnStartup() {
+    console.log('🔄 Auto-loading history from MongoDB...');
+    
+    try {
+        // Önce MongoDB'den API key'i kontrol et
+        let apiKey = await loadApiKeyFromMongoDB();
+        
+        // MongoDB'de yoksa localStorage'dan al
+        if (!apiKey) {
+            apiKey = localStorage.getItem('saved_api_key');
+            if (apiKey) {
+                console.log('📌 Using API key from localStorage');
+            }
+        } else {
+            console.log('📌 Using API key from MongoDB');
+        }
+        
+        if (!apiKey) {
+            console.log('ℹ️ No API key found in storage');
+            return false;
+        }
+        
+        // API key'i global değişkene set et
+        window.apiKey = apiKey;
+        window.isConnected = true;
+        
+        // Paralel olarak tüm history türlerini yükle
+        const results = await Promise.allSettled([
+            loadQueryHistoryFromMongoDB(),
+            loadAnomalyHistoryFromMongoDB({ limit: 50 }), // Mevcut fonksiyonu kullan
+            loadAndMergeDBAHistory() // Mevcut fonksiyonu kullan
+        ]);
+        
+        // Sonuçları değerlendir
+        let successCount = 0;
+        const types = ['Query History', 'Anomaly History', 'DBA History'];
+        
+        results.forEach((result, index) => {
+            if (result.status === 'fulfilled' && result.value) {
+                successCount++;
+                console.log(`✅ ${types[index]} loaded successfully`);
+            } else {
+                console.warn(`⚠️ ${types[index]} failed:`, result.reason);
+            }
+        });
+        
+        if (successCount > 0) {
+            console.log(`📊 Successfully loaded ${successCount}/3 history types`);
+            
+            // Son anomaly analizini otomatik göster
+            await displayLastAnomalyAnalysis();
+            
+            // History display'i güncelle
+            updateHistoryDisplay();
+            
+            // Başarılı yükleme bildirimi
+            if (window.showNotification) {
+                window.showNotification(
+                    `MongoDB'den ${successCount} veri türü yüklendi`, 
+                    'success'
+                );
+            }
+            
+            return true;
+        }
+        
+        console.log('⚠️ No history data could be loaded');
+        return false;
+        
+    } catch (error) {
+        console.error('❌ Auto-load failed:', error);
+        return false;
+    }
+}
+
+/**
+ * MongoDB'den sadece query history yükle
+ * NOT: Bu fonksiyon yoksa eklenecek
+ */
+async function loadQueryHistoryFromMongoDB() {
+    if (!window.apiKey) {
+        throw new Error('No API key available');
+    }
+    
+    try {
+        const response = await fetch(
+            `/api/query-history/load?api_key=${window.apiKey}&limit=100`
+        );
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status === 'success' && data.history) {
+            // Mevcut loadHistory fonksiyonu gibi davran
+            window.queryHistory = data.history;
+            console.log(`✅ Loaded ${data.count} query history items`);
+            return data.history;
+        }
+        
+        return [];
+    } catch (error) {
+        console.error('Failed to load query history:', error);
+        throw error;
+    }
+}
+
+/**
+ * Son anomaly analizini otomatik olarak görüntüle
+ */
+async function displayLastAnomalyAnalysis() {
+    try {
+        // Mevcut loadAnomalyHistoryFromMongoDB fonksiyonunu kullan
+        const anomalyHistory = await loadAnomalyHistoryFromMongoDB({ limit: 1 });
+        
+        if (anomalyHistory && anomalyHistory.length > 0) {
+            const lastAnalysis = anomalyHistory[0];
+            console.log('📊 Found last anomaly analysis:', lastAnalysis.analysis_id);
+            
+            // Detaylı veriyi al
+            const detailResponse = await fetch(
+                `/api/anomaly-history/${lastAnalysis.analysis_id}?api_key=${window.apiKey}`
+            );
+            
+            if (detailResponse.ok) {
+                const detailData = await detailResponse.json();
+                
+                if (detailData.status === 'success' && detailData.analysis) {
+                    const analysis = detailData.analysis;
+                    
+                    // Global değişkene kaydet
+                    if (analysis.detailed_data && analysis.detailed_data.result) {
+                        window.lastAnomalyResult = {
+                            sonuç: analysis.detailed_data.result.sonuç || analysis.detailed_data.result,
+                            durum: 'tamamlandı',
+                            işlem: 'anomaly_from_storage',
+                            açıklama: `📊 Önceki anomali analizi yüklendi\n\nAnaliz ID: ${analysis.analysis_id}\nZaman: ${analysis.timestamp}`,
+                            analysis_id: analysis.analysis_id,
+                            storage_info: {
+                                analysis_id: analysis.analysis_id,
+                                timestamp: analysis.timestamp,
+                                host: analysis.host
+                            }
+                        };
+                        
+                        // Display fonksiyonunu çağır
+                        if (window.displayAnomalyResults) {
+                            window.displayAnomalyResults(window.lastAnomalyResult);
+                            console.log('✅ Last anomaly analysis displayed automatically');
+                        }
+                    }
+                }
+            }
+        } else {
+            console.log('ℹ️ No previous anomaly analysis found');
+        }
+    } catch (error) {
+        console.error('Failed to display last anomaly:', error);
     }
 }
 
@@ -692,9 +908,18 @@ async function loadAndMergeDBAHistory() {
             
             // Display'i güncelle
             window.updateHistoryDisplayWithDBA();
+            
+            // ✅ YENİ: Başarılı durumda analyses'i döndür
+            return data.analyses;
         }
+        
+        // ✅ YENİ: Veri yoksa boş array döndür
+        return [];
+        
     } catch (error) {
         console.error('Failed to load DBA history from MongoDB:', error);
+        // ✅ YENİ: Hata durumunda da boş array döndür
+        return [];
     }
 }
 
@@ -1326,4 +1551,6 @@ window.checkStorageSize = checkStorageSize;
 window.exportHistory = exportHistory;
 window.loadMongoDBHistory = loadMongoDBHistory;
 window.loadAnomalyHistoryFromMongoDB = loadAnomalyHistoryFromMongoDB;
+window.saveApiKeyToMongoDB = saveApiKeyToMongoDB;
+window.loadApiKeyFromMongoDB = loadApiKeyFromMongoDB;
 console.log('✅ History module loaded successfully');

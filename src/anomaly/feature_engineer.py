@@ -29,6 +29,8 @@ class MongoDBFeatureEngineer:
         self.features_config = self.config['anomaly_detection']['features']
         self.enabled_features = self.features_config['enabled_features']
         self.filters = self.features_config['filters']
+        # ===== MODEL FEATURE SCHEMA HOLDER =====
+        self.model_feature_schema = None
         
         logger.info(f"Feature engineer initialized with {len(self.enabled_features)} features")
     
@@ -48,6 +50,32 @@ class MongoDBFeatureEngineer:
                     }
                 }
             }
+
+    def stabilize_features(self, df: pd.DataFrame, expected_schema: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Modelin eğitimde kullandığı feature schema'ya göre DataFrame'i stabilize eder.
+        Eksik kolonları ekler, fazla kolonları yok sayar, sıra ve dtype uyumluluğunu sağlar.
+        """
+        expected_cols = expected_schema.get("names", [])
+        expected_count = expected_schema.get("count", len(expected_cols))
+
+        # 1) Eksik kolonları ekle (default = 0.0)
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = 0.0
+
+        # 2) Fazla kolonları logla (drop etmeye gerek yok — reindex sırasında zaten atılır)
+        extra_cols = set(df.columns) - set(expected_cols)
+        if extra_cols:
+            logger.warning(f"[Feature Stabilizer] Extra features detected and will be ignored: {extra_cols}")
+
+        # 3) Yalnızca expected schema kolonlarını al ve sırayı düzelt
+        df = df[expected_cols]
+
+        # 4) Tüm kolonları float olarak cast et (ML uyumluluğu için)
+        df = df.astype(float)
+
+        return df
             
     def create_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -79,7 +107,18 @@ class MongoDBFeatureEngineer:
         df = self.extract_component_features(df)
         df = self.extract_combination_features(df)
         df = self.extract_attr_features(df)
-        
+
+        # ===================== SCHEMA STABILIZER =====================
+        # Eğer model schema bilgisi gönderilmişse stabilize et
+        if hasattr(self, "model_feature_schema") and self.model_feature_schema:
+            try:
+                logger.info("Applying feature schema stabilizer (from model training stats)...")
+                df = self.stabilize_features(df, self.model_feature_schema)
+            except Exception as e:
+                logger.error(f"Feature schema stabilizer failed: {e}")
+        # ====================================================================
+
+        # Feature seçimi
         # Feature seçimi
         feature_columns = [col for col in self.enabled_features if col in df.columns]
         X = df[feature_columns].copy()
@@ -89,6 +128,20 @@ class MongoDBFeatureEngineer:
             X = X.drop('time_since_last_log', axis=1)
         if 'log_burst_flag' in X.columns and 'log_burst_flag' not in self.enabled_features:
             X = X.drop('log_burst_flag', axis=1)
+        
+        # YENİ: Non-numeric kolonları filtrele
+        numeric_dtypes = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
+        numeric_columns = X.select_dtypes(include=numeric_dtypes).columns.tolist()
+        non_numeric_columns = X.select_dtypes(exclude=numeric_dtypes).columns.tolist()
+        
+        if non_numeric_columns:
+            logger.warning(f"Removing non-numeric columns from features: {non_numeric_columns}")
+            X = X[numeric_columns].copy()
+        
+        # NaN değerleri 0 ile doldur (güvenlik için)
+        X = X.fillna(0)
+        
+        logger.info(f"Final feature matrix: {X.shape} (all numeric)")
         
         logger.info(f"Feature engineering completed. Shape: {X.shape}")
         logger.info(f"Features: {list(X.columns)}")
@@ -101,7 +154,10 @@ class MongoDBFeatureEngineer:
             # Timestamp parse
             if 't' in df.columns:
                 if isinstance(df['t'].iloc[0], dict):
-                    df['timestamp'] = pd.to_datetime(df['t'].apply(lambda x: x.get('$date') if isinstance(x, dict) else None))
+                    df['timestamp'] = pd.to_datetime(
+                        df['t'].apply(lambda x: x.get('$date') if isinstance(x, dict) else None),
+                        utc=True  # ✅ UTC'ye zorla
+                    )
                 else:
                     df['timestamp'] = pd.to_datetime(df['t'])
             
@@ -319,7 +375,7 @@ class MongoDBFeatureEngineer:
             def extract_duration(text):
                 """Extract durationMillis from log message"""
                 try:
-                    match = DURATION_PATTERN.search(str(text))  # ✅ Compiled pattern kullan
+                    match = DURATION_PATTERN.search(str(text))  
                     return int(match.group(1)) if match else 0
                 except:
                     return 0
@@ -328,7 +384,7 @@ class MongoDBFeatureEngineer:
             def extract_docs_examined(text):
                 """Extract docsExamined count from log message"""
                 try:
-                    match = DOCS_EXAMINED_PATTERN.search(str(text))  # ✅ Compiled pattern kullan
+                    match = DOCS_EXAMINED_PATTERN.search(str(text))  
                     return int(match.group(1)) if match else 0
                 except:
                     return 0
@@ -337,7 +393,7 @@ class MongoDBFeatureEngineer:
             def extract_keys_examined(text):
                 """Extract keysExamined count from log message"""
                 try:
-                    match = KEYS_EXAMINED_PATTERN.search(str(text))  # ✅ Compiled pattern kullan
+                    match = KEYS_EXAMINED_PATTERN.search(str(text))  
                     return int(match.group(1)) if match else 0
                 except:
                     return 0

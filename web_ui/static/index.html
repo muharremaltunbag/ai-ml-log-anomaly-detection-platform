@@ -24,7 +24,7 @@
         </div>
     </div>
 
-    <div class="container">
+    <div class="container" id="mainContainer">
         <!-- Header -->
         <header>
             <h1>MongoDB Doğal Dil Sorgu Asistanı</h1>
@@ -43,6 +43,10 @@
                 <button id="connectBtn" class="btn btn-primary">BAĞLAN</button>
             </div>
         </section>
+
+
+        <!-- Main content wrapper -->
+        <div class="main-wrapper">
 
         <!-- Ana İçerik -->
         <main id="mainContent" style="display: none;">
@@ -296,7 +300,7 @@
                                 </label>
                                 <!-- Custom Date Range Option -->
                                 <label>
-                                    <input type="radio" name="modalTimeRange" value="custom">
+                                    <input type="radio" name="modal// web_ui\static\script.jsTimeRange" value="custom">
                                     Özel Tarih Aralığı
                                 </label>
                             </div>
@@ -345,6 +349,85 @@
         </div>
     </div>
 
+    <!-- ML Model Panel -->
+    <div id="mlModelPanel" class="ml-panel" style="display: none;">
+        <div class="panel-header">
+            <h3>🤖 ML Model Metrikleri</h3>
+            <button class="panel-minimize" onclick="window.MLPanel?.toggleMinimize()">_</button>
+        </div>
+        
+        <div class="panel-content">
+            <!-- Model Metrikleri -->
+            <div class="panel-section">
+                <h4>📊 Model Performansı</h4>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <span class="metric-label">Accuracy</span>
+                        <span class="metric-value" id="modelAccuracy">--</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">F1 Score</span>
+                        <span class="metric-value" id="modelF1">--</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Precision</span>
+                        <span class="metric-value" id="modelPrecision">--</span>
+                    </div>
+                    <div class="metric-card">
+                        <span class="metric-label">Recall</span>
+                        <span class="metric-value" id="modelRecall">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Anomali İstatistikleri -->
+            <div class="panel-section">
+                <h4>📈 Anomali İstatistikleri</h4>
+                <div class="stats-list">
+                    <div class="stat-item">
+                        <span>Toplam Log:</span>
+                        <span id="totalLogs">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Tespit Edilen:</span>
+                        <span id="detectedAnomalies">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Anomali Oranı:</span>
+                        <span id="anomalyRate">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Model Bilgisi -->
+            <div class="panel-section">
+                <h4>ℹ️ Model Bilgisi</h4>
+                <div class="stats-list">
+                    <div class="stat-item">
+                        <span>Model:</span>
+                        <span id="modelVersion">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Son Eğitim:</span>
+                        <span id="lastTrainingDate">--</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Log Validasyon -->
+            <div class="panel-section">
+                <h4>🔍 Log Validasyon</h4>
+                <div class="validation-area">
+                    <textarea id="sampleLogInput" placeholder="Test edilecek log satırını buraya yapıştırın..."></textarea>
+                    <button id="validateLogBtn" class="btn btn-primary" onclick="window.MLPanel?.validateLog()">
+                        ANOMALİ TESTİ YAP
+                    </button>
+                    <div id="validationResult" class="validation-result" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Core Configuration Module - EN ÖNCE YÜKLENMELİ -->
     <script src="/static/script-core.js"></script>
     
@@ -358,6 +441,8 @@
     <script src="/static/script-anomaly.js"></script>
     <script src="/static/script-performance.js"></script>
     <script src="/static/script-ml-visualization.js"></script>
+    <!-- ML Panel Module -->
+    <script src="/static/script-ml-panel.js"></script>
     
     <!-- Log Filter & Grouping Module -->
     <script src="/static/script-log-filter.js"></script>

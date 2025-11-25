@@ -1411,7 +1411,7 @@ class AnomalyDetectionTools:
                     logger.debug(f"Critical pattern matched for anomaly {i}")
                 
                 # Yüksek severity score olanlar
-                elif severity_score > 50:  # Daha yüksek threshold
+                elif severity_score > 35: 
                     is_critical = True
                     logger.debug(f"High severity score: {severity_score} for anomaly {i}")
                 
@@ -1643,11 +1643,20 @@ Türkçe yaz. MongoDB best practice'lerini kullan. Rastgele öneri verme. Teknik
             score_range = summary.get('score_range', {})
             if isinstance(score_range, dict):
                 mean_score = score_range.get('mean', 0)
+                min_score = score_range.get('min', 0)
+                max_score = score_range.get('max', 0)
+            elif isinstance(score_range, (int, float)):
+                mean_score = float(score_range)
+                min_score = float(score_range)
+                max_score = float(score_range)
             else:
-                mean_score = score_range if isinstance(score_range, (int, float)) else 0
+                mean_score = 0
+                min_score = 0
+                max_score = 0
             
             user_prompt = f"""{server_info}Analiz Özeti: {summary.get('n_anomalies', 0)} anomali / {summary.get('total_logs', 0):,} log (%{summary.get('anomaly_rate', 0):.1f})
-Ortalama anomali skoru: {mean_score:.3f}
+
+Ortalama anomali skoru: {mean_score:.3f if mean_score else 0:.3f}
 
 TOP 10 KRİTİK ANOMALİ:
 {self._format_critical_anomalies_for_prompt(critical_anomalies[:10])}

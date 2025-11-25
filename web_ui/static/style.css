@@ -10227,12 +10227,33 @@ input:checked + .toggle-slider:before {
 }
 
 .compact-mode .critical-anomaly-card {
-    padding: 10px;
-    margin-bottom: 8px;
+    padding: 15px;
+    margin-bottom: 12px;
 }
 
 .compact-mode .log-message-pre {
-    max-height: 150px;
+    max-height: 280px;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 15px;
+    overflow-y: auto;
+}
+
+/* Compact mode'da anomali mesaj alanı için özel ayar */
+.compact-mode .anomaly-main-message {
+    padding: 12px;
+    margin: 10px 0;
+    background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+}
+
+/* Compact mode'da badge'ler için boyut optimizasyonu */
+.compact-mode .severity-badge,
+.compact-mode .component-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+}
+
+.compact-mode .severity-score-inline {
     font-size: 11px;
 }
 
@@ -12292,3 +12313,142 @@ mark.text-highlight:hover {
     }
 }
 /* ========== END OF LOG FILTER PANEL STYLES ========== */
+
+
+/* ============================================
+   ML MODEL PANEL STYLES
+   ============================================ */
+   .ml-panel {
+    position: fixed;
+    left: 20px;  /* right yerine left */
+    top: 100px;
+    width: 320px;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    z-index: 100;
+    transition: all 0.3s ease;
+}
+
+.ml-panel.minimized {
+    height: 50px;
+    overflow: hidden;
+}
+
+.ml-panel .panel-header {
+    padding: 15px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px 8px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.ml-panel .panel-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.panel-minimize {
+    background: none;
+    border: 1px solid white;
+    color: white;
+    padding: 2px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.panel-section {
+    padding: 15px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.metric-card {
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.metric-label {
+    font-size: 11px;
+    color: #666;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.metric-value {
+    font-size: 18px;
+    font-weight: bold;
+    color: #333;
+}
+
+.metric-value.loading {
+    color: #999;
+    font-size: 14px;
+    font-weight: normal;
+}
+
+.stats-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+}
+
+.stat-item span:first-child {
+    color: #666;
+}
+
+.stat-item span:last-child {
+    font-weight: 600;
+    color: #333;
+}
+
+.validation-area textarea {
+    width: 100%;
+    min-height: 60px;
+    padding: 8px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    resize: vertical;
+}
+
+.validation-result {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.validation-result.anomaly {
+    background: #fff5f5;
+    border: 1px solid #ff6b6b;
+    color: #c92a2a;
+}
+
+.validation-result.normal {
+    background: #f0fff4;
+    border: 1px solid #51cf66;
+    color: #2b8a3e;
+}
+
+#validateLogBtn {
+    width: 100%;
+    margin-top: 10px;
+}

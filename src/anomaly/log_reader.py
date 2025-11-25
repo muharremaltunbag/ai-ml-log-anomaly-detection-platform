@@ -1377,7 +1377,7 @@ class OpenSearchProxyReader:
             mongodb_hosts = []
             for host in hosts:
                 # MongoDB sunucu pattern'leri
-                if any(pattern in host.lower() for pattern in ['mongodb', 'mongod', 'mongo']):
+                if any(pattern in host.lower() for pattern in ['mongodb', 'mongod', 'mongo', 'mng']):
                     mongodb_hosts.append(host)
             
             if len(mongodb_hosts) != len(hosts):
@@ -1531,9 +1531,8 @@ def normalize_hostname(host: str) -> str:
     Returns:
         str: Normalize edilmiş host adı
     """
-    # .lcwaikiki.local, .lcwecommerce.com gibi suffix'leri temizle
-    normalized = host.replace('.lcwaikiki.local', '').replace('.lcwecommerce.com', '')
-    
+    # .lcwaikiki.local, .lcwecommerce.com .lcwecomtr.com gibi suffix'leri temizle
+    normalized = host.replace('.lcwaikiki.local', '').replace('.lcwecommerce.com', '').replace('.lcwecomtr.com', '')
     # Uppercase yap (karşılaştırma için)
     normalized = normalized.upper()
     
