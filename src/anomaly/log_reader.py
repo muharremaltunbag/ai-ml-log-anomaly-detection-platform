@@ -151,7 +151,9 @@ class MongoDBLogReader:
                             cutoff_time = datetime.now() - pd.Timedelta(hours=last_hours)
                             if log_time < cutoff_time:
                                 continue
-                                
+                        # ✅ YENİ: Log entry'yi zenginleştir (OpenSearch ile tutarlılık)
+                        log_entry = enrich_log_entry(log_entry)
+                            
                         logs.append(log_entry)
                         count += 1
                         
@@ -232,6 +234,9 @@ class MongoDBLogReader:
                         
                         # Özel mesaj parse işlemleri
                         self._parse_text_message_attributes(log_entry)
+                        
+                        # ✅ YENİ: Log entry'yi zenginleştir (OpenSearch ile tutarlılık)
+                        log_entry = enrich_log_entry(log_entry)
                         
                         logs.append(log_entry)
                         count += 1
@@ -333,7 +338,10 @@ class MongoDBLogReader:
                 
                 if self.format == "json":
                     try:
-                        logs.append(json.loads(line.strip()))
+                        log_entry = json.loads(line.strip())
+                        # ✅ YENİ: Log entry'yi zenginleştir (OpenSearch ile tutarlılık)
+                        log_entry = enrich_log_entry(log_entry)
+                        logs.append(log_entry)
                     except:
                         continue
                 else:
@@ -1006,7 +1014,10 @@ class OpenSearchProxyReader:
     
     def _read_logs_with_scroll(self, last_hours: int, host_filter: Union[str, List[str]] = None,
                               start_time: str = None, end_time: str = None) -> pd.DataFrame:
-        """Timestamp-based slicing ile büyük veri setlerini oku"""
+        """
+        Timestamp-based slicing ile büyük veri setlerini oku.
+        Timeout ve 502 hatalarını önlemek için Micro-Slicing (15dk) kullanır.
+        """
         try:
             logger.info(f"Starting timestamp-sliced read for last {last_hours} hours")
             print(f"[DEBUG] Starting timestamp-sliced read for last {last_hours} hours, host_filter: {host_filter}")
@@ -1016,74 +1027,89 @@ class OpenSearchProxyReader:
             
             # Zaman aralığını hesapla - UTC kullan
             if start_time and end_time:
-                # String'leri datetime'a çevir
                 from dateutil import parser
+                # String ise parse et, zaten datetime ise olduğu gibi kullan
                 start_dt = parser.parse(start_time) if isinstance(start_time, str) else start_time
                 end_dt = parser.parse(end_time) if isinstance(end_time, str) else end_time
             else:
-                # last_hours kullan
                 end_dt = datetime.now(timezone.utc)
                 start_dt = end_dt - timedelta(hours=last_hours)
             
             # Zaman dilimlerini belirle
-            # Eğer 24 saatten az ise 1 saatlik dilimler, 
-            # 24-168 saat arası ise 4 saatlik dilimler,
-            # 168 saatten fazla ise 12 saatlik dilimler kullan
+            # Eğer 24 saatten az ise 30 dakika lik dilimler, 
+            # 24-168 saat arası ise 60 dakika lik dilimler,
+            # 168 saatten fazla ise 240 dakika lik dilimler kullan
             if last_hours <= 24:
-                slice_hours = 1
+                slice_minutes = 30  # 30 dakika
             elif last_hours <= 168:  # 1 hafta
-                slice_hours = 4
+                # Orta yoğunluk: 1 saatlik dilimler (60 dakika)
+                slice_minutes = 60 
             else:
-                slice_hours = 12
-                
+                # Arşiv: 4 saatlik dilimler (240 dakika)
+                slice_minutes = 240 
+
             time_slices = []
             current_time = start_dt
             
+            # Zaman dilimlerini oluştur
             while current_time < end_dt:
-                slice_end = min(current_time + timedelta(hours=slice_hours), end_dt)
+                # FIX: slice_minutes kullanarak bitiş zamanını hesapla
+                slice_end = min(current_time + timedelta(minutes=slice_minutes), end_dt)
                 time_slices.append((current_time, slice_end))
                 current_time = slice_end
+
+            logger.info(f"Strategy: Micro-Slicing | Created {len(time_slices)} slices (each {slice_minutes} mins)")
+            print(f"[DEBUG] Strategy: Micro-Slicing | Created {len(time_slices)} slices (each {slice_minutes} mins)")
             
-            logger.info(f"Created {len(time_slices)} time slices (each {slice_hours} hours)")
-            print(f"[DEBUG] Created {len(time_slices)} time slices (each {slice_hours} hours)")
-            
-            # İlk önce toplam log sayısını kontrol et
+            # İlk önce toplam log sayısını kontrol et (Progress bar veya loglama için)
             total_check_query = {
                 "size": 0,  # Sadece count için
                 "query": {
                     "bool": {
-                        "must": [
-                            {"range": {"@timestamp": {"gte": f"now-{last_hours}h"}}}
-                        ]
+                        "must": []
                     }
                 }
             }
-            
+
+            # Range filtresi ekle (Genel aralık için)
+            # Not: start_dt ve end_dt'nin strftime metodu olup olmadığını kontrol et
+            gte_val = start_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z") if hasattr(start_dt, 'strftime') else str(start_dt)
+            lt_val = end_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z") if hasattr(end_dt, 'strftime') else str(end_dt)
+
+            time_range_filter = {
+                "range": {
+                    "@timestamp": {
+                        "gte": gte_val,
+                        "lt": lt_val
+                    }
+                }
+            }
+            total_check_query["query"]["bool"]["must"].append(time_range_filter)
+
             if host_filter:
-                total_check_query["query"]["bool"]["must"].append({
-                    "term": {"host.name": host_filter}
-                })
+                if isinstance(host_filter, list):
+                    total_check_query["query"]["bool"]["must"].append({"terms": {"host.name": host_filter}})
+                else:
+                    total_check_query["query"]["bool"]["must"].append({"term": {"host.name": host_filter}})
             
             search_path = f"{self.index_pattern}/_search"
             total_result = self._make_request(search_path, "GET", total_check_query)
             
+            total_expected = 0
             if total_result and 'hits' in total_result:
                 total_expected = total_result['hits']['total']['value']
-                pass
-            else:
-                total_expected = 0
+                logger.info(f"Total expected logs to fetch: {total_expected}")
             
             # Her zaman dilimi için ayrı sorgular çalıştır
             for slice_idx, (slice_start, slice_end) in enumerate(time_slices):
                 # Bu zaman dilimi için tüm logları çek
                 slice_logs = self._read_time_slice(slice_start, slice_end, batch_size, host_filter)
                 all_logs.extend(slice_logs)
-                
-                # Progress update
-                if len(all_logs) % 50000 == 0 and len(all_logs) > 0:
-                    pass
-            if total_expected > 0:
-                retrieval_rate = (len(all_logs) / total_expected) * 100
+
+                # Progress log (Her 5 dilimde bir veya son dilimde)
+                if (slice_idx + 1) % 5 == 0 or (slice_idx + 1) == len(time_slices):
+                    progress = ((slice_idx + 1) / len(time_slices)) * 100
+                    print(f"[DEBUG] Progress: {progress:.1f}% ({len(all_logs)} logs retrieved)")
             
             if len(all_logs) == 0:
                 logger.warning("No logs retrieved. Check time range and filters.")
@@ -1091,22 +1117,22 @@ class OpenSearchProxyReader:
                 return pd.DataFrame()
             
             final_df = pd.DataFrame(all_logs)
-            print(f"[DEBUG] Created final DataFrame with shape: {final_df.shape}")
-            logger.debug(f"Created final DataFrame with shape: {final_df.shape}")
-            return final_df
+            print(f"[DEBUG] Fetch completed. Final DataFrame shape: {final_df.shape}")
+            logger.info(f"Fetch completed. Retrieved {len(final_df)} logs.")
             
+            return final_df
+
         except Exception as e:
             logger.error(f"Error in timestamp-sliced read: {e}")
             logger.debug("Timestamp-sliced read error details:", exc_info=True)
             print(f"[DEBUG] Error in timestamp-sliced read: {e}")
-            logger.warning("Falling back to regular search due to timestamp-sliced read error")
-            print("[DEBUG] Falling back to regular search due to timestamp-sliced read error")
-            # Hata durumunda normal okumaya dön
+            
+            # Hata durumunda Fallback: Basit limitli sorgu (Sistemi kilitlememek için)
+            logger.warning("Falling back to regular search due to error (Limited to 10k)")
             try:
                 return self.read_logs(limit=10000, last_hours=last_hours, host_filter=host_filter)
             except Exception as fallback_error:
-                logger.error(f"Fallback to regular search also failed: {fallback_error}")
-                print(f"[DEBUG] Fallback to regular search also failed: {fallback_error}")
+                logger.error(f"Fallback failed: {fallback_error}")
                 return pd.DataFrame()
                 
     def _read_time_slice(self, start_time: datetime, end_time: datetime, 

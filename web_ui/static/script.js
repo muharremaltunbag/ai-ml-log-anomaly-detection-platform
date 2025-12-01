@@ -755,9 +755,18 @@ async function handleQuery() {
                 if (chatResponse.ok) {
                     const chatResult = await chatResponse.json();
                     console.log('LCWGPT result:', chatResult);
-                    
-                    // Chat sonucunu özel formatta göster
-                    displayChatAnomalyResult(chatResult, query);
+
+                    // ✅ YENİ: Güvenli fonksiyon çağrısı - Race condition önleme
+                    if (typeof window.displayChatAnomalyResult === 'function') {
+                        window.displayChatAnomalyResult(chatResult, query);
+                    } else if (typeof window.displayChatQueryResult === 'function') {
+                        // Fallback: Aynı fonksiyonun alternatif ismi
+                        console.warn('displayChatAnomalyResult not found, using displayChatQueryResult');
+                        window.displayChatQueryResult(chatResult, query);
+                    } else {
+                        console.error('❌ No chat display function available!');
+                        window.showNotification('Chat sonucu gösterilemedi. Sayfayı yenileyin.', 'error');
+                    }
                     
                     
                     // History'ye ekle - chat-anomaly olarak işaretle

@@ -980,14 +980,15 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
         
         print(f"DEBUG: Agent'a gönderilen parametreler - {analysis_params}")
         
-        # YENİ: OpenSearch için direkt anomaly tools kullan
+        # YENİ: OpenSearch ve Upload için direkt anomaly tools kullan
+
         if request.source_type == "opensearch":
             logger.info("OpenSearch için direkt anomaly tools kullanılıyor...")
             from src.anomaly.anomaly_tools import AnomalyDetectionTools
-            
+
             # Anomaly tools instance oluştur
             anomaly_tools = AnomalyDetectionTools(environment='production')
-            
+
             # Direkt analyze_mongodb_logs fonksiyonunu çağır
             tool_params = {
                 "source_type": "opensearch",
@@ -1002,11 +1003,9 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                 tool_params["end_time"] = request.end_time
                 logger.info(f"OpenSearch query with date range: {request.start_time} - {request.end_time}")
 
-            
             tool_result = anomaly_tools.analyze_mongodb_logs(tool_params)
-            
-            # Tool sonucunu parse et
 
+            # Tool sonucunu parse et
             if isinstance(tool_result, str):
                 try:
                     parsed_result = json.loads(tool_result)
@@ -1020,6 +1019,55 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                     }
             else:
                 result = tool_result
+
+        elif request.source_type == "upload":
+            # ✅ YENİ: Upload için direkt anomaly tools kullan (OpenSearch ile aynı pipeline)
+            logger.info("=" * 50)
+            logger.info("📁 UPLOAD ANALİZİ - DİREKT TOOL ÇAĞRISI")
+            logger.info("=" * 50)
+
+            from src.anomaly.anomaly_tools import AnomalyDetectionTools
+
+            # Dosya adını çıkar
+            uploaded_filename = Path(request.file_path).name
+            logger.info(f"   📄 Dosya: {uploaded_filename}")
+            logger.info(f"   📍 Yol: {request.file_path}")
+
+            # Anomaly tools instance oluştur
+            anomaly_tools = AnomalyDetectionTools(environment='production')
+
+            # Direkt analyze_mongodb_logs fonksiyonunu çağır
+            tool_params = {
+                "source_type": "upload",
+                "file_path": request.file_path,
+                "uploaded_filename": uploaded_filename,  # ✅ Dosya adını ekle
+                "time_range": request.time_range
+            }
+
+            logger.info(f"   🔧 Tool params: {tool_params}")
+
+            tool_result = anomaly_tools.analyze_mongodb_logs(tool_params)
+
+            # Tool sonucunu parse et
+            if isinstance(tool_result, str):
+                try:
+                    parsed_result = json.loads(tool_result)
+                    result = parsed_result
+                    logger.info(f"✅ Upload analizi tamamlandı - Durum: {result.get('durum', 'unknown')}")
+                except Exception as e:
+                    logger.error(f"Tool result parse hatası: {e}")
+                    result = {
+                        "durum": "tamamlandı",
+                        "işlem": "upload_anomaly_analysis",
+                        "açıklama": "Upload anomali analizi tamamlandı",
+                        "sonuç": {"raw_result": tool_result}
+                    }
+            else:
+                result = tool_result
+                logger.info(f"✅ Upload analizi tamamlandı - Durum: {result.get('durum', 'unknown')}")
+
+            logger.info("=" * 50)
+
         else:
             # Diğer source type'lar için MongoDB agent kullan
             result = mongodb_agent.process_query_with_args(query, analysis_params)
@@ -1116,8 +1164,9 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                 logger.info("[DEBUG API] API response - no critical_anomalies in sonuç")
                 print("[DEBUG API] No critical_anomalies found in response")
         
-        # YENİ: Auto-save analysis to storage
-        if request.source_type == "opensearch" and result.get('durum') in ("tamamlandı", "başarılı", "success"):
+
+        # YENİ: Auto-save analysis to storage (OpenSearch VE Upload için)
+        if request.source_type in ("opensearch", "upload") and result.get('durum') in ("tamamlandı", "başarılı", "success"):
             try:
                 logger.info("=" * 50)
                 logger.info("📊 ANOMALİ ANALİZ SONUCU KAYIT İŞLEMİ BAŞLADI")
@@ -1142,11 +1191,16 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                 
                 logger.info(f"📈 Tespit edilen kritik anomali sayısı: {anomaly_count}")
                 
+                # Upload için host bilgisi dosya adından alınır
+
+                host_info = request.host_filter if request.source_type == "opensearch" else result.get('sonuç', {}).get('server_info', {}).get('server_name', Path(request.file_path).name if request.file_path else 'unknown')
+
                 save_result = await storage.save_anomaly_analysis(
                     analysis_result=result,
                     source_type=request.source_type,
-                    host=request.host_filter,
-                    time_range=request.time_range
+                    host=host_info,
+                    time_range=request.time_range,
+                    uploaded_filename=Path(request.file_path).name if request.source_type == "upload" and request.file_path else None  # ✅ YENİ
                 )
                 
                 if save_result and save_result.get('analysis_id'):

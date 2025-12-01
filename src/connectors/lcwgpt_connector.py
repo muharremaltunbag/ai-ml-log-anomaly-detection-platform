@@ -1,3 +1,5 @@
+# MongoDB-LLM-assistant\src\connectors\lcwgpt_connector.py
+
 """
 LCWGPT Connector - LC Waikiki Kurumsal LLM Entegrasyonu
 Bu modül, OpenAI yerine kurumsal LCWGPT servisini kullanmak için yazılmıştır.

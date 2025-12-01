@@ -5,7 +5,7 @@ Anomali tespiti için LangChain tool tanımları
 """
 from typing import Dict, Any, List, Optional
 from langchain.tools import Tool, StructuredTool
-from langchain.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field
 import json
 import logging
 from datetime import datetime, timedelta
@@ -329,22 +329,21 @@ class AnomalyDetectionTools:
         
         logger.info(f"Enhanced analysis completed for {source_name}")
         return analysis
-    
     def _fix_mongodb_hostname_fqdn(self, hostname: str) -> str:
         """MongoDB hostname'ine gerekirse FQDN ekle"""
         import re
         
         if not hostname:
             return hostname
-            
+
         # Zaten FQDN varsa dokunma
         if hostname.endswith('.lcwaikiki.local'):
             logger.debug(f"Hostname already has FQDN: {hostname}")
             return hostname
-        
+
         # ÖNEMLI: Case-insensitive kontrol yap ama orijinal case'i koru!
         hostname_lower = hostname.lower()
-        
+
         # FQDN eklenmesi gereken pattern'ler (whitelist)
         fqdn_required_patterns = [
             r'^lcwmongodb\d+n\d+$',           # lcwmongodb01n2
@@ -354,7 +353,7 @@ class AnomalyDetectionTools:
             r'^kznmongodbn\d+$',               # kznmongodbn1, KZNMONGODBN2
             r'^ntfcmongodb\d+$',               # NTFCMONGODB01
         ]
-        
+
         # Pattern kontrolü - küçük harfle kontrol et
         for pattern in fqdn_required_patterns:
             if re.match(pattern, hostname_lower):
@@ -362,11 +361,156 @@ class AnomalyDetectionTools:
                 fixed_hostname = f"{hostname}.lcwaikiki.local"
                 logger.debug(f"FQDN added: {hostname} -> {fixed_hostname}")
                 return fixed_hostname
-        
+
         # Whitelist'te değilse olduğu gibi döndür
         logger.debug(f"FQDN not required for: {hostname}")
         return hostname
-    
+
+    def _extract_server_from_filename(self, filename: str) -> 'Optional[str]':
+        """
+        Upload edilen dosya adından MongoDB server adını çıkar
+
+        Desteklenen LC Waikiki MongoDB hostname pattern'leri:
+        - lcwmongodb01n2.log -> lcwmongodb01n2
+        - ECAZTRDBMNG019.log -> ecaztrdbmng019
+        - PPLMNGDBN2.log -> pplmngdbn2
+        - mongod_lcwmongodb01n2.log -> lcwmongodb01n2
+        - mongod.log.ECAZTRDBMNG005 -> ecaztrdbmng005
+
+        Args:
+            filename: Dosya adı
+        Returns:
+            Server adı (lowercase) veya None
+        """
+        import re
+
+        if not filename:
+            return None
+
+        # Dosya adını normalize et (lowercase)
+        filename_lower = filename.lower()
+
+        # LC Waikiki MongoDB server hostname pattern'leri (gerçek envanter bazlı)
+        patterns = [
+            # LCW MongoDB cluster: lcwmongodb01n1, lcwmongodb01n2, lcwmongodb01n3
+            r'(lcwmongodb\d+n\d+)',
+
+            # ECAZ TR DB MNG: ECAZTRDBMNG004 - ECAZTRDBMNG021
+            r'(ecaztrdbmng\d+)',
+
+            # ECAZ GL DB MNG: ECAZGLDBMNG001, ECAZGLDBMNG002, ECAZGLDBMNG003
+            r'(ecazgldbmng\d+)',
+
+            # PPL MongoDB: PPLMNGDBN1, PPLMNGDBN2, PPLMNGDBN3
+            r'(pplmngdbn\d+)',
+            r'(drpplmngdbn\d+)',  # DR node
+
+            # KZN MongoDB: kznmngdbn1, kznmngdbn2, kznmngdbn3
+            r'(kznmngdbn\d+)',
+            r'(drkznmngdbn\d+)',  # DR node
+
+            # NTFC MongoDB: ntfcmongodb01, ntfcmongodb02, ntfcmongodb04
+            r'(ntfcmongodb\d+)',
+
+            # ECOMFIX MongoDB: ECOMFIXMONGODB01, ECOMFIXMONGODB02, ECOMFIXMONGODB03
+            r'(ecomfixmongodb\d+)',
+
+            # PPL AZ MongoDB: pplazmongodbn1, pplazmongodbn2, pplazmongodbn3
+            r'(pplazmongodbn\d+)',
+
+            # RU MongoDB: rumongo02
+            r'(rumongo\d+)',
+
+            # HQ SEC TWRAP: hqsectwrapmdbn1, hqsectwrapmdbn2, hqsectwrapmdbn3
+            r'(hqsectwrapmdbn\d+)',
+            r'(drhqsectmdbn\d+)',  # DR node
+
+            # WPOS MongoDB: WPOSMNG1, WPOSMNG2, WPOSMNG3
+            r'(wposmng\d+)',
+
+            # Logistic MongoDB: LGSTMNGDB01, LGSTMNGDB02, LGSTMNGDB03
+            r'(lgstmngdb\d+)',
+
+            # Test/Dev environments
+            r'(testmongodb\d+)',
+            r'(devmongodb\d+)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, filename_lower)
+            if match:
+                server_name = match.group(1)
+                logger.info(f"Extracted server name from filename: {filename} -> {server_name}")
+                return server_name
+
+        logger.debug(f"Could not extract server name from filename: {filename}")
+        return None
+
+    def _extract_server_from_log_content(self, df: 'pd.DataFrame') -> 'Optional[str]':
+        """
+        Log içeriğinden (DataFrame) server adını çıkar
+
+        MongoDB log'larında host bilgisi şu alanlarda bulunabilir:
+        - attr.host (Process Details mesajında)
+        - host alanı (OpenSearch'ten gelen loglarda)
+
+        Args:
+            df: Log DataFrame'i
+        Returns:
+            Server adı (lowercase) veya None
+        """
+        import re
+
+        if df is None or df.empty:
+            return None
+
+        try:
+            # 1. 'host' sütunu varsa kontrol et
+            if 'host' in df.columns:
+                host_values = df['host'].dropna().unique()
+                for host in host_values:
+                    if host and host != 'unknown':
+                        # FQDN'den hostname'i çıkar
+                        hostname = str(host).split('.')[0].lower()
+                        # Pattern kontrolü yap
+                        server_name = self._extract_server_from_filename(hostname)
+                        if server_name:
+                            logger.info(f"Extracted server from 'host' column: {server_name}")
+                            return server_name
+
+            # 2. 'attr' sütununda host bilgisi ara (Process Details mesajı)
+            if 'attr' in df.columns:
+                for idx, row in df.head(100).iterrows():  # İlk 100 satıra bak
+                    attr = row.get('attr')
+                    if isinstance(attr, dict) and 'host' in attr:
+                        host = attr['host']
+                        hostname = str(host).split('.')[0].lower()
+                        server_name = self._extract_server_from_filename(hostname)
+                        if server_name:
+                            logger.info(f"Extracted server from attr.host: {server_name}")
+                            return server_name
+
+            # 3. 'msg' sütununda "Process Details" mesajını ara
+            if 'msg' in df.columns:
+                process_details = df[df['msg'] == 'Process Details']
+                if not process_details.empty:
+                    first_row = process_details.iloc[0]
+                    attr = first_row.get('attr')
+                    if isinstance(attr, dict) and 'host' in attr:
+                        host = attr['host']
+                        hostname = str(host).split('.')[0].lower()
+                        server_name = self._extract_server_from_filename(hostname)
+                        if server_name:
+                            logger.info(f"Extracted server from Process Details: {server_name}")
+                            return server_name
+
+            logger.debug("Could not extract server name from log content")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error extracting server from log content: {e}")
+            return None
+            
     def analyze_mongodb_logs(self, args_input) -> str:
         """MongoDB loglarında anomali analizi yap"""
         logger.debug(f"Starting MongoDB log analysis with input: {args_input}")
@@ -406,14 +550,200 @@ class AnomalyDetectionTools:
             if source_type == "upload":
                 file_path = args_dict.get("file_path")
                 logger.info(f"Processing upload file: {file_path}")
+
                 if not file_path or not os.path.exists(file_path):
                     logger.error(f"Upload file not found: {file_path}")
                     return self._format_result(
                         {"error": f"Upload dosyası bulunamadı: {file_path}"},
                         "anomaly_analysis"
                     )
+
+                # ✅ YENİ: Dosya adını sakla
+                uploaded_filename = Path(file_path).name
+                logger.info(f"Using uploaded file: {file_path} (filename: {uploaded_filename})")
+
+                # ✅ YENİ: Dosya adından server name çıkarmaya çalış
+                server_for_model = self._extract_server_from_filename(uploaded_filename)
+
+                # Log reader başlat ve logları oku
                 self.log_reader = MongoDBLogReader(file_path, 'auto')
-                logger.info(f"Using uploaded file: {file_path}")
+
+                # Zaman aralığını belirle
+                last_hours = None
+                if time_range == "last_hour":
+                    last_hours = 1
+                elif time_range == "last_day":
+                    last_hours = 24
+                elif time_range == "last_week":
+                    last_hours = 168
+                elif time_range == "last_month":
+                    last_hours = 720
+
+                # Logları oku
+                logger.info(f"Reading logs from uploaded file...")
+                df = self.log_reader.read_logs(last_hours=last_hours)
+
+                if df.empty:
+                    logger.error("No logs read from uploaded file")
+                    return self._format_result(
+                        {"error": "Upload dosyasından log okunamadı veya dosya boş"},
+                        "anomaly_analysis"
+                    )
+
+                logger.info(f"Read {len(df)} logs from uploaded file")
+
+                # ✅ YENİ: Log içeriğinden server name çıkarmayı dene (dosya adından bulunamadıysa)
+                if not server_for_model:
+                    server_for_model = self._extract_server_from_log_content(df)
+                    if server_for_model:
+                        logger.info(f"Extracted server name from log content: {server_for_model}")
+
+                # Feature engineering
+                logger.info("Creating features for uploaded file...")
+                X, df_enriched = self.feature_engineer.create_features(df)
+
+                # Filtreleri uygula
+                df_filtered, X_filtered = self.feature_engineer.apply_filters(df_enriched, X)
+                logger.info(f"After filtering: {len(df_filtered)} logs, {X_filtered.shape[1]} features")
+
+                # ✅ YENİ: Model yükleme mekanizması - OpenSearch ile aynı
+                model_loaded = False
+                if not self.detector.is_trained:
+                    logger.info(f"Attempting to load existing model{f' for server: {server_for_model}' if server_for_model else ''}...")
+                    model_loaded = self.detector.load_model(server_name=server_for_model)
+                    if model_loaded:
+                        logger.info(f"✅ Existing model loaded successfully{f' for server: {server_for_model}' if server_for_model else ''}")
+                    else:
+                        logger.info(f"⚠️ No existing model found, will train new model")
+                else:
+                    model_loaded = True
+
+                # Model kontrolü ve tahmin
+                if not self.detector.is_trained:
+                    logger.info(f"Training model for uploaded file{f' (server: {server_for_model})' if server_for_model else ''}...")
+                    if hasattr(self.detector, 'train_incremental'):
+                        batch_id = f"{server_for_model or 'opensearch'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        self.detector.train_incremental(X_filtered, batch_id=batch_id)
+                        logger.info(f"Initial training completed - Ensemble size: {len(self.detector.incremental_models)}")
+                        # ÖNEMLİ: Incremental training sonrası ana modeli de set et
+                        if self.detector.incremental_models and not self.detector.model:
+                            self.detector.model = self.detector.incremental_models[-1]
+                            self.detector.feature_names = list(X_filtered.columns)
+                            self.detector.is_trained = True
+                            logger.info("✅ Main model set from incremental ensemble")
+
+                    else:
+                        self.detector.train(X_filtered, save_model=True)
+                        logger.info("Standard training completed")
+                else:
+                    # Incremental update
+                    logger.info("📊 Performing incremental training to update historical buffer...")
+                    self.detector.train(X_filtered, save_model=True, incremental=True, server_name=server_for_model)
+                    logger.info(f"✅ Model incrementally updated with {len(X_filtered)} new samples")
+
+                # Tahmin yap
+                predictions, anomaly_scores = self.detector.predict(X_filtered, df=df_filtered)
+                anomaly_count = sum(predictions == -1)
+                logger.info(f"Found {anomaly_count} anomalies in uploaded file")
+
+                # Enhanced analiz
+                analysis = self._perform_enhanced_analysis(
+                    df_filtered, X_filtered, predictions, anomaly_scores,
+                    source_name="upload", use_incremental=True, server_name=server_for_model
+                )
+
+                # ✅ YENİ: Filtreleme öncesi orijinal anomali sayısını sakla
+                unfiltered_anomaly_count = len(analysis.get('critical_anomalies', []))
+                unfiltered_analysis = analysis.copy()
+                logger.info(f"Unfiltered anomaly count: {unfiltered_anomaly_count}")
+
+                # False positive filtering
+                analysis = self._filter_false_positives(analysis, source_name="upload")
+
+                # Sonuçları sakla
+                self.last_analysis = {
+                    "df": df_filtered,
+                    "predictions": predictions,
+                    "anomaly_scores": anomaly_scores,
+                    "analysis": analysis
+                }
+
+                # ✅ YENİ: AI explanation - OpenSearch ile aynı
+                ai_explanation = {}
+                if self.llm_connector and self.llm_connector.is_connected():
+                    logger.info("Generating AI-powered explanation for uploaded file...")
+                    limited_analysis = {
+                        "summary": {
+                            "total_logs": analysis["summary"]["total_logs"],
+                            "n_anomalies": analysis["summary"]["n_anomalies"],
+                            "anomaly_rate": analysis["summary"]["anomaly_rate"],
+                            "score_range": analysis["summary"]["score_range"]
+                        },
+                        "critical_anomalies": analysis["critical_anomalies"][:20],
+                        "security_alerts": analysis.get("security_alerts", {}),
+                        "component_analysis": dict(list(analysis.get("component_analysis", {}).items())[:10]),
+                        "temporal_analysis": {
+                            "peak_hours": analysis.get("temporal_analysis", {}).get("peak_hours", [])[:3]
+                        },
+                        "feature_importance": dict(list(analysis.get("feature_importance", {}).items())[:10])
+                    }
+                    ai_explanation = self._generate_ai_explanation(limited_analysis, server_name=server_for_model)
+
+                # Açıklama ve öneriler
+                if ai_explanation:
+                    server_desc = f" ({server_for_model} sunucusu)" if server_for_model else ""
+                    model_desc = " ✅ Mevcut model güncellendi" if model_loaded else " 🆕 Yeni model eğitildi"
+                    time_desc = f"son {last_hours} saatteki" if last_hours else "tüm"
+
+                    description = f"Upload edilen dosyadan ({uploaded_filename}) {time_desc} {len(df)} log analiz edildi{server_desc}.{model_desc}\n\n" + \
+                                 self._create_enriched_description(analysis, time_range, ai_explanation)[len("🤖 **AI DESTEKLİ ANOMALİ ANALİZİ**\n\n"):]
+                    suggestions = ai_explanation.get("onerilen_aksiyonlar", [])
+                else:
+                    description = f"Upload edilen dosyadan ({uploaded_filename}) {len(df)} log analiz edildi. " + \
+                                 self._create_analysis_description(analysis, time_range)
+                    suggestions = self._create_suggestions(analysis)
+
+                # ✅ YENİ: OpenSearch ile uyumlu result yapısı
+                result = {
+                    "description": description,
+                    "data": {
+                        "source": "UploadedFile",
+                        "uploaded_filename": uploaded_filename,
+                        "server_info": {
+                            "server_name": server_for_model or "unknown",
+                            "model_status": "existing" if model_loaded else "newly_trained",
+                            "model_path": f"models/isolation_forest_{server_for_model}.pkl" if server_for_model else "models/isolation_forest.pkl",
+                            "historical_buffer_size": self.detector.historical_data['metadata']['total_samples'],
+                            "last_update": self.detector.historical_data['metadata'].get('last_update', 'N/A')
+                        },
+                        "time_range_info": {
+                            "custom_range": False,
+                            "start_time": None,
+                            "end_time": None,
+                            "last_hours": last_hours,
+                            "description": f"son {last_hours} saat" if last_hours else "tüm dosya"
+                        },
+                        "logs_analyzed": len(df),
+                        "filtered_logs": len(df_filtered),
+                        "summary": analysis["summary"],
+                        "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),
+                        "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),
+                        "unfiltered_count": unfiltered_anomaly_count,
+                        "security_alerts": analysis.get("security_alerts", {}),
+                        "temporal_analysis": analysis.get("temporal_analysis", {}),
+                        "component_analysis": analysis.get("component_analysis", {}),
+                        "feature_importance": analysis.get("feature_importance", {}),
+                        "anomaly_score_stats": {
+                            "min": analysis["summary"]["score_range"]["min"],
+                            "max": analysis["summary"]["score_range"]["max"],
+                            "mean": analysis["summary"]["score_range"]["mean"]
+                        }
+                    },
+                    "suggestions": suggestions,
+                    "ai_explanation": ai_explanation
+                }
+
+                return self._format_result(result, "anomaly_analysis")
                 
             elif source_type == "mongodb_direct":
                 # MongoDB'den doğrudan okuma için özel işlem
@@ -580,6 +910,12 @@ class AnomalyDetectionTools:
                             batch_id = f"{server_for_model or 'opensearch'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                             self.detector.train_incremental(X_filtered, batch_id=batch_id)
                             logger.info(f"Initial training completed - Ensemble size: {len(self.detector.incremental_models)}")
+                            # ÖNEMLİ: Incremental training sonrası ana modeli de set et
+                            if self.detector.incremental_models and not self.detector.model:
+                                self.detector.model = self.detector.incremental_models[-1]
+                                self.detector.feature_names = list(X_filtered.columns)
+                                self.detector.is_trained = True
+                                logger.info("✅ Main model set from incremental ensemble")
                         else:
                             self.detector.train(X_filtered, save_model=True)  # Auto-save enabled
                             logger.info("Standard training completed and saved")
@@ -1436,13 +1772,18 @@ class AnomalyDetectionTools:
             
             logger.info(f"Filter results: {len(filtered_anomalies)} anomalies kept, {filtered_out_count} filtered out")
             
-            # Maximum 500 anomali limiti
-            if len(filtered_anomalies) > 500:
-                logger.info(f"Limiting from {len(filtered_anomalies)} to 500 most critical")
-                # Severity score'a göre sırala ve ilk 500'ü al
+            # Maximum 2000 anomali limiti (DBA Görünürlüğü için artırıldı)
+
+            LIMIT = 2000
+
+            if len(filtered_anomalies) > LIMIT:
+
+                logger.info(f"Limiting from {len(filtered_anomalies)} to {LIMIT} most critical")
+
+                # Severity score'a göre sırala ve ilk LIMIT kadarını al
                 filtered_anomalies.sort(key=lambda x: x.get('severity_score', 0), reverse=True)
-                filtered_anomalies = filtered_anomalies[:500]
-            
+                filtered_anomalies = filtered_anomalies[:LIMIT]
+
             # Analizi güncelle
             analysis['critical_anomalies'] = filtered_anomalies
             
@@ -1639,8 +1980,13 @@ Türkçe yaz. MongoDB best practice'lerini kullan. Rastgele öneri verme. Teknik
             # Optimize edilmiş user prompt - daha fazla context ile
             server_info = f"Sunucu: {server_name}\n" if server_name else ""
             
-            # Safe accessor - score_range float da olabilir dict de olabilir
+            # FIX: score_range bazen doğrudan float gelebilir, get() çağırmadan önce kontrol et
             score_range = summary.get('score_range', {})
+            
+            mean_score = 0
+            min_score = 0
+            max_score = 0
+
             if isinstance(score_range, dict):
                 mean_score = score_range.get('mean', 0)
                 min_score = score_range.get('min', 0)
@@ -1649,14 +1995,12 @@ Türkçe yaz. MongoDB best practice'lerini kullan. Rastgele öneri verme. Teknik
                 mean_score = float(score_range)
                 min_score = float(score_range)
                 max_score = float(score_range)
-            else:
-                mean_score = 0
-                min_score = 0
-                max_score = 0
+
+            # User prompt oluşturulurken bu değişkenler kullanılacak
             
             user_prompt = f"""{server_info}Analiz Özeti: {summary.get('n_anomalies', 0)} anomali / {summary.get('total_logs', 0):,} log (%{summary.get('anomaly_rate', 0):.1f})
 
-Ortalama anomali skoru: {mean_score:.3f if mean_score else 0:.3f}
+Ortalama anomali skoru: {mean_score:.3f}
 
 TOP 10 KRİTİK ANOMALİ:
 {self._format_critical_anomalies_for_prompt(critical_anomalies[:10])}
@@ -2034,106 +2378,6 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
             result.append(f"{i}. [{comp}] {msg_extract}")
             result.append(f"   Skor: {score:.3f} | Severity: {severity}")
             
-        return "\n".join(result)
-
-    def _format_component_analysis_for_prompt(self, components: Dict) -> str:
-        """Component analizini prompt için formatla"""
-        if not components:
-            return "Component analizi mevcut değil."
-        
-        result = []
-        # En yüksek anomali oranına göre sırala
-        sorted_components = sorted(components.items(), 
-                                 key=lambda x: x[1].get('anomaly_rate', 0), 
-                                 reverse=True)
-        
-        for comp, stats in sorted_components[:5]:
-            anomaly_count = stats.get('anomaly_count', 0)
-            total_count = stats.get('total_count', 0)
-            anomaly_rate = stats.get('anomaly_rate', 0)
-            
-            result.append(f"- {comp}: {anomaly_count}/{total_count} anomali (%{anomaly_rate:.1f})")
-        
-        return "\n".join(result)
-
-    def _create_fallback_explanation(self, anomaly_data: Dict[str, Any]) -> Dict[str, Any]:
-        """AI başarısız olursa kullanılacak detaylı fallback açıklama"""
-        summary = anomaly_data.get('summary', {})
-        component_analysis = anomaly_data.get('component_analysis', {})
-        temporal_analysis = anomaly_data.get('temporal_analysis', {})
-        critical_anomalies = anomaly_data.get('critical_anomalies', [])[:3]
-        
-        ne_tespit_edildi = f"• Toplam {summary.get('total_logs', 0):,} log içinde {summary.get('n_anomalies', 0)} anomali tespit edildi (%{summary.get('anomaly_rate', 0):.1f})\n"
-        
-        # Component detayları ekle
-        for comp, stats in list(component_analysis.items())[:3]:
-            ne_tespit_edildi += f"• {comp} bileşeninde {stats.get('anomaly_count', 0)} anomali (%{stats.get('anomaly_rate', 0):.1f})\n"
-        
-        # Kritik anomaliler
-        if critical_anomalies:
-            ne_tespit_edildi += f"• En kritik anomali skoru: {critical_anomalies[0].get('score', 0):.3f} ({critical_anomalies[0].get('component', 'N/A')} bileşeni)"
-        
-        # Zamansal analiz
-        if temporal_analysis.get('peak_hours'):
-            peak_hours = temporal_analysis['peak_hours']
-            ne_tespit_edildi += f"\n• Anomaliler en çok saat {', '.join(map(str, peak_hours))} arasında yoğunlaşmış"
-        
-        return {
-            "ne_tespit_edildi": ne_tespit_edildi,
-            "potansiyel_etkiler": [
-                f"Sistem performansı %{summary.get('anomaly_rate', 0):.1f} oranında etkilenebilir",
-                f"En kritik {len(component_analysis)} bileşende sorun tespit edildi",
-                f"Ortalama anomali skoru {summary.get('score_range', {}).get('mean', 0):.3f} seviyesinde"
-            ],
-            "muhtemel_nedenler": [
-                "Yoğun kullanım veya sistem sorunu",
-                f"Saat {temporal_analysis.get('peak_hours', [0])[0] if temporal_analysis.get('peak_hours') else 'belirli'} civarında artan yük",
-                f"En yüksek anomali oranı %{max([s.get('anomaly_rate', 0) for s in component_analysis.values()] or [0]):.1f} ile tespit edildi"
-            ],
-            "onerilen_aksiyonlar": [
-                f"{summary.get('n_anomalies', 0)} anomaliyi detaylı inceleyin",
-                f"Özellikle %{max([s.get('anomaly_rate', 0) for s in component_analysis.values()] or [0]):.1f} anomali oranına sahip bileşenlere odaklanın",
-                f"Skor değeri {summary.get('score_range', {}).get('min', 0):.3f} altındaki kritik anomalileri öncelikle çözün"
-            ]
-        }
-
-    def _format_critical_anomalies_detailed(self, anomalies: List[Dict]) -> str:
-        """Prompt için kritik anomalileri detaylı formatlar"""
-        if not anomalies: 
-            return "Kritik anomali tespit edilmedi."
-        
-        result = []
-        # Component bazlı gruplama yap
-        component_groups = {}
-        for a in anomalies:
-            comp = a.get('component', 'N/A')
-            if comp not in component_groups:
-                component_groups[comp] = []
-            component_groups[comp].append(a)
-        
-        # Her component için detaylı bilgi ver
-        for comp, comp_anomalies in component_groups.items():
-            result.append(f"\n{comp} Bileşeni ({len(comp_anomalies)} anomali):")
-            for i, a in enumerate(comp_anomalies[:3], 1):  # Her component'ten ilk 3
-                result.append(f"  {i}. Skor: {a.get('score', 0):.3f}")
-                result.append(f"     Zaman: {a.get('timestamp', 'N/A')}")
-                result.append(f"     Mesaj: {a.get('message', '')[:80]}...")
-                result.append(f"     Önem: {a.get('severity', 'N/A')}")
-        
-        return "\n".join(result)
-    
-    def _format_critical_anomalies_for_prompt(self, anomalies: List[Dict]) -> str:
-        """Kritik anomalileri prompt için formatla"""
-        if not anomalies:
-            return "Kritik anomali tespit edilmedi."
-        
-        result = []
-        for i, a in enumerate(anomalies, 1):
-            result.append(f"{i}. {a.get('timestamp', 'N/A')} - {a.get('component', 'N/A')}")
-            result.append(f"   Mesaj: {a.get('message', '')[:100]}...")
-            result.append(f"   Skor: {a.get('score', 0):.3f} (Önem: {a.get('severity', 'N/A')})")
-            result.append("")
-        
         return "\n".join(result)
 
     def _format_component_analysis_for_prompt(self, components: Dict) -> str:
@@ -2534,26 +2778,6 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         
         return desc
 
-# Pydantic modelleri - Tool argümanları için
-class AnalyzeLogsArgs(BaseModel):
-    time_range: str = Field(default="last_hour", description="Zaman aralığı: last_hour, last_day, last_week, last_month")
-    threshold: float = Field(default=0.03, description="Anomali eşik değeri")
-    uploaded_file_path: Optional[str] = Field(default=None, description="Upload edilen dosya yolu")
-    source_type: Optional[str] = Field(default="file", description="Veri kaynağı: file, upload, mongodb_direct, test_servers, opensearch")
-    file_path: Optional[str] = Field(default=None, description="Log dosya yolu")
-    connection_string: Optional[str] = Field(default=None, description="MongoDB connection string")
-    server_name: Optional[str] = Field(default=None, description="Test sunucu adı")
-    last_hours: Optional[int] = Field(default=None, description="Kaç saatlik log okunacak (OpenSearch için)")
-    host_filter: Optional[str] = Field(default=None, description="Belirli bir MongoDB sunucusundan logları filtrele")
-
-
-class SummaryArgs(BaseModel):
-    top_n: int = Field(default=10, description="Gösterilecek anomali sayısı")
-
-class TrainModelArgs(BaseModel):
-    sample_size: int = Field(default=10000, description="Eğitim için kullanılacak log sayısı")
-
-
     async def query_anomalies_from_storage(self, query: str, analysis_id: str = None, limit: int = 50) -> Dict[str, Any]:
         """
         Storage'daki anomalileri LCWGPT ile sorgula
@@ -2650,6 +2874,25 @@ class TrainModelArgs(BaseModel):
         except Exception as e:
             logger.error(f"Storage query error: {e}")
             return {"error": str(e)}
+
+# Pydantic modelleri - Tool argümanları için
+class AnalyzeLogsArgs(BaseModel):
+    time_range: str = Field(default="last_hour", description="Zaman aralığı: last_hour, last_day, last_week, last_month")
+    threshold: float = Field(default=0.03, description="Anomali eşik değeri")
+    uploaded_file_path: Optional[str] = Field(default=None, description="Upload edilen dosya yolu")
+    source_type: Optional[str] = Field(default="file", description="Veri kaynağı: file, upload, mongodb_direct, test_servers, opensearch")
+    file_path: Optional[str] = Field(default=None, description="Log dosya yolu")
+    connection_string: Optional[str] = Field(default=None, description="MongoDB connection string")
+    server_name: Optional[str] = Field(default=None, description="Test sunucu adı")
+    last_hours: Optional[int] = Field(default=None, description="Kaç saatlik log okunacak (OpenSearch için)")
+    host_filter: Optional[str] = Field(default=None, description="Belirli bir MongoDB sunucusundan logları filtrele")
+
+
+class SummaryArgs(BaseModel):
+    top_n: int = Field(default=10, description="Gösterilecek anomali sayısı")
+
+class TrainModelArgs(BaseModel):
+    sample_size: int = Field(default=10000, description="Eğitim için kullanılacak log sayısı")
 
 def create_anomaly_tools(config_path: str = "config/anomaly_config.json", 
                         environment: str = "test") -> List[StructuredTool]:

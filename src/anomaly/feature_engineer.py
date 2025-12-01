@@ -76,7 +76,47 @@ class MongoDBFeatureEngineer:
         df = df.astype(float)
 
         return df
+
+    def stabilize_features_for_model(self, X: pd.DataFrame, feature_schema: Optional[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Model prediction için feature stabilization wrapper.
+        anomaly_detector.py tarafından çağrılır.
+        
+        Args:
+            X: Feature matrix (prediction için)
+            feature_schema: Model training'den gelen feature schema
+                           Format: {"names": [...], "count": int}
+        
+        Returns:
+            Stabilize edilmiş feature matrix
+        """
+        # Schema yoksa veya boşsa, orijinal X'i döndür
+        if feature_schema is None:
+            logger.debug("No feature schema provided, returning original features")
+            return X
+        
+        if not feature_schema.get("names"):
+            logger.debug("Empty feature schema names, returning original features")
+            return X
+        
+        # Schema varsa stabilize et
+        logger.info(f"Stabilizing features for model prediction ({len(feature_schema.get('names', []))} expected features)")
+        
+        try:
+            # Internal model schema'yı güncelle
+            self.model_feature_schema = feature_schema
             
+            # Mevcut stabilize_features metodunu kullan
+            X_stabilized = self.stabilize_features(X.copy(), feature_schema)
+            
+            logger.info(f"Feature stabilization completed: {X.shape} -> {X_stabilized.shape}")
+            return X_stabilized
+            
+        except Exception as e:
+            logger.error(f"Feature stabilization failed: {e}")
+            logger.warning("Returning original features due to stabilization error")
+            return X
+
     def create_features(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Tüm feature'ları oluştur
@@ -98,7 +138,7 @@ class MongoDBFeatureEngineer:
             logger.warning("raw_log field not found, using msg field as fallback")
             df['raw_log'] = df['msg'] if 'msg' in df.columns else ''
         else:
-            logger.info(f"✅ raw_log field preserved with {df['raw_log'].notna().sum()} entries")
+            logger.info(f"[OK] raw_log field preserved with {df['raw_log'].notna().sum()} entries")
 
         # Sırasıyla feature extraction
         df = self.extract_timestamp_features(df)
@@ -156,7 +196,7 @@ class MongoDBFeatureEngineer:
                 if isinstance(df['t'].iloc[0], dict):
                     df['timestamp'] = pd.to_datetime(
                         df['t'].apply(lambda x: x.get('$date') if isinstance(x, dict) else None),
-                        utc=True  # ✅ UTC'ye zorla
+                        utc=True  # [OK] UTC'ye zorla
                     )
                 else:
                     df['timestamp'] = pd.to_datetime(df['t'])
@@ -183,7 +223,7 @@ class MongoDBFeatureEngineer:
             # Burst density (son 100 log içindeki burst yoğunluğu)
             df['burst_density'] = df['extreme_burst_flag'].rolling(window=100, min_periods=1).mean()
             
-            logger.info(f"✅ Temporal features extracted")
+            logger.info(f"[OK] Temporal features extracted")
             logger.info(f"   Extreme bursts: {df['extreme_burst_flag'].sum()} ({df['extreme_burst_flag'].mean()*100:.1f}%)")
             
         except Exception as e:
@@ -193,9 +233,15 @@ class MongoDBFeatureEngineer:
     def extract_message_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Message-based features"""
         try:
-            # Authorization failure flag
-            df['is_auth_failure'] = (df['msg'] == 'Checking authorization failed').astype(int)
-            
+            # Authorization failure flag 
+            # Hem "Checking authorization failed" hem de "Authentication failed" yakalanır
+            df['is_auth_failure'] = (
+                (df['msg'] == 'Checking authorization failed') | 
+                (df['msg'] == 'Authentication failed') |
+                df['msg'].str.contains('AuthenticationFailed|authentication failed|auth.*failed', 
+                                       case=False, na=False, regex=True)
+            ).astype(int)
+
             # Authentication succeeded flag (filtreleme için)
             df['is_auth_success'] = (df['msg'] == 'Authentication succeeded').astype(int)
             
@@ -206,12 +252,6 @@ class MongoDBFeatureEngineer:
             # DROP operasyonları - Veri silme riskli
             df['is_drop_operation'] = df['msg'].str.contains(
                 'CMD: drop|dropIndexes|dropDatabase|drop collection|dropCollection', 
-                case=False, na=False
-            ).astype(int)
-            
-            # CREATE operasyonları - Index ve koleksiyon oluşturma
-            df['is_create_operation'] = df['msg'].str.contains(
-                'CMD: createIndexes|createIndex|create collection|createCollection|cmd.*create', 
                 case=False, na=False
             ).astype(int)
             
@@ -233,12 +273,13 @@ class MongoDBFeatureEngineer:
                 case=False, na=False
             ).astype(int)
             
-            # TRANSACTION operasyonları - İşlem yönetimi
-            df['is_transaction_operation'] = df['msg'].str.contains(
-                'startTransaction|commitTransaction|abortTransaction|session.*transaction', 
-                case=False, na=False
+            # ABORTED TRANSACTION - İptal edilen işlemler (potansiyel sorun göstergesi)
+            # startTransaction ve commitTransaction normal operasyonlar, sadece abort önemli
+
+            df['is_aborted_transaction'] = df['msg'].str.contains(
+                'abortTransaction|transaction.*abort|abort.*transaction',
+                case=False, na=False, regex=True
             ).astype(int)
-            
             
             # COLLSCAN detection (performans sorunu)
             df['is_collscan'] = df['msg'].str.contains(
@@ -345,15 +386,14 @@ class MongoDBFeatureEngineer:
             rare_messages = msg_counts[msg_counts < rare_threshold].index
             df['is_rare_message'] = df['msg'].isin(rare_messages).astype(int)
             
-            logger.info(f"✅ Message features extracted")
+            logger.info(f"[OK] Message features extracted")
             logger.info(f"   Auth failures: {df['is_auth_failure'].sum()} ({df['is_auth_failure'].mean()*100:.1f}%)")
             # YENİ: GENİŞLETİLMİŞ komut istatistikleri
             logger.info(f"   DROP operations: {df['is_drop_operation'].sum()}")
-            logger.info(f"   CREATE operations: {df['is_create_operation'].sum()}")
             logger.info(f"   AGGREGATE operations: {df['is_aggregate_operation'].sum()}")
             logger.info(f"   ADMIN operations: {df['is_admin_operation'].sum()}")
             logger.info(f"   BULK operations: {df['is_bulk_operation'].sum()}")
-            logger.info(f"   TRANSACTION operations: {df['is_transaction_operation'].sum()}")
+            logger.info(f"   ABORTED TRANSACTION operations: {df['is_aborted_transaction'].sum()}")
             # Diğer özellikler
             logger.info(f"   COLLSCAN queries: {df['is_collscan'].sum()}")
             logger.info(f"   Slow queries: {df['is_slow_query'].sum()}")
@@ -365,50 +405,112 @@ class MongoDBFeatureEngineer:
             logger.info(f"   Normal replication ops: {df['is_normal_replication'].sum()} ({df['is_normal_replication'].mean()*100:.1f}%)")
             
             # === NUMERIC VALUE EXTRACTION BAŞLANGIÇ ===
-            
-            # Compiled regex patterns (performans için)
+
+            # Compiled regex patterns (performans için - fallback olarak kullanılacak)
             DURATION_PATTERN = re.compile(r'"durationMillis":(\d+)')
             DOCS_EXAMINED_PATTERN = re.compile(r'"docsExamined":(\d+)')
             KEYS_EXAMINED_PATTERN = re.compile(r'"keysExamined":(\d+)')
-            
-            # Duration extraction helper function
-            def extract_duration(text):
-                """Extract durationMillis from log message"""
+
+            # YENİ: Hibrit extraction - önce attr dict, sonra msg string
+
+            def extract_duration_hybrid(row):
+                """Extract durationMillis from attr dict OR msg string"""
                 try:
-                    match = DURATION_PATTERN.search(str(text))  
-                    return int(match.group(1)) if match else 0
+                    # 1. Önce attr dict'inden dene (TXN logları için kritik)
+                    if 'attr' in row and isinstance(row['attr'], dict):
+                        attr = row['attr']
+                        if 'durationMillis' in attr:
+                            return int(attr['durationMillis'])
+                    # 2. Fallback: msg string'inden regex ile çek
+                    if 'msg' in row and row['msg']:
+                        match = DURATION_PATTERN.search(str(row['msg']))
+                        if match:
+                            return int(match.group(1))
+                    # 3. Son çare: raw_log'dan dene
+                    if 'raw_log' in row and row['raw_log']:
+                        match = DURATION_PATTERN.search(str(row['raw_log']))
+                        if match:
+                            return int(match.group(1))
+                    return 0
                 except:
                     return 0
-            
-            # Documents examined extraction helper function
-            def extract_docs_examined(text):
-                """Extract docsExamined count from log message"""
+
+            def extract_docs_examined_hybrid(row):
+                """Extract docsExamined from attr dict OR msg string"""
                 try:
-                    match = DOCS_EXAMINED_PATTERN.search(str(text))  
-                    return int(match.group(1)) if match else 0
+                    # 1. Önce attr dict'inden dene
+                    if 'attr' in row and isinstance(row['attr'], dict):
+                        attr = row['attr']
+                        if 'docsExamined' in attr:
+                            return int(attr['docsExamined'])
+                    # 2. Fallback: msg string'inden regex ile çek
+                    if 'msg' in row and row['msg']:
+                        match = DOCS_EXAMINED_PATTERN.search(str(row['msg']))
+                        if match:
+                            return int(match.group(1))
+                    return 0
                 except:
                     return 0
-            
-            # Keys examined extraction helper function
-            def extract_keys_examined(text):
-                """Extract keysExamined count from log message"""
+
+            def extract_keys_examined_hybrid(row):
+                """Extract keysExamined from attr dict OR msg string"""
                 try:
-                    match = KEYS_EXAMINED_PATTERN.search(str(text))  
-                    return int(match.group(1)) if match else 0
+                    # 1. Önce attr dict'inden dene
+                    if 'attr' in row and isinstance(row['attr'], dict):
+                        attr = row['attr']
+                        if 'keysExamined' in attr:
+                            return int(attr['keysExamined'])
+                    # 2. Fallback: msg string'inden regex ile çek
+                    if 'msg' in row and row['msg']:
+                        match = KEYS_EXAMINED_PATTERN.search(str(row['msg']))
+                        if match:
+                            return int(match.group(1))
+                    return 0
                 except:
                     return 0
+
+            # YENİ: Transaction-spesifik metrikler
+            def extract_txn_metrics(row):
+                """Extract transaction-specific metrics from attr"""
+                metrics = {
+                    'time_active_micros': 0,
+                    'time_inactive_micros': 0
+                }
+                try:
+                    if 'attr' in row and isinstance(row['attr'], dict):
+                        attr = row['attr']
+                        metrics['time_active_micros'] = int(attr.get('timeActiveMicros', 0))
+                        metrics['time_inactive_micros'] = int(attr.get('timeInactiveMicros', 0))
+                except:
+                    pass
+                return metrics
+
+            # Apply hibrit numeric extractions (row-based for attr access)
+            df['query_duration_ms'] = df.apply(extract_duration_hybrid, axis=1)
+            df['docs_examined_count'] = df.apply(extract_docs_examined_hybrid, axis=1)
+            df['keys_examined_count'] = df.apply(extract_keys_examined_hybrid, axis=1)
+
+            # YENİ: Transaction metrikleri çıkar
+            txn_metrics = df.apply(extract_txn_metrics, axis=1)
+            df['txn_time_active_micros'] = txn_metrics.apply(lambda x: x['time_active_micros'])
+            df['txn_time_inactive_micros'] = txn_metrics.apply(lambda x: x['time_inactive_micros'])
             
-            # Apply numeric extractions
-            df['query_duration_ms'] = df['msg'].apply(extract_duration)
-            df['docs_examined_count'] = df['msg'].apply(extract_docs_examined)
-            df['keys_examined_count'] = df['msg'].apply(extract_keys_examined)
-            
+            # YENİ: Transaction wait ratio (yüksek değer = blocking sorunu göstergesi)
+            # time_inactive / time_active oranı - 100'den büyükse potansiyel lock contention
+            df['txn_wait_ratio'] = np.where(
+                df['txn_time_active_micros'] > 0,
+                df['txn_time_inactive_micros'] / df['txn_time_active_micros'],
+                0
+            )
+
+            # YENİ: Uzun transaction flag (100ms üzeri)
+            df['is_long_transaction'] = (df['query_duration_ms'] > 100).astype(int)
             # Performance score (yüksek değer = kötü performans)
             # COLLSCAN'de keys_examined 0 olur, bu da kötü performans göstergesi
             df['performance_score'] = np.where(
                 df['is_collscan'] == 1,
                 df['docs_examined_count'] * 2,  # COLLSCAN'de çarpan uygula
-                np.maximum(0, df['docs_examined_count'] - df['keys_examined_count'])  # ✅ Minimum 0
+                np.maximum(0, df['docs_examined_count'] - df['keys_examined_count'])  # [OK] Minimum 0
             )
             
             # Log numeric extraction stats
@@ -432,7 +534,7 @@ class MongoDBFeatureEngineer:
         try:
             df['severity_W'] = (df['s'] == 'W').astype(int)
             
-            logger.info(f"✅ Severity features extracted")
+            logger.info(f"[OK] Severity features extracted")
             logger.info(f"   Warnings: {df['severity_W'].sum()} ({df['severity_W'].mean()*100:.1f}%)")
             
         except Exception as e:
@@ -457,14 +559,95 @@ class MongoDBFeatureEngineer:
             
             # Component transition (component değişimi)
             df['component_changed'] = (df['c'] != df['c'].shift(1)).astype(int)
-            
-            logger.info(f"✅ Component features extracted")
+
+            # ========== YENİ: MongoDB 8.0 Component Features ==========
+
+            # WiredTiger Storage Engine Components
+            # WTRECOV: Recovery işlemleri - startup/crash recovery göstergesi
+            df['is_wiredtiger_recovery'] = (df['c'] == 'WTRECOV').astype(int)
+
+            # WTCHKPT: Checkpoint işlemleri - disk I/O ve checkpoint health
+            df['is_wiredtiger_checkpoint'] = (df['c'] == 'WTCHKPT').astype(int)
+
+            # Kombine WiredTiger flag (herhangi bir WT component)
+            df['is_wiredtiger_event'] = df['c'].isin(['WTRECOV', 'WTCHKPT', 'WT']).astype(int)
+
+            # STORAGE component - genel storage engine olayları
+            df['is_storage_event'] = (df['c'] == 'STORAGE').astype(int)
+
+            # Multi-tenant ve Migration Components (MongoDB 8.0+)
+            df['is_tenant_operation'] = (df['c'] == 'TENANT_M').astype(int)
+
+            # FTDC - Diagnostik veri toplama (performans monitoring)
+            df['is_ftdc_event'] = (df['c'] == 'FTDC').astype(int)
+
+            # ASIO - Async I/O events (network issues)
+            df['is_async_io_event'] = (df['c'] == 'ASIO').astype(int)
+
+            # INDEX component - index operasyonları
+            df['is_index_event'] = (df['c'] == 'INDEX').astype(int)
+
+            # RECOVERY component - recovery operasyonları
+            df['is_recovery_event'] = (df['c'] == 'RECOVERY').astype(int)
+
+            # Boş/Unknown component handling (c = "-")
+            df['is_unknown_component'] = (df['c'].isin(['-', '', 'UNKNOWN', None]) | df['c'].isna()).astype(int)
+
+            # ========== Critical Component Kategorileri ==========
+
+            # Network kritik component'ler
+            network_components = ['NETWORK', 'CONNPOOL', 'ASIO']
+            df['is_network_component'] = df['c'].isin(network_components).astype(int)
+
+            # Access/Security kritik component'ler  
+            security_components = ['ACCESS', 'SECURITY']
+            df['is_security_component'] = df['c'].isin(security_components).astype(int)
+
+            # Replication kritik component'ler
+            replication_components = ['REPL', 'ELECTION', 'ROLLBACK']
+            df['is_replication_component'] = df['c'].isin(replication_components).astype(int)
+
+            # Storage kritik component'ler (tüm storage-related)
+            storage_components = ['STORAGE', 'WTRECOV', 'WTCHKPT', 'WT', 'JOURNAL']
+            df['is_storage_component'] = df['c'].isin(storage_components).astype(int)
+
+            # Control/Startup component'ler
+            control_components = ['CONTROL', 'INITSYNC']
+            df['is_control_component'] = df['c'].isin(control_components).astype(int)
+
+            # ========== Component Anomaly Scoring ==========
+
+            # Kritik component skoru (ağırlıklı)
+            # Daha yüksek skor = daha kritik event
+            df['component_criticality_score'] = (
+                df['is_security_component'] * 3 +      # Security en kritik
+                df['is_storage_component'] * 2 +       # Storage kritik
+                df['is_replication_component'] * 2 +   # Replication kritik
+                df['is_network_component'] * 1 +       # Network orta
+                df['is_unknown_component'] * 1         # Unknown dikkat çeker
+            )
+
+            # ========== Loglama ==========
+
+            logger.info(f"[OK] Component features extracted")
             logger.info(f"   Unique components: {df['c'].nunique()}")
             logger.info(f"   Rare components: {len(rare_components)}")
-            
+
+            # MongoDB 8.0 component istatistikleri
+            logger.info(f"   WiredTiger Recovery events: {df['is_wiredtiger_recovery'].sum()}")
+            logger.info(f"   WiredTiger Checkpoint events: {df['is_wiredtiger_checkpoint'].sum()}")
+            logger.info(f"   Tenant Migration events: {df['is_tenant_operation'].sum()}")
+            logger.info(f"   FTDC events: {df['is_ftdc_event'].sum()}")
+            logger.info(f"   Unknown component events: {df['is_unknown_component'].sum()}")
+
+            # Kritik component dağılımı
+            logger.info(f"   Security component logs: {df['is_security_component'].sum()}")
+            logger.info(f"   Storage component logs: {df['is_storage_component'].sum()}")
+            logger.info(f"   Network component logs: {df['is_network_component'].sum()}")
+
         except Exception as e:
             logger.error(f"Error in component features: {e}")
-            
+
         return df
     
     def extract_combination_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -479,7 +662,7 @@ class MongoDBFeatureEngineer:
             rare_combos = combo_counts[combo_counts < rare_threshold].index
             df['is_rare_combo'] = df['severity_component_combo'].isin(rare_combos).astype(int)
             
-            logger.info(f"✅ Combination features extracted")
+            logger.info(f"[OK] Combination features extracted")
             logger.info(f"   Rare combos: {df['is_rare_combo'].sum()}")
             
         except Exception as e:
@@ -521,11 +704,11 @@ class MongoDBFeatureEngineer:
                 df['attr_key_count'] = 0
                 df['has_many_attrs'] = 0
                 
-            logger.info(f"✅ Attr features extracted")
+            logger.info(f"[OK] Attr features extracted")
             if 'has_error_key' in df.columns:
                 logger.info(f"   Error logs: {df['has_error_key'].sum()} ({df['has_error_key'].mean()*100:.1f}%)")
             
-            # ✅ YENİ: Memory optimization - geçici sütunu temizle
+            # [OK] YENİ: Memory optimization - geçici sütunu temizle
             if 'attr_parsed' in df.columns:
                 # Temizlemeden önce bellek kullanımını logla
                 memory_before = df.memory_usage(deep=True).sum() / 1024 / 1024
@@ -558,11 +741,7 @@ class MongoDBFeatureEngineer:
         """
         try:
             filter_mask = pd.Series([True] * len(df))
-            
-            # Auth success filter
-            if self.filters.get('exclude_auth_success', True) and 'is_auth_success' in df.columns:
-                filter_mask &= (df['is_auth_success'] == 0)
-                
+                          
             # Reauthenticate filter
             if self.filters.get('exclude_reauthenticate', True) and 'is_reauthenticate' in df.columns:
                 filter_mask &= (df['is_reauthenticate'] == 0)
@@ -596,9 +775,9 @@ class MongoDBFeatureEngineer:
         
         # Binary features - YENİ: GENİŞLETİLMİŞ komut özellikleri dahil
         binary_features = ['severity_W', 'is_rare_component', 'is_rare_combo', 'has_error_key', 
-                          'is_auth_failure', 'is_drop_operation', 'is_create_operation', 
+                          'is_auth_failure', 'is_drop_operation', 
                           'is_aggregate_operation', 'is_admin_operation', 'is_bulk_operation',
-                          'is_transaction_operation', 'is_rare_message', 'extreme_burst_flag', 
+                          'is_aborted_transaction', 'is_rare_message', 'extreme_burst_flag', 
                           'is_weekend', 'component_changed', 'has_many_attrs',
                           'is_collscan', 'is_index_build', 'is_slow_query', 'is_high_doc_scan',
                           'is_shutdown', 'is_assertion', 'is_fatal', 'is_error', 'is_replication_issue',

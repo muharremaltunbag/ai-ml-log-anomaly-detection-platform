@@ -94,8 +94,8 @@ function updateParentAnomalyQuery(result) {
 /**
  * Chat anomali sonuçlarını göster
  */
-function displayAnomalyResults(result) {
-    console.log('displayAnomalyResults called with result:', result);
+function displayChatQueryResult(result, userQuery) {
+    console.log('displayChatQueryResult called with result:', result);
     
     // YENİ: ML Panel'i otomatik güncelle
     if (window.MLPanel && window.MLPanel.autoUpdate) {
@@ -108,8 +108,35 @@ function displayAnomalyResults(result) {
     }
 
     const elements = window.elements;
+
+    // ✅ YENİ: DOM element kontrolü - Chat UI görünmeme sorununu çözer
+    if (!elements || !elements.resultSection || !elements.resultContent) {
+        console.error('❌ Critical DOM elements not found:', {
+            elements: !!elements,
+            resultSection: !!elements?.resultSection,
+            resultContent: !!elements?.resultContent
+        });
+
+        // Fallback: Tekrar initialize etmeyi dene
+        if (typeof window.initializeElements === 'function') {
+            console.log('🔄 Attempting to re-initialize DOM elements...');
+            window.initializeElements();
+        }
+
+        // Hala yoksa hata göster ve çık
+        if (!window.elements?.resultSection || !window.elements?.resultContent) {
+            console.error('❌ DOM elements still not available after re-initialization');
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('UI hatası: Sonuç alanı bulunamadı. Sayfayı yenileyin.', 'error');
+            } else {
+                alert('UI hatası: Sonuç alanı bulunamadı. Sayfayı yenileyin.');
+            }
+            return;
+        }
+    }
+
     elements.resultSection.style.display = 'block';
-    
+
     let html = '<div class="chat-result">';
     
     // Kullanıcı sorusu
@@ -2187,7 +2214,8 @@ async function loadAnomalyChunk(analysisId, chunkIndex) {
 // GLOBAL ERİŞİM İÇİN WINDOW'A ATAMA
 // ============================================
 window.updateParentAnomalyQuery = updateParentAnomalyQuery;
-window.displayChatAnomalyResult = displayAnomalyResults;  // Mevcut fonksiyona yönlendir
+window.displayChatQueryResult = displayChatQueryResult;  // Mevcut fonksiyona yönlendir
+window.displayChatAnomalyResult = displayChatQueryResult;  // Chat query sonuçları için (script.js alias)
 window.decodeHtmlEntities = decodeHtmlEntities;
 window.formatAIResponse = formatAIResponse;
 window.displayAnomalyAnalysisResult = displayAnomalyAnalysisResult;

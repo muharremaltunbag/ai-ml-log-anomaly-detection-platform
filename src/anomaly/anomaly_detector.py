@@ -105,13 +105,13 @@ class MongoDBAnomalyDetector:
     def _initialize_critical_rules(self) -> Dict[str, Any]:
         """
         Kritik anomali kurallarını tanımla
-        
+
         Returns:
             Rule dictionary
         """
-        
+
         rules = {
-            # Sistem kritik hatalar
+            # --- SİSTEM SAĞLIĞI ---
             'system_failure': {
                 'condition': lambda row: (
                     row.get('is_fatal', 0) == 1 or 
@@ -131,15 +131,74 @@ class MongoDBAnomalyDetector:
                 'severity': 0.95,
                 'description': 'Memory crisis detected'
             },
-            
-            # Performans kritik
+
+            # --- PERFORMANS & SORGULAR (PROD OPTIMIZED) ---
+
+            # 1. MASSIVE COLLSCAN (Veri Madenciliği Gibi)
+            # Loglarda 3.2M döküman tarayan sorgular görüldü. Bu sunucuyu kilitler.
+            'massive_scan': {
+                'condition': lambda row: (
+                    row.get('docs_examined_count', 0) > 1000000  # 1 Milyon+
+                ),
+                'severity': 1.0,  # CRITICAL (Fatal kadar önemli)
+                'description': 'Massive document scan (>1M docs)'
+            },
+
+            # 2. Performans Kritik (Ağır COLLSCAN)
+            # Standart kural: Sadece yüksek döküman tarayan COLLSCAN'leri yakala
             'performance_critical': {
                 'condition': lambda row: (
                     row.get('is_collscan', 0) == 1 and 
                     row.get('docs_examined_count', 0) > 100000
                 ),
                 'severity': 0.85,
-                'description': 'Critical performance issue'
+                'description': 'Critical performance issue (Heavy Scan)'
+            },
+
+            # 3. INEFFICIENT INDEX (Verimsiz İndeks)
+            # 156ms'de 125k key tarayan sorgular var. İndeks var ama verimsiz.
+            'inefficient_index': {
+                'condition': lambda row: (
+                    row.get('keys_examined_count', 0) > 10000 and
+                    row.get('docs_examined_count', 0) > 10000 and
+                    # Keys > Docs ise indeks verimsiz çalışıyor demektir
+                    row.get('keys_examined_count', 0) > row.get('docs_examined_count', 0) * 2
+                ),
+                'severity': 0.85,
+                'description': 'Inefficient index usage (High Key Scan)'
+            },
+
+            # 4. LONG TRANSACTION (Uzun Süren Transaction)
+            # 3.6 saniye süren transactionlar görüldü. Locking yaratır.
+            'long_transaction': {
+                'condition': lambda row: (
+                    # TXN logu veya uzun süren işlem
+                    (row.get('component_encoded', 0) == 'TXN' or row.get('c') == 'TXN') and
+                    row.get('query_duration_ms', 0) > 3000  # 3 saniye üzeri transaction
+                ),
+                'severity': 0.90,
+                'description': 'Long running transaction (>3s)'
+            },
+
+            # --- ALTYAPI & REPLİKASYON ---
+
+            # 5. Replikasyon Sorunları (Data Safety)
+            'replication_risk': {
+                'condition': lambda row: (
+                    row.get('is_replication_issue', 0) == 1
+                ),
+                'severity': 0.90,
+                'description': 'Replication integrity risk'
+            },
+
+            # 3. Bellek/Cache Baskısı (Stability) - Eviction storm ve memory limit
+            'memory_pressure': {
+                'condition': lambda row: (
+                    row.get('is_memory_limit', 0) == 1 or
+                    (row.get('is_wiredtiger_event', 0) == 1 and row.get('severity_W', 0) == 1)
+                ),
+                'severity': 0.88,
+                'description': 'High memory pressure detected'
             },
             
             # Multi-error burst
@@ -155,7 +214,7 @@ class MongoDBAnomalyDetector:
             # Güvenlik kritik
             'security_alert': {
                 'condition': lambda row: (
-                    row.get('is_drop_operation', 0) == 1 or
+                    row.get('is_drop_operation', 0) == 1 or 
                     row.get('is_assertion', 0) == 1
                 ),
                 'severity': 0.88,
@@ -172,8 +231,9 @@ class MongoDBAnomalyDetector:
                 'description': 'Post-restart anomaly'
             }
         }
-        
+
         return rules
+
 
     def _load_config(self, config_path: str) -> Dict:
         """Config dosyasını yükle"""
@@ -357,169 +417,170 @@ class MongoDBAnomalyDetector:
               server_name: str = None) -> Dict[str, Any]:
         """
         Anomali modelini eğit (Online Learning desteği ile)
-        
+
         Args:
             X: Feature matrix
             save_model: Modeli kaydet (None ise config'den al)
             incremental: Online learning kullan (None ise config'den al)
             server_name: Sunucu adı (model yönetimi için)
-            
+
         Returns:
             Training sonuçları
         """
-        
-        with self._training_lock:  # Thread safety
-            
+
+        # Thread safety - tüm training süreci boyunca lock tut
+        self._training_lock.acquire()
+        try:
             if server_name:
                 logger.debug(f"Training for server: {server_name}")
             logger.info(f"Training model on {X.shape[0]} samples with {X.shape[1]} features...")
-        
-        # Current server'ı güncelle
-        self.current_server = server_name
-        
-        # Online learning kontrolü
-        if incremental is None:
-            incremental = self.online_learning_config.get('enabled', True)
-        
-        # Feature isimlerini sakla
-        self.feature_names = list(X.columns)
-        
-        
-        # Historical data ile birleştir
-        X_train = X.copy()
-        training_mode = "new"
-        
-        if incremental and self.is_trained and self.historical_data['features'] is not None:
-            
-            
-            
-            
+
+            # Current server'ı güncelle
+            self.current_server = server_name
+
+            # Online learning kontrolü
+            if incremental is None:
+                incremental = self.online_learning_config.get('enabled', True)
+
+            # Feature isimlerini sakla
+            self.feature_names = list(X.columns)
+
             # Historical data ile birleştir
-            X_train = self._combine_with_history(X)
-            training_mode = "incremental"
-            
-            
-        else:
-            logger.debug("Standard training mode (no historical data)")
-        
-        # Model parametreleri
-        params = self.model_config['parameters'].copy()
-        
-        # ÇÖZÜM: Combined dataset boyutuna göre max_samples'ı dinamik ayarla
-        if incremental and self.is_trained and X_train.shape[0] < params.get('max_samples', 512) * 2:
-            original_max_samples = params.get('max_samples', 512)
-            # Dataset'in %80'ini kullan veya 256 (hangisi küçükse)
-            new_max_samples = min(int(X_train.shape[0] * 0.8), 256)
-            
-            # Minimum 10 sample kontrolü
-            if new_max_samples < 10:
-                logger.debug(f"WARNING: Very few samples after deduplication ({X_train.shape[0]})")
-                params['max_samples'] = 'auto'  # sklearn'ün otomatik hesaplamasına bırak
+            X_train = X.copy()
+            training_mode = "new"
+
+            if incremental and self.is_trained and self.historical_data['features'] is not None:
+                # Historical data ile birleştir
+                X_train = self._combine_with_history(X)
+                training_mode = "incremental"
             else:
-                params['max_samples'] = new_max_samples
-            
-            logger.debug(f"Adjusted max_samples from {original_max_samples} to {params['max_samples']} (dataset size: {X_train.shape[0]})")
-        
-        
-        
-        # Index'i reset et (sklearn için kritik!)
-        X_train = X_train.reset_index(drop=True)
+                logger.debug("Standard training mode (no historical data)")
 
-        # === STRICT FEATURE ORDER ALIGNMENT BEFORE MODEL FIT ===
+            # Model parametreleri
+            params = self.model_config['parameters'].copy()
 
-        # 1) Eğer geçmiş feature_names varsa, önce onlarla hizala
-        if self.feature_names and list(X_train.columns) != self.feature_names:
-            missing = set(self.feature_names) - set(X_train.columns)
-            extra   = set(X_train.columns) - set(self.feature_names)
-            if missing or extra:
-                raise ValueError(
-                    f"[TRAIN MISMATCH] X_train columns do not match saved feature_names. "
-                    f"Missing: {missing} | Extra: {extra}"
-                )
-            # Saved feature order'a göre sıralama
-            X_train = X_train[self.feature_names]
-            logger.debug("Reordered X_train to match saved feature_names before fit().")
+            # ÇÖZÜM: Combined dataset boyutuna göre max_samples'ı dinamik ayarla
+            if incremental and self.is_trained and X_train.shape[0] < params.get('max_samples', 512) * 2:
+                original_max_samples = params.get('max_samples', 512)
+                # Dataset'in %80'ini kullan veya 256 (hangisi küçükse)
+                new_max_samples = min(int(X_train.shape[0] * 0.8), 256)
 
-        # 2) Eğer incremental retraining ve mevcut model sklearn feature_names_in_ içeriyorsa, onunla hizala
-        if hasattr(self.model, 'feature_names_in_'):
-            sklearn_cols = list(self.model.feature_names_in_)
-            if sklearn_cols != list(X_train.columns):
-                missing = set(sklearn_cols) - set(X_train.columns)
-                extra   = set(X_train.columns) - set(sklearn_cols)
+                # Minimum 10 sample kontrolü
+                if new_max_samples < 10:
+                    logger.debug(f"WARNING: Very few samples after deduplication ({X_train.shape[0]})")
+                    params['max_samples'] = 'auto'  # sklearn'ün otomatik hesaplamasına bırak
+                else:
+                    params['max_samples'] = new_max_samples
+
+                logger.debug(f"Adjusted max_samples from {original_max_samples} to {params['max_samples']} (dataset size: {X_train.shape[0]})")
+
+            # Index'i reset et (sklearn için kritik!)
+            X_train = X_train.reset_index(drop=True)
+
+            # === STRICT FEATURE ORDER ALIGNMENT BEFORE MODEL FIT ===
+
+            # 1) Eğer geçmiş feature_names varsa, önce onlarla hizala
+            if self.feature_names and list(X_train.columns) != self.feature_names:
+                missing = set(self.feature_names) - set(X_train.columns)
+                extra   = set(X_train.columns) - set(self.feature_names)
                 if missing or extra:
                     raise ValueError(
-                        f"[SKLEARN MISMATCH] X_train columns mismatch with model.feature_names_in_. "
+                        f"[TRAIN MISMATCH] X_train columns do not match saved feature_names. "
                         f"Missing: {missing} | Extra: {extra}"
                     )
-                # sklearn'ün iç order'ına göre sıralama
-                X_train = X_train[sklearn_cols]
-                logger.debug("Reordered X_train to sklearn feature_names_in_ before fit().")
-        
-        # Model oluştur veya mevcut modeli kullan
-        if not self.is_trained:
-            # İlk kez model oluştur
-            if self.model_config['type'] == 'IsolationForest':
-                logger.debug("Creating NEW IsolationForest model (first training)...")
-                self.model = IsolationForest(**params)
+                # Saved feature order'a göre sıralama
+                X_train = X_train[self.feature_names]
+                logger.debug("Reordered X_train to match saved feature_names before fit().")
+
+            # 2) Eğer incremental retraining ve mevcut model sklearn feature_names_in_ içeriyorsa, onunla hizala
+            if hasattr(self.model, 'feature_names_in_'):
+                sklearn_cols = list(self.model.feature_names_in_)
+                if sklearn_cols != list(X_train.columns):
+                    missing = set(sklearn_cols) - set(X_train.columns)
+                    extra   = set(X_train.columns) - set(sklearn_cols)
+                    if missing or extra:
+                        raise ValueError(
+                            f"[SKLEARN MISMATCH] X_train columns mismatch with model.feature_names_in_. "
+                            f"Missing: {missing} | Extra: {extra}"
+                        )
+                    # sklearn'ün iç order'ına göre sıralama
+                    X_train = X_train[sklearn_cols]
+                    logger.debug("Reordered X_train to sklearn feature_names_in_ before fit().")
+
+            # Model oluştur veya mevcut modeli kullan
+            if not self.is_trained:
+                # İlk kez model oluştur
+                if self.model_config['type'] == 'IsolationForest':
+                    logger.debug("Creating NEW IsolationForest model (first training)...")
+                    self.model = IsolationForest(**params)
+                else:
+                    raise ValueError(f"Unknown model type: {self.model_config['type']}")
+            elif incremental and self.is_trained:
+                logger.debug("INCREMENTAL MODE: Retraining existing model with combined data")
+
+                # Mevcut model parametrelerini güncelle ama instance'ı değiştirme
+                if hasattr(self.model, 'contamination'):
+                    self.model.contamination = params.get('contamination', 0.03)
+                # NOT: IsolationForest'ın set_params metodu ile parametreleri güncelleyebiliriz
+                # ama model tekrar fit edilecek zaten, bu yüzden yeni instance oluşturmak da sorun değil
+                # Ancak historical continuity için mevcut model'i koruyoruz
             else:
-                raise ValueError(f"Unknown model type: {self.model_config['type']}")
-        elif incremental and self.is_trained:
-            logger.debug("INCREMENTAL MODE: Retraining existing model with combined data")
-            
-            # Mevcut model parametrelerini güncelle ama instance'ı değiştirme
-            if hasattr(self.model, 'contamination'):
-                self.model.contamination = params.get('contamination', 0.03)
-            # NOT: IsolationForest'ın set_params metodu ile parametreleri güncelleyebiliriz
-            # ama model tekrar fit edilecek zaten, bu yüzden yeni instance oluşturmak da sorun değil
-            # Ancak historical continuity için mevcut model'i koruyoruz
-        else:
-            # Non-incremental mode ama model trained - yine de yeni model oluştur
-            
-            if self.model_config['type'] == 'IsolationForest':
-                self.model = IsolationForest(**params)
-        
-        # Eğitim
-        start_time = datetime.now()
-        # X yerine X_train kullan (reset edilmiş index ile)
-        self.model.fit(X_train)
-        training_time = (datetime.now() - start_time).total_seconds()
-        
-        
-        # Eğitim istatistikleri
-        self.training_stats = {
-            "n_samples": X.shape[0],
-            "n_features": X.shape[1],
-            "feature_names": self.feature_names,
-            "feature_schema": {
-                "names": self.feature_names,
-                "count": len(self.feature_names),
-            },
-            "training_time_seconds": training_time,
-            "model_type": self.model_config['type'],
-            "parameters": params,
-            "timestamp": datetime.now().isoformat(),
-            "server_name": server_name,  # YENİ: Sunucu bilgisi
-            "model_version": self.model_version  # MODEL VERSION EKLENDİ
-        }
-        self.is_trained = True
-        logger.debug(f"Training completed - Model is now ready for predictions")
-        logger.info(f"Model training completed in {training_time:.2f} seconds")
-        
-        # Online Learning: Historical buffer'ı güncelle
-        if incremental and self.online_learning_config.get('enabled', True):
-            logger.debug(f"Updating historical buffer...")
-            self._update_historical_buffer(X, X_train, training_mode)  # ✅ ÖNCE GÜNCELLE
+                # Non-incremental mode ama model trained - yine de yeni model oluştur
+                if self.model_config['type'] == 'IsolationForest':
+                    self.model = IsolationForest(**params)
 
-        # Model kaydetme
-        if save_model is None:
-            save_model = self.output_config.get('save_model', True)
-            
-        if save_model:
-            
-            self.save_model(server_name=server_name)  # ✅ SONRA KAYDET
-        
-        return self.training_stats
+            # Eğitim
 
+            start_time = datetime.now()
+            # === FIX: FEATURE SCALING ===
+            logger.info("Applying StandardScaler to training data to prevent feature dominance...")
+            # Veriyi scale et (normalize et)
+            X_train_scaled_np = self.scaler.fit_transform(X_train)
+            self.is_scaler_fitted = True
+
+            # DataFrame formatını koru (IsolationForest feature name'leri saklasın diye)
+            X_train_scaled = pd.DataFrame(X_train_scaled_np, columns=X_train.columns)
+            # X yerine X_train_scaled kullan
+            self.model.fit(X_train_scaled)
+            training_time = (datetime.now() - start_time).total_seconds()
+
+            # Eğitim istatistikleri
+            self.training_stats = {
+                "n_samples": X.shape[0],
+                "n_features": X.shape[1],
+                "feature_names": self.feature_names,
+                "feature_schema": {
+                    "names": self.feature_names,
+                    "count": len(self.feature_names),
+                },
+                "training_time_seconds": training_time,
+                "model_type": self.model_config['type'],
+                "parameters": params,
+                "timestamp": datetime.now().isoformat(),
+                "server_name": server_name,  # YENİ: Sunucu bilgisi
+                "model_version": self.model_version  # MODEL VERSION EKLENDİ
+            }
+            self.is_trained = True
+            logger.debug(f"Training completed - Model is now ready for predictions")
+            logger.info(f"Model training completed in {training_time:.2f} seconds")
+
+            # Online Learning: Historical buffer'ı güncelle
+            if incremental and self.online_learning_config.get('enabled', True):
+                logger.debug(f"Updating historical buffer...")
+                self._update_historical_buffer(X, X_train, training_mode)  # ✅ ÖNCE GÜNCELLE
+
+            # Model kaydetme
+            if save_model is None:
+                save_model = self.output_config.get('save_model', True)
+
+            if save_model:
+                self.save_model(server_name=server_name)  # ✅ SONRA KAYDET
+
+            return self.training_stats
+
+        finally:
+            # Thread safety - lock'u her durumda (başarı/hata) serbest bırak
+            self._training_lock.release()
     def _update_historical_buffer(self, X_new: pd.DataFrame, X_train: pd.DataFrame, 
                                   training_mode: str) -> None:
         """
@@ -552,8 +613,12 @@ class MongoDBAnomalyDetector:
                 # Yeni veriyi ekle
                 combined_buffer = pd.concat([current_buffer, X_new], ignore_index=True)
 
-                # Buffer limit kontrolü
-                max_buffer_size = self.config.get('max_historical_buffer', 50000)
+                # Buffer limit kontrolü - online_learning config'den al
+                # max_history_size null ise max_buffer_samples kullan, o da yoksa default 100000
+                max_buffer_size = (
+                    self.online_learning_config.get('max_history_size') or 
+                    self.online_learning_config.get('max_buffer_samples', 100000)
+                )
 
                 if len(combined_buffer) > max_buffer_size:
                     # FIFO: En eski verileri at, en yenileri tut
@@ -665,12 +730,25 @@ class MongoDBAnomalyDetector:
 
             # Sadece sıra farklıysa reorder et
             # 1) Column presence check (en kritik guard)
-            missing = set(self.model.feature_names_in_) - set(X.columns)
-            if missing:
-                raise ValueError(
-                    f"Missing required features for prediction: {missing}. "
-                    "Prediction aborted."
-                )
+            # NOT: Ensemble mode'da self.model None olabilir
+
+            if self.model is not None and hasattr(self.model, 'feature_names_in_'):
+                missing = set(self.model.feature_names_in_) - set(X.columns)
+                if missing:
+                    raise ValueError(
+                        f"Missing required features for prediction: {missing}. "
+                        "Prediction aborted."
+                    )
+            elif self.incremental_models:
+                # Ensemble mode - ilk modeli kontrol et
+                first_model = self.incremental_models[0]
+                if hasattr(first_model, 'feature_names_in_'):
+                    missing = set(first_model.feature_names_in_) - set(X.columns)
+                    if missing:
+                        raise ValueError(
+                            f"Missing required features for prediction: {missing}. "
+                            "Prediction aborted."
+                        )
 
             # 2) Training feature order vs input order mismatch
             input_features = list(X.columns)
@@ -682,12 +760,19 @@ class MongoDBAnomalyDetector:
                 X = X[self.feature_names]
 
             # 3) ZORUNLU sklearn hizalaması (kesin sıra)
-            if hasattr(self.model, "feature_names_in_"):
+            # NOT: Ensemble mode'da self.model None olabilir, bu durumda skip et
+            if self.model is not None and hasattr(self.model, "feature_names_in_"):
                 logger.debug(
                     f"Applying sklearn feature_names_in_ ordering "
                     f"({len(self.model.feature_names_in_)} features)"
                 )
                 X = X[self.model.feature_names_in_]
+            elif self.incremental_models:
+                # Ensemble mode - ilk modelin feature order'ını kullan
+                first_model = self.incremental_models[0]
+                if hasattr(first_model, "feature_names_in_"):
+                    logger.debug(f"Using first ensemble model's feature order")
+                    X = X[first_model.feature_names_in_]
             
         
         # Incremental ensemble varsa onu kullan
@@ -697,8 +782,18 @@ class MongoDBAnomalyDetector:
         else:
             # Legacy single model prediction
             
-            predictions = self.model.predict(X)
-            anomaly_scores = self.model.score_samples(X)
+            # === FIX: APPLY SCALING FOR PREDICTION ===
+            X_prediction = X
+
+            if self.is_scaler_fitted:
+                logger.debug("Applying scaler transform for single model prediction")
+                X_scaled_np = self.scaler.transform(X)
+                # DataFrame yapısını koru
+                X_prediction = pd.DataFrame(X_scaled_np, columns=X.columns)
+            # ========================================
+
+            predictions = self.model.predict(X_prediction)
+            anomaly_scores = self.model.score_samples(X_prediction)
         
         # Ensemble mode: Critical rules override
         if self.ensemble_config.get('enabled', True) and df is not None:
@@ -1084,6 +1179,7 @@ class MongoDBAnomalyDetector:
 
         logger.debug(f"Anomaly analysis completed")
         return analysis
+        
     def calculate_severity_score(self, anomaly_idx: int, anomaly_score: float, 
                                row_features: Dict, df_row: pd.Series) -> Dict[str, Any]:
         """
@@ -1106,7 +1202,7 @@ class MongoDBAnomalyDetector:
         ml_contribution = abs(anomaly_score) * 40
         severity_score += ml_contribution
         factors.append(f"ML Score: +{ml_contribution:.1f}")
-        
+
         # 2. Component Criticality (0-20 puan)
         component_scores = {
             'REPL': 20,      # Replikasyon kritik
@@ -1116,6 +1212,7 @@ class MongoDBAnomalyDetector:
             'NETWORK': 10,   # Network orta
             'QUERY': 8,      # Query normal
             'INDEX': 8,      # Index normal
+            'TXN': 15,       # Transaction önemli (YENİ)
             '-': 5           # Diğer
         }
         
@@ -1123,54 +1220,80 @@ class MongoDBAnomalyDetector:
         comp_score = component_scores.get(component, 5)
         severity_score += comp_score
         factors.append(f"Component ({component}): +{comp_score}")
-        
-        # 3. Critical Features (0-30 puan)
+
+        # 3. Critical Features (0-40 puan)
+
         feature_score = 0
-        
-        # Fatal errors - en kritik
-        if row_features.get('is_fatal', 0) == 1:
+
+        # === PROD LOG OPTIMIZASYONU (EN KRİTİKLER EN ÜSTE) ===
+
+        # 1. Massive Scan (>1.5M docs) - Sunucu Kilitleyici
+        if row_features.get('docs_examined_count', 0) > 1500000:
+            feature_score += 40
+            factors.append("Massive Scan (>1.5M): +40")
+
+        # 2. Fatal errors
+        elif row_features.get('is_fatal', 0) == 1:
             feature_score += 30
             factors.append("Fatal Error: +30")
-        # Out of memory
+
+        # 3. Replication issues - Veri güvenliği
+        elif row_features.get('is_replication_issue', 0) == 1:
+            feature_score += 35 
+            factors.append("Replication Issue: +35")
+
+        # 4. Long Transaction (>5s) - Locking Risk
+        elif (row_features.get('is_long_transaction', 0) == 1 and 
+              row_features.get('query_duration_ms', 0) > 5000):
+            feature_score += 30
+            factors.append("Long Transaction (>5s): +30")
+
+        # 5. Out of memory
         elif row_features.get('is_out_of_memory', 0) == 1:
             feature_score += 28
             factors.append("Out of Memory: +28")
-        # Shutdown
-        elif row_features.get('is_shutdown', 0) == 1:
+
+        # 6. Memory limit / Eviction
+        elif row_features.get('is_memory_limit', 0) == 1:
             feature_score += 25
-            factors.append("Shutdown: +25")
-        # Drop operation
+            factors.append("Memory Limit: +25")
+
+        # 7. Shutdown / Restart
+        elif row_features.get('is_shutdown', 0) == 1 or row_features.get('is_restart', 0) == 1:
+            feature_score += 25
+            factors.append("System Restart/Shutdown: +25")
+
+        # 8. Drop operation
         elif row_features.get('is_drop_operation', 0) == 1:
             feature_score += 25
             factors.append("DROP Operation: +25")
-        # Assertion failure
+
+        # 9. Inefficient Index (High Key Scan)
+        elif row_features.get('keys_examined_count', 0) > 50000:
+            feature_score += 15
+            factors.append("High Key Scan (>50k): +15")
+
+        # 10. COLLSCAN (Ağır vs Hafif)
+        elif row_features.get('is_collscan', 0) == 1:
+            if row_features.get('docs_examined_count', 0) > 100000:
+                feature_score += 20
+                factors.append("Heavy COLLSCAN: +20")
+            else:
+                feature_score += 12
+                factors.append("COLLSCAN: +12")
+
+        # 11. Assertion failure
         elif row_features.get('is_assertion', 0) == 1:
             feature_score += 22
             factors.append("Assertion Failure: +22")
-        # Memory limit
-        elif row_features.get('is_memory_limit', 0) == 1:
-            feature_score += 20
-            factors.append("Memory Limit: +20")
-        # Restart
-        elif row_features.get('is_restart', 0) == 1:
-            feature_score += 18
-            factors.append("Restart Event: +18")
-        # Slow query with high docs
-        elif (row_features.get('is_slow_query', 0) == 1 and 
-              row_features.get('docs_examined_count', 0) > 100000):
-            feature_score += 15
-            factors.append("Slow Query (High Docs): +15")
-        # COLLSCAN
-        elif row_features.get('is_collscan', 0) == 1:
-            feature_score += 12
-            factors.append("COLLSCAN: +12")
-        # Regular slow query
+
+        # 12. Regular slow query
         elif row_features.get('is_slow_query', 0) == 1:
             feature_score += 8
             factors.append("Slow Query: +8")
-        
+
         severity_score += feature_score
-        
+
         # 4. Temporal Factor (0-10 puan)
         # Peak saatlerde daha kritik
         hour = row_features.get('hour_of_day', 0)
@@ -1185,15 +1308,15 @@ class MongoDBAnomalyDetector:
             factors.append(f"Normal Hour ({hour}:00): +7")
         
         severity_score += temporal_score
-        
+
         # 5. Rule Engine Bonus (ek 20 puan)
         if anomaly_score == -1.0:  # Rule override edilmiş
             severity_score += 20
             factors.append("Rule Override: +20")
-        
+
         # Normalize to 0-100
         severity_score = min(100, max(0, severity_score))
-        
+
         # Severity level
         if severity_score >= 80:
             level = "CRITICAL"
@@ -1210,7 +1333,7 @@ class MongoDBAnomalyDetector:
         else:
             level = "INFO"
             color = "#95a5a6"
-        
+
         return {
             "score": severity_score,
             "level": level,
@@ -1303,9 +1426,14 @@ class MongoDBAnomalyDetector:
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
                 
                 # Model ve metadata'yı kaydet
+
                 model_data = {
                     'model': self.model,
                     'feature_names': self.feature_names,
+                    # === FIX: SAVE SCALER STATE ===
+                    'scaler': self.scaler,
+                    'is_scaler_fitted': self.is_scaler_fitted,
+                    # ==============================
                     'training_stats': self.training_stats,
                     'config': self.config,
                     'server_name': server_name,  # YENİ: Sunucu bilgisi
@@ -1372,12 +1500,21 @@ class MongoDBAnomalyDetector:
                 logger.error(f"Model file not found: {path}")
                 return False
             # Model ve metadata'yı yükle
-            # Model ve metadata'yı yükle
             model_data = joblib.load(path)
-            
+
             self.model = model_data['model']
             self.feature_names = model_data['feature_names']
             self.training_stats = model_data.get('training_stats', {})
+
+            # === FIX: LOAD SCALER STATE ===
+            if 'scaler' in model_data:
+                self.scaler = model_data['scaler']
+                self.is_scaler_fitted = model_data.get('is_scaler_fitted', True)
+                logger.debug("Scaler state loaded successfully.")
+            else:
+                logger.warning("No scaler found in model file. Using un-fitted scaler (legacy model).")
+                self.is_scaler_fitted = False
+            # ==============================
 
             # === FEATURE NAME ALIGNMENT STABILIZER ===
             if hasattr(self.model, "feature_names_in_"):

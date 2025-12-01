@@ -122,7 +122,8 @@ class StorageManager:
                                    source_type: str = "unknown",
                                    host: str = None,
                                    time_range: str = None,
-                                   auto_save: bool = None) -> Dict[str, str]:
+                                   auto_save: bool = None,
+                                   uploaded_filename: str = None) -> Dict[str, str]:
         """
         Save complete anomaly analysis (metadata + data)
         
@@ -132,7 +133,7 @@ class StorageManager:
             host: Host filter if applicable
             time_range: Time range of analysis
             auto_save: Override auto-save setting
-            
+            uploaded_filename: Filename for uploaded files
         Returns:
             Dictionary with analysis_id and file_path
         """
@@ -155,6 +156,19 @@ class StorageManager:
                 "time_range": time_range,
                 "timestamp": datetime.utcnow().isoformat()
             }
+
+            # ✅ YENİ: Upload için ek metadata
+            if source_type == "upload" and uploaded_filename:
+                source_info["uploaded_filename"] = uploaded_filename
+                # analysis_result içinden server_info çıkar
+                sonuc = analysis_result.get("sonuç", {})
+                if isinstance(sonuc, dict):
+                    server_info = sonuc.get("server_info", {})
+                    if isinstance(server_info, dict) and server_info:
+                        source_info["server_name"] = server_info.get("server_name")
+                        source_info["model_status"] = server_info.get("model_status")
+                        source_info["model_path"] = server_info.get("model_path")
+                logger.info(f"📁 Upload metadata eklendi: {uploaded_filename}")
             
             # ✅ NEW: normalize incoming analysis_result to a safe, consistent dict
             analysis_result = self._normalize_analysis_result(analysis_result, source_info)
@@ -182,6 +196,11 @@ class StorageManager:
                 logger.info(f"   📍 Host: {host or 'all'}")
                 logger.info(f"   📍 Time Range: {time_range}")
                 logger.info(f"   📍 Source Type: {source_type}")
+                if source_type == "upload" and uploaded_filename:
+                    logger.info(f"   📍 Uploaded Filename: {uploaded_filename}")
+                    logger.info(f"   📍 Server Name: {source_info.get('server_name')}")
+                    logger.info(f"   📍 Model Status: {source_info.get('model_status')}")
+                    logger.info(f"   📍 Model Path: {source_info.get('model_path')}")
             else:
                 logger.error("❌ MongoDB KAYIT BAŞARISIZ - Analysis ID alınamadı!")
             
