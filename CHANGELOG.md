@@ -38,6 +38,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - .gitignore genişletildi (models/*.pkl*, temp_logs/, *.log)
 
+# Changelog
+
+## v17 – 01.12.2025  
+### Full OpenSearch Modernization + ML Scaling + Hybrid Rule Engine + LCWGPT Visibility Fixes
+
+Bu sürüm, LC Waikiki MongoDB Anomaly Detection platformunun tam kapsamlı modernizasyonudur.  
+Sistem artık sadece “Slow Query Dedektörü” değil; OpenSearch tabanlı gerçek zamanlı risk tarayıcısı ve bütüncül bir sağlık monitörü olarak çalışmaktadır.
+
+---
+
+### 1) Machine Learning Modernizasyonu
+- StandardScaler entegre edildi → Sayısal değer farkları giderildi.
+- Küçük olayların büyük sayılar tarafından ezilmesi problemi çözüldü.
+- Auth Failure, Replication Error, Long Transaction gibi olaylar artık eşit önemde.
+
+---
+
+### 2) OpenSearch Micro-Slicing & Stabil Pipeline
+- 24 saatlik veri tek seferde alınmıyor → 15 dakikalık mikro paketlere bölündü.
+- Batch size 5000 → timeout (502) hataları tamamen ortadan kalktı.
+- 300.000+ satır kesintisiz işlenebilir hale geldi.
+
+---
+
+### 3) Hybrid Rule Engine (ML + DBA Knowledge)
+- Massive Scan (>1M docs) → +40 CRITICAL skor
+- Long Transaction (>3s) → +30 skor
+- Memory / Replication hataları → Her zaman kritik
+- ML model skoru + DBA kural puanları birleşerek priority sorting geliştirildi.
+
+---
+
+### 4) UI & LCWGPT İyileştirmeleri
+- UI limit 500 → 2000
+- Hardcoded tenant (“LCW”) → Dinamik tenant yapısına geçildi
+- LCWGPT float parsing hatası düzeltildi → AI sonuçları eksiksiz okuyabiliyor
+
+---
+
+### 5) Model Cleanup ve Yönetim
+- Eski tüm .pkl modeller temizlendi.
+- Çoklu cluster eğitim desteği için `retrain_all_models.py` eklendi.
+- Model store yeniden yapılandırıldı.
+
+---
+
+### ⚡ Sonuç
+Bu sürüm ile sistem:
+- Daha akıllı  
+- Daha hızlı  
+- Daha stabil  
+- Daha görünür  
+- Daha üretim odaklı  
+
+bir **MongoDB Health Monitoring Platformu** hâline gelmiştir.
+
 ### Migration Notes
 - index.html script sırası güncel tutulmalı
 - Modeller repo’ya **eklenmemeli**

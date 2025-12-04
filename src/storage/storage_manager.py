@@ -281,23 +281,58 @@ class StorageManager:
                                  include_details: bool = False) -> List[Dict[str, Any]]:
         """
         Get anomaly history with optional detailed data
-        
+
+        Supports fallback to JSON files if MongoDB doesn't have the record
+
         Args:
             filters: Query filters
             limit: Maximum results
             skip: Skip for pagination
             include_details: Load full details from files
-            
+
         Returns:
             List of anomaly analyses
         """
         try:
             # Get metadata from MongoDB
             analyses = await self.mongodb.get_anomaly_history(filters, limit, skip)
-            
+
+            # ========== YENİ: JSON FALLBACK ==========
+            # Eğer MongoDB'de bulunamadıysa ve analysis_id filtresi varsa, JSON'dan dene
+            if not analyses and filters and "analysis_id" in filters:
+                analysis_id = filters["analysis_id"]
+                logger.info(f"MongoDB'de bulunamadı, JSON fallback deneniyor: {analysis_id}")
+
+                # JSON dosyasından yükle (backward compat ile)
+                json_data = await self._load_analysis_file(analysis_id)
+
+                if json_data:
+                    logger.info(f"✅ JSON fallback başarılı: {analysis_id}")
+                    # JSON verisini MongoDB formatına uyumlu hale getir
+                    analyses = [{
+                        "analysis_id": json_data.get("analysis_id", analysis_id),
+                        "host": json_data.get("host") or json_data.get("source_info", {}).get("host"),
+                        "source": json_data.get("source", "unknown"),
+                        "timestamp": json_data.get("saved_at"),
+                        "logs_analyzed": json_data.get("logs_analyzed", 0),
+                        "anomaly_count": json_data.get("anomaly_count", json_data.get("critical_count", 0)),
+                        "anomaly_rate": json_data.get("anomaly_rate", 0),
+                        "time_range": json_data.get("time_range") or json_data.get("source_info", {}).get("time_range"),
+                        # Detaylı veri zaten yüklü
+                        "detailed_data": json_data,
+                        "_from_json_fallback": True  # Debug için işaret
+                    }]
+                else:
+                    logger.warning(f"JSON fallback da başarısız: {analysis_id}")
+            # ========== JSON FALLBACK SONU ==========
+
             # Load detailed data if requested
             if include_details:
                 for analysis in analyses:
+                    # JSON fallback zaten detaylı veriyi yükledi
+                    if analysis.get("_from_json_fallback"):
+                        continue
+
                     analysis_id = analysis.get("analysis_id")
                     
                     # Check cache first
@@ -310,13 +345,12 @@ class StorageManager:
                         if detailed_data:
                             analysis["detailed_data"] = detailed_data
                         self.stats["cache_misses"] += 1
-            
+
             return analyses
-            
+
         except Exception as e:
             logger.error(f"Error getting anomaly history: {e}")
             return []
-            
     async def get_latest_analysis(self, 
                                  host: str = None,
                                  source_type: str = None) -> Optional[Dict[str, Any]]:
@@ -591,12 +625,49 @@ class StorageManager:
                 # Ensure directory exists
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 
-                # Save as JSON
+                # Save as JSON - MongoDB ile uyumlu flat yapı
+
+                # Extract data from result format (sonuç veya data key'inden)
+                sonuc = analysis_result.get("sonuç") or analysis_result.get("data") or {}
+
                 data = {
                     "analysis_id": analysis_id,
                     "source_info": source_info,
-                    "result": analysis_result,
-                    "saved_at": datetime.utcnow().isoformat()
+                    "saved_at": datetime.utcnow().isoformat(),
+
+                    # Summary information
+                    "source": sonuc.get("source", "unknown"),
+                    "logs_analyzed": sonuc.get("logs_analyzed", 0),
+                    "filtered_logs": sonuc.get("filtered_logs", 0),
+                    "summary": sonuc.get("summary", {}),
+
+                    # Analysis results (MongoDB ile aynı)
+                    "anomaly_count": sonuc.get("summary", {}).get("n_anomalies", 0),
+                    "anomaly_rate": sonuc.get("summary", {}).get("anomaly_rate", 0),
+                    "score_range": sonuc.get("summary", {}).get("score_range", {}),
+
+                    # Anomalies - flat structure
+                    "critical_anomalies_display": sonuc.get("critical_anomalies", [])[:100],
+                    "critical_anomalies_full": sonuc.get("critical_anomalies", []),
+                    "critical_count": len(sonuc.get("critical_anomalies", [])),
+                    "unfiltered_anomalies": sonuc.get("unfiltered_anomalies", []),
+                    "unfiltered_count": sonuc.get("unfiltered_count", 0),
+
+                    # Alerts and analysis
+                    "security_alerts": sonuc.get("security_alerts", {}),
+                    "performance_alerts": sonuc.get("performance_alerts", {}),
+                    "temporal_analysis": sonuc.get("temporal_analysis", {}),
+                    "component_analysis": sonuc.get("component_analysis", {}),
+
+                    # AI explanation
+                    "ai_explanation": sonuc.get("ai_explanation", {}),
+
+                    # Host and time info (flat for easy access)
+                    "host": source_info.get("host") if source_info else None,
+                    "time_range": source_info.get("time_range") if source_info else None,
+
+                    # Keep original for backward compatibility
+                    "_original_result": analysis_result
                 }
                 
                 async with aiofiles.open(file_path, 'w') as f:
@@ -634,15 +705,17 @@ class StorageManager:
             raise
     
     async def _load_analysis_file(self, analysis_id: str) -> Optional[Dict[str, Any]]:
-        """Load analysis data from file system"""
+        """Load analysis data from file system with backward compatibility"""
         try:
             # Try JSON first
             json_path = self.storage_paths["exports"] / "anomaly" / f"{analysis_id}.json"
             if json_path.exists():
                 async with aiofiles.open(json_path, 'r') as f:
                     content = await f.read()
-                    return json.loads(content)
-            
+                    data = json.loads(content)
+                    # Normalize to flat structure for backward compatibility
+                    return self._normalize_loaded_analysis(data)
+
             # Try pickle
             pkl_path = self.storage_paths["exports"] / "anomaly" / f"{analysis_id}.pkl"
             if pkl_path.exists():
@@ -652,15 +725,85 @@ class StorageManager:
                     joblib.load,
                     pkl_path
                 )
-                return data
-            
+                # Normalize to flat structure for backward compatibility
+                return self._normalize_loaded_analysis(data)
+
             logger.warning(f"Analysis file not found: {analysis_id}")
             return None
-            
+
         except Exception as e:
             logger.error(f"Error loading analysis file: {e}")
             return None
-    
+
+    def _normalize_loaded_analysis(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize loaded analysis data to flat structure
+        Handles both old (nested) and new (flat) formats
+
+        Args:
+            data: Raw loaded data from file
+
+        Returns:
+            Normalized flat structure data
+        """
+        # Check if already in new flat format
+        if "critical_anomalies_full" in data:
+            return data
+
+        # Old format: result.sonuç.critical_anomalies
+        # Need to convert to flat format
+        result = data.get("result", {})
+        sonuc = result.get("sonuç") or result.get("data") or {}
+        source_info = data.get("source_info", {})
+
+        # If no sonuç found, return as-is (might be pickle or other format)
+        if not sonuc:
+            return data
+
+        # Convert to flat structure (same as _save_analysis_file)
+        normalized = {
+            "analysis_id": data.get("analysis_id"),
+            "source_info": source_info,
+            "saved_at": data.get("saved_at"),
+
+            # Summary information
+            "source": sonuc.get("source", "unknown"),
+            "logs_analyzed": sonuc.get("logs_analyzed", 0),
+            "filtered_logs": sonuc.get("filtered_logs", 0),
+            "summary": sonuc.get("summary", {}),
+
+            # Analysis results
+            "anomaly_count": sonuc.get("summary", {}).get("n_anomalies", 0),
+            "anomaly_rate": sonuc.get("summary", {}).get("anomaly_rate", 0),
+            "score_range": sonuc.get("summary", {}).get("score_range", {}),
+
+            # Anomalies - flat structure
+            "critical_anomalies_display": sonuc.get("critical_anomalies", [])[:100],
+            "critical_anomalies_full": sonuc.get("critical_anomalies", []),
+            "critical_count": len(sonuc.get("critical_anomalies", [])),
+            "unfiltered_anomalies": sonuc.get("unfiltered_anomalies", []),
+            "unfiltered_count": sonuc.get("unfiltered_count", 0),
+
+            # Alerts and analysis
+            "security_alerts": sonuc.get("security_alerts", {}),
+            "performance_alerts": sonuc.get("performance_alerts", {}),
+            "temporal_analysis": sonuc.get("temporal_analysis", {}),
+            "component_analysis": sonuc.get("component_analysis", {}),
+
+            # AI explanation
+            "ai_explanation": sonuc.get("ai_explanation", {}),
+
+            # Host and time info
+            "host": source_info.get("host"),
+            "time_range": source_info.get("time_range"),
+
+            # Keep original for reference
+            "_original_result": data
+        }
+
+        logger.debug(f"Normalized old format analysis: {data.get('analysis_id')}")
+        return normalized
+
     async def _backup_model(self, model_path: Path):
         """Backup existing model file"""
         try:
@@ -674,7 +817,6 @@ class StorageManager:
                 
         except Exception as e:
             logger.error(f"Error backing up model: {e}")
-    
     async def _add_to_cache(self, analysis_id: str, analysis_result: Dict[str, Any]):
         """Add analysis to cache with size management"""
         try:

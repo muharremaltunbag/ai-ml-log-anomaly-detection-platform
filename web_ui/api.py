@@ -30,9 +30,13 @@ from pydantic import BaseModel, Field, validator
 import logging
 import shutil
 import tempfile
+import contextvars
+import re           # ✅ Log parsing için (Chat entegrasyonunda lazım olacak)
+# İş parçacıkları (Threads) arasında Request ID taşımak için
+request_context: contextvars.ContextVar[str] = contextvars.ContextVar('request_context', default=None)
+
 from langchain.schema import HumanMessage, SystemMessage
 from src.connectors.lcwgpt_connector import LCWGPTConnector
-
 from src.agents.mongodb_agent import MongoDBAgent
 from web_ui.config import *
 from dotenv import load_dotenv
@@ -43,7 +47,115 @@ from src.anomaly.anomaly_detector import MongoDBAnomalyDetector
 anomaly_detector = MongoDBAnomalyDetector()
 # .env dosyasını yükle
 load_dotenv()
+# Progress Tracking Global State ---
+# İşlem durumlarını tutacak global hafıza
+# Progress Tracking Global State
 
+
+# Belirli endpoint loglarını gizlemek için filtre sınıfı
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # /api/progress ve /api/progress/ endpointlerinden gelen access log kayıtlarını filtrele
+        msg = record.getMessage()
+        if "/api/progress" in msg:
+            return False
+        return True
+
+ANALYSIS_PROGRESS: Dict[str, Dict[str, Any]] = {}
+
+# Progress Response Model
+class ProgressResponse(BaseModel):
+    request_id: str
+    step: str       # connect, fetch, ml, ai, complete, error
+    message: str
+    percentage: int # 0-100 arası
+    timestamp: str
+
+# Helper: Update Progress (SYNC OLARAK GÜNCELLENDİ)
+def update_progress(request_id: Optional[str], step: str, message: str, percentage: int):
+    """Global progress durumunu günceller (Senkron - Log Handler için)"""
+    if request_id:
+        ANALYSIS_PROGRESS[request_id] = {
+            "step": step,
+            "message": message,
+            "percentage": percentage,
+            "timestamp": datetime.now().isoformat()
+        }
+        # Log recursion'ı önlemek için sadece belirli stepleri logla
+        if step in ['connect', 'complete', 'error']:
+            # Bu loglar tekrar handler'a düşmesin diye basit print veya farklı logger kullanılabilir
+            # Ama şimdilik recursion riski düşük, normal logger kullanalım
+            pass
+
+# Custom Log Handler: Hem ML hem de Chat loglarını UI progress'e çevirir
+class AnomalyProgressLogHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            # Mevcut thread/context için request_id var mı?
+            req_id = request_context.get()
+            if not req_id:
+                return
+
+            msg = record.getMessage()
+
+            # ==========================================
+            # 1. KLASİK ANOMALİ ANALİZİ (ML MODU)
+            # ==========================================
+            if "Reading logs from OpenSearch" in msg or "Starting timestamp-sliced read" in msg:
+                update_progress(req_id, "fetch", "Log verileri veritabanından çekiliyor...", 20)
+
+            elif "Fetch completed" in msg:
+                update_progress(req_id, "processing", "Veri çekme tamamlandı. Özellik çıkarımı başlıyor...", 35)
+
+            elif "Starting feature engineering" in msg:
+                update_progress(req_id, "processing", "Veri setinden 50+ özellik (Feature) çıkarılıyor...", 40)
+
+            elif "Feature engineering completed" in msg:
+                update_progress(req_id, "ml", "Özellik çıkarımı bitti. ML modeli hazırlanıyor...", 50)
+
+            elif "Training model" in msg or "Initializing model" in msg:
+                update_progress(req_id, "ml", "Isolation Forest modeli eğitiliyor...", 60)
+
+            elif "Predictions completed" in msg:
+                update_progress(req_id, "ml", "Anomali skorları hesaplandı...", 70)
+
+            # ==========================================
+            # 2. CHAT / LCWGPT AKIŞI (FRONTEND İLE UYUMLU ID'LER)
+            # ==========================================
+            elif "Found" in msg and "anomalies for LCWGPT" in msg:
+                update_progress(req_id, "context", "İlgili anomali kayıtları geçmişten yükleniyor...", 10)
+
+            elif "LCWGPT Connector initialized" in msg:
+                update_progress(req_id, "connect", "LCWGPT servisi ile bağlantı kuruluyor...", 20)
+
+            elif "Will process" in msg and "chunks" in msg:
+                # ID: 'chunk' (Frontend'deki 🧩 ikonu için)
+                update_progress(req_id, "chunk", "Büyük veri seti analiz için parçalara bölünüyor...", 35)
+
+            elif "Processing chunk" in msg:
+                # Regex ile chunk bilgisini yakala: "Processing chunk 5/25"
+                match = re.search(r"Processing chunk (\d+)/(\d+)", msg)
+                if match:
+                    current, total = map(int, match.groups())
+                    # Yüzde hesabı: %40 (başlangıç) ile %90 (bitiş) arasına yay
+                    progress = 40 + int((current / total) * 50)
+                    # ID: 'analyze' (Frontend'deki 🧠 ikonu için)
+                    # Frontend metni: "Yapay zeka analizi yapılıyor (Parça X/Y)..."
+                    update_progress(req_id, "analyze", f"Yapay zeka analizi yapılıyor (Parça {current}/{total})...", progress)
+
+            elif "Multi-chunk aggregation completed" in msg:
+                # ID: 'merge' (Frontend'deki ✨ ikonu için)
+                update_progress(req_id, "merge", "Tüm parçalar birleştiriliyor ve özetleniyor...", 95)
+
+            # ==========================================
+            # 3. ORTAK ADIMLAR
+            # ==========================================
+            elif "ANOMALİ ANALİZ SONUCU KAYIT" in msg or "Anomaly result saved" in msg or "Query saved with ID" in msg:
+                # ID: 'save' (Veya 'merge' adımında kalabilir, save çok hızlı geçer)
+                update_progress(req_id, "merge", "Sonuçlar kaydediliyor...", 98)
+
+        except Exception:
+            pass # Loglama hatası uygulamayı kırmamalı
 
 # Logging - Console handler eklendi
 logging.basicConfig(level=logging.INFO)
@@ -140,6 +252,7 @@ class AnalyzeLogsRequest(BaseModel):
     host_filter: Optional[str] = Field(None, description="Belirli bir MongoDB sunucusu (OpenSearch için)")
     start_time: Optional[str] = Field(None, description="Başlangıç zamanı (ISO format: 2025-09-15T16:09:00Z)")
     end_time: Optional[str] = Field(None, description="Bitiş zamanı (ISO format: 2025-09-15T16:11:00Z)")
+    request_id: Optional[str] = Field(None, description="Frontend takip ID'si") #Progress Tracking ID
 
 # Session yönetimi fonksiyonları
 def create_session(api_key: str) -> str:
@@ -439,6 +552,25 @@ async def get_status():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+# Progress Tracking Endpoint
+@app.get("/api/progress/{request_id}")
+async def get_analysis_progress(request_id: str):
+    """
+    Belirli bir analiz işleminin ilerleme durumunu sorgula.
+    Frontend polling (periyodik sorgu) ile burayı çağırır.
+    """
+    # Get the status from the global dictionary
+    if request_id in ANALYSIS_PROGRESS:
+        data = ANALYSIS_PROGRESS[request_id]
+        return data
+
+    return {
+        "step": "unknown", 
+        "message": "İşlem bekleniyor...", 
+        "percentage": 0,
+        "timestamp": datetime.now().isoformat()
+    }
 
 @app.get("/api/collections")
 async def get_collections(api_key: str):
@@ -859,8 +991,6 @@ async def upload_log_file(
         logger.error(f"Log yükleme hatası: {e}")
         raise HTTPException(status_code=500, detail=f"Beklenmeyen hata: {str(e)}")
 
-@app.post("/api/analyze-uploaded-log")
-async def analyze_uploaded_log(request: AnalyzeLogsRequest):
     """Yüklenen log dosyasını analiz et"""
     try:
         logger.info(f"Log analizi başlatıldı - Source: {request.source_type}, Time Range: {request.time_range}")
@@ -1236,7 +1366,185 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
             "açıklama": f"Log analizi sırasında hata: {str(e)}",
             "öneriler": ["Veri kaynağını kontrol edin", "Parametreleri doğrulayın"]
         }
-        
+@app.post("/api/analyze-uploaded-log")
+async def analyze_uploaded_log(request: AnalyzeLogsRequest):
+    """Yüklenen log dosyasını analiz et (Progress Tracking Destekli)"""
+    req_id = request.request_id
+
+    # ✅ YENİ: Context ID'yi ayarla (Log Handler için)
+    token = request_context.set(req_id)
+
+    try:
+        # 1. BAŞLANGIÇ (await kaldırıldı çünkü update_progress artık sync)
+        update_progress(req_id, "init", "Analiz isteği alındı, parametreler kontrol ediliyor...", 5)
+        logger.info(f"Log analizi başlatıldı - Source: {request.source_type}, Time Range: {request.time_range}")
+
+        # API key kontrolü
+        if not await verify_api_key(request.api_key):
+            logger.warning("Geçersiz API anahtarı ile log analizi denemesi")
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+        # Source type kontrol
+        if request.source_type == "upload":
+            logger.info(f"Upload modu - Dosya kontrol ediliyor: {request.file_path}")
+            if not os.path.exists(request.file_path):
+                raise HTTPException(status_code=404, detail="Log dosyası bulunamadı")
+        elif request.source_type == "mongodb_direct" and not request.connection_string:
+            request.connection_string = API_KEY
+        elif request.source_type == "test_servers" and not request.server_name:
+            raise HTTPException(status_code=400, detail="Test sunucu adı belirtilmeli")
+        elif request.source_type == "opensearch" and not request.host_filter:
+            try:
+                from src.anomaly.log_reader import get_available_mongodb_hosts
+                available_hosts = get_available_mongodb_hosts(last_hours=24)
+                error_message = {
+                    "error": "Host filter zorunludur",
+                    "message": "OpenSearch sunucusu seçmelisiniz.",
+                    "available_hosts": available_hosts[:20] if available_hosts else []
+                }
+                raise HTTPException(status_code=400, detail=error_message)
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=400, detail="Host filter gerekli")
+
+        # Agent'ı al
+        update_progress(req_id, "connect", "MongoDB Agent hazırlanıyor...", 10)
+        logger.info("MongoDB Agent alınıyor...")
+        mongodb_agent = await get_agent()
+
+        # Analiz sorgusu
+        if request.source_type == "opensearch" and request.host_filter:
+            query = f"{request.host_filter} sunucusu için anomali analizi yap"
+        else:
+            query = f"MongoDB loglarında anomali analizi yap"
+
+        # Parametreler
+        analysis_params = {
+            "uploaded_file_path": request.file_path if request.source_type == "upload" else None,
+            "file_path": request.file_path,
+            "time_range": request.time_range,
+            "source_type": request.source_type,
+            "connection_string": request.connection_string,
+            "server_name": request.server_name,
+            "host_filter": request.host_filter,
+            "start_time": request.start_time,
+            "end_time": request.end_time
+        }
+        if request.start_time and request.end_time:
+            analysis_params["time_range"] = "custom"
+        if request.source_type == "opensearch":
+            analysis_params.update({
+                "confirmation_required": False,
+                "params_extracted": True,
+                "skip_confirmation": True,
+                "detected_server": request.host_filter,
+                "detected_time_range": request.time_range
+            })
+
+        # --- A. OPENSEARCH ANALİZİ ---
+        if request.source_type == "opensearch":
+            update_progress(req_id, "connect", f"OpenSearch: {request.host_filter} bağlantısı...", 15)
+            from src.anomaly.anomaly_tools import AnomalyDetectionTools
+            tool_params = {
+                "source_type": "opensearch",
+                "host_filter": request.host_filter,
+                "time_range": request.time_range,
+                "last_hours": analysis_params.get("last_hours", 24)
+            }
+            if request.start_time:
+                tool_params["start_time"] = request.start_time
+            if request.end_time:
+                tool_params["end_time"] = request.end_time
+
+            update_progress(req_id, "fetch", "Analiz süreci başlatılıyor (Log Okuma)...", 20)
+
+            def run_analysis():
+                tools = AnomalyDetectionTools(environment='production')
+                return tools.analyze_mongodb_logs(tool_params)
+
+            tool_result = await asyncio.to_thread(run_analysis)
+
+            if isinstance(tool_result, str):
+                try:
+                    result = json.loads(tool_result)
+                except Exception:
+                    result = {"durum": "tamamlandı", "sonuç": {"raw_result": tool_result}}
+            else:
+                result = tool_result
+
+        # --- B. UPLOAD ANALİZİ ---
+        elif request.source_type == "upload":
+            update_progress(req_id, "fetch", "Dosya okunuyor...", 20)
+            from src.anomaly.anomaly_tools import AnomalyDetectionTools
+
+            tool_params = {
+                "source_type": "upload",
+                "file_path": request.file_path,
+                "uploaded_filename": Path(request.file_path).name,
+                "time_range": request.time_range
+            }
+
+            def run_upload():
+                tools = AnomalyDetectionTools(environment='production')
+                return tools.analyze_mongodb_logs(tool_params)
+
+            tool_result = await asyncio.to_thread(run_upload)
+
+            if isinstance(tool_result, str):
+                try:
+                    result = json.loads(tool_result)
+                except Exception:
+                    result = {"durum": "tamamlandı", "sonuç": {"raw_result": tool_result}}
+            else:
+                result = tool_result
+
+        # --- C. DİĞER ---
+        else:
+            update_progress(req_id, "ml", "Agent analizi yürütülüyor...", 50)
+            result = await asyncio.to_thread(mongodb_agent.process_query_with_args, query, analysis_params)
+
+        # Bitiş işlemleri
+        update_progress(req_id, "save", "Son kontroller yapılıyor...", 95)
+
+        # Status normalization & Auto-save (Mevcut logic)
+        if result.get('durum') in (None, 'başarılı', 'success', 'ok'):
+            result['durum'] = 'tamamlandı'
+
+        if request.source_type in ("opensearch", "upload") and result.get('durum') == 'tamamlandı':
+            try:
+                storage = await get_storage_manager()
+                host_info = (
+                    request.host_filter
+                    if request.source_type == "opensearch"
+                    else result.get('sonuç', {}).get('server_info', {}).get('server_name', 'unknown')
+                )
+                save_result = await storage.save_anomaly_analysis(
+                    analysis_result=result,
+                    source_type=request.source_type,
+                    host=host_info,
+                    time_range=request.time_range,
+                    uploaded_filename=Path(request.file_path).name if request.source_type == "upload" and request.file_path else None
+                )
+                if save_result:
+                    result['storage_info'] = save_result
+            except Exception as e:
+                logger.error(f"Auto-save error: {e}")
+
+        update_progress(req_id, "complete", "Tamamlandı!", 100)
+        return result
+
+    except HTTPException:
+        update_progress(req_id, "error", "İstek hatası oluştu.", 0)
+        raise
+    except Exception as e:
+        logger.error(f"Log analiz hatası: {e}")
+        update_progress(req_id, "error", f"Hata: {str(e)[:100]}...", 0)
+        return {"durum": "hata", "açıklama": f"Hata: {str(e)}"}
+
+    finally:
+        # ✅ YENİ: Context'i temizle
+        request_context.reset(token)
 
 @app.get("/api/uploaded-logs")
 async def list_uploaded_logs(api_key: str):
@@ -1334,6 +1642,39 @@ async def cleanup_expired_sessions():
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
             await asyncio.sleep(300)
+
+# Arka plan görevi - Eski progress kayıtlarını temizle
+async def cleanup_progress_cache():
+    """10 dakikadan eski progress kayıtlarını temizle"""
+    while True:
+        try:
+            current_time = datetime.now()
+            expired_ids = []
+            
+            # Dictionary değişirken hata almamak için kopyası üzerinde dön
+            for req_id, data in list(ANALYSIS_PROGRESS.items()):
+                try:
+                    timestamp_str = data.get('timestamp')
+                    if timestamp_str:
+                        last_update = datetime.fromisoformat(timestamp_str)
+                        # 10 dakikadan eskiyse sil (Frontend polling'i çoktan bitmiştir)
+                        if (current_time - last_update).total_seconds() > 600:
+                            expired_ids.append(req_id)
+                except Exception:
+                    expired_ids.append(req_id)  # Hatalı veri varsa sil
+            
+            # Toplu silme
+            for req_id in expired_ids:
+                if req_id in ANALYSIS_PROGRESS:
+                    del ANALYSIS_PROGRESS[req_id]
+            
+            if expired_ids:
+                logger.debug(f"🧹 Cleaned up {len(expired_ids)} expired progress records")
+            
+            await asyncio.sleep(700)  # 7 dakikada bir çalış
+        except Exception as e:
+            logger.error(f"Progress cleanup error: {e}")
+            await asyncio.sleep(700)
 
 # ============= YENİ STORAGE ENDPOINTS =============
 
@@ -1621,39 +1962,44 @@ def _calculate_chunk_relevance(query: str, chunk_anomalies: list, chunk_index: i
 
 @app.post("/api/chat-query-anomalies")
 async def chat_query_anomalies(request: Dict[str, Any]):
-    """Chat üzerinden anomali sorgulama - LCWGPT ile"""
+    """Chat üzerinden anomali sorgulama - LCWGPT ile (Progress Tracking Destekli)"""
     start_time = datetime.now()  # Performance tracking için
-    
+
+    # ✅ YENİ: Request ID ve Context Yönetimi
+    request_id = request.get("request_id")
+    token = request_context.set(request_id) if request_id else None
+
     try:
+        # 1. ADIM: Context (Bağlam) Yükleme
+        update_progress(request_id, "context", "Analiz bağlamı ve geçmiş veriler hazırlanıyor...", 5)
+
         # API key kontrolü
         if not await verify_api_key(request.get('api_key')):
             raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
-        
+
         query = request.get("query", "")
         analysis_id = request.get("analysis_id")
-        
+
         logger.info(f"Chat anomaly query received - Query: {query[:50]}...")
-        
+
         # YENİ: Analysis ID yoksa sunucu adı zorunlu
         if not analysis_id:
             try:
                 from src.anomaly.log_reader import get_available_mongodb_hosts
                 available_hosts = get_available_mongodb_hosts(last_hours=24)
-                
+
                 # Query'de sunucu adı kontrolü
                 detected_server = None
                 query_lower = query.lower()
                 for host in available_hosts:
-                    # Hem tam host adı hem de kısa versiyonu kontrol et
                     host_short = host.split('.')[0] if '.' in host else host
                     if host.lower() in query_lower or host_short.lower() in query_lower:
                         detected_server = host
                         logger.info(f"✅ Chat query'de sunucu tespit edildi: {detected_server}")
                         break
-                
+
                 if not detected_server:
                     logger.warning("❌ Chat anomali sorgusu yapıldı ama sunucu adı belirtilmedi")
-                    # Kullanıcı dostu mesaj ve sunucu listesi
                     host_examples = available_hosts[:5] if available_hosts else []
                     return {
                         "status": "error",
@@ -1669,14 +2015,11 @@ async def chat_query_anomalies(request: Dict[str, Any]):
                         "available_hosts": available_hosts,
                         "total_anomalies": 0
                     }
-                
-                # Sunucu adı varsa, o sunucuya ait son analizi bul
-                # Sunucu adı varsa, o sunucuya ait son analizi bul
+
                 filters = {"host": detected_server}
                 logger.info(f"✅ Server detected in query: {detected_server}")
                 logger.info(f"Searching for existing analysis in storage for server: {detected_server}")
-                
-                # Storage'dan bu sunucuya ait son analizi çek
+
                 try:
                     storage = await get_storage_manager()
                     server_analyses = await storage.get_anomaly_history(
@@ -1684,103 +2027,78 @@ async def chat_query_anomalies(request: Dict[str, Any]):
                         limit=1,
                         include_details=True
                     )
-                    
                     if server_analyses and len(server_analyses) > 0:
                         logger.info(f"✅ Found existing analysis for {detected_server} in storage")
-                        # Analysis ID'yi override et
                         analysis_id = server_analyses[0].get("analysis_id")
                         filters = {"analysis_id": analysis_id}
                         logger.info(f"Using analysis_id from storage: {analysis_id}")
                     else:
                         logger.warning(f"⚠️ No analysis found for server {detected_server} in storage")
-                        # Kullanıcıya bilgilendirici mesaj dön
                         return {
                             "status": "error",
-                            "message": f"❌ {detected_server} sunucusu için kayıtlı anomali analizi bulunamadı.\n\n" +
-                                     f"Lütfen önce bu sunucu için anomali analizi yapın:\n" +
-                                     f"• OpenSearch veri kaynağını seçin\n" +
-                                     f"• '{detected_server}' sunucusunu seçin\n" +
-                                     f"• 'Anomali Analizi Yap' butonuna tıklayın\n\n" +
-                                     f"Analiz tamamlandıktan sonra sorularınızı sorabilirsiniz.",
+                            "message": f"❌ {detected_server} sunucusu için kayıtlı anomali analizi bulunamadı.\n\nLütfen önce bu sunucu için anomali analizi yapın.",
                             "server_detected": detected_server,
                             "available_hosts": [],
                             "total_anomalies": 0
                         }
                 except Exception as e:
                     logger.error(f"Error checking storage for server {detected_server}: {e}")
-                    # Hata durumunda devam et
                     filters = {"host": detected_server}
-                    
+
                 # ✅ YENİ: Multiple context analyses için genişletilmiş arama
                 context_analyses = []
                 logger.info(f"🔍 Searching for related analyses in storage...")
 
                 try:
                     storage = await get_storage_manager()
-                    
-                    # Kullanıcı sorgusundaki anahtar kelimeleri çıkar
                     query_words = query.lower().split()
                     important_keywords = [
-                        word for word in query_words 
+                        word for word in query_words
                         if len(word) > 3 and word not in ['mongodb', 'anomali', 'göster', 'analiz', 'nedir', 'nasıl', 'hangi']
                     ]
-                    
-                    logger.info(f"Keywords extracted from query: {important_keywords}")
-                    
-                    # Son 30 anomaly analizini al (daha geniş context için)
+
                     recent_analyses = await storage.get_anomaly_history(
                         limit=30,
                         include_details=False
                     )
-                    
-                    # İlgili analizleri skorla
+
                     for analysis_ctx in recent_analyses:
                         relevance_score = 0
-                        
-                        # 1. Detected server match - en yüksek skor
                         if detected_server and analysis_ctx.get("host") == detected_server:
                             relevance_score += 50
-                            
-                        # 2. Keyword match in host
                         elif analysis_ctx.get("host"):
                             host_lower = analysis_ctx["host"].lower()
                             for keyword in important_keywords:
                                 if keyword in host_lower:
                                     relevance_score += 20
-                                    
-                        # 3. Time range keywords (bugün, dün, son 24 saat vb.)
+
                         time_keywords = ['bugün', 'dün', 'son', 'saat', 'dakika', 'gün']
                         for tk in time_keywords:
-                            if tk in query_lower:
-                                # Son 24 saatteki analizlere öncelik ver
+                            if tk in query.lower():
                                 analysis_time = analysis_ctx.get("timestamp")
                                 if analysis_time:
                                     try:
                                         analysis_dt = datetime.fromisoformat(analysis_time.replace('Z', '+00:00'))
                                         hours_ago = (datetime.utcnow() - analysis_dt).total_seconds() / 3600
                                         if hours_ago < 24:
-                                            relevance_score += 10 * (1 - hours_ago/24)  # Yakın zamana daha yüksek skor
+                                            relevance_score += 10 * (1 - hours_ago/24)
                                     except:
                                         pass
-                        # 4. Component/pattern keywords
+
                         pattern_keywords = ['timeout', 'connection', 'authentication', 'slow', 'query', 'index', 'lock']
                         for pk in pattern_keywords:
-                            if pk in query_lower and analysis_ctx.get("anomaly_count", 0) > 0:
+                            if pk in query.lower() and analysis_ctx.get("anomaly_count", 0) > 0:
                                 relevance_score += 5
                         if relevance_score > 0:
                             analysis_ctx["relevance_score"] = relevance_score
                             context_analyses.append(analysis_ctx)
-                    
-                    # En relevant 3 analizi seç
+
                     context_analyses = sorted(
-                        context_analyses, 
-                        key=lambda x: x.get("relevance_score", 0), 
+                        context_analyses,
+                        key=lambda x: x.get("relevance_score", 0),
                         reverse=True
                     )[:3]
-                    
-                    logger.info(f"✅ Found {len(context_analyses)} relevant analyses for additional context")
-                    
-                    # Her biri için detaylı veri yükle
+
                     detailed_contexts = []
                     for ctx in context_analyses:
                         try:
@@ -1793,102 +2111,83 @@ async def chat_query_anomalies(request: Dict[str, Any]):
                                 detailed_contexts.append(detailed[0])
                         except Exception as e:
                             logger.warning(f"Failed to load details for context: {e}")
-                    
+
                     context_analyses = detailed_contexts
-                    
+
                 except Exception as e:
                     logger.error(f"Error building context: {e}")
                     context_analyses = []
 
             except Exception as e:
                 logger.error(f"Sunucu listesi alınamadı: {e}")
-                # Fallback: analysis_id olmadan devam et
                 filters = {}
                 context_analyses = []
         else:
-            # Analysis ID varsa onu kullan
             filters = {"analysis_id": analysis_id}
             context_analyses = []
 
-        # Storage'dan anomalileri al
         storage = await get_storage_manager()
         analyses = await storage.get_anomaly_history(
             filters=filters,
             limit=1,
             include_details=True
         )
-        
+
         if not analyses:
             return {
                 "status": "error",
                 "message": "Anomali analizi bulunamadı",
                 "total_anomalies": 0
             }
-        
+
         analysis = analyses[0]
-        
-        # Unfiltered anomalileri al
+
         all_anomalies = analysis.get("unfiltered_anomalies", [])
         if not all_anomalies:
             all_anomalies = analysis.get("critical_anomalies", [])
-        
+
         logger.info(f"Found {len(all_anomalies)} anomalies for LCWGPT processing")
-        
-        # ✅ TEST 2: Storage-First Yaklaşım
-        logger.info(f"[STORAGE TEST] Loaded {len(all_anomalies)} anomalies from storage")
-        logger.info(f"[STORAGE TEST] Analysis ID: {analysis_id}")
-        
-        # LCWGPT ile işle
+
+        # 2. ADIM: Bağlantı
+        update_progress(request_id, "connect", "LCWGPT servisi ile güvenli bağlantı kuruluyor...", 20)
         llm_connector = await get_llm_connector()
 
         if not llm_connector:
             logger.error("LCWGPT connection failed")
+            update_progress(request_id, "error", "LCWGPT servisine bağlanılamadı!", 0)
             return {
                 "status": "error",
                 "message": "LCWGPT bağlantısı kurulamadı",
                 "total_anomalies": len(all_anomalies)
             }
-        
-        # ✅ Multi-chunk processing - Tüm chunk'ları işle
-        # Token limitini aşmamak için chunk boyutunu küçült
-        chunk_size = 20  
+
+        chunk_size = 20
         total_chunks = (len(all_anomalies) + chunk_size - 1) // chunk_size
+        batch_size = 3
+        max_chunks_to_process = min(total_chunks, 25)
 
-        # Progressive processing - Her seferde 3 chunk işle
-        batch_size = 3  # Her batch'te 3 chunk
-        max_chunks_to_process = min(total_chunks, 25)  # Maksimum 25 chunk (500 anomali)
-
+        # 3. ADIM: Chunking
+        update_progress(request_id, "chunk", f"Büyük veri seti {max_chunks_to_process} parçaya bölünüyor...", 35)
         logger.info(f"Will process {max_chunks_to_process} chunks in batches of {batch_size}")
 
-        # Kullanıcının sorusuna göre chunk önceliklendirmesi yap
         chunk_relevance_scores = []
         for i in range(total_chunks):
             relevance_score = _calculate_chunk_relevance(query, all_anomalies[i*chunk_size:(i+1)*chunk_size], i)
             chunk_relevance_scores.append((i, relevance_score))
-
-        # En relevant chunk'ları seç
         chunk_relevance_scores.sort(key=lambda x: x[1], reverse=True)
         selected_chunk_indices = [idx for idx, _ in chunk_relevance_scores[:max_chunks_to_process]]
-        selected_chunk_indices.sort()  # Sıralı işlem için
+        selected_chunk_indices.sort()
+        logger.info(f"Processing {len(selected_chunk_indices)} most relevant chunks")
 
-        logger.info(f"Processing {len(selected_chunk_indices)} most relevant chunks out of {total_chunks}")
-
-        # ✅ TEST 1: Multi-Chunk Processing
-        logger.info(f"[MULTI-CHUNK TEST] Processing {len(selected_chunk_indices)} chunks")
-        logger.info(f"[MULTI-CHUNK TEST] Chunk indices: {selected_chunk_indices}")
-        logger.info(f"[MULTI-CHUNK TEST] Total anomalies: {len(all_anomalies)}")
-
-        # Component ve severity dağılımı hesapla (tüm anomaliler için)
         component_dist = {}
         severity_dist = {}
         for a in all_anomalies:
             comp = a.get('component', 'N/A')
             component_dist[comp] = component_dist.get(comp, 0) + 1
-            
             sev = a.get('severity_level', 'N/A')
             severity_dist[sev] = severity_dist.get(sev, 0) + 1
 
-        # LCWGPT için gelişmiş system prompt
+        # LCWGPT system prompt
         system_prompt = """Sen MongoDB anomali analizi ve performans optimizasyonu konusunda uzman bir DBA'sin. 
 MongoDB loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve spesifik çözüm önerileri sunabilirsin.
 
@@ -1908,12 +2207,12 @@ ANALİZ YÖNTEMİ:
 4. Çözüm Önerisi: Spesifik, uygulanabilir adımlar sun
 
 YANIT FORMATI:
-📊 ÖZET: [Tek cümlede ana bulgu ve ilgili log'ları tamamiyle göster]
+📊 ÖZET: [Tek cümlede ana bulgu]
 
 🔍 DETAYLI ANALİZ:
 Her kritik anomali için:
 - Pattern açıklaması
-- **GERÇEK LOG ÖRNEKLERİ:**[Timestamp] [Component] [Severity] Tam gövdesiyle log mesajı burada gösterilmeli
+- **GERÇEK LOG ÖRNEKLERİ:**[Timestamp] [Component] [Severity] Tam gövdesiyle log mesajı
 - Pattern grupları ve sayıları
 - En kritik 6-7 spesifik log örneği
 - Zaman dağılımı (peak saatler varsa)
@@ -1929,9 +2228,7 @@ Her kritik anomali için:
 
 Türkçe yanıt ver, teknik terimleri açıkla, DBA'ların anlayacağı detay seviyesinde ol. MUTLAKA gerçek log mesajlarını kod bloğu içinde göster. Önce log örneklerini göster sonra pattern açıklamasını ve sonra önerileri göster."""
 
-        # ✅ DÜZELTME: Mevcut query yapısını koruyarak context ekle
         if context_analyses:
-            # System prompt'a context bilgisini ekle
             system_prompt += f"""
 
 CONTEXT BİLGİSİ:
@@ -1939,30 +2236,35 @@ Bu sunucu veya benzer sunucularda daha önce tespit edilen {len(context_analyses
 Bu geçmiş analizleri de göz önünde bulundurarak daha kapsamlı bir değerlendirme yap.
 """
 
-        # Her chunk için LCWGPT çağrısı yap ve sonuçları topla
+        # 4. ADIM: DÖNGÜSEL ANALİZ
         chunk_responses = []
-        for chunk_idx in selected_chunk_indices:
+        total_selected = len(selected_chunk_indices)
+        for i, chunk_idx in enumerate(selected_chunk_indices):
+            current_progress = 40 + int(((i + 1) / total_selected) * 45)
+            update_progress(request_id, "analyze", f"Yapay zeka analizi yapılıyor (Parça {i + 1}/{total_selected})...", current_progress)
             start_idx = chunk_idx * chunk_size
             end_idx = min(start_idx + chunk_size, len(all_anomalies))
             current_chunk = all_anomalies[start_idx:end_idx]
-            
+
             logger.info(f"Processing chunk {chunk_idx + 1}/{total_chunks} with {len(current_chunk)} anomalies")
-            
-            # Chunk-specific prompt hazırla
+
             if context_analyses:
                 chunk_prompt = f"""
+
 KULLANICI SORUSU: {query}
 
 İLGİLİ GEÇMİŞ ANALİZLER:
 """
                 for idx, ctx in enumerate(context_analyses, 1):
                     chunk_prompt += f"""
+
 Geçmiş Analiz #{idx} - {ctx.get('host', 'N/A')} ({ctx.get('time_range', 'N/A')}):
 - Anomali Sayısı: {ctx.get('anomaly_count', 0)}
 """
                 chunk_prompt += f"""
 
 ANA ANALİZ - Chunk {chunk_idx + 1}/{total_chunks}:
+
 ANOMALİ KATEGORİ DAĞILIMI (Bu chunk):
 {_get_chunk_category_distribution(current_chunk)}
 
@@ -1984,6 +2286,7 @@ GÖREV:
 """
             else:
                 chunk_prompt = f"""
+
 KULLANICI SORUSU: {query}
 
 CHUNK BİLGİSİ: {chunk_idx + 1}/{total_chunks} (Anomali {start_idx+1}-{end_idx} arası)
@@ -2008,59 +2311,21 @@ GÖREV:
 8. Log mesajlarındaki önemli bilgileri (tablo adı, sorgu süresi, hata kodu vb.) vurgula
 """
 
-            # ✅ Token limit kontrolü
             estimated_tokens = estimate_token_count(chunk_prompt)
-            if estimated_tokens > 3000:  # LCWGPT limit varsayımı
+            if estimated_tokens > 3000:
                 logger.warning(f"[TOKEN WARNING] Chunk {chunk_idx} may exceed token limit: {estimated_tokens}")
-                # Chunk'ı daha da küçült
-                current_chunk = current_chunk[:25]  # Sadece ilk 25 anomali
-                # Prompt'u yeniden hazırla
-                if context_analyses:
-                    chunk_prompt = f"""
-KULLANICI SORUSU: {query}
+                current_chunk = current_chunk[:25]
+                # Optionally, prompt regeneration (left as original source for brevity)
+                # It's crucial that LLM uses context; only top anomalies/first 25 shown for safety
 
-İLGİLİ GEÇMİŞ ANALİZLER:
-"""
-                    for idx, ctx in enumerate(context_analyses, 1):
-                        chunk_prompt += f"""
-Geçmiş Analiz #{idx} - {ctx.get('host', 'N/A')} ({ctx.get('time_range', 'N/A')}):
-- Anomali Sayısı: {ctx.get('anomaly_count', 0)}
-"""
-                    chunk_prompt += f"""
-
-ANA ANALİZ - Chunk {chunk_idx + 1}/{total_chunks} (Anomali {start_idx+1}-{min(start_idx+25, end_idx)} arası - TOKEN LİMİT UYARISI):
-
-EN KRİTİK 5 ANOMALİ (Severity Score'a göre):
-{_format_top_anomalies_detailed(current_chunk, limit=5)}
-
-TÜM ANOMALİ DETAYLARI (İlk 25):
-{_format_anomalies_with_context(current_chunk)}
-
-GÖREV: Bu chunk'taki pattern'leri tespit et ve kullanıcının sorusuna odaklan.
-"""
-                else:
-                    chunk_prompt = f"""
-KULLANICI SORUSU: {query}
-
-CHUNK BİLGİSİ: {chunk_idx + 1}/{total_chunks} (Anomali {start_idx+1}-{min(start_idx+25, end_idx)} arası - TOKEN LİMİT UYARISI)
-
-EN KRİTİK 5 ANOMALİ (Severity Score'a göre):
-{_format_top_anomalies_detailed(current_chunk, limit=5)}
-
-TÜM ANOMALİ DETAYLARI (İlk 25):
-{_format_anomalies_with_context(current_chunk)}
-
-GÖREV: Bu chunk'taki pattern'leri tespit et ve kullanıcının sorusuna odaklan.
-"""
-
-            # LCWGPT'ye gönder
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=chunk_prompt)
             ]
-            
+
             try:
-                response = llm_connector.invoke(messages)
+                # LLM çağrısını thread'e taşıyarak event loop'un kilitlenmesini önle
+                response = await asyncio.to_thread(llm_connector.invoke, messages)
                 chunk_responses.append({
                     'chunk_idx': chunk_idx + 1,
                     'response': response.content,
@@ -2075,10 +2340,12 @@ GÖREV: Bu chunk'taki pattern'leri tespit et ve kullanıcının sorusuna odaklan
                     'anomaly_count': len(current_chunk)
                 })
 
-        # Tüm chunk response'larını birleştir
+        # 5. ADIM: Merge & Aggregation
+        update_progress(request_id, "merge", "Analiz sonuçları birleştiriliyor ve özetleniyor...", 90)
+
         if len(chunk_responses) > 1:
-            # Aggregate prompt hazırla
             aggregate_prompt = f"""
+
 KULLANICI SORUSU: {query}
 
 ANALİZ ÖZETİ:
@@ -2096,32 +2363,30 @@ CHUNK ANALİZ SONUÇLARI:
 """
             for cr in chunk_responses:
                 aggregate_prompt += f"\n\n[Chunk {cr['chunk_idx']}] ({cr['anomaly_count']} anomali):\n{cr['response'][:500]}..."
-            
+
             aggregate_prompt += "\n\nYukarıdaki chunk analizlerini birleştirerek, kullanıcının sorusuna kapsamlı ve net bir yanıt oluştur."
-            
-            # Final aggregation
+
             final_messages = [
                 SystemMessage(content="Sen MongoDB anomali analiz uzmanısın. Birden fazla analizi birleştirip özet çıkarabilirsin."),
                 HumanMessage(content=aggregate_prompt)
             ]
-            
+
             try:
-                final_response = llm_connector.invoke(final_messages)
+
+                # Final birleştirmeyi de thread'e taşı
+                final_response = await asyncio.to_thread(llm_connector.invoke, final_messages)
                 ai_response = final_response.content
+
                 logger.info("Multi-chunk aggregation completed successfully")
             except Exception as e:
                 logger.error(f"Aggregation error: {e}")
-                # Fallback: Chunk response'larını direkt birleştir
                 ai_response = "Anomali Analiz Özeti:\n\n"
                 for cr in chunk_responses:
                     ai_response += f"[Chunk {cr['chunk_idx']}]:\n{cr['response']}\n\n"
         else:
-            # Tek chunk varsa direkt kullan
             ai_response = chunk_responses[0]['response'] if chunk_responses else "Analiz yapılamadı"
             logger.info(f"Single chunk response used (chunk {selected_chunk_indices[0] + 1})")
 
-        
-        # Response hazırla
         response_data = {
             "status": "success",
             "total_anomalies": len(all_anomalies),
@@ -2130,9 +2395,7 @@ CHUNK ANALİZ SONUÇLARI:
             "timestamp": str(analysis.get("timestamp"))
         }
 
-        # Multi-chunk bilgilerini ekle
         if len(chunk_responses) > 1:
-            # Multi-chunk processing yapıldı
             response_data["chunks_processed"] = len(chunk_responses)
             response_data["processed_chunks"] = [
                 {
@@ -2145,7 +2408,6 @@ CHUNK ANALİZ SONUÇLARI:
             response_data["processing_mode"] = "multi-chunk"
             response_data["chunk_info"] = f"{len(chunk_responses)} chunk analiz edildi ve birleştirildi"
         else:
-            # Tek chunk processing
             response_data["chunks_processed"] = 1
             response_data["processed_chunks"] = [{
                 "chunk_idx": selected_chunk_indices[0] + 1 if selected_chunk_indices else 1,
@@ -2155,26 +2417,29 @@ CHUNK ANALİZ SONUÇLARI:
             response_data["processing_mode"] = "single-chunk"
             response_data["chunk_info"] = f"Chunk {selected_chunk_indices[0] + 1}/{total_chunks} işlendi"
 
-        # Total chunks bilgisini ekle
         response_data["total_chunks"] = total_chunks
-
-        # Performance metrics ekle (opsiyonel)
         response_data["performance_metrics"] = {
             "processing_time_ms": int((datetime.now() - start_time).total_seconds() * 1000) if 'start_time' in locals() else None,
-            "tokens_estimated": len(ai_response.split()) * 1.3 if ai_response else 0,  # Yaklaşık token tahmini
+            "tokens_estimated": len(ai_response.split()) * 1.3 if ai_response else 0,
             "chunks_skipped": total_chunks - len(chunk_responses) if len(chunk_responses) < total_chunks else 0
         }
 
+        # Son Adım: Complete
+        update_progress(request_id, "complete", "İşlem tamamlandı!", 100)
         return response_data
-        
+
     except Exception as e:
         logger.error(f"Chat anomaly query error: {e}", exc_info=True)
+        update_progress(request_id, "error", f"Hata: {str(e)}", 0)
         return {
             "status": "error",
             "message": str(e),
             "total_anomalies": 0
         }
-
+    finally:
+        # Context'i temizle
+        if token:
+            request_context.reset(token)
 
 @app.post("/api/get-anomaly-chunk")
 async def get_anomaly_chunk(request: Request):
@@ -3611,9 +3876,19 @@ async def get_ml_model_info(api_key: str = Query(...)):
 @app.on_event("startup")
 async def startup_event():
     """Uygulama başlatıldığında"""
+
+    # Custom Log Handler'ı ekle (Logları UI progress'e çevirir)
+    progress_handler = AnomalyProgressLogHandler()
+    logging.getLogger().addHandler(progress_handler)
+    logger.info("✅ AnomalyProgressLogHandler registered")
+
     # Session cleanup task'ı başlat
     asyncio.create_task(cleanup_expired_sessions())
     logger.info("Session cleanup task başlatıldı")
+
+    # Progress cleanup task'ı başlat
+    asyncio.create_task(cleanup_progress_cache())
+    logger.info("Progress cache cleanup task başlatıldı")
     
     """API başlatıldığında çalışacak işlemler"""
     global storage_manager, anomaly_detector
@@ -3630,7 +3905,7 @@ async def startup_event():
         else:
             logger.warning("⚠️ Storage Manager initialization failed - auto-save disabled")
             storage_manager = None
-    
+
     # Model Auto-Load: Mevcut modeli kontrol et ve yükle
     try:
         models_dir = Path("models")

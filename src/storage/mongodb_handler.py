@@ -295,6 +295,11 @@ class MongoDBHandler:
             query = {}
             
             if filters:
+
+                # Analysis ID filter (exact match)
+                if "analysis_id" in filters:
+                    query["analysis_id"] = filters["analysis_id"]
+
                 # Time range filter
                 if "start_date" in filters or "end_date" in filters:
                     date_filter = {}

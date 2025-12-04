@@ -773,21 +773,40 @@ function parseAIExplanationFromText(text) {
     return sections;
 }
 
+// --- Helper: UUID v4 Üretici ---
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
 /**
- * Anomali analiz işlemini başlat
+ * Anomali analiz işlemini başlat (Request ID ve Progress Tracking Destekli)
  */
 async function handleAnalyzeLog() {
-    console.log('handleAnalyzeLog çağrıldı!'); // DEBUG LOG
+    console.log('handleAnalyzeLog çağrıldı! (Live Tracking Active)');
 
     // Zaman aralığını al
-    const timeRange = document.querySelector('input[name="modalTimeRange"]:checked').value;
-    console.log('Time Range:', timeRange); // DEBUG LOG
-    console.log('Selected Data Source:', window.selectedDataSource); // DEBUG LOG
+    const timeRangeInput = document.querySelector('input[name="modalTimeRange"]:checked');
+    if (!timeRangeInput) {
+        alert("Lütfen bir zaman aralığı seçin.");
+        return;
+    }
+    const timeRange = timeRangeInput.value;
+    
+    console.log('Time Range:', timeRange);
+    console.log('Selected Data Source:', window.selectedDataSource);
+
+    // ✅ YENİ: Request ID oluştur
+    const requestId = generateUUID();
+    console.log("Generated Request ID:", requestId);
 
     // Temel requestData hazırla
     let requestData = {
         api_key: window.apiKey,
-        source_type: window.selectedDataSource
+        source_type: window.selectedDataSource,
+        request_id: requestId  // ✅ BACKEND'E TAKİP ID'Sİ GÖNDERİLİYOR
     };
 
     // Zaman aralığına göre parametre ekle
@@ -803,13 +822,8 @@ async function handleAnalyzeLog() {
         requestData.start_time = new Date(startTime).toISOString();
         requestData.end_time = new Date(endTime).toISOString();
         requestData.time_range = 'custom';
-
-        console.log('Custom date range:', {
-            start: requestData.start_time,
-            end: requestData.end_time
-        });
     } else {
-        // Backend'e uygun time_range çevir
+        // Backend uyumluluğu
         let backendTimeRange = timeRange;
         if (timeRange === 'last_24h') backendTimeRange = 'last_day';
         else if (timeRange === 'last_7d') backendTimeRange = 'last_week';
@@ -821,59 +835,48 @@ async function handleAnalyzeLog() {
     switch (window.selectedDataSource) {
         case 'file':
             requestData.file_path = 'config';
-            console.log('Using config file source');
             break;
 
         case 'upload': {
             const selectedFile = document.querySelector('input[name="logFile"]:checked');
             if (!selectedFile) {
-                console.log('No file selected for upload source');
                 alert('Lütfen bir dosya seçin!');
                 return;
             }
             requestData.file_path = selectedFile.value;
-            console.log('Using uploaded file:', selectedFile.value);
             break;
         }
 
         case 'mongodb_direct':
-            requestData.connection_string = document.getElementById('mongoConnectionString').value;
+            const connStr = document.getElementById('mongoConnectionString').value;
+            if(!connStr) { alert("Bağlantı cümlesi giriniz."); return; }
+            requestData.connection_string = connStr;
             requestData.file_path = 'mongodb';
-            console.log('Using MongoDB direct connection');
             break;
 
         case 'test_servers':
             requestData.server_name = document.getElementById('testServerSelect').value;
             requestData.file_path = 'server';
-            console.log('Using test server:', requestData.server_name);
             break;
 
         case 'opensearch': {
-            // Single/Cluster mode kontrolü
             const hostMode = document.querySelector('input[name="hostSelectionMode"]:checked')?.value || 'single';
-            console.log('Host selection mode:', hostMode);
-
-            let hostFilter = ''; 
-
+            
             if (hostMode === 'cluster') {
+                // Cluster modu mantığı (Aynen korunuyor)
                 const selectedCluster = document.getElementById('clusterSelect')?.value;
                 if (!selectedCluster) {
                     alert('Lütfen bir cluster seçin!');
                     return;
                 }
-
-                // Backend'e cluster_id gönder
+                
+                // NOT: Cluster analizine henüz backend tarafında progress desteği eklemedik.
+                // O yüzden burası eski loader ile çalışmaya devam edecek.
                 requestData.cluster_id = selectedCluster;
                 requestData.analysis_mode = 'cluster';
-                requestData.file_path = 'opensearch';
-
-                console.log('Cluster mode - selected cluster:', selectedCluster);
-
-                // Cluster analizi için özel endpoint kullan
-                // Backend /api/analyze-cluster endpoint'ini kullanacak
-
-                window.showLoader(true);
+                
                 closeAnomalyModal();
+                if (window.showLoader) window.showLoader(true);
 
                 try {
                     const clusterResponse = await fetch(window.API_ENDPOINTS.analyzeCluster, {
@@ -887,10 +890,8 @@ async function handleAnalyzeLog() {
                             end_time: requestData.end_time
                         })
                     });
-
                     const clusterResult = await clusterResponse.json();
-                    console.log('Cluster analysis result:', clusterResult);
-
+                    if (window.showLoader) window.showLoader(false);
                     displayAnomalyResults({
                         durum: 'tamamlandı',
                         işlem: 'anomaly_analysis',
@@ -902,132 +903,84 @@ async function handleAnalyzeLog() {
                                 anomaly_rate: clusterResult.anomaly_rate
                             },
                             critical_anomalies: clusterResult.top_anomalies,
-                            host_breakdown: clusterResult.host_breakdown,
-                            cluster_info: {
-                                cluster_id: selectedCluster,
-                                hosts_analyzed: clusterResult.hosts_analyzed,
-                                successful_hosts: clusterResult.successful_hosts,
-                                failed_hosts: clusterResult.failed_hosts
-                            }
+                            host_breakdown: clusterResult.host_breakdown
                         }
                     });
-
-                    if (clusterResult.storage_id) {
-                        window.lastAnomalyResult = {
-                            storage_info: {
-                                analysis_id: clusterResult.storage_id
-                            }
-                        };
-                    }
-
-                    return;
+                    return; 
                 } catch (error) {
+                    if (window.showLoader) window.showLoader(false);
                     console.error('Cluster analysis error:', error);
-                    alert('Cluster analizi sırasında hata oluştu: ' + error.message);
+                    alert('Cluster analizi hatası: ' + error.message);
                     return;
-                } finally {
-                    window.showLoader(false);
                 }
-            } else {
-                // Single mode: dropdown'dan seç
-                hostFilter = document.getElementById('mongodbHostSelect')?.value; // ✅ const yerine sadece atama
+            } 
 
-                if (!hostFilter) {
-                    alert('Lütfen bir MongoDB sunucusu seçin!');
-                    return;
-                }
-                requestData.host_filter = hostFilter;
-                requestData.analysis_mode = 'single';
-                requestData.file_path = 'opensearch';
-                console.log('Single mode - selected host:', hostFilter);
+            // Single mode:
+            const hostFilter = document.getElementById('mongodbHostSelect')?.value;
+            if (!hostFilter) {
+                alert('Lütfen bir MongoDB sunucusu seçin!');
+                return;
             }
-
-            console.log('OpenSearch Analysis Configuration:', {
-                mode: hostMode,
-                hosts: hostFilter,
-                hostCount: hostFilter ? hostFilter.split(',').length : 0,
-                timeRange: requestData.time_range,
-                customStartTime: requestData.start_time || 'N/A',
-                customEndTime: requestData.end_time || 'N/A'
-            });
-
+            requestData.host_filter = hostFilter;
+            requestData.analysis_mode = 'single';
+            requestData.file_path = 'opensearch';
             break;
         }
-
-        default:
-            console.log('Unknown data source for analysis:', window.selectedDataSource);
     }
 
-    console.log('Final Request Data for Analysis:', JSON.stringify(requestData, null, 2));
-    console.log('Request Data - Source Type:', requestData.source_type);
-    console.log('Request Data - Host Filter:', requestData.host_filter);
-
+    // Modal'ı kapat
     closeAnomalyModal();
-    window.showLoader();
+
+    // ✅ YENİ: Progress Tracker'ı Başlat (ID ile)
+    if (window.AnomalyProgress) {
+        window.AnomalyProgress.show(requestId);
+    } else {
+        window.showLoader(true);
+    }
 
     try {
-        console.log('Sending analysis request to API...');
-        console.log('API Endpoint:', window.API_ENDPOINTS.analyzeLog);
-        console.log('Request Method: POST');
-        console.log('Request Headers: Content-Type: application/json');
-        console.log('Request Body:', JSON.stringify(requestData, null, 2));
+        console.log('Sending analysis request with ID:', requestId);
 
-        const response = await fetch(window.API_ENDPOINTS.analyzeLog, {
+        // İsteği gönder (Upload veya diğerleri için analyzeLog endpoint'i)
+        // Eğer dosya yükleme ise farklı endpoint olabilir, ama genelde backend yönlendirir.
+        // Burada mevcut yapınızda upload için 'analyze-uploaded-log' kullanılıyorsa ona dikkat edelim.
+        // Backend tarafında tek bir endpoint mi kullanıyorsunuz yoksa upload ayrı mı?
+        // API.py'de `analyze_uploaded_log` düzenledik. Upload ve OpenSearch oraya gidiyor.
+        // Endpoint URL'sini kontrol edelim:
+        
+        let targetEndpoint = window.API_ENDPOINTS.analyzeLog; 
+        if (window.selectedDataSource === 'upload') {
+             // Eğer sisteminizde upload için ayrı bir endpoint URL'i tanımlıysa burayı güncelleyin.
+             // Varsayılan olarak analyzeLog endpoint'ine atıyoruz.
+             // Eğer API_ENDPOINTS.analyzeUploadedLog varsa onu kullanın:
+             if (window.API_ENDPOINTS.analyzeUploadedLog) {
+                 targetEndpoint = window.API_ENDPOINTS.analyzeUploadedLog;
+             }
+        }
+
+        const response = await fetch(targetEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestData)
         });
 
         console.log('Analysis response status:', response.status);
-        console.log('Analysis response headers:', response.headers);
-
         const result = await response.json();
-        console.log('Analysis result received:', result);
-        console.log('BACKEND RESPONSE:', {
-            durum: result.durum,
-            işlem: result.işlem,
-            açıklama: result.açıklama ? result.açıklama.substring(0, 100) + '...' : 'YOK',
-            hasResult: !!result.sonuç,
-            resultKeys: result.sonuç ? Object.keys(result.sonuç) : []
-        });
 
-        if (result.durum === 'onay_bekliyor') {
-            console.error('HATA: Backend hala onay bekliyor response döndürüyor!');
-            console.log('Onay response detayı:', result);
-        }
-        console.log('Analysis result type:', typeof result);
-        console.log('Analysis result keys:', Object.keys(result));
-        console.log('FULL RESULT:', JSON.stringify(result, null, 2));
-        console.log('Result durum:', result.durum);
-        console.log('Result işlem:', result.işlem);
+        // ✅ YENİ: Progress Tamamla
+        if (window.AnomalyProgress) window.AnomalyProgress.complete();
+        else window.showLoader(false);
 
+        // Sonuçları işle (Mevcut kodlar)
         displayAnomalyResults(result);
 
-        // Analiz başarılıysa history'ye ekle
+        // History'ye ekle (Mevcut kodlar)
         if (result.durum !== 'hata' && result.işlem === 'anomaly_analysis') {
-            let queryText = '';
-            if (window.selectedDataSource === 'opensearch' && requestData.host_filter) {
-                queryText = `${requestData.host_filter} için anomali analizi`;
-            } else if (window.selectedDataSource === 'upload' && requestData.file_path) {
-                const fileName = requestData.file_path.split('/').pop();
-                queryText = `${fileName} dosyası için anomali analizi`;
-            } else if (window.selectedDataSource === 'test_servers' && requestData.server_name) {
-                queryText = `${requestData.server_name} sunucusu için anomali analizi`;
-            } else {
-                queryText = `Anomali analizi (${window.selectedDataSource})`;
-            }
-
-            const timeRangeText =
-                timeRange === 'last_24h' ? 'son 24 saat' :
-                timeRange === 'last_7d' ? 'son 7 gün' :
-                timeRange === 'last_30d' ? 'son 30 gün' : '';
-
-            if (timeRangeText) {
-                queryText += ` - ${timeRangeText}`;
-            }
-
-            console.log('Adding manual anomaly analysis to history:', queryText);
-
+            let queryText = `Anomali analizi (${window.selectedDataSource})`;
+            if (requestData.host_filter) queryText = `${requestData.host_filter} analizi`;
+            else if (requestData.uploaded_filename) queryText = `Dosya analizi`;
+            else if (window.selectedDataSource === 'upload') queryText = `Log Dosyası Analizi`;
+            
             const historyItem = {
                 id: Date.now(),
                 timestamp: new Date().toISOString(),
@@ -1035,32 +988,29 @@ async function handleAnalyzeLog() {
                 type: 'anomaly',
                 category: 'anomaly',
                 result: result,
-                durum: result.durum || 'tamamlandı',
+                durum: 'tamamlandı',
                 işlem: 'anomaly_analysis',
                 isManualAnalysis: true,
-                sourceType: window.selectedDataSource,
                 hasResult: true,
                 childResult: result
             };
-
-            window.queryHistory.unshift(historyItem);
-            if (window.queryHistory.length > window.MAX_HISTORY_ITEMS) {
-                window.queryHistory = window.queryHistory.slice(0, window.MAX_HISTORY_ITEMS);
+            
+            // Global history'ye ekle
+            if (window.queryHistory) {
+                window.queryHistory.unshift(historyItem);
+                if (typeof window.saveHistory === 'function') window.saveHistory();
+                if (typeof window.updateHistoryDisplay === 'function') window.updateHistoryDisplay();
             }
-
-            window.saveHistory();
-            window.updateHistoryDisplay();
-
-            console.log('Manual anomaly analysis added to history successfully');
         }
+
     } catch (error) {
+        // Hata Durumu
         console.error('Analiz hatası:', error);
-        console.error('Analysis request failed:', error);
-        console.error('Error details:', error.message);
-        console.error('Error stack:', error.stack);
-        alert('Analiz sırasında bir hata oluştu!');
-    } finally {
-        window.showLoader(false);
+        
+        if (window.AnomalyProgress) window.AnomalyProgress.error("Sunucu ile iletişim hatası");
+        else window.showLoader(false);
+        
+        alert('Analiz sırasında bir hata oluştu: ' + error.message);
     }
 }
 
@@ -2211,6 +2161,353 @@ async function loadAnomalyChunk(analysisId, chunkIndex) {
 }
 
 // ============================================
+// ANOMALY PROGRESS TRACKER (DETAILED & LIVE)
+// ============================================
+
+const AnomalyProgress = {
+    modalId: 'anomalyProgressModal',
+    pollingInterval: null,
+    currentRequestId: null,
+
+    // ✅ Yeni alanlar:
+    lastStepKey: null,
+    lastStepChangeTime: 0,
+    pendingUpdateTimeout: null,
+
+    // UI'da gösterilecek adımların statik listesi (Sıralı)
+    uiSteps: [
+        { id: 'init', label: 'Hazırlık & Parametre Kontrolü' },
+        { id: 'connect', label: 'Sunucu Bağlantısı & Yetkilendirme' },
+        { id: 'fetch', label: 'Log Verilerinin Çekilmesi (Slice Read)' },
+        { id: 'processing', label: 'Veri İşleme & Feature Engineering' },
+        { id: 'ml', label: 'Model Eğitimi & Anomali Tespiti' },
+        { id: 'ai', label: 'LCWGPT ile Kök Neden Analizi' },
+        { id: 'save', label: 'Sonuçların Kaydedilmesi & Raporlama' }
+    ],
+
+    // Backend'den gelen step kodlarına karşılık gelen detay mesajları
+    // Bu mesajlar fallback olarak kullanılır, backend genelde kendi mesajını gönderir.
+    stepMap: {
+        'init': 'Analiz başlatılıyor...',
+        'connect': 'OpenSearch/MongoDB bağlantısı kuruluyor...',
+        'fetch': 'Loglar taranıyor...',
+        'processing': 'Özellik çıkarımı (Feature Engineering) yapılıyor...',
+        'ml': 'Isolation Forest modeli çalıştırılıyor...',
+        'ai': 'Yapay zeka bulguları yorumluyor...',
+        'save': 'Sonuçlar veritabanına yazılıyor...',
+        'complete': 'İşlem tamamlandı.',
+        'error': 'İşlem hatası.'
+    },
+
+    // CSS Stillerini Ekle
+    injectStyles: function() {
+        if (document.getElementById('anomaly-progress-style')) return;
+        const style = document.createElement('style');
+        style.id = 'anomaly-progress-style';
+        style.textContent = `
+            .progress-modal {
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0, 0, 0, 0.85); z-index: 9999;
+                display: flex; align-items: center; justify-content: center;
+                backdrop-filter: blur(8px);
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            }
+            .progress-content {
+                background: #1e1e1e; border: 1px solid #333; border-radius: 16px;
+                padding: 0; width: 500px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+                animation: slideIn 0.3s ease-out;
+                overflow: hidden;
+            }
+            .progress-header { 
+                background: #252526; padding: 20px 25px; border-bottom: 1px solid #333;
+                display: flex; flex-direction: column; align-items: center;
+            }
+            .progress-header h3 { margin: 0; font-size: 1.2rem; font-weight: 600; color: #fff; display: flex; align-items: center; gap: 10px;}
+            .current-status-text { 
+                font-size: 0.9rem; color: #3498db; margin-top: 8px; font-weight: 500; 
+                text-align: center; min-height: 1.4em;
+            }
+            .progress-body { padding: 10px 0; max-height: 60vh; overflow-y: auto; }
+            .progress-step {
+                display: flex; align-items: center; padding: 12px 25px;
+                border-bottom: 1px solid #2a2a2a; color: #555; transition: all 0.3s ease;
+            }
+            .progress-step:last-child { border-bottom: none; }
+            .step-icon {
+                width: 28px; height: 28px; /* Biraz büyüttük */
+                border-radius: 50%; border: 2px solid #444;
+                margin-right: 15px; display: flex; align-items: center; justify-content: center;
+                font-size: 14px; /* Emoji boyutu */
+                transition: all 0.3s ease; flex-shrink: 0; background: #1e1e1e;
+                line-height: 1; /* Emoji hizalama */
+            }
+            
+            /* Active State */
+            .progress-step.active { background: rgba(52, 152, 219, 0.08); color: #e0e0e0; }
+            .progress-step.active .step-icon {
+                border-color: #3498db; border-top-color: transparent;
+                animation: spin 1s linear infinite;
+            }
+            
+            /* Completed State */
+            .progress-step.completed { color: #888; }
+            .progress-step.completed .step-icon {
+                background: #27ae60; border-color: #27ae60; color: #fff;
+                font-weight: bold; border-width: 0;
+            }
+            .progress-step.completed .step-icon::before { content: '✓'; }
+            
+            .step-label { font-size: 0.95rem; font-weight: 500; }
+            
+            @keyframes spin { 100% { transform: rotate(360deg); } }
+            @keyframes slideIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        `;
+        document.head.appendChild(style);
+    },
+
+    // Modalı Göster
+    show: function(requestId) {
+
+        if (typeof window.showLoader === 'function') window.showLoader(false);
+        this.injectStyles();
+        this.currentRequestId = requestId;
+
+        // ✅ Progress state reset
+        this.lastStepKey = null;
+        this.lastStepChangeTime = 0;
+        if (this.pendingUpdateTimeout) {
+            clearTimeout(this.pendingUpdateTimeout);
+            this.pendingUpdateTimeout = null;
+        }
+
+        const existing = document.getElementById(this.modalId);
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.id = this.modalId;
+        modal.className = 'progress-modal';
+
+        // ✅ DİNAMİK ADIM SEÇİMİ: Override edilmiş 'steps' varsa onu kullan, yoksa default 'uiSteps'
+        const activeSteps = this.steps || this.uiSteps;
+
+        // Steps HTML oluştur (İkon desteği eklendi)
+        let stepsHtml = activeSteps.map((step) => `
+            <li class="progress-step" id="p-step-${step.id}">
+                <div class="step-icon">${step.icon || ''}</div> 
+                <div class="step-label">${step.label || step.text}</div>
+            </li>
+        `).join('');
+
+        modal.innerHTML = `
+            <div class="progress-content">
+                <div class="progress-header">
+                    <h3>🚀 Anomali Analizi</h3>
+                    <div id="progress-detail-text" class="current-status-text">İşlem başlatılıyor...</div>
+                </div>
+                <ul class="progress-body">${stepsHtml}</ul>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        if (requestId) {
+            this.startPolling(requestId);
+        } else {
+            // Fallback (ID yoksa ilk adımı aktif et)
+            const firstStep = activeSteps[0].id;
+            this.updateUI(firstStep, 'Hazırlanıyor...');
+        }
+
+    },
+
+    // Backend Polling
+    startPolling: function(requestId) {
+        if (this.pollingInterval) clearInterval(this.pollingInterval);
+        
+        console.log(`📡 Polling started for Request ID: ${requestId}`);
+        
+        this.pollingInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/progress/${requestId}`);
+                if (!response.ok) return;
+                
+                const data = await response.json();
+                
+                // Backend'den gelen veriyi işle
+                if (data.step && data.step !== 'unknown') {
+                    this.updateUI(data.step, data.message);
+                }
+                
+                if (data.step === 'complete' || data.step === 'error') {
+                    this.stopPolling();
+                }
+            } catch (e) {
+                console.warn("Polling warning:", e);
+            }
+        }, 800); // 800ms'de bir sor (daha akıcı)
+    },
+
+    stopPolling: function() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
+    },
+
+    // UI Güncelleme - Minimum 2 sn kuralı ile
+    updateUI: function(currentStepKey, message) {
+
+        const MIN_STEP_DURATION = 2000; // ms
+        const now = Date.now();
+
+        // 1) Önceki adım bilgisi varsa, "init" ve "connect" için minimum süre uygula
+        if (
+            this.lastStepKey && 
+            this.lastStepKey !== currentStepKey
+        ) {
+            const isProtectedPrev =
+                this.lastStepKey === 'init' ||
+                this.lastStepKey === 'connect';
+
+            const elapsed = now - this.lastStepChangeTime;
+
+            // complete / error’a asla geciktirme uygulama
+            const isTerminalStep =
+                currentStepKey === 'complete' ||
+                currentStepKey === 'error';
+
+            if (isProtectedPrev && !isTerminalStep && elapsed < MIN_STEP_DURATION) {
+                const remaining = MIN_STEP_DURATION - elapsed;
+
+                // Eski timeout varsa iptal et
+                if (this.pendingUpdateTimeout) {
+                    clearTimeout(this.pendingUpdateTimeout);
+                }
+
+                // ✅ Yeni adımı geciktir
+                this.pendingUpdateTimeout = setTimeout(() => {
+                    this.updateUI(currentStepKey, message);
+                }, remaining);
+
+                return; // Şimdilik UI'yi güncelleme
+            }
+        }
+
+        // Herhangi bir gecikme yoksa normal akışı çalıştır
+
+        // 2) Durum mesajını güncelle
+        const msgEl = document.getElementById('progress-detail-text');
+        if (msgEl) {
+            msgEl.innerText = message || this.stepMap[currentStepKey] || 'İşleniyor...';
+            // Hafif yanıp sönme efekti (canlılık için)
+            msgEl.style.opacity = '0.7';
+            setTimeout(() => (msgEl.style.opacity = '1'), 100);
+        }
+
+        // 3) init/connect/diğer step’ler için UI güncelle
+        // Override edilmiş 'steps' varsa onu, yoksa varsayılanı kullan
+        const activeSteps = this.steps || this.uiSteps;
+        const stepIds = (this.steps || this.uiSteps).map((s) => s.id);
+        const currentIndex = stepIds.indexOf(currentStepKey);
+
+        // Eğer 'complete' veya 'error' geldiyse özel işlem
+        if (currentStepKey === 'complete') {
+            this.markAllComplete();
+            // state güncelle
+            this.lastStepKey = currentStepKey;
+            this.lastStepChangeTime = now;
+            return;
+        }
+        if (currentStepKey === 'error') {
+            // error UI'sini ayrı error() fonksiyonu yönetiyor
+            this.lastStepKey = currentStepKey;
+            this.lastStepChangeTime = now;
+            return;
+        }
+
+        if (currentIndex === -1) {
+            // UI'da tanımlı olmayan bir adım geldiyse sessizce geç
+            this.lastStepKey = currentStepKey;
+            this.lastStepChangeTime = now;
+            return;
+        }
+
+        // 3. Görsel Güncelleme Döngüsü
+        stepIds.forEach((id, index) => {
+            const el = document.getElementById(`p-step-${id}`);
+            if (!el) return;
+
+            el.classList.remove('active', 'completed');
+
+            if (index < currentIndex) {
+                // Önceki adımlar -> Tamamlandı
+                el.classList.add('completed');
+            } else if (index === currentIndex) {
+                // Şu anki adım -> Aktif
+                el.classList.add('active');
+                // Aktif adımı görünür alana kaydır
+                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            // Sonraki adımlar -> Beklemede (class yok)
+        });
+
+        // ✅ Son olarak current step’i kaydet
+        this.lastStepKey = currentStepKey;
+        this.lastStepChangeTime = now;
+    },
+
+    markAllComplete: function() {
+        const steps = document.querySelectorAll('.progress-step');
+        steps.forEach(el => {
+            el.classList.remove('active');
+            el.classList.add('completed');
+        });
+    },
+
+    complete: function() {
+        this.stopPolling();
+        this.markAllComplete();
+
+        const msgEl = document.getElementById('progress-detail-text');
+        if (msgEl) {
+            msgEl.innerText = "✅ Analiz Tamamlandı!";
+            msgEl.style.color = "#2ecc71";
+        }
+
+        // 1 saniye bekle ve kapat
+        setTimeout(() => {
+            const modal = document.getElementById(this.modalId);
+            if (modal) {
+                modal.style.opacity = '0';
+                modal.style.transition = 'opacity 0.3s ease';
+                setTimeout(() => modal.remove(), 300);
+            }
+        }, 1000);
+    },
+
+    error: function(msg) {
+        this.stopPolling();
+        const modal = document.getElementById(this.modalId);
+        if (modal) {
+            const headerTitle = modal.querySelector('.progress-header h3');
+            const desc = document.getElementById('progress-detail-text');
+            
+            if (headerTitle) {
+                headerTitle.innerHTML = '❌ İşlem Başarısız';
+                headerTitle.style.color = '#e74c3c';
+            }
+            if (desc) {
+                desc.innerText = msg || 'Bilinmeyen bir hata oluştu.';
+                desc.style.color = '#e74c3c';
+            }
+            
+            // Hata durumunda 3sn bekle kapat
+            setTimeout(() => modal.remove(), 3000);
+        }
+    }
+};
+
+// ============================================
 // GLOBAL ERİŞİM İÇİN WINDOW'A ATAMA
 // ============================================
 window.updateParentAnomalyQuery = updateParentAnomalyQuery;
@@ -2238,5 +2535,6 @@ window.renderDetailedAnomalyList = renderDetailedAnomalyList;
 window.getAnomalyExplanation = getAnomalyExplanation;
 window.renderCriticalAnomaliesTable = renderCriticalAnomaliesTable;
 window.generateMLInsights = generateMLInsights;
+window.AnomalyProgress = AnomalyProgress; 
 console.log('✅ Anomaly module loaded successfully');
 

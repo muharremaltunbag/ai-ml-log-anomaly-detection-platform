@@ -11,6 +11,7 @@
  *      script-core.js bu dosyadan ÖNCE yüklenmeli!
 web_ui */
 
+
 //  web_ui/static/script.js
 
 // ============================================
@@ -37,6 +38,15 @@ var loadLastAnomalyFromStorage = window.loadLastAnomalyFromStorage;
 // Kaydedilmiş analizi görüntüle
 var viewStoredAnalysis = window.viewStoredAnalysis;
 
+
+
+// ====== UUID Helper ======
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
 // Sayfa yüklendiğinde
 document.addEventListener('DOMContentLoaded', async () => {
     // DOM element referanslarını initialize et
@@ -274,7 +284,6 @@ function initializeEventListeners() {
             openDBAAnalysisModal();
         }
     });
-    
     
     // Anomaly Modal içindeki Analizi Başlat butonu  
     document.getElementById('startAnalysisBtn').addEventListener('click', handleAnalyzeLog);
@@ -684,17 +693,17 @@ async function handleQuery() {
         if (isChatAnomalyQuery) {
             console.log('🔍 DEBUG: Chat anomaly query detected, checking lastAnomalyResult...');
             console.log('🔍 DEBUG: window.lastAnomalyResult exists:', !!window.lastAnomalyResult);
-            
+
             // Eğer lastAnomalyResult yoksa storage'dan yüklemeyi dene
             if (!window.lastAnomalyResult) {
                 console.log('🔍 DEBUG: No lastAnomalyResult found, attempting to load from storage...');
                 console.log('🔍 DEBUG: Calling loadLastAnomalyFromStorage()...');
-                
+
                 try {
                     const loaded = await loadLastAnomalyFromStorage();
                     console.log('🔍 DEBUG: loadLastAnomalyFromStorage() returned:', loaded);
                     console.log('🔍 DEBUG: window.lastAnomalyResult after storage load:', !!window.lastAnomalyResult);
-                    
+
                     if (!loaded) {
                         console.log('❌ DEBUG: Storage load failed, showing warning and exiting');
                         console.log('⚠️ DEBUG: No storage data found, will proceed with normal query');
@@ -716,7 +725,7 @@ async function handleQuery() {
             } else {
                 console.log('✅ DEBUG: window.lastAnomalyResult already exists, skipping storage load');
             }
-            
+
             // Artık window.lastAnomalyResult kesinlikle var
             if (window.lastAnomalyResult) {
                 console.log('✅ Chat anomaly query CONFIRMED, using LCWGPT endpoint');
@@ -724,36 +733,70 @@ async function handleQuery() {
                 console.log('🔍 DEBUG: - storage_info:', !!window.lastAnomalyResult.storage_info);
                 console.log('🔍 DEBUG: - storage_id:', !!window.lastAnomalyResult.storage_id);
                 console.log('🔍 DEBUG: - analysis_id from storage_info:', window.lastAnomalyResult.storage_info?.analysis_id);
-            
-            // Son anomali analizinin ID'sini al
-            const lastAnalysisId = window.lastAnomalyResult.storage_info?.analysis_id || 
-                                  window.lastAnomalyResult.storage_id;
-            
-            console.log('🔍 DEBUG: Final analysis_id for LCWGPT:', lastAnalysisId);
-            
-            console.log('Analysis ID:', lastAnalysisId);
-            console.log('Sending query to LCWGPT:', query);
-            
-            showLoader(true);
-            
-            try {
-                // Tek chunk gönderiliyor
-                const chatResponse = await fetch('/api/chat-query-anomalies', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        query: query,
-                        api_key: apiKey,
-                        analysis_id: lastAnalysisId
-                    })
-                });
-                
+
+                const lastAnalysisId = window.lastAnomalyResult.storage_info?.analysis_id ||
+                                      window.lastAnomalyResult.storage_id;
+
+                // ✅ YENİ: Request ID Oluştur
+                const requestId = generateUUID();
+                console.log('Generated Request ID for Chat:', requestId);
+
+                // --- PROGRESS FEEDBACK ENTEGRASYONU (CHAT MODU) ---
+                if (window.AnomalyProgress) {
+                    showLoader(false);
+
+                    // Adımlar (Önceki adımda eklemiştik, aynen koruyoruz)
+                    window.AnomalyProgress.steps = [
+                        { id: 'context', text: 'Analiz bağlamı storage\'dan yükleniyor...', icon: '🗄️', duration: 1500 },
+                        { id: 'connect', text: 'LCWGPT servisi ile bağlantı kuruluyor...', icon: '🔌', duration: 2000 },
+                        { id: 'chunk',   text: 'Veri setleri parçalanıyor (Chunking)...', icon: '🧩', duration: 1500 },
+                        { id: 'analyze', text: 'Yapay zeka analizi yapılıyor (Bu işlem zaman alabilir)...', icon: '🧠', duration: 15000 },
+                        { id: 'merge',   text: 'Yanıtlar birleştiriliyor ve özetleniyor...', icon: '✨', duration: 1000 }
+                    ];
+
+                    // ✅ DEĞİŞİKLİK: requestId ile show() çağırıyoruz
+                    window.AnomalyProgress.show(requestId);
+
+                    // Başlık güncelleme (Mevcut kod aynen kalıyor)
+                    setTimeout(() => {
+                        const progressModal = document.getElementById('anomalyProgressModal');
+                        if (progressModal) {
+                            const headerTitle = progressModal.querySelector('.progress-header h3');
+                            const headerDesc = progressModal.querySelector('.progress-header p');
+                            if (headerTitle) {
+                                headerTitle.innerHTML = '🤖 LCWGPT Asistan Devrede';
+                                headerTitle.style.color = '#9b59b6';
+                            }
+                            if (headerDesc) headerDesc.textContent = 'Büyük veri setleri parçalı olarak işleniyor, lütfen bekleyin...';
+                        }
+                    }, 50);
+
+                } else {
+                    showLoader(true);
+                }
+
+                try {
+                    // API İsteği
+                    const chatResponse = await fetch('/api/chat-query-anomalies', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            query: query,
+                            api_key: apiKey,
+                            analysis_id: lastAnalysisId,
+                            request_id: requestId  //  ID'yi backend'e gönderiyoruz
+                        })
+                    });
+
                 console.log('LCWGPT response status:', chatResponse.status);
-                
+
                 if (chatResponse.ok) {
                     const chatResult = await chatResponse.json();
+
+                    // YENİ: Progress Tamamla
+                    if (window.AnomalyProgress) window.AnomalyProgress.complete();
+                    else showLoader(false);
+
                     console.log('LCWGPT result:', chatResult);
 
                     // ✅ YENİ: Güvenli fonksiyon çağrısı - Race condition önleme
@@ -797,8 +840,11 @@ async function handleQuery() {
                 }
             } catch (error) {
                 console.error('LCWGPT error:', error);
-            } finally {
-                showLoader(false);
+                // YENİ: Progress Hata Gösterimi
+                if (window.AnomalyProgress) window.AnomalyProgress.error();
+                else showLoader(false);
+
+                showNotification('Yapay zeka yanıtı alınırken hata oluştu.', 'error');
             }
             }
         } else {
