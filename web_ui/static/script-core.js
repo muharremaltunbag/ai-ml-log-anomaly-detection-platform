@@ -191,63 +191,89 @@ window.loadLastAnomalyFromStorage = async function() {
         await new Promise(resolve => setTimeout(resolve, 100));
         retryCount++;
     }
-    
+
     if (!window.isConnected || !window.apiKey) {
-        console.log('Not connected after retry, skipping storage load');
-        return;
+        console.log('[STORAGE] Not connected after retry, skipping storage load');
+        return false;
     }
-    
+
     try {
         console.log('Loading last anomaly analysis from storage...');
-        
-        // Backend'den storage kontrolü yap
-        const response = await fetch(window.API_ENDPOINTS.query, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                query: "son anomali analizi",  // Backend'de anomali keyword'ü tetikler
-                api_key: window.apiKey
-            })
-        });
-        
-        if (response.ok) {
-            const result = await response.json();
-            
-            // Storage'dan veri geldiyse global değişkene ata ve yapıyı düzelt
-            if (result.işlem === 'anomaly_from_storage' && result.sonuç?.from_storage) {
-                // Storage info'yu doğru yere koy
-                if (!result.storage_info && result.sonuç.storage_info) {
-                    result.storage_info = result.sonuç.storage_info;
+
+        // ✅ FIX: Direkt anomaly-history endpoint'ini kullan
+        const response = await fetch(
+            `${window.API_ENDPOINTS.anomalyHistory}?api_key=${window.apiKey}&limit=1`,
+            { method: 'GET' }
+        );
+
+        if (!response.ok) {
+            console.log('Failed to fetch anomaly history');
+            return false;
+        }
+
+        const data = await response.json();
+
+        if (data.status === 'success' && data.history && data.history.length > 0) {
+            const lastAnalysis = data.history[0];
+
+            // Detaylı veriyi çek
+            const detailResponse = await fetch(
+                `${window.API_ENDPOINTS.anomalyHistory}/${lastAnalysis.analysis_id}?api_key=${window.apiKey}`,
+                { method: 'GET' }
+            );
+
+            if (detailResponse.ok) {
+                const detailData = await detailResponse.json();
+
+                if (detailData.status === 'success' && detailData.analysis) {
+                    const analysis = detailData.analysis;
+
+                    // Global değişkene ata (script-history.js formatıyla uyumlu)
+                    window.lastAnomalyResult = {
+                        durum: 'tamamlandı',
+                        işlem: 'anomaly_from_storage',
+                        açıklama: `📊 Önceki anomali analizi yüklendi\n\nAnaliz ID: ${analysis.analysis_id}\nZaman: ${analysis.timestamp}`,
+                        analysis_id: analysis.analysis_id,
+                        sonuç: {
+                            from_storage: true,
+                            analysis_id: analysis.analysis_id,
+                            anomaly_count: analysis.anomaly_count || 0,
+                            anomaly_rate: analysis.anomaly_rate || 0,
+                            total_logs: analysis.logs_analyzed || 0,
+                            critical_anomalies: analysis.critical_anomalies || [],
+                            unfiltered_anomalies: analysis.unfiltered_anomalies || [],
+                            storage_info: {
+                                analysis_id: analysis.analysis_id,
+                                timestamp: analysis.timestamp,
+                                host: analysis.host,
+                                time_range: analysis.time_range
+                            }
+                        },
+                        storage_info: {
+                            analysis_id: analysis.analysis_id,
+                            timestamp: analysis.timestamp
+                        }
+                    };
+
+                    console.log('✅ Storage anomaly loaded successfully:', {
+                        analysis_id: analysis.analysis_id,
+                        anomaly_count: analysis.anomaly_count,
+                        has_critical: !!(analysis.critical_anomalies?.length)
+                    });
+
+                    // Query input'a ipucu ekle
+                    if (window.elements.queryInput) {
+                        window.elements.queryInput.placeholder = "Önceki analizle ilgili sorularınızı sorabilirsiniz...";
+                    }
+
+                    return true;
                 }
-                window.lastAnomalyResult = result;
-                console.log('Storage anomaly loaded successfully:', {
-                    analysis_id: result.sonuç.analysis_id,
-                    anomaly_count: result.sonuç.anomaly_count,
-                    has_critical: !!(result.sonuç.critical_anomalies?.length)
-                });
-                
-                // Kullanıcıya bilgi ver
-                const anomalyCount = result.sonuç.anomaly_count || 0;
-                const timestamp = result.sonuç.storage_info?.timestamp || 'N/A';
-                window.showNotification(
-                    `Önceki analiz yüklendi: ${anomalyCount} anomali (${new Date(timestamp).toLocaleString('tr-TR')})`,
-                    'info'
-                );
-                
-                // Query input'a ipucu ekle
-                if (window.elements.queryInput) {
-                    window.elements.queryInput.placeholder = "Önceki analizle ilgili sorularınızı sorabilirsiniz...";
-                }
-                
-                return true;
             }
         }
     } catch (error) {
         console.error('Error loading from storage:', error);
     }
-    
+
     console.log('No previous analysis found in storage');
     return false;
 };

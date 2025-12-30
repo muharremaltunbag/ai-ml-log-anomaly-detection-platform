@@ -29,10 +29,12 @@ class LCWGPTChat(BaseChatModel):
     api_key: str
     endpoint: str
     institution_id: str
-    model_name: str = "GPT-4o"
+    model_name: str = "Sonnet"
     temperature: float = 0.0
-    timeout: int = 30
-    max_retries: int = 2
+    # Büyük batch analizleri ve aggregation için süre uzatıldı
+    timeout: int = 180
+    # Ağ hatalarına karşı direnç artırıldı
+    max_retries: int = 3
     
     def _generate(
         self,
@@ -263,7 +265,7 @@ class LCWGPTConnector(BaseConnector):
         self.api_key = os.getenv('LCWGPT_API_KEY', 'sk_gsMk5_sScqq9ZXFxOr751GJsuIf4VhI6tQhMOp2siW8')
         self.endpoint = os.getenv('LCWGPT_ENDPOINT', 'https://lcwgpt-test.lcwaikiki.com/api/service/message')
         self.institution_id = os.getenv('LCWGPT_INSTITUTION_ID', 'analitikverimüdürlügü')
-        self.model_name = os.getenv('LCWGPT_MODEL', 'GPT-4o')
+        self.model_name = os.getenv('LCWGPT_MODEL', 'Sonnet')
         self.llm: Optional[LCWGPTChat] = None
         
         # Log yapılandırma bilgileri (hassas bilgileri gizle)

@@ -8,6 +8,7 @@ import json
 import re
 import pandas as pd
 from pathlib import Path
+import threading
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -327,7 +328,6 @@ class MongoDBLogReader:
         logs = []
         
         logger.debug(f"Reading chunk: lines {start}-{end}")
-        print(f"[DEBUG] Reading chunk: lines {start}-{end}")
         
         with open(self.log_path, 'r', encoding=self.encoding) as f:
             for i, line in enumerate(f):
@@ -349,7 +349,6 @@ class MongoDBLogReader:
                     pass
         
         logger.debug(f"Chunk {start}-{end} completed: {len(logs)} logs")
-        print(f"[DEBUG] Chunk {start}-{end} completed: {len(logs)} logs")
         return logs
     
     def get_log_stats(self) -> Dict[str, Any]:
@@ -395,6 +394,28 @@ class MongoDBLogReader:
         logger.debug(f"Log stats completed: {stats}")
         print(f"[DEBUG] Log stats completed")
         return stats
+
+
+def normalize_message(message: str) -> str:
+    """
+    Mesaj içindeki değişkenleri (sayı, ID, ms) temizleyerek parmak izi (fingerprint) oluşturur.
+    ML modeli için aynı türdeki mesajları gruplamaya yarar.
+    Örn: "Slow query took 1004ms" ve "Slow query took 1005ms" -> "Slow query took <NUM>ms"
+    """
+    if not message:
+        return ""
+    
+    # 1. MongoDB hex ID'leri temizle (24 karakterlik ObjectId'ler)
+    normalized = re.sub(r'[0-9a-fA-F]{24}', '<ID>', message)
+    
+    # 2. Sayıları temizle (ms, count, ID vb.)
+    normalized = re.sub(r'\d+', '<NUM>', normalized)
+    
+    # 3. Fazla boşlukları temizle
+    normalized = " ".join(normalized.split())
+    
+    return normalized
+
         
 def extract_mongodb_message(log_entry):
     """
@@ -544,6 +565,9 @@ def enrich_log_entry(log_entry):
     # Ayrıca message alanını da set et (API consistency için)
     log_entry['message'] = extracted_message
     
+    # Parmak izi (Fingerprint) ekle
+    log_entry['message_fingerprint'] = normalize_message(extracted_message)
+    
     # Sadece kritik operation details'i sakla (opsiyonel)
     if 'attr' in log_entry and 'CRUD' in log_entry['attr']:
         crud = log_entry['attr']['CRUD']
@@ -561,7 +585,21 @@ def enrich_log_entry(log_entry):
 
 class OpenSearchProxyReader:
     """OpenSearch Proxy API üzerinden MongoDB loglarını okuma"""
-    
+
+    _instance = None
+    _instance_lock = threading.Lock()
+
+    @classmethod
+    def get_instance(cls, config: Dict[str, Any] = None):
+        """Shared reader instance döndürür (Thread-safe)"""
+        with cls._instance_lock:
+            if cls._instance is None:
+                logger.info("Creating GLOBAL OpenSearch reader instance...")
+                cls._instance = cls(config)
+                # İlk oluşturulduğunda bağlantıyı kur
+                cls._instance.connect()
+            return cls._instance
+
     def __init__(self, config: Dict[str, Any] = None):
         """
         OpenSearch Proxy Reader başlat
@@ -666,7 +704,7 @@ class OpenSearchProxyReader:
             logger.error(f"Login error: {e}")
             print(f"[DEBUG] Login error: {e}")
             return False
-    
+
     def _select_tenant(self) -> bool:
         """Login sonrası tenant seçimi yap"""
         try:
@@ -723,12 +761,11 @@ class OpenSearchProxyReader:
             print(f"[DEBUG] Tenant selection error: {e}")
             return False
     
-    def _make_request(self, path: str, method: str = "GET", body: dict = None) -> dict:
-        """Proxy API üzerinden request yap"""
+    def _make_request(self, path: str, method: str = "GET", body: dict = None, retry_auth: bool = True) -> dict:
+        """Proxy API üzerinden request yap (Auto-Relogin destekli)"""
         try:
             # URL encode path
             from urllib.parse import quote
-            # Sadece özel karakterleri encode et, / karakterini koru
             encoded_path = quote(path, safe='/')
             
             # Query parameters
@@ -748,6 +785,19 @@ class OpenSearchProxyReader:
                 timeout=120  # YENİ: Büyük veri setleri için timeout artırıldı
             )
             
+            # [SAFETY] Auto-Relogin Mekanizması
+            if response.status_code in [401, 403] and retry_auth:
+                logger.warning(f"Authentication failed ({response.status_code}). Attempting re-login...")
+                print(f"[DEBUG] 🔄 Token expired. Re-authenticating...")
+
+                # Tekrar login ve tenant seçimi dene
+                if self._login() and self._select_tenant():
+                    logger.info("Re-login successful. Retrying request...")
+                    # Recursive call (sonsuz döngüyü önlemek için retry_auth=False)
+                    return self._make_request(path, method, body, retry_auth=False)
+                else:
+                    logger.error("Auto re-login failed.")
+
             if response.status_code == 200:
                 return response.json()
             else:
@@ -777,7 +827,6 @@ class OpenSearchProxyReader:
             logger.error(f"Request error: {e}")
             print(f"[DEBUG] Request error: {e}")
             return None
-    
     def connect(self) -> bool:
         """OpenSearch'e bağlantıyı test et"""
         try:
@@ -1019,10 +1068,11 @@ class OpenSearchProxyReader:
         Timeout ve 502 hatalarını önlemek için Micro-Slicing (15dk) kullanır.
         """
         try:
-            logger.info(f"Starting timestamp-sliced read for last {last_hours} hours")
-            print(f"[DEBUG] Starting timestamp-sliced read for last {last_hours} hours, host_filter: {host_filter}")
+            logger.info(f"Starting memory-efficient sliced read for last {last_hours} hours")
+            print(f"[DEBUG] Starting memory-efficient sliced read for last {last_hours} hours, host_filter: {host_filter}")
             
-            all_logs = []
+            df_chunks = []
+            total_logs_count = 0
             batch_size = 10000  # OpenSearch limiti
             
             # Zaman aralığını hesapla - UTC kullan
@@ -1101,22 +1151,59 @@ class OpenSearchProxyReader:
                 logger.info(f"Total expected logs to fetch: {total_expected}")
             
             # Her zaman dilimi için ayrı sorgular çalıştır
+            # [SAFETY] Hard Limit Tanımla (400k ~ Yüksek Yoğunluklu Analiz için Yeterli)
+            SAFETY_LIMIT = 400000
+
+            # Her zaman dilimi için ayrı sorgular çalıştır
             for slice_idx, (slice_start, slice_end) in enumerate(time_slices):
+                # [SAFETY] Limit Kontrolü
+                if total_logs_count >= SAFETY_LIMIT:
+                    logger.warning(f"⚠️ SAFETY LIMIT REACHED: Stopped at {total_logs_count} logs (Limit: {SAFETY_LIMIT}).")
+                    print(f"[DEBUG] 🛑 SAFETY LIMIT REACHED: {total_logs_count} logs. Stopping fetch to protect system memory.")
+                    break
+
                 # Bu zaman dilimi için tüm logları çek
                 slice_logs = self._read_time_slice(slice_start, slice_end, batch_size, host_filter)
-                all_logs.extend(slice_logs)
+                
+                if slice_logs:
+                    # Çekilen parça bile tek başına limiti aşabilir, kontrol et
+                    if total_logs_count + len(slice_logs) > SAFETY_LIMIT:
+                        remaining = SAFETY_LIMIT - total_logs_count
+                        chunk_df = pd.DataFrame(slice_logs[:remaining])
+                        df_chunks.append(chunk_df)
+                        total_logs_count += remaining
+                        logger.warning(f"⚠️ SAFETY LIMIT HIT during slice merge. Truncated to {SAFETY_LIMIT}.")
+                        slice_logs = None
+                        break
+
+                    # Her dilimi anında küçük bir DataFrame'e çevir
+                    chunk_df = pd.DataFrame(slice_logs)
+                    df_chunks.append(chunk_df)
+                    total_logs_count += len(slice_logs)
+                    # Geçici listeyi hemen serbest bırak ki RAM dolmasın
+                    slice_logs = None
+                
+                # [PERFORMANCE] Memory Leak Önleme - Daha sık temizlik
+                if slice_idx % 5 == 0:
+                    gc.collect()
 
                 # Progress log (Her 5 dilimde bir veya son dilimde)
                 if (slice_idx + 1) % 5 == 0 or (slice_idx + 1) == len(time_slices):
                     progress = ((slice_idx + 1) / len(time_slices)) * 100
-                    print(f"[DEBUG] Progress: {progress:.1f}% ({len(all_logs)} logs retrieved)")
+                    logger.info(f"Progress: {progress:.1f}% ({total_logs_count} logs retrieved)")
             
-            if len(all_logs) == 0:
+            if not df_chunks:
                 logger.warning("No logs retrieved. Check time range and filters.")
                 print("[DEBUG] No logs retrieved. Check time range and filters.")
                 return pd.DataFrame()
             
-            final_df = pd.DataFrame(all_logs)
+            # Parçaları verimli şekilde birleştir
+            logger.info(f"Concatenating {len(df_chunks)} data chunks...")
+            final_df = pd.concat(df_chunks, ignore_index=True)
+            # Referansları temizle
+            df_chunks = None
+            gc.collect()
+            
             print(f"[DEBUG] Fetch completed. Final DataFrame shape: {final_df.shape}")
             logger.info(f"Fetch completed. Retrieved {len(final_df)} logs.")
             

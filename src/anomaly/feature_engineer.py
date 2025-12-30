@@ -490,11 +490,30 @@ class MongoDBFeatureEngineer:
             df['docs_examined_count'] = df.apply(extract_docs_examined_hybrid, axis=1)
             df['keys_examined_count'] = df.apply(extract_keys_examined_hybrid, axis=1)
 
+            # [SAFETY LAYER] CONFIG-BASED NUMERICAL CAPPING Devasa sayıların ML modelindeki binary (0/1) uyarıları ezmesini önlemek için
+            try:
+                cap_config = self.config.get('anomaly_detection', {}).get('capping', {})
+                max_dur = cap_config.get('max_query_duration_ms', 60000)
+                max_scan = cap_config.get('max_docs_examined', 1000000)
+                logger.info(f"Applying numerical capping (Duration Limit: {max_dur}ms, Scan Limit: {max_scan})")
+                df['query_duration_ms'] = df['query_duration_ms'].clip(upper=max_dur)
+                df['docs_examined_count'] = df['docs_examined_count'].clip(upper=max_scan)
+                df['keys_examined_count'] = df['keys_examined_count'].clip(upper=max_scan)
+            except Exception as cap_err:
+                logger.warning(f"Numerical capping applied with fallback defaults: {cap_err}")
+                df['query_duration_ms'] = df['query_duration_ms'].clip(upper=60000)
+            # --- END SAFETY LAYER ---
+
             # YENİ: Transaction metrikleri çıkar
             txn_metrics = df.apply(extract_txn_metrics, axis=1)
             df['txn_time_active_micros'] = txn_metrics.apply(lambda x: x['time_active_micros'])
             df['txn_time_inactive_micros'] = txn_metrics.apply(lambda x: x['time_inactive_micros'])
-            
+
+            # Transaction capping (eğer txn field'ları varsa)
+            if 'txn_time_active_micros' in df.columns:
+                max_txn = self.config.get('anomaly_detection', {}).get('capping', {}).get('max_txn_active_micros', 30000000)
+                df['txn_time_active_micros'] = df['txn_time_active_micros'].clip(upper=max_txn)
+
             # YENİ: Transaction wait ratio (yüksek değer = blocking sorunu göstergesi)
             # time_inactive / time_active oranı - 100'den büyükse potansiyel lock contention
             df['txn_wait_ratio'] = np.where(
@@ -529,6 +548,7 @@ class MongoDBFeatureEngineer:
             logger.error(f"Error in message features: {e}")
             
         return df
+
     def extract_severity_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Severity features"""
         try:

@@ -16,3 +16,7 @@ temp_logs/
 storage/exports/anomaly/*.json
 storage/temp/*.json
 *.log
+
+# runtime cache
+storage/temp/analysis_cache.json
+

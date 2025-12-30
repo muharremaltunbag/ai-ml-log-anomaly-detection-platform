@@ -30,7 +30,7 @@
         // Eğer API zaten bağlıysa panel'i göster
         if (window.isConnected) {
             console.log('API already connected, showing ML Panel...');
-            showMLPanel();
+            // showMLPanel();
             loadMLMetrics();
         }
         
@@ -348,7 +348,8 @@
         hide: hideMLPanel,
         loadMetrics: loadMLMetrics,
         updateWithDefaults: updateMLPanelWithDefaults,
-        autoUpdate: autoUpdatePanelAfterAnalysis
+        autoUpdate: autoUpdatePanelAfterAnalysis,
+        toggleMinimize: togglePanelMinimize
     };
     
     // Backward compatibility

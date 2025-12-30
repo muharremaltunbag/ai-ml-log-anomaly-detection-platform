@@ -180,151 +180,227 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 /**
- * Event listener'ları başlat
+ * Event listener'ları başlat - GÜVENLİ VERSİYON
  */
 function initializeEventListeners() {
-    console.log('Initializing event listeners...'); // DEBUG LOG
+    console.log('Initializing event listeners... (Robust Version)');
     
     // Bağlan butonu
-    elements.connectBtn.addEventListener('click', handleConnect);
+    if (elements.connectBtn) {
+        elements.connectBtn.addEventListener('click', handleConnect);
+    }
     
     // Enter tuşu ile bağlan
-    elements.apiKeyInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') handleConnect();
-    });
+    if (elements.apiKeyInput) {
+        elements.apiKeyInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleConnect();
+        });
+    }
     
     // Sorgu gönder butonu
-    elements.queryBtn.addEventListener('click', handleQuery);
+    if (elements.queryBtn) {
+        elements.queryBtn.addEventListener('click', handleQuery);
+    }
     
     // Enter tuşu ile sorgu gönder (Ctrl+Enter)
-    elements.queryInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && e.ctrlKey) handleQuery();
-    });
+    if (elements.queryInput) {
+        elements.queryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) handleQuery();
+        });
+    }
     
     // Hızlı işlem butonları
-    document.getElementById('statusBtn').addEventListener('click', handleStatus);
+    const statusBtn = document.getElementById('statusBtn');
+    if (statusBtn) {
+        statusBtn.addEventListener('click', handleStatus);
+    }
     
     // Log Yükle butonu
-    document.getElementById('logUploadBtn').addEventListener('click', () => {
-        console.log('Log upload button clicked'); // DEBUG LOG
-        document.getElementById('logFileInput').click();
-    });
+    const logUploadBtn = document.getElementById('logUploadBtn');
+    if (logUploadBtn) {
+        logUploadBtn.addEventListener('click', () => {
+            console.log('Log upload button clicked');
+            const fileInput = document.getElementById('logFileInput');
+            if (fileInput) fileInput.click();
+        });
+    }
 
     // Dosya yükleme için event listener'lar
     const logFileInput = document.getElementById('logFileInput');
     const uploadDropzone = document.getElementById('uploadDropzone');
     
     if (logFileInput) {
-        logFileInput.addEventListener('change', handleFileUpload);
+        logFileInput.addEventListener('change', (e) => {
+            console.log('File input changed event triggered');
+            if (window.handleFileUpload) {
+                window.handleFileUpload(e);
+            } else {
+                console.error('❌ CRITICAL: handleFileUpload function not found in window scope!');
+                alert('Dosya yükleme modülü yüklenemedi. Lütfen sayfayı yenileyin.');
+            }
+        });
     }
     
     if (uploadDropzone) {
         uploadDropzone.addEventListener('click', () => {
-            logFileInput.click();
+            if (logFileInput) logFileInput.click();
         });
         
         // Drag and Drop
         uploadDropzone.addEventListener('dragover', (e) => {
             e.preventDefault();
+            e.stopPropagation();
             uploadDropzone.classList.add('drag-over');
         });
         
-        uploadDropzone.addEventListener('dragleave', () => {
+        uploadDropzone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             uploadDropzone.classList.remove('drag-over');
         });
         
         uploadDropzone.addEventListener('drop', (e) => {
             e.preventDefault();
+            e.stopPropagation();
             uploadDropzone.classList.remove('drag-over');
             
             const files = e.dataTransfer.files;
             if (files.length > 0) {
-                handleFileUpload({ target: { files: files } });
+                console.log('File dropped via drag-and-drop');
+                if (window.handleFileUpload) {
+                    window.handleFileUpload({ target: { files: files } });
+                } else {
+                    console.error('❌ CRITICAL: handleFileUpload function not found!');
+                }
             }
         });
     }
 
-    // Anomali Analizi butonu  
-    document.getElementById('anomalyAnalysisBtn').addEventListener('click', () => {
-        console.log('Anomaly Analysis Button clicked!');
-        
-        // Modal'ı göster
-        document.getElementById('anomalyModal').style.display = 'block';
-        
-        // Dosyaları güncelle ama data source'u resetleme
-        updateUploadedFilesList();
-        
-        // Eğer önceden upload seçiliyse, tekrar seç
-        if (selectedDataSource === 'upload') {
-            document.querySelector('input[name="dataSource"][value="upload"]').checked = true;
-            updateSourceInputs('upload');
-        }
-        // YENİ: OpenSearch seçiliyse listeleri yükle
-        else if (selectedDataSource === 'opensearch' && isConnected) {
-            document.querySelector('input[name="dataSource"][value="opensearch"]').checked = true;
-            updateSourceInputs('opensearch');
-            setTimeout(() => {
-                loadMongoDBHosts();
-                loadClusters();
-            }, 200);
-        }
-    });
+    // Anomali Analizi butonu
+    const anomalyBtn = document.getElementById('anomalyAnalysisBtn');
+    if (anomalyBtn) {
+        anomalyBtn.addEventListener('click', () => {
+            console.log('Anomaly Analysis Button clicked!');
+            
+            // Modal'ı göster
+            const modal = document.getElementById('anomalyModal');
+            if (modal) modal.style.display = 'block';
+            
+            // Dosyaları güncelle ama data source'u resetleme
+            if (window.updateUploadedFilesList) window.updateUploadedFilesList();
+            else if (typeof updateUploadedFilesList === 'function') updateUploadedFilesList();
+            
+            // Eğer önceden upload seçiliyse, tekrar seç
+            if (typeof selectedDataSource !== 'undefined' && selectedDataSource === 'upload') {
+                const uploadRadio = document.querySelector('input[name="dataSource"][value="upload"]');
+                if (uploadRadio) uploadRadio.checked = true;
+                if (window.updateSourceInputs) window.updateSourceInputs('upload');
+                else if (typeof updateSourceInputs === 'function') updateSourceInputs('upload');
+            }
+            // OpenSearch seçiliyse listeleri yükle
+            else if (typeof selectedDataSource !== 'undefined' && selectedDataSource === 'opensearch' && (window.isConnected || isConnected)) {
+                const osRadio = document.querySelector('input[name="dataSource"][value="opensearch"]');
+                if (osRadio) osRadio.checked = true;
+                if (window.updateSourceInputs) window.updateSourceInputs('opensearch');
+                else if (typeof updateSourceInputs === 'function') updateSourceInputs('opensearch');
+                setTimeout(() => {
+                    if (window.loadMongoDBHosts) window.loadMongoDBHosts();
+                    else if (typeof loadMongoDBHosts === 'function') loadMongoDBHosts();
+                    if (window.loadClusters) window.loadClusters();
+                    else if (typeof loadClusters === 'function') loadClusters();
+                }, 200);
+            }
+        });
+    }
 
-    // DBA Analizi butonu - YENİ
-    document.getElementById('dbaAnalysisBtn').addEventListener('click', () => {
-        console.log('DBA Analysis Button clicked!');
-        openDBAAnalysisModal();
-    });
+    // DBA Analizi butonu
+    const dbaBtn = document.getElementById('dbaAnalysisBtn');
+    if (dbaBtn) {
+        dbaBtn.addEventListener('click', () => {
+            console.log('DBA Analysis Button clicked!');
+            if (window.openDBAAnalysisModal) window.openDBAAnalysisModal();
+            else if (typeof openDBAAnalysisModal === 'function') openDBAAnalysisModal();
+        });
+    }
     
     // Event delegation for dynamically loaded buttons
     document.addEventListener('click', function(e) {
         if (e.target && e.target.id === 'dbaAnalysisBtn') {
-            console.log('DBA TAVSİYE SİSTEMİ clicked via delegation!');
             e.preventDefault();
-            openDBAAnalysisModal();
+            if (window.openDBAAnalysisModal) window.openDBAAnalysisModal();
+            else if (typeof openDBAAnalysisModal === 'function') openDBAAnalysisModal();
         }
     });
     
-    // Anomaly Modal içindeki Analizi Başlat butonu  
-    document.getElementById('startAnalysisBtn').addEventListener('click', handleAnalyzeLog);
-    
+    // Anomaly Modal içindeki Analizi Başlat butonu
+    const startAnalysisBtn = document.getElementById('startAnalysisBtn');
+    if (startAnalysisBtn) {
+        startAnalysisBtn.addEventListener('click', (e) => {
+            console.log('Start Analysis clicked');
+            if (window.handleAnalyzeLog) window.handleAnalyzeLog(e);
+            else if (typeof handleAnalyzeLog === 'function') handleAnalyzeLog(e);
+            else console.error('handleAnalyzeLog function missing');
+        });
+    }
 
     // Refresh hosts button - CLUSTER DESTEĞİ İLE
-    document.getElementById('refreshHostsBtn')?.addEventListener('click', () => {
-        const hostMode = document.querySelector('input[name="hostSelectionMode"]:checked')?.value || 'single';
-        
-        if (hostMode === 'single') {
-            loadMongoDBHosts();
-            showNotification('Host listesi yenileniyor...', 'info');
-        } else if (hostMode === 'cluster') {
-            loadClusters();
-            showNotification('Cluster listesi yenileniyor...', 'info');
-        }
-    });
+    const refreshBtn = document.getElementById('refreshHostsBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            const hostMode = document.querySelector('input[name="hostSelectionMode"]:checked')?.value || 'single';
+            
+            if (hostMode === 'single') {
+                if (window.loadMongoDBHosts) window.loadMongoDBHosts();
+                else if (typeof loadMongoDBHosts === 'function') loadMongoDBHosts();
+                showNotification('Host listesi yenileniyor...', 'info');
+            } else if (hostMode === 'cluster') {
+                if (window.loadClusters) window.loadClusters();
+                else if (typeof loadClusters === 'function') loadClusters();
+                showNotification('Cluster listesi yenileniyor...', 'info');
+            }
+        });
+    }
     
     // Örnek sorgu chip'leri
     document.querySelectorAll('.chip').forEach(chip => {
         chip.addEventListener('click', (e) => {
-            console.log('Chip clicked:', e.target.dataset.query); // DEBUG LOG
-            elements.queryInput.value = e.target.dataset.query;
-            elements.queryInput.focus();
+            if (elements.queryInput) {
+                elements.queryInput.value = e.target.dataset.query;
+                elements.queryInput.focus();
+            }
         });
     });
     
     // Modal kapatma
-    document.querySelector('#modal .close').addEventListener('click', closeModal);
+    const modalClose = document.querySelector('#modal .close');
+    if (modalClose) {
+        modalClose.addEventListener('click', closeModal);
+    }
+    
     window.addEventListener('click', (e) => {
-        if (e.target === elements.modal) closeModal();
+        if (elements.modal && e.target === elements.modal) closeModal();
     });
     
     // Anomaly Modal kapatma butonu için event listener ekle
-    document.querySelector('#anomalyModal .close').addEventListener('click', closeAnomalyModal);
+    const anomalyClose = document.querySelector('#anomalyModal .close');
+    if (anomalyClose) {
+        anomalyClose.addEventListener('click', () => {
+            if (window.closeAnomalyModal) window.closeAnomalyModal();
+            else if (typeof closeAnomalyModal === 'function') closeAnomalyModal();
+            else {
+                const m = document.getElementById('anomalyModal');
+                if (m) m.style.display = 'none';
+            }
+        });
+    }
     
     // Anomaly modal dışına tıklama ile kapatma
     window.addEventListener('click', (e) => {
         const anomalyModal = document.getElementById('anomalyModal');
-        if (e.target === anomalyModal) {
-            closeAnomalyModal();
+        if (anomalyModal && e.target === anomalyModal) {
+            if (window.closeAnomalyModal) window.closeAnomalyModal();
+            else if (typeof closeAnomalyModal === 'function') closeAnomalyModal();
+            else anomalyModal.style.display = 'none';
         }
     });
 
@@ -477,8 +553,37 @@ function initializeEventListeners() {
     window.addEventListener('error', (e) => {
         console.error('Global error caught:', e.message);
     });
+
+    // ML Panel Toggle butonu
+    const mlPanelBtn = document.getElementById('toggleMLPanelBtn');
+    if (mlPanelBtn) {
+        mlPanelBtn.addEventListener('click', () => {
+            const panel = document.getElementById('mlModelPanel');
+            if (panel) {
+                // Panelin mevcut durumunu kontrol et
+                const isHidden = (panel.style.display === 'none' || panel.style.display === '');
+                if (isHidden) {
+                    // Paneli aç
+                    if (window.MLPanel && typeof window.MLPanel.show === 'function') {
+                        window.MLPanel.show();
+                    } else {
+                        panel.style.display = 'block';
+                    }
+                    mlPanelBtn.classList.add('active'); // Opsiyonel: butonu aktif stil yap
+                } else {
+                    // Paneli kapat
+                    if (window.MLPanel && typeof window.MLPanel.hide === 'function') {
+                        window.MLPanel.hide();
+                    } else {
+                        panel.style.display = 'none';
+                    }
+                    mlPanelBtn.classList.remove('active');
+                }
+            }
+        });
+    }
     
-    console.log('Event listeners initialized successfully'); // DEBUG LOG
+    console.log('✅ Event listeners initialized successfully');
 }
 
 /**
@@ -558,15 +663,12 @@ async function handleConnect() {
             elements.mainContent.style.display = 'block';
             elements.apiKeyInput.disabled = true;
 
-            // YENİ: ML Paneli görünür yap ve metrikleri yükle
-            // YENİ: ML Panel modülünü kullan
+            // YENİ: ML Panel verilerini yükle (AMA PANELİ AÇMA)
             if (window.MLPanel) {
-                window.MLPanel.show();
+                // window.MLPanel.show(); // Artık otomatik açılmayacak
                 setTimeout(() => {
-                    window.MLPanel.loadMetrics();
+                    if(window.MLPanel.loadMetrics) window.MLPanel.loadMetrics();
                 }, 500);
-            } else {
-                console.warn('ML Panel module not loaded');
             }
             elements.connectBtn.textContent = 'BAĞLANDI';
             elements.connectBtn.classList.add('connected');

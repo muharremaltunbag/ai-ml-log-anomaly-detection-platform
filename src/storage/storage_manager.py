@@ -123,7 +123,8 @@ class StorageManager:
                                    host: str = None,
                                    time_range: str = None,
                                    auto_save: bool = None,
-                                   uploaded_filename: str = None) -> Dict[str, str]:
+                                   uploaded_filename: str = None,
+                                   model_info: Dict[str, Any] = None) -> Dict[str, str]:
         """
         Save complete anomaly analysis (metadata + data)
         
@@ -134,6 +135,7 @@ class StorageManager:
             time_range: Time range of analysis
             auto_save: Override auto-save setting
             uploaded_filename: Filename for uploaded files
+            model_info: Model metadata (version, path, ensemble info, etc.)
         Returns:
             Dictionary with analysis_id and file_path
         """
@@ -185,7 +187,8 @@ class StorageManager:
             # Save metadata to MongoDB
             analysis_id = await self.mongodb.save_anomaly_result(
                 analysis_result, 
-                source_info
+                source_info,
+                model_info
             )
             
             # ✅ YENİ: MongoDB kayıt durumunu detaylı logla
@@ -208,7 +211,8 @@ class StorageManager:
             file_path = await self._save_analysis_file(
                 analysis_id,
                 analysis_result,
-                source_info
+                source_info,
+                model_info
             )
             
             # Update statistics
@@ -614,7 +618,8 @@ class StorageManager:
     async def _save_analysis_file(self,
                                  analysis_id: str,
                                  analysis_result: Dict[str, Any],
-                                 source_info: Dict[str, Any]) -> Path:
+                                 source_info: Dict[str, Any],
+                                 model_info: Dict[str, Any] = None) -> Path:
         """Save analysis data to file system"""
         try:
             # Determine file format
@@ -666,10 +671,22 @@ class StorageManager:
                     "host": source_info.get("host") if source_info else None,
                     "time_range": source_info.get("time_range") if source_info else None,
 
+                    #  Model metadata (MongoDB ile uyumlu yapı)
+                    "model_info": {
+                        "model_version": model_info.get("model_version") if model_info else None,
+                        "model_path": model_info.get("model_path") if model_info else None,
+                        "server_name": model_info.get("server_name") if model_info else None,
+                        "is_ensemble_mode": model_info.get("is_ensemble_mode", False) if model_info else False,
+                        "ensemble_model_count": model_info.get("ensemble_model_count", 0) if model_info else 0,
+                        "historical_buffer_samples": model_info.get("historical_buffer_samples", 0) if model_info else 0,
+                        "model_trained_at": model_info.get("model_trained_at") if model_info else None,
+                        "feature_count": model_info.get("feature_count", 0) if model_info else 0,
+                        "contamination": model_info.get("contamination") if model_info else None
+                    } if model_info else None,
+
                     # Keep original for backward compatibility
                     "_original_result": analysis_result
                 }
-                
                 async with aiofiles.open(file_path, 'w') as f:
                     await f.write(json.dumps(data, indent=2, default=str))
                     
@@ -1100,3 +1117,86 @@ class StorageManager:
             data["source"].setdefault("time_range", source_info.get("time_range"))
 
         return analysis_result
+
+    async def save_uploaded_log(self, file_object, filename: str) -> str:
+        """
+        Upload edilen log dosyasını kalıcı storage'a kaydet (FIFO kontrollü)
+        
+        Args:
+            file_object: FastAPI UploadFile.file objesi
+            filename: Kaydedilecek dosya adı
+            
+        Returns:
+            Kaydedilen dosyanın tam yolu
+        """
+        try:
+            upload_dir = self.storage_paths["uploads"]
+            target_path = upload_dir / filename
+            
+            # 1. FIFO: Limit kontrolü yap ve gerekirse yer aç
+            await self._enforce_upload_storage_limit()
+            
+            # 2. Dosyayı kaydet
+            with open(target_path, "wb") as buffer:
+                shutil.copyfileobj(file_object, buffer)
+                
+            logger.info(f"✅ Log file saved to permanent storage: {target_path}")
+            
+            # Dosya boyutunu logla
+            size_mb = target_path.stat().st_size / (1024 * 1024)
+            logger.info(f"   Size: {size_mb:.2f} MB")
+            
+            return str(target_path)
+            
+        except Exception as e:
+            logger.error(f"❌ Error saving uploaded log: {e}")
+            raise
+
+    async def _enforce_upload_storage_limit(self):
+        """
+        Upload klasörü boyut limitini FIFO (First-In-First-Out) mantığıyla koru
+        """
+        try:
+            upload_dir = self.storage_paths["uploads"]
+            # Config'den limiti al (GB -> Byte çevir)
+            max_size_gb = STORAGE_LIMITS.get("max_upload_size_gb", 5.0)
+            max_size_bytes = max_size_gb * 1024 * 1024 * 1024
+            
+            # Mevcut dosyaları listele
+            files = list(upload_dir.glob("*"))
+            if not files:
+                return
+
+            # Mevcut boyutu hesapla
+            current_size = sum(f.stat().st_size for f in files if f.is_file())
+            
+            # Eğer limit aşıldıysa temizlik yap
+            if current_size >= max_size_bytes:
+                logger.warning(f"⚠️ Upload storage limit exceeded: {current_size / (1024**3):.2f} GB / {max_size_gb} GB")
+                logger.info("🧹 Starting FIFO cleanup for uploads...")
+                
+                # Dosyaları değiştirilme tarihine göre sırala (En eski en başta)
+                files.sort(key=lambda x: x.stat().st_mtime)
+                
+                deleted_count = 0
+                freed_bytes = 0
+                
+                for f in files:
+                    # Yeterince yer açıldı mı? (Güvenlik payı olarak %10 altına inene kadar sil)
+                    if current_size < (max_size_bytes * 0.9):
+                        break
+                    
+                    try:
+                        file_size = f.stat().st_size
+                        f.unlink()
+                        current_size -= file_size
+                        freed_bytes += file_size
+                        deleted_count += 1
+                        logger.debug(f"Deleted old upload: {f.name}")
+                    except Exception as del_err:
+                        logger.error(f"Failed to delete {f.name}: {del_err}")
+                
+                logger.info(f"✅ FIFO Cleanup complete: {deleted_count} files deleted, {freed_bytes / (1024**2):.2f} MB freed")
+                
+        except Exception as e:
+            logger.error(f"Error enforcing upload limits: {e}")

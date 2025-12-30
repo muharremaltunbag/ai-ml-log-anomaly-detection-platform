@@ -127,17 +127,19 @@ class MongoDBHandler:
             
         except Exception as e:
             logger.error(f"Error creating indexes: {e}")
-    
+
     async def save_anomaly_result(self, analysis_result: Dict[str, Any], 
-                                 source_info: Dict[str, Any] = None) -> str:
+                                  source_info: Dict[str, Any] = None,
+                                  model_info: Dict[str, Any] = None) -> str:
         """
         Save anomaly analysis result to MongoDB
         Compatible with anomaly_tools.analyze_mongodb_logs() output
-        
+
         Args:
             analysis_result: Result from analyze_mongodb_logs
             source_info: Additional source metadata
-            
+            model_info: Model metadata (version, path, ensemble info, etc.)
+
         Returns:
             Analysis ID
         """
@@ -182,28 +184,45 @@ class MongoDBHandler:
                 # AI explanation if available
                 "ai_explanation": analysis_result.get("ai_explanation", {}),
                 "suggestions": analysis_result.get("suggestions", []),
-                
                 # Source metadata
                 "source_info": source_info or {},
                 "host": source_info.get("host") if source_info else None,
                 "time_range": source_info.get("time_range") if source_info else None,
-                
+
+                # Model metadata
+                "model_metadata": {
+                    "model_version": model_info.get("model_version") if model_info else None,
+                    "model_path": model_info.get("model_path") if model_info else None,
+                    "server_name": model_info.get("server_name") if model_info else None,
+                    "is_ensemble_mode": model_info.get("is_ensemble_mode", False) if model_info else False,
+                    "ensemble_model_count": model_info.get("ensemble_model_count", 0) if model_info else 0,
+                    "historical_buffer_samples": model_info.get("historical_buffer_samples", 0) if model_info else 0,
+                    "model_trained_at": model_info.get("model_trained_at") if model_info else None,
+                    "feature_count": model_info.get("feature_count", 0) if model_info else 0,
+                    "contamination": model_info.get("contamination") if model_info else None
+                } if model_info else None,
                 # Metadata
                 "created_at": datetime.utcnow(),
                 "ttl_date": datetime.utcnow() + timedelta(days=RETENTION_POLICY["anomaly_history_days"])
             }
-            
             # Insert to MongoDB
             collection = self.db[self.collections["anomaly_history"]]
+
+            # [SAFETY] MongoDB 16MB limit koruması.
+            # Döküman çok büyükse veriyi bozmadan en kritik kısımları koru.
+            if len(document.get("unfiltered_anomalies", [])) > 10000:
+                logger.warning(f"Analysis {analysis_id} is too large. Truncating for MongoDB safety.")
+                document["unfiltered_anomalies"] = document["unfiltered_anomalies"][:10000]
+                document["is_truncated_in_db"] = True
+
             result = await collection.insert_one(document)
-            
             logger.info(f"Anomaly result saved with ID: {analysis_id}")
-            
-            # Check and cleanup old records
-            await self._cleanup_old_anomalies()
-            
+
+            # [STABILITY] Temizlik işlemini arka plana at.
+            # Kullanıcı temizliğin bitmesini beklemeden hemen cevabını alsın.
+            asyncio.create_task(self._cleanup_old_anomalies())
+
             return analysis_id
-            
         except Exception as e:
             logger.error(f"Error saving anomaly result: {e}")
             raise
@@ -779,4 +798,46 @@ class MongoDBHandler:
             
         except Exception as e:
             logger.error(f"Error during size-based cleanup: {e}")
+            return 0
+
+    async def clear_all_analysis_history(self) -> int:
+        """
+        Clear ALL anomaly and DBA analysis history.
+        Used when user explicitly requests 'Clear History'.
+        
+        Returns:
+            Number of deleted documents
+        """
+        try:
+            # anomaly_history koleksiyonunu hedefle
+            collection = self.db[self.collections["anomaly_history"]]
+            
+            # Filtre vermeden delete_many çağırarak hepsini sil
+            result = await collection.delete_many({})
+            
+            if result.deleted_count > 0:
+                logger.info(f"🗑️ Explicitly cleared {result.deleted_count} anomaly/DBA history records")
+            
+            return result.deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error clearing analysis history: {e}")
+            return 0
+
+    async def clear_all_query_history(self) -> int:
+        """
+        Clear ALL chat/query history globally (Truncate collection).
+        """
+        try:
+            collection = self.db[self.collections.get("query_history", "query_history")]
+            # Filtre olmadan hepsini sil
+            result = await collection.delete_many({})
+            
+            if result.deleted_count > 0:
+                logger.info(f"🗑️ Explicitly cleared {result.deleted_count} chat query records")
+            
+            return result.deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error clearing query history: {e}")
             return 0

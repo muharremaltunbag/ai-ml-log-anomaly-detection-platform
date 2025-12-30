@@ -447,69 +447,164 @@ function toggleViewMode(mode) {
     // Kullanıcı tercihini kaydet
     localStorage.setItem('anomalyViewMode', mode);
 }
+
 /**
- * Dosya yükleme işlemi
+ * Dosya yükleme işlemi - Progress Bar Destekli (XHR)
  */
-async function handleFileUpload(event) {
+function handleFileUpload(event) {
     const file = event.target.files[0];
     if (!file) {
         console.log('No file selected');
         return;
     }
-    
+
     console.log('File selected:', file.name, file.size, 'bytes');
-    
-    // Dosya boyutu kontrolü (100MB limit)
-    const maxSize = 100 * 1024 * 1024; // 100MB
+
+    // Dosya boyutu kontrolü (1GB limit)
+    const maxSize = 1024 * 1024 * 1024; // 1GB
     if (file.size > maxSize) {
-        showNotification('Dosya boyutu 100MB\'dan büyük olamaz', 'error');
+        showNotification('Dosya boyutu 1GB\'dan büyük olamaz', 'error');
+        event.target.value = ''; // Input'u temizle
         return;
     }
+
+    // UI: Dropzone'u Progress Bar'a dönüştür
+    const dropzone = document.getElementById('uploadDropzone');
+    let originalContent = '';
     
+    if (dropzone) {
+        originalContent = dropzone.innerHTML;
+        dropzone.innerHTML = `
+            <div class="upload-progress-container" style="text-align: center; padding: 15px; color: #0047BA;">
+                <div class="spinner" style="margin: 0 auto 10px; width: 30px; height: 30px; border-width: 3px;"></div>
+                <p style="margin: 5px 0; font-weight: bold; font-size: 0.9em;">Yükleniyor...</p>
+                <p style="margin: 0; font-size: 0.8em; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">${window.escapeHtml(file.name)}</p>
+                
+                <div class="progress-bar-bg" style="background: #e0e0e0; height: 8px; border-radius: 4px; width: 100%; margin-top: 15px; overflow: hidden;">
+                    <div id="uploadProgressBar" style="background: #27ae60; height: 100%; width: 0%; transition: width 0.1s linear;"></div>
+                </div>
+                <p id="uploadStatusText" style="font-size: 0.8em; color: #888; margin-top: 5px;">%0</p>
+            </div>
+        `;
+    } else {
+        // Fallback: Dropzone yoksa normal loader
+        showLoader(true);
+    }
+
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('api_key', window.apiKey);
-    
-    try {
-        showLoader(true);
-        showNotification('Dosya yükleniyor...', 'info');
-        
-        const response = await fetch(window.API_ENDPOINTS.uploadLog, {
-            method: 'POST',
-            body: formData
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            showNotification('Dosya başarıyla yüklendi!', 'success');
-            console.log('File uploaded successfully:', data);
+
+    const xhr = new XMLHttpRequest();
+    // URL param olarak API key ekle
+    xhr.open('POST', `${window.API_ENDPOINTS.uploadLog}?api_key=${encodeURIComponent(window.apiKey)}`, true);
+
+    // Progress Event
+    xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+            const percentComplete = Math.round((e.loaded / e.total) * 100);
             
-            // Dosya listesini güncelle
-            await window.updateUploadedFilesList();
+            const progressBar = document.getElementById('uploadProgressBar');
+            const statusText = document.getElementById('uploadStatusText');
             
-            // Anomali modal açıksa, yeni dosyayı otomatik seç
-            const modal = document.getElementById('anomalyModal');
-            if (modal && modal.style.display === 'flex') {
+            if (progressBar) progressBar.style.width = `${percentComplete}%`;
+            if (statusText) statusText.textContent = `%${percentComplete}`;
+        }
+    };
+
+    // Load Event (Success/Error)
+    xhr.onload = async function() {
+        if (dropzone) showLoader(false); // Fallback loader'ı kapat
+
+        if (xhr.status === 200) {
+            try {
+                const data = JSON.parse(xhr.responseText);
+                console.log('Upload success:', data);
+
+                // UI: Başarılı Mesajı
+                if (dropzone) {
+                    dropzone.innerHTML = `
+                        <div style="text-align: center; color: #27ae60; padding: 20px; animation: fadeIn 0.3s;">
+                            <div style="font-size: 40px; margin-bottom: 10px;">✅</div>
+                            <p style="font-weight: bold; margin: 5px 0;">Yükleme Başarılı!</p>
+                            <p style="font-size: 0.8em; color: #555;">${window.escapeHtml(data.filename)}</p>
+                        </div>
+                    `;
+                }
+                showNotification('Dosya başarıyla yüklendi!', 'success');
+
+                // Dosya listesini güncelle
+                await window.updateUploadedFilesList();
+
+                // Anomali modal açıksa, yeni dosyayı otomatik seç
+                // Backend 'file_path' dönüyor, listedeki 'path' ile eşleşmeli
+                const savedPath = data.file_path || data.path; 
+                
+                // Modal ve Radio button seçimi
                 setTimeout(() => {
-                    const newFileRadio = document.querySelector(`input[name="logFile"][value="${data.path}"]`);
+                    const newFileRadio = document.querySelector(`input[name="logFile"][value="${savedPath}"]`);
                     if (newFileRadio) {
                         newFileRadio.checked = true;
-                        window.validateAnalysisButton();
+                        // Seçimi tetikle
+                        newFileRadio.dispatchEvent(new Event('change', { bubbles: true }));
+                        
+                        // Validasyonu tetikle
+                        if (typeof window.validateAnalysisButton === 'function') {
+                            window.validateAnalysisButton();
+                        }
                     }
-                }, 100);
+                    
+                    // 3 Saniye sonra Dropzone'u eski haline getir
+                    if (dropzone) {
+                        dropzone.innerHTML = originalContent;
+                    }
+                }, 2000);
+
+            } catch (e) {
+                console.error('JSON Parse error:', e);
+                handleError('Sunucu yanıtı işlenemedi.');
             }
         } else {
-            throw new Error(data.detail || 'Dosya yüklenemedi');
+            let errorMsg = 'Yükleme başarısız.';
+            try {
+                const errData = JSON.parse(xhr.responseText);
+                errorMsg = errData.detail || errorMsg;
+            } catch (e) {}
+            handleError(errorMsg);
         }
-    } catch (error) {
-        console.error('File upload error:', error);
-        showNotification(`Hata: ${error.message}`, 'error');
-    } finally {
-        showLoader(false);
-        // Input'u temizle
+        
+        // Input'u temizle ki aynı dosya tekrar seçilebilsin
         event.target.value = '';
+    };
+
+    // Error Event (Network)
+    xhr.onerror = function() {
+        handleError('Ağ hatası oluştu.');
+        event.target.value = '';
+    };
+
+    // Hata Yönetimi Yardımcısı
+    function handleError(msg) {
+        console.error('Upload error:', msg);
+        showNotification(msg, 'error');
+        
+        if (dropzone) {
+            dropzone.innerHTML = `
+                <div style="text-align: center; color: #c0392b; padding: 20px;">
+                    <div style="font-size: 40px; margin-bottom: 10px;">❌</div>
+                    <p style="font-weight: bold;">Hata!</p>
+                    <p style="font-size: 0.9em;">${window.escapeHtml(msg)}</p>
+                </div>
+            `;
+            // 3 sn sonra reset
+            setTimeout(() => {
+                dropzone.innerHTML = originalContent;
+            }, 3000);
+        } else {
+            showLoader(false);
+        }
     }
+
+    xhr.send(formData);
 }
 
 /**
@@ -594,37 +689,29 @@ async function updateUploadedFilesList() {
  * Veri kaynağı input alanlarını güncelle
  */
 function updateSourceInputs(source) {
-    console.log('updateSourceInputs called with source:', source); // DEBUG LOG
+    console.log('updateSourceInputs called with source:', source);
+    
+    // GÜVENLİ: Sadece HTML'de VAR OLAN elementlere erişim
+    const uploadInputs = document.getElementById('uploadSourceInputs');
+    const fileSelection = document.getElementById('fileSelectionSection');
+    const opensearchInputs = document.getElementById('opensearchSourceInputs');
     
     // Tüm input alanlarını gizle
-    document.getElementById('uploadSourceInputs').style.display = 'none';
-    document.getElementById('mongoSourceInputs').style.display = 'none';
-    document.getElementById('serverSourceInputs').style.display = 'none';
-    document.getElementById('fileSelectionSection').style.display = 'none';
-    document.getElementById('opensearchSourceInputs').style.display = 'none';
+    if (uploadInputs) uploadInputs.style.display = 'none';
+    if (fileSelection) fileSelection.style.display = 'none';
+    if (opensearchInputs) opensearchInputs.style.display = 'none';
     
     // Seçilen kaynağa göre göster
     switch(source) {
-        case 'file':
-            console.log('Showing file source inputs'); // DEBUG LOG
-            // Config dosyası seçildi, ekstra input gerekmez
-            break;
         case 'upload':
-            console.log('Showing upload source inputs'); // DEBUG LOG
-            document.getElementById('uploadSourceInputs').style.display = 'block';
-            document.getElementById('fileSelectionSection').style.display = 'block';
+            console.log('Showing upload source inputs');
+            if (uploadInputs) uploadInputs.style.display = 'block';
+            if (fileSelection) fileSelection.style.display = 'block';
             break;
-        case 'mongodb_direct':
-            console.log('Showing MongoDB direct source inputs'); // DEBUG LOG
-            document.getElementById('mongoSourceInputs').style.display = 'block';
-            break;
-        case 'test_servers':
-            console.log('Showing test servers source inputs'); // DEBUG LOG
-            document.getElementById('serverSourceInputs').style.display = 'block';
-            break;
+            
         case 'opensearch':
             console.log('Showing OpenSearch source inputs');
-            document.getElementById('opensearchSourceInputs').style.display = 'block';
+            if (opensearchInputs) opensearchInputs.style.display = 'block';
             
             // Default olarak single mode seçili olsun
             const singleModeRadio = document.querySelector('input[name="hostSelectionMode"][value="single"]');
@@ -633,23 +720,71 @@ function updateSourceInputs(source) {
             }
             
             // Single mode UI'ını göster
-            document.getElementById('singleHostSelection').style.display = 'block';
-            document.getElementById('clusterSelection').style.display = 'none';
+            const singleHostDiv = document.getElementById('singleHostSelection');
+            const clusterDiv = document.getElementById('clusterSelection');
+            if (singleHostDiv) singleHostDiv.style.display = 'block';
+            if (clusterDiv) clusterDiv.style.display = 'none';
             
             // MongoDB sunucularını yükle (single mode için)
-            window.loadMongoDBHosts();
+            if (window.loadMongoDBHosts) {
+                window.loadMongoDBHosts();
+            }
             
-            // Cluster listesini de arka planda yükle (kullanıcı değiştirirse hazır olsun)
+            // Cluster listesini de arka planda yükle
             setTimeout(() => {
-                window.loadClusters();
+                if (window.loadClusters) {
+                    window.loadClusters();
+                }
             }, 500);
             break;
+            
         default:
-            console.log('Unknown source type:', source); // DEBUG LOG
+            console.log('Unknown source type:', source);
+    }
+
+    // ===== Zaman Filtresi UI Yönetimi =====
+    const timeOptionsGrid = document.querySelector('.analysis-options .options-grid');
+    const timeOptionsTitle = document.querySelector('.analysis-options h4');
+    const customDateSection = document.getElementById('customDateInputs');
+    const startBtn = document.getElementById('startAnalysisBtn');
+
+    // Eski bilgilendirme mesajını temizle
+    const existingMsg = document.getElementById('upload-mode-info');
+    if (existingMsg) existingMsg.remove();
+
+    if (source === 'upload') {
+        // Upload: Zaman filtrelerini gizle
+        if (timeOptionsGrid) timeOptionsGrid.style.display = 'none';
+        if (customDateSection) customDateSection.style.display = 'none';
+        if (timeOptionsTitle && timeOptionsTitle.textContent.includes('Analiz Seçenekleri')) {
+            timeOptionsTitle.style.display = 'none';
+        }
+
+        // Bilgilendirme mesajı ekle
+        const msg = document.createElement('div');
+        msg.id = 'upload-mode-info';
+        msg.style.cssText = 'background: #e3f2fd; color: #0d47a1; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 0.95em; border-left: 5px solid #2196f3; display: flex; align-items: center; gap: 10px;';
+        msg.innerHTML = '<span style="font-size: 1.5em;">ℹ️</span> <div><strong>Tam Dosya Analizi Modu</strong><br><span style="font-size: 0.9em; opacity: 0.9;">Yüklediğiniz dosyanın tamamı analiz edilecektir.</span></div>';
+        
+        if (startBtn && startBtn.parentNode) {
+            startBtn.parentNode.insertBefore(msg, startBtn);
+        }
+    } else {
+        // OpenSearch: Zaman filtrelerini göster
+        if (timeOptionsGrid) timeOptionsGrid.style.display = '';
+        if (timeOptionsTitle) timeOptionsTitle.style.display = '';
+
+        // Custom date kontrolü
+        const customRadio = document.querySelector('input[name="modalTimeRange"][value="custom"]');
+        if (customDateSection && customRadio) {
+            customDateSection.style.display = customRadio.checked ? 'block' : 'none';
+        }
     }
     
-    // Analiz butonunu güncelle
-    window.validateAnalysisButton();
+    // Validation güncelle
+    if (window.validateAnalysisButton) {
+        window.validateAnalysisButton();
+    }
 }
 
 /**

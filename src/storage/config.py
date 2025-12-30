@@ -43,10 +43,11 @@ FILE_STORAGE_CONFIG = {
         "models": STORAGE_ROOT / "models",
         "exports": STORAGE_ROOT / "exports",
         "temp": STORAGE_ROOT / "temp",
-        "backups": STORAGE_ROOT / "backups"
+        "backups": STORAGE_ROOT / "backups",
+        "uploads": STORAGE_ROOT / "uploads" # Upload edilen dosyaların kaydedildiği klasör
     },
     "max_file_size_mb": 100,
-    "allowed_extensions": [".pkl", ".joblib", ".json", ".csv", ".log"]
+    "allowed_extensions": [".pkl", ".joblib", ".json", ".csv", ".log", ".txt"]
 }
 
 # Retention Policies
@@ -54,14 +55,16 @@ RETENTION_POLICY = {
     "anomaly_history_days": 90,
     "model_versions_count": 10,
     "cache_ttl_hours": 24,
-    "temp_files_hours": 6
+    "temp_files_hours": 6,
+    "upload_retention_days": 30 # Upload edilen dosyaların ne kadar süreyle tutulacağı
 }
 
 # Storage Limits
 STORAGE_LIMITS = {
-    "max_total_size_gb": 10.0,      # Toplam limit: 10GB
+    "max_total_size_gb": 15.0,      # Toplam limit: 15GB
     "max_database_size_gb": 5.0,     # MongoDB limit: 5GB
     "max_file_size_gb": 5.0,         # File storage limit: 5GB
+    "max_upload_size_gb": 5.0,       # Upload edilen dosyaların limiti: 5GB
     "cleanup_threshold": 0.8,        # %80'e ulaşınca uyar
     "aggressive_cleanup": 0.9        # %90'a ulaşınca agresif temizlik
 }
@@ -80,7 +83,7 @@ def initialize_storage_dirs():
     """Storage dizinlerini oluştur"""
     for path in FILE_STORAGE_CONFIG["subdirs"].values():
         path.mkdir(parents=True, exist_ok=True)
-    print(f"✅ Storage directories initialized at: {STORAGE_ROOT}")
+    print(f"[OK] Storage directories initialized at: {STORAGE_ROOT}")
 
 # Validate configuration
 def validate_config():

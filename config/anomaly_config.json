@@ -1,11 +1,29 @@
 {
+    "model_version": "2.1",
+    "config_metadata": {
+        "last_updated": "2024-12-05",
+        "updated_by": "DBA Team",
+        "description": "MongoDB Log Anomaly Detection Configuration",
+        "compatible_detector_versions": ["2.0", "2.1"]
+    },
+    "server_management": {
+        "cluster_mapping_path": "config/cluster_mapping.json",
+        "unmapped_host_behavior": "warn_and_process",
+        "model_strategy": "per_server",
+        "fallback_to_global_model": true,
+        "auto_discovery": {
+            "enabled": false,
+            "sync_interval_hours": 24,
+            "add_to_unmapped_cluster": true
+        }
+    },
     "environments": {
       "test": {
         "description": "Test/Development Environment",
         "data_sources": {
           "file": {
             "enabled": true,
-            "path": "C:/Users/muharrem.altunbag/Desktop/Anomaly_Detection/Latest/log dosya/mongod.log",
+            "path": "/var/log/mongodb/mongod.log",
             "format": "json",
             "encoding": "utf-8",
             "buffer_size": 8192
@@ -121,6 +139,12 @@
       }
     },
     "anomaly_detection": {
+      "capping": {
+        "max_query_duration_ms": 60000, 
+        "max_docs_examined": 1000000,
+        "max_keys_examined": 1000000,
+        "max_txn_active_micros": 30000000
+      },
       "model": {
         "type": "IsolationForest",
         "parameters": {
@@ -168,6 +192,7 @@
           "query_duration_ms",
           "docs_examined_count",
           "keys_examined_count",
+          "is_long_transaction",
           "performance_score",
           "is_wiredtiger_recovery",
           "is_wiredtiger_checkpoint",

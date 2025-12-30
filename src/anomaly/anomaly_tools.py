@@ -47,8 +47,9 @@ class AnomalyDetectionTools:
         # Modülleri başlat
         self.log_reader = None
         self.feature_engineer = MongoDBFeatureEngineer(config_path)
-        self.detector = MongoDBAnomalyDetector(config_path)
-        logger.debug("Feature engineer and detector modules initialized")
+        # Başlangıçta boş, analiz anında Singleton üzerinden sunucuya özel alınacak
+        self.detector = None 
+        logger.debug("Feature engineer initialized. Detector will be fetched on-demand via Singleton.")
         
         # YENİ: LLM connector'ı başlat (OpenAI veya LCWGPT)
         llm_provider = os.getenv('LLM_PROVIDER', 'lcwgpt').lower()
@@ -528,7 +529,20 @@ class AnomalyDetectionTools:
                 logger.debug("Using dict input directly")
             
             logger.info(f"Anomaly analysis started with args: {args_dict}")
-            
+
+            # Host filter güvenli kontrolü
+            host_filter = args_dict.get("host_filter")
+            if host_filter and isinstance(host_filter, str) and ',' in host_filter:
+                # Virgülle ayrılmış string ise listeye çevir
+                host_filter = [h.strip() for h in host_filter.split(',') if h.strip()]
+                args_dict['host_filter'] = host_filter
+
+            # Sunucu bazlı Singleton instance'ı al
+            # host_filter string ise direkt, list ise ilk elemanı referans al
+            server_ref = host_filter[0] if isinstance(host_filter, list) and host_filter else host_filter
+            self.detector = MongoDBAnomalyDetector.get_instance(server_name=server_ref, config_path=self.config_path)
+            logger.info(f"Using shared detector instance for: {server_ref}")
+
             time_range = args_dict.get("time_range", "last_hour")
             threshold = args_dict.get("threshold", 0.03)
             
@@ -568,20 +582,14 @@ class AnomalyDetectionTools:
                 # Log reader başlat ve logları oku
                 self.log_reader = MongoDBLogReader(file_path, 'auto')
 
-                # Zaman aralığını belirle
-                last_hours = None
-                if time_range == "last_hour":
-                    last_hours = 1
-                elif time_range == "last_day":
-                    last_hours = 24
-                elif time_range == "last_week":
-                    last_hours = 168
-                elif time_range == "last_month":
-                    last_hours = 720
+                # Upload için zaman filtresini devre dışı bırak - dosyanın tamamı okunmalı
+                logger.info("Upload source detected: Disabling time filter to read FULL file content.")
+                last_hours = None 
+                time_range = "Tüm Dosya İçeriği"
 
-                # Logları oku
-                logger.info(f"Reading logs from uploaded file...")
-                df = self.log_reader.read_logs(last_hours=last_hours)
+                # Logları oku (last_hours=None ile tüm dosya)
+                logger.info(f"Reading ALL logs from uploaded file...")
+                df = self.log_reader.read_logs(last_hours=None)
 
                 if df.empty:
                     logger.error("No logs read from uploaded file")
@@ -740,7 +748,8 @@ class AnomalyDetectionTools:
                         }
                     },
                     "suggestions": suggestions,
-                    "ai_explanation": ai_explanation
+                    "ai_explanation": ai_explanation,
+                    "model_info": self._get_model_info_for_storage()
                 }
 
                 return self._format_result(result, "anomaly_analysis")
@@ -773,16 +782,17 @@ class AnomalyDetectionTools:
                 log_path = self._get_test_server_log_path(server_name)
                 logger.debug(f"Test server log path: {log_path}")
                 self.log_reader = MongoDBLogReader(log_path, 'auto')
-                
+            
             elif source_type == "opensearch":
                 logger.info("Using OpenSearch data source")
                 try:
-                    # OpenSearch reader'ı başlat
-                    opensearch_reader = OpenSearchProxyReader()
-                    
-                    # Bağlantıyı kontrol et
-                    if not opensearch_reader.connect():
-                        logger.error("Failed to connect to OpenSearch")
+                    # Paylaşımlı reader'ı al (Gereksiz login'i önler)
+                    opensearch_reader = OpenSearchProxyReader.get_instance()
+
+                    # Not: get_instance içinde connect() çağrıldığı için 
+                    # burada sadece bağlantı durumunu kontrol etmek yeterlidir
+                    if not opensearch_reader:
+                        logger.error("Failed to get OpenSearch reader instance")
                         return self._format_result(
                             {"error": "OpenSearch'e bağlanılamadı. Lütfen bağlantı bilgilerini kontrol edin."},
                             "anomaly_analysis"
@@ -916,6 +926,9 @@ class AnomalyDetectionTools:
                                 self.detector.feature_names = list(X_filtered.columns)
                                 self.detector.is_trained = True
                                 logger.info("✅ Main model set from incremental ensemble")
+                            # Model'i diske kaydet
+                            saved_path = self.detector.save_model(server_name=server_for_model)
+                            logger.info(f"✅ Model saved to: {saved_path}")
                         else:
                             self.detector.train(X_filtered, save_model=True)  # Auto-save enabled
                             logger.info("Standard training completed and saved")
@@ -1074,7 +1087,8 @@ class AnomalyDetectionTools:
                             }
                         },
                         "suggestions": suggestions,
-                        "ai_explanation": ai_explanation  
+                        "ai_explanation": ai_explanation,
+                        "model_info": self._get_model_info_for_storage()  
                     }
                     
                     return self._format_result(result, "anomaly_analysis")
@@ -1165,9 +1179,18 @@ class AnomalyDetectionTools:
                     batch_id = f"file_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                     self.detector.train_incremental(X_filtered, batch_id=batch_id)
                     logger.info(f"Initial training completed - Ensemble size: {len(self.detector.incremental_models)}")
+                    # ÖNEMLİ: Incremental training sonrası ana modeli de set et
+                    if self.detector.incremental_models and not self.detector.model:
+                        self.detector.model = self.detector.incremental_models[-1]
+                        self.detector.feature_names = list(X_filtered.columns)
+                        self.detector.is_trained = True
+                        logger.info("✅ Main model set from incremental ensemble")
+                    # Model'i diske kaydet
+                    saved_path = self.detector.save_model(server_name=file_server_name)
+                    logger.info(f"✅ Model saved to: {saved_path}")
                 else:
-                    self.detector.train(X_filtered, server_name=file_server_name)
-                    logger.info(f"Standard training completed{f' for server: {file_server_name}' if file_server_name else ''}")
+                    self.detector.train(X_filtered, save_model=True, server_name=file_server_name)
+                    logger.info(f"Standard training completed and saved{f' for server: {file_server_name}' if file_server_name else ''}")
 
             # Tahmin yap
             logger.debug("Starting anomaly prediction...")
@@ -1258,7 +1281,8 @@ class AnomalyDetectionTools:
                 "description": description,
                 "data": enhanced_analysis, # Enhanced analiz verisini gönder
                 "suggestions": suggestions,
-                "ai_explanation": ai_explanation # Yapılandırılmış AI çıktısını da ekleyelim
+                "ai_explanation": ai_explanation,
+                "model_info": self._get_model_info_for_storage()
             }
             
             print(f"[DEBUG] MAIN FUNCTION: Final result data critical_anomalies count: {len(result['data'].get('critical_anomalies', []))}")
@@ -1663,6 +1687,33 @@ class AnomalyDetectionTools:
         except Exception as e:
             logger.error(f"Model training error: {e}", exc_info=True)
             return self._format_result({"error": str(e)}, "model_training")
+
+    def _get_model_info_for_storage(self) -> Dict[str, Any]:
+        """
+        Detector'dan model metadata bilgilerini topla (Storage için)
+        
+        Returns:
+            Model metadata dictionary
+        """
+        if not self.detector:
+            return None
+        
+        try:
+            return {
+                "model_version": getattr(self.detector, 'model_version', None),
+                "model_path": f"models/isolation_forest_{self.detector.current_server}.pkl" if self.detector.current_server else "models/isolation_forest.pkl",
+                "server_name": self.detector.current_server,
+                "is_ensemble_mode": bool(self.detector.incremental_models) and self.detector.incremental_config.get('enabled', True),
+                "ensemble_model_count": len(self.detector.incremental_models) if self.detector.incremental_models else 0,
+                "historical_buffer_samples": self.detector.historical_data['metadata']['total_samples'] if self.detector.historical_data.get('features') is not None else 0,
+                "model_trained_at": self.detector.training_stats.get('timestamp') if self.detector.training_stats else None,
+                "feature_count": len(self.detector.feature_names) if self.detector.feature_names else 0,
+                "contamination": self.detector.model_config['parameters'].get('contamination') if self.detector.model_config else None
+            }
+        except Exception as e:
+            logger.error(f"Error getting model info for storage: {e}")
+            return None
+
     def _filter_false_positives(self, analysis: Dict[str, Any], source_name: str = "unknown") -> Dict[str, Any]:
         """
         Analiz sonuçlarından false positive'leri filtrele
@@ -1807,7 +1858,7 @@ class AnomalyDetectionTools:
         logger.info(f"Filtered out {original_count - len(analysis.get('critical_anomalies', []))} false positives")
         
         return analysis
-    
+
     def _create_analysis_description(self, analysis: Dict, time_range: str) -> str:
         """Analiz sonucu için kullanıcı dostu açıklama oluştur"""
         summary = analysis["summary"]
@@ -1842,11 +1893,18 @@ class AnomalyDetectionTools:
                 desc += f"• 🚨 {drop_count} adet DROP operasyonu tespit edildi!\n"
         
         if "feature_importance" in analysis:
+            def get_feat_value(stats):
+                if isinstance(stats, (int, float)):
+                    return float(stats)
+                elif isinstance(stats, dict):
+                    return float(stats.get('ratio', stats.get('importance', 0)))
+                return 0.0
+            
             critical_features = [(feat, stats) for feat, stats in analysis["feature_importance"].items() 
-                               if stats.get("ratio", 0) > 5]
+                               if get_feat_value(stats) > 0.5]
             if critical_features:
                 desc += f"• Yüksek risk faktörleri: "
-                desc += ", ".join([f"{feat} (x{stats['ratio']:.1f})" for feat, stats in critical_features[:3]])
+                desc += ", ".join([f"{feat} ({get_feat_value(stats):.2f})" for feat, stats in critical_features[:3]])
                 desc += "\n"
         
         logger.debug("Analysis description created successfully")
@@ -2316,8 +2374,8 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
             ],
             "onerilen_aksiyonlar": [
                 f"{summary.get('n_anomalies', 0)} anomaliyi detaylı inceleyin",
-                f"Özellikle %{max([s.get('anomaly_rate', 0) for s in component_analysis.values()] or [0]):.1f} anomali oranına sahip bileşenlere odaklanın",
-                f"Skor değeri {summary.get('score_range', {}).get('min', 0):.3f} altındaki kritik anomalileri öncelikle çözün"
+                f"Yüksek anomali oranına sahip bileşenlere odaklanın",
+                f"Kritik anomalileri öncelikle çözün"
             ]
         }
 
@@ -2406,16 +2464,27 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
             return "Feature analizi mevcut değil."
         
         result = []
-        # Ratio'ya göre sırala (yüksek ratio = önemli)
+        
+        def get_importance_value(stats):
+            """Feature importance değerini güvenli şekilde al"""
+            if isinstance(stats, (int, float)):
+                return float(stats)
+            elif isinstance(stats, dict):
+                return float(stats.get('ratio', stats.get('importance', 0)))
+            else:
+                return 0.0
+        
         sorted_features = sorted(features.items(), 
-                               key=lambda x: x[1].get('ratio', 0), 
+                               key=lambda x: get_importance_value(x[1]), 
                                reverse=True)
         
-        for feat, stats in sorted_features[:3]:
-            if stats.get('ratio', 0) > 10:  # Sadece önemli olanları göster
-                result.append(f"- {feat}: {stats.get('ratio', 0):.1f}x normal değerden sapma")
+        for feat, stats in sorted_features[:5]:
+            importance = get_importance_value(stats)
+            if importance > 0.1:
+                result.append(f"- {feat}: {importance:.2f} importance")
         
         return "\n".join(result) if result else "Normal değerler içinde."
+
 
     def _format_security_alerts_for_prompt(self, alerts: Dict) -> str:
         """Güvenlik uyarılarını prompt için formatla"""
@@ -2774,7 +2843,17 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
             desc += f"\n📊 **İSTATİSTİK ÖZETİ:**\n"
             desc += f"• Toplam Log: {summary.get('total_logs', 0):,}\n"
             desc += f"• Anomali Sayısı: {summary.get('n_anomalies', 0)} (%{summary.get('anomaly_rate', 0):.1f})\n"
-            desc += f"• Ortalama Anomali Skoru: {summary.get('score_range', {}).get('mean', 0):.3f}\n"
+
+            # Safe access to score_range which can be float or dict
+            score_range_data = summary.get('score_range', {})
+            avg_score = 0.0
+
+            if isinstance(score_range_data, (int, float)):
+                avg_score = float(score_range_data)
+            elif isinstance(score_range_data, dict):
+                avg_score = float(score_range_data.get('mean', 0))
+                
+            desc += f"• Ortalama Anomali Skoru: {avg_score:.3f}\n"
         
         return desc
 

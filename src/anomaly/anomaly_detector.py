@@ -24,7 +24,45 @@ logger = logging.getLogger(__name__)
 
 class MongoDBAnomalyDetector:
     """MongoDB logları için anomali tespiti"""
-    
+
+    # YENİ: Küresel kilitler ve instance cache (Class level)
+    _model_io_lock = threading.Lock()
+    _instances = {}  # {server_name: instance_object}
+    _instance_lock = threading.Lock()
+
+    @classmethod
+    def get_instance(cls, server_name: str = "global", config_path: str = "config/anomaly_config.json"):
+        """Belirli bir sunucu için bellekteki mevcut modeli döndürür, yoksa oluşturur."""
+        # FQDN NORMALIZATION
+        # ecaztrdbmng015.lcwecomtr.com → ecaztrdbmng015
+        # ECAZTRDBMNG015.lcwaikiki.local → ecaztrdbmng015
+        raw_name = server_name or "global"
+        
+        # FQDN ise sadece hostname'i al (ilk nokta öncesi)
+        if '.' in raw_name and raw_name != "global":
+            hostname = raw_name.split('.')[0]
+            logger.debug(f"FQDN normalized: {raw_name} -> {hostname}")
+        else:
+            hostname = raw_name
+        
+        # Lowercase ve güvenli karakter dönüşümü
+        safe_name = hostname.lower().replace('/', '_')
+
+
+        with cls._instance_lock:
+            if safe_name not in cls._instances:
+                logger.info(f"Creating NEW shared instance for server: {safe_name}")
+                instance = cls(config_path)
+                # Nesne oluşturulduğunda modeli diskten yüklemeyi dene
+                # load_model'e normalize edilmiş server_name gönder
+                instance.load_model(server_name=safe_name if safe_name != "global" else None)
+                cls._instances[safe_name] = instance
+            else:
+                logger.debug(f"Using EXISTING shared instance for server: {safe_name}")
+
+            return cls._instances[safe_name]
+
+
     def __init__(self, config_path: str = "config/anomaly_config.json"):
         """
         Anomaly Detector başlat
@@ -50,9 +88,11 @@ class MongoDBAnomalyDetector:
         self.feature_names = None
         self.training_stats = {}
         
-        # Thread safety için lock
-        self._training_lock = threading.Lock()  
-        self._save_lock = threading.Lock()      
+        # Thread safety için locklar
+        self._training_lock = threading.Lock()
+        # Instance kilitlerini geriye dönük uyumluluk için sınıf kilidine yönlendiriyoruz
+        self._save_lock = self.__class__._model_io_lock
+        self._load_lock = self.__class__._model_io_lock        
 
         # Online Learning - Historical Pattern Buffer
         self.historical_data = {
@@ -101,7 +141,6 @@ class MongoDBAnomalyDetector:
         
         
         logger.info(f"Anomaly detector initialized with {self.model_config['type']} model")
-    
     def _initialize_critical_rules(self) -> Dict[str, Any]:
         """
         Kritik anomali kurallarını tanımla
@@ -607,11 +646,8 @@ class MongoDBAnomalyDetector:
                 self.historical_data['scores'] = scores
 
             else:  # incremental mode
-                # DÜZELTME: Mevcut buffer ile yeni veriyi FIFO mantığıyla birleştir
-                current_buffer = self.historical_data['features']
 
-                # Yeni veriyi ekle
-                combined_buffer = pd.concat([current_buffer, X_new], ignore_index=True)
+                # FIFO Mantığını bozmadan, bellek kullanımını minimize eden yeni yapı
 
                 # Buffer limit kontrolü - online_learning config'den al
                 # max_history_size null ise max_buffer_samples kullan, o da yoksa default 100000
@@ -619,16 +655,31 @@ class MongoDBAnomalyDetector:
                     self.online_learning_config.get('max_history_size') or 
                     self.online_learning_config.get('max_buffer_samples', 100000)
                 )
+                
+                old_buffer = self.historical_data['features']
+                new_data_size = len(X_new)
 
-                if len(combined_buffer) > max_buffer_size:
-                    # FIFO: En eski verileri at, en yenileri tut
-                    logger.info(f"Buffer size ({len(combined_buffer)}) exceeds limit ({max_buffer_size})")
-                    logger.info(f"Applying FIFO: keeping last {max_buffer_size} samples")
-
-                    # Son max_buffer_size kadar sample'ı tut
-                    self.historical_data['features'] = combined_buffer.tail(max_buffer_size).reset_index(drop=True)
+                if old_buffer is not None:
+                    # 1. Adım: Eski veriden ne kadarını saklayabileceğimizi hesapla
+                    keep_from_old = max_buffer_size - new_data_size
+                    
+                    if keep_from_old > 0:
+                        # Sadece sığacak kadarını kırpıp yeni bir değişkene al
+                        trimmed_old = old_buffer.tail(keep_from_old)
+                        # 2. Adım: RAM'de yer açmak için büyük objeyi hemen serbest bırak
+                        old_buffer = None 
+                        # 3. Adım: Küçük parça ile yeni veriyi birleştir
+                        self.historical_data['features'] = pd.concat([trimmed_old, X_new], ignore_index=True)
+                    else:
+                        # Yeni veri zaten limitten büyük veya eşitse eskiyi tamamen at
+                        old_buffer = None
+                        self.historical_data['features'] = X_new.tail(max_buffer_size).reset_index(drop=True)
                 else:
-                    self.historical_data['features'] = combined_buffer
+                    self.historical_data['features'] = X_new.tail(max_buffer_size).reset_index(drop=True)
+
+                # 4. Adım: Multi-user yükü altında Python'ın çöp toplayıcısını (GC) tetikle
+                import gc
+                gc.collect()
 
                 # Yeni predictions ve scores hesapla (güncel buffer için)
                 predictions = self.model.predict(self.historical_data['features'])
@@ -673,7 +724,7 @@ class MongoDBAnomalyDetector:
 
     def predict(self, X: pd.DataFrame, df: Optional[pd.DataFrame] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Anomali tahminleri yap (Ensemble model ile)
+        Anomali tahminleri yap (Ensemble model ile) - THREAD SAFE
         
         Args:
             X: Feature matrix
@@ -686,129 +737,129 @@ class MongoDBAnomalyDetector:
         if not self.is_trained:
             raise ValueError("Model is not trained yet!")
 
-        # ====== STABILIZER EKLENECEK ======
-        try:
-            if hasattr(self, "feature_engineer") and self.feature_engineer:
-                X = self.feature_engineer.stabilize_features_for_model(
-                    X,
-                    self.training_stats.get("feature_schema")
-                )
-                logger.debug("FeatureEngineer stabilizer applied successfully before prediction.")
-        except Exception as e:
-            logger.error(f"Feature stabilizer failed before prediction: {e}")
-        # =======================================
-        
-        # Feature isimleri ve sırasını güvenli şekilde hizala
-        if self.feature_names is None or not len(self.feature_names):
-            # Modelde feature bilgisi yoksa, ilk gelen X'i referans al
-            logger.warning(
-                "Model feature_names is empty/None. "
-                "Setting feature_names from current input columns."
-            )
-            self.feature_names = list(X.columns)
-        else:
-            input_features = list(X.columns)
-
-            # Aynı feature set'i var mı?
-            input_set = set(input_features)
-            model_set = set(self.feature_names)
-
-            missing_features = [f for f in self.feature_names if f not in input_set]
-            extra_features = [f for f in input_features if f not in model_set]
-
-            if missing_features or extra_features:
-                # Burada hard fail veriyoruz, çünkü IsolationForest feature sayısına hassas
-                logger.error(
-                    "Feature mismatch between trained model and input data. "
-                    f"Missing in input: {missing_features} | "
-                    f"Extra in input: {extra_features}"
-                )
-                raise ValueError(
-                    "Feature mismatch between trained model and input data. "
-                    "Check feature engineering pipeline and retrain the model if necessary."
-                )
-
-            # Sadece sıra farklıysa reorder et
-            # 1) Column presence check (en kritik guard)
-            # NOT: Ensemble mode'da self.model None olabilir
-
-            if self.model is not None and hasattr(self.model, 'feature_names_in_'):
-                missing = set(self.model.feature_names_in_) - set(X.columns)
-                if missing:
-                    raise ValueError(
-                        f"Missing required features for prediction: {missing}. "
-                        "Prediction aborted."
+        # Thread safety - Tahmin sırasında modelin eğitilmediğinden/değiştirilmediğinden emin ol
+        with self._training_lock:
+            # ====== STABILIZER EKLENECEK ======
+            try:
+                if hasattr(self, "feature_engineer") and self.feature_engineer:
+                    X = self.feature_engineer.stabilize_features_for_model(
+                        X,
+                        self.training_stats.get("feature_schema")
                     )
-            elif self.incremental_models:
-                # Ensemble mode - ilk modeli kontrol et
-                first_model = self.incremental_models[0]
-                if hasattr(first_model, 'feature_names_in_'):
-                    missing = set(first_model.feature_names_in_) - set(X.columns)
+                    logger.debug("FeatureEngineer stabilizer applied successfully before prediction.")
+            except Exception as e:
+                logger.error(f"Feature stabilizer failed before prediction: {e}")
+            # =======================================
+            
+            # Feature isimleri ve sırasını güvenli şekilde hizala
+            if self.feature_names is None or not len(self.feature_names):
+                # Modelde feature bilgisi yoksa, ilk gelen X'i referans al
+                logger.warning(
+                    "Model feature_names is empty/None. "
+                    "Setting feature_names from current input columns."
+                )
+                self.feature_names = list(X.columns)
+            else:
+                input_features = list(X.columns)
+
+                # Aynı feature set'i var mı?
+                input_set = set(input_features)
+                model_set = set(self.feature_names)
+
+                missing_features = [f for f in self.feature_names if f not in input_set]
+                extra_features = [f for f in input_features if f not in model_set]
+
+                if missing_features or extra_features:
+                    # Burada hard fail veriyoruz, çünkü IsolationForest feature sayısına hassas
+                    logger.error(
+                        "Feature mismatch between trained model and input data. "
+                        f"Missing in input: {missing_features} | "
+                        f"Extra in input: {extra_features}"
+                    )
+                    raise ValueError(
+                        "Feature mismatch between trained model and input data. "
+                        "Check feature engineering pipeline and retrain the model if necessary."
+                    )
+
+                # Sadece sıra farklıysa reorder et
+                # 1) Column presence check (en kritik guard)
+                # NOT: Ensemble mode'da self.model None olabilir
+
+                if self.model is not None and hasattr(self.model, 'feature_names_in_'):
+                    missing = set(self.model.feature_names_in_) - set(X.columns)
                     if missing:
                         raise ValueError(
                             f"Missing required features for prediction: {missing}. "
                             "Prediction aborted."
                         )
+                elif self.incremental_models:
+                    # Ensemble mode - ilk modeli kontrol et
+                    first_model = self.incremental_models[0]
+                    if hasattr(first_model, 'feature_names_in_'):
+                        missing = set(first_model.feature_names_in_) - set(X.columns)
+                        if missing:
+                            raise ValueError(
+                                f"Missing required features for prediction: {missing}. "
+                                "Prediction aborted."
+                            )
 
-            # 2) Training feature order vs input order mismatch
-            input_features = list(X.columns)
-            if input_features != self.feature_names:
-                logger.warning(
-                    "Feature names order mismatch. Reordering input columns "
-                    "to match training feature order."
+                # 2) Training feature order vs input order mismatch
+                input_features = list(X.columns)
+                if input_features != self.feature_names:
+                    logger.warning(
+                        "Feature names order mismatch. Reordering input columns "
+                        "to match training feature order."
+                    )
+                    X = X[self.feature_names]
+
+                # 3) ZORUNLU sklearn hizalaması (kesin sıra)
+                # NOT: Ensemble mode'da self.model None olabilir, bu durumda skip et
+                if self.model is not None and hasattr(self.model, "feature_names_in_"):
+                    logger.debug(
+                        f"Applying sklearn feature_names_in_ ordering "
+                        f"({len(self.model.feature_names_in_)} features)"
+                    )
+                    X = X[self.model.feature_names_in_]
+                elif self.incremental_models:
+                    # Ensemble mode - ilk modelin feature order'ını kullan
+                    first_model = self.incremental_models[0]
+                    if hasattr(first_model, "feature_names_in_"):
+                        logger.debug(f"Using first ensemble model's feature order")
+                        X = X[first_model.feature_names_in_]
+            
+            # Incremental ensemble varsa onu kullan
+            if self.incremental_models and self.incremental_config['enabled']:
+                predictions, anomaly_scores = self.predict_ensemble(X)
+            else:
+                # Legacy single model prediction
+                
+                # === FIX: APPLY SCALING FOR PREDICTION ===
+                X_prediction = X
+
+                if self.is_scaler_fitted:
+                    logger.debug("Applying scaler transform for single model prediction")
+                    X_scaled_np = self.scaler.transform(X)
+                    # DataFrame yapısını koru
+                    X_prediction = pd.DataFrame(X_scaled_np, columns=X.columns)
+                # ========================================
+
+                predictions = self.model.predict(X_prediction)
+                anomaly_scores = self.model.score_samples(X_prediction)
+            
+            # Ensemble mode: Critical rules override
+            if self.ensemble_config.get('enabled', True) and df is not None:
+                predictions, anomaly_scores = self._apply_critical_rules(
+                    predictions, anomaly_scores, X, df
                 )
-                X = X[self.feature_names]
+            
+            n_anomalies = (predictions == -1).sum()
+            anomaly_rate = n_anomalies / len(predictions) * 100
+            
+            logger.info(f"Predictions completed: {n_anomalies} anomalies ({anomaly_rate:.1f}%)")
+            
+            return predictions, anomaly_scores
 
-            # 3) ZORUNLU sklearn hizalaması (kesin sıra)
-            # NOT: Ensemble mode'da self.model None olabilir, bu durumda skip et
-            if self.model is not None and hasattr(self.model, "feature_names_in_"):
-                logger.debug(
-                    f"Applying sklearn feature_names_in_ ordering "
-                    f"({len(self.model.feature_names_in_)} features)"
-                )
-                X = X[self.model.feature_names_in_]
-            elif self.incremental_models:
-                # Ensemble mode - ilk modelin feature order'ını kullan
-                first_model = self.incremental_models[0]
-                if hasattr(first_model, "feature_names_in_"):
-                    logger.debug(f"Using first ensemble model's feature order")
-                    X = X[first_model.feature_names_in_]
-            
-        
-        # Incremental ensemble varsa onu kullan
-        if self.incremental_models and self.incremental_config['enabled']:
-            
-            predictions, anomaly_scores = self.predict_ensemble(X)
-        else:
-            # Legacy single model prediction
-            
-            # === FIX: APPLY SCALING FOR PREDICTION ===
-            X_prediction = X
 
-            if self.is_scaler_fitted:
-                logger.debug("Applying scaler transform for single model prediction")
-                X_scaled_np = self.scaler.transform(X)
-                # DataFrame yapısını koru
-                X_prediction = pd.DataFrame(X_scaled_np, columns=X.columns)
-            # ========================================
-
-            predictions = self.model.predict(X_prediction)
-            anomaly_scores = self.model.score_samples(X_prediction)
-        
-        # Ensemble mode: Critical rules override
-        if self.ensemble_config.get('enabled', True) and df is not None:
-            
-            predictions, anomaly_scores = self._apply_critical_rules(
-                predictions, anomaly_scores, X, df
-            )
-        
-        n_anomalies = (predictions == -1).sum()
-        anomaly_rate = n_anomalies / len(predictions) * 100
-        
-        
-        logger.info(f"Predictions completed: {n_anomalies} anomalies ({anomaly_rate:.1f}%)")
-        
-        return predictions, anomaly_scores
     def _apply_critical_rules(self, predictions: np.ndarray, anomaly_scores: np.ndarray,
                          X: pd.DataFrame, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -1409,7 +1460,7 @@ class MongoDBAnomalyDetector:
         if not self.is_trained:
             raise ValueError("Model is not trained yet!")
         
-        with self._save_lock:  # Thread safety
+        with self.__class__._model_io_lock:  # Küresel kilit
             # Sunucu bazlı dosya adı oluştur
             if path is None:
                 if server_name:
@@ -1426,6 +1477,8 @@ class MongoDBAnomalyDetector:
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
                 
                 # Model ve metadata'yı kaydet
+                # Ensemble mode kontrolü: incremental_models doluysa ensemble aktif
+                is_ensemble_mode = bool(self.incremental_models) and self.incremental_config.get('enabled', True)
 
                 model_data = {
                     'model': self.model,
@@ -1436,22 +1489,42 @@ class MongoDBAnomalyDetector:
                     # ==============================
                     'training_stats': self.training_stats,
                     'config': self.config,
-                    'server_name': server_name,  # YENİ: Sunucu bilgisi
+                    'server_name': server_name,  # Sunucu bilgisi
                     # Online Learning - Historical Buffer
                     'historical_data': self.historical_data if self.online_learning_config.get('enabled', True) else None,
                     'online_learning_config': self.online_learning_config,
                     # Version tracking: config kontrollü, default 2.0
-                    'model_version': self.model_version
+                    'model_version': self.model_version,
+                    'is_ensemble_mode': is_ensemble_mode,
+                    'incremental_models': list(self.incremental_models) if is_ensemble_mode else [],
+                    'model_weights': self.model_weights.copy() if is_ensemble_mode else [],
+                    'model_metadata': self.model_metadata.copy() if is_ensemble_mode else [],
+                    'incremental_config': self.incremental_config
+
                 }
 
-                # Historical buffer size kontrolü
+                # Historical buffer save kontrolü
                 if self.historical_data['features'] is not None:
                     buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
-                    logger.debug(f"Saving historical buffer: {buffer_size_mb:.2f} MB")
+                    buffer_samples = len(self.historical_data['features'])
+                    logger.info(f"💾 Saving historical buffer: {buffer_samples} samples, {buffer_size_mb:.2f} MB")
                     
                     # Büyük dosya uyarısı
                     if buffer_size_mb > 500:
                         logger.warning(f"Large model file warning: Historical buffer is {buffer_size_mb:.2f} MB")
+                else:
+                    logger.warning(f"⚠️ Historical buffer is EMPTY - no features to save!")
+                
+                # Kaydedilecek veriyi logla
+                logger.info(f"📦 Model data to save:")
+                logger.info(f"   - model: {type(model_data.get('model'))}")
+                logger.info(f"   - feature_names: {len(model_data.get('feature_names', [])) if model_data.get('feature_names') else 0} features")
+                logger.info(f"   - historical_data: {'Present' if model_data.get('historical_data') else 'None'}")
+                if model_data.get('historical_data') and model_data['historical_data'].get('features') is not None:
+                    logger.info(f"   - historical_data.features: {len(model_data['historical_data']['features'])} rows")
+                    logger.info(f"   - historical_data.metadata: {model_data['historical_data'].get('metadata', {})}")
+                logger.info(f"   - model_version: {model_data.get('model_version')}")
+                logger.info(f"   - server_name: {model_data.get('server_name')}")
 
                 joblib.dump(model_data, path)
 
@@ -1467,6 +1540,7 @@ class MongoDBAnomalyDetector:
                 print(f"[DEBUG] Error saving model: {e}")
                 logger.error(f"Error saving model: {e}")
                 raise
+            
     def load_model(self, path: str = None, server_name: str = None) -> bool:
         """
         Modeli yükle (sunucu bazlı)
@@ -1478,127 +1552,190 @@ class MongoDBAnomalyDetector:
         Returns:
             Başarılı olup olmadığı
         """
-        # Sunucu bazlı dosya yolu oluştur
-        if path is None:
-            if server_name:
-                # Sunucu adını normalize et (özel karakterleri temizle)
-                safe_server_name = server_name.replace('.', '_').replace('/', '_')
-                path = f'models/isolation_forest_{safe_server_name}.pkl'
-                
+        with self.__class__._model_io_lock:  # Küresel kilit
+            # Sunucu bazlı dosya yolu oluştur
+            if path is None:
+                if server_name:
+                    # Sunucu adını normalize et (özel karakterleri temizle)
+                    safe_server_name = server_name.replace('.', '_').replace('/', '_')
+                    path = f'models/isolation_forest_{safe_server_name}.pkl'
+                else:
+                    # Server name yoksa global model kullan
+                    path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
                 
                 # Eğer sunucuya özel model yoksa, global modeli dene
                 if not Path(path).exists():
-                    
                     path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
-            else:
-                path = self.output_config.get('model_path', 'models/isolation_forest.pkl')
-        
-        try:
-            
-            if not Path(path).exists():
+
+            try:
                 
-                logger.error(f"Model file not found: {path}")
-                return False
-            # Model ve metadata'yı yükle
-            model_data = joblib.load(path)
+                if not Path(path).exists():
+                    
+                    logger.error(f"Model file not found: {path}")
+                    return False
+                # Model ve metadata'yı yükle
+                model_data = joblib.load(path)
 
-            self.model = model_data['model']
-            self.feature_names = model_data['feature_names']
-            self.training_stats = model_data.get('training_stats', {})
+                self.model = model_data['model']
+                self.feature_names = model_data['feature_names']
+                self.training_stats = model_data.get('training_stats', {})
 
-            # === FIX: LOAD SCALER STATE ===
-            if 'scaler' in model_data:
-                self.scaler = model_data['scaler']
-                self.is_scaler_fitted = model_data.get('is_scaler_fitted', True)
-                logger.debug("Scaler state loaded successfully.")
-            else:
-                logger.warning("No scaler found in model file. Using un-fitted scaler (legacy model).")
-                self.is_scaler_fitted = False
-            # ==============================
-
-            # === FEATURE NAME ALIGNMENT STABILIZER ===
-            if hasattr(self.model, "feature_names_in_"):
-                # sklearn modelinin kendi garantili feature sırasını kullan
-                self.feature_names = list(self.model.feature_names_in_)
-            elif not self.feature_names:
-                # Eski model / eksik metadata → predict() ilk X ile dolduracak
-                logger.warning("Loaded model has no feature_names. Will set on first prediction.")
-            
-            # YENİ: Server bilgisini kontrol et ve güncelle
-            loaded_server = model_data.get('server_name', None)
-            if server_name and loaded_server != server_name:
-                logger.warning(f"Model was trained for server '{loaded_server}' but loading for '{server_name}'")
-            
-            # Current server'ı güncelle
-            self.current_server = server_name or loaded_server
-            
-            # Server metadata'yı güncelle
-            if self.current_server:
-                self.server_models[self.current_server] = {
-                    'model_path': path,
-                    'last_update': datetime.now(),
-                    'sample_count': self.training_stats.get('n_samples', 0)
-                }
-                
-            
-            # Online Learning - Historical Buffer'ı yükle
-            model_version = model_data.get('model_version')
-
-            if model_version is None:
-                # Eğer eski model dosyasıysa - kesin olarak legacy işaretle
-                model_version = "legacy-1.x"
-                logger.warning("Loaded model has no version info. Marked as legacy model.")
-            else:
-                # String or numeric → normalize to string
-                model_version = str(model_version).strip()
-
-            # Runtime state
-            self.loaded_model_version = model_version
-            self.training_stats["model_version"] = model_version
-
-            logger.info(f"Loaded model version: {model_version}")
-
-            if (model_version >= '2.0') and ('historical_data' in model_data):
-                if model_data['historical_data'] is not None:
-                    self.historical_data = model_data['historical_data']
-                    logger.debug(f"  Total samples: {self.historical_data['metadata']['total_samples']}")
-
-                    # Buffer size info
-                    if self.historical_data['features'] is not None:
-                        buffer_size_mb = self.historical_data['features'].memory_usage(deep=True).sum() / 1024 / 1024
-                        logger.debug(f"  Buffer size: {buffer_size_mb:.2f} MB")
+                # === FIX: LOAD SCALER STATE ===
+                if 'scaler' in model_data:
+                    self.scaler = model_data['scaler']
+                    self.is_scaler_fitted = model_data.get('is_scaler_fitted', True)
+                    logger.debug("Scaler state loaded successfully.")
                 else:
-                    logger.debug(f"No historical buffer found in model file")
-            else:
-                logger.debug(f"Legacy model format - no historical buffer")
-                # Legacy model için boş buffer initialize et
-                self.historical_data = {
-                    'features': None,
-                    'predictions': None,
-                    'scores': None,
-                    'metadata': {
-                        'total_samples': 0,
-                        'anomaly_samples': 0,
-                        'last_update': None,
-                        'buffer_version': 1.0
+                    logger.warning("No scaler found in model file. Using un-fitted scaler (legacy model).")
+                    self.is_scaler_fitted = False
+                # ==============================
+
+                # === FEATURE NAME ALIGNMENT STABILIZER ===
+                if hasattr(self.model, "feature_names_in_"):
+                    # sklearn modelinin kendi garantili feature sırasını kullan
+                    self.feature_names = list(self.model.feature_names_in_)
+                elif not self.feature_names:
+                    # Eski model / eksik metadata → predict() ilk X ile dolduracak
+                    logger.warning("Loaded model has no feature_names. Will set on first prediction.")
+                
+                # YENİ: Server bilgisini kontrol et ve güncelle
+                loaded_server = model_data.get('server_name', None)
+                if server_name and loaded_server != server_name:
+                    logger.warning(f"Model was trained for server '{loaded_server}' but loading for '{server_name}'")
+                
+                # Current server'ı güncelle
+                self.current_server = server_name or loaded_server
+                
+                # Server metadata'yı güncelle
+                if self.current_server:
+                    self.server_models[self.current_server] = {
+                        'model_path': path,
+                        'last_update': datetime.now(),
+                        'sample_count': self.training_stats.get('n_samples', 0)
                     }
-                }
-            
-            # Online learning config'i güncelle
-            if 'online_learning_config' in model_data:
-                self.online_learning_config.update(model_data['online_learning_config'])
-            
-            self.is_trained = True
-            
-            logger.info(f"Model loaded from: {path}")
-            
-            return True
-            
-        except Exception as e:
-            print(f"[DEBUG] Error loading model: {e}")
-            logger.error(f"Error loading model: {e}")
-            return False
-    
+                    
+                
+                # Online Learning - Historical Buffer'ı yükle
+                model_version = model_data.get('model_version')
+
+                if model_version is None:
+                    # Eğer eski model dosyasıysa - kesin olarak legacy işaretle
+                    model_version = "legacy-1.x"
+                    logger.warning("Loaded model has no version info. Marked as legacy model.")
+                else:
+                    # String or numeric → normalize to string
+                    model_version = str(model_version).strip()
+
+                # Runtime state
+                self.loaded_model_version = model_version
+                self.training_stats["model_version"] = model_version
+
+                logger.info(f"Loaded model version: {model_version}")
+
+                logger.info(f"📂 Loading historical buffer check:")
+                logger.info(f"   - model_version: {model_version}")
+                logger.info(f"   - version check (>= 2.0): {model_version >= '2.0'}")
+                logger.info(f"   - 'historical_data' in model_data: {'historical_data' in model_data}")
+
+                if (model_version >= '2.0') and ('historical_data' in model_data):
+                    if model_data['historical_data'] is not None:
+                        logger.info(f"   ✅ historical_data found in model file")
+                        
+                        # Yüklenen veriyi kontrol et
+                        loaded_hist = model_data['historical_data']
+                        logger.info(f"   - features type: {type(loaded_hist.get('features'))}")
+                        logger.info(f"   - metadata: {loaded_hist.get('metadata', {})}")
+                        
+                        if loaded_hist.get('features') is not None:
+                            logger.info(f"   - features shape: {loaded_hist['features'].shape if hasattr(loaded_hist['features'], 'shape') else 'N/A'}")
+                            buffer_size_mb = loaded_hist['features'].memory_usage(deep=True).sum() / 1024 / 1024
+                            logger.info(f"   - features size: {buffer_size_mb:.2f} MB")
+                        else:
+                            logger.warning(f"   ⚠️ historical_data.features is None!")
+                        
+                        self.historical_data = loaded_hist
+                        logger.info(f"   ✅ Historical buffer loaded: {self.historical_data['metadata']['total_samples']} samples")
+                    else:
+                        logger.warning(f"   ⚠️ historical_data is None in model file")
+                        # Boş buffer oluştur
+                        self.historical_data = {
+                            'features': None,
+                            'predictions': None,
+                            'scores': None,
+                            'metadata': {
+                                'total_samples': 0,
+                                'anomaly_samples': 0,
+                                'last_update': None,
+                                'buffer_version': 1.0
+                            }
+                        }
+                else:
+                    logger.warning(f"   ⚠️ Legacy model format or missing historical_data - initializing empty buffer")
+                    # Legacy model için boş buffer initialize et
+                    self.historical_data = {
+                        'features': None,
+                        'predictions': None,
+                        'scores': None,
+                        'metadata': {
+                            'total_samples': 0,
+                            'anomaly_samples': 0,
+                            'last_update': None,
+                            'buffer_version': 1.0
+                        }
+                    }
+                    # Legacy model için boş buffer initialize et
+                    self.historical_data = {
+                        'features': None,
+                        'predictions': None,
+                        'scores': None,
+                        'metadata': {
+                            'total_samples': 0,
+                            'anomaly_samples': 0,
+                            'last_update': None,
+                            'buffer_version': 1.0
+                        }
+                    }
+
+                is_ensemble_mode = model_data.get('is_ensemble_mode', False)
+                
+                if is_ensemble_mode:
+                    # Ensemble modelleri yükle (list -> deque dönüşümü)
+                    loaded_models = model_data.get('incremental_models', [])
+                    if loaded_models:
+                        # Mevcut deque'i temizle ve yeni modelleri ekle
+                        self.incremental_models.clear()
+                        for m in loaded_models:
+                            self.incremental_models.append(m)
+                        
+                        # Weights ve metadata yükle
+                        self.model_weights = model_data.get('model_weights', [1.0] * len(loaded_models))
+                        self.model_metadata = model_data.get('model_metadata', [])
+                        
+                        # Incremental config güncelle
+                        if 'incremental_config' in model_data:
+                            self.incremental_config.update(model_data['incremental_config'])
+                        
+                        logger.info(f"✅ Ensemble models loaded: {len(self.incremental_models)} models")
+                        logger.debug(f"   Model weights: {self.model_weights}")
+                    else:
+                        logger.warning("is_ensemble_mode=True but no incremental_models found in file")
+                else:
+                    # Ensemble mode değil - incremental_models boş kalacak
+                    logger.debug("Single model mode - no ensemble to load")
+
+                # Online learning config'i güncelle
+                if 'online_learning_config' in model_data:
+                    self.online_learning_config.update(model_data['online_learning_config'])
+                self.is_trained = True
+
+                logger.info(f"Model loaded from: {path}")
+
+                return True
+            except Exception as e:
+                print(f"[DEBUG] Error loading model: {e}")
+                logger.error(f"Error loading model: {e}")
+                return False
+
     def get_model_info(self) -> Dict[str, Any]:
         """Model bilgilerini döndür"""
         info = {
@@ -2408,7 +2545,7 @@ class MongoDBAnomalyDetector:
 
     def train_incremental(self, X: pd.DataFrame, batch_id: str = None) -> Dict[str, Any]:
         """
-        Gerçek incremental learning - Yeni mini model ekle
+        Gerçek incremental learning - Yeni mini model ekle - THREAD SAFE
         
         Args:
             X: Yeni batch feature matrix
@@ -2418,93 +2555,130 @@ class MongoDBAnomalyDetector:
             Training sonuçları
         """
         
-        logger.debug(f"Batch size: {len(X)} samples")
-        logger.debug(f"Current ensemble size: {len(self.incremental_models)} models")
-        
-        # Feature isimlerini sakla
-        if self.feature_names is None:
-            self.feature_names = list(X.columns)
-        
-        # Feature normalization (consistency için)
-        if not self.is_scaler_fitted:
-            X_scaled = self.scaler.fit_transform(X)
-            self.is_scaler_fitted = True
-        else:
-            X_scaled = self.scaler.transform(X)
-        
-        X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
-        
-        # Yeni mini model oluştur
-        mini_model_params = self.model_config['parameters'].copy()
-        mini_model_params['n_estimators'] = min(100, mini_model_params.get('n_estimators', 100))  # Daha küçük model
-        
-        mini_model = IsolationForest(**mini_model_params)
-        
-        # Mini model'i eğit
-        start_time = datetime.now()
-        mini_model.fit(X_scaled_df)
-        training_time = (datetime.now() - start_time).total_seconds()
-        
-        # Model metadata
-        metadata = {
-            'batch_id': batch_id or datetime.now().isoformat(),
-            'timestamp': datetime.now().isoformat(),
-            'n_samples': len(X),
-            'training_time': training_time,
-            'anomaly_ratio': 0  # Henüz bilinmiyor
-        }
-        
-        # Model performansını test et (kendi verisi üzerinde)
-        predictions = mini_model.predict(X_scaled_df)
-        anomaly_ratio = (predictions == -1).mean()
-        metadata['anomaly_ratio'] = float(anomaly_ratio)
-        
-        # Model ağırlığını hesapla (yeni model full ağırlık)
-        model_weight = 1.0
-        
-        # Ensemble'a ekle
-        self.incremental_models.append(mini_model)
-        self.model_metadata.append(metadata)
-        self.model_weights.append(model_weight)
-        
-        # Eski modellerin ağırlıklarını decay et
-        decay_factor = self.incremental_config['weight_decay_factor']
-        for i in range(len(self.model_weights) - 1):
-            self.model_weights[i] *= decay_factor
-        
-        # Ağırlıkları normalize et
-        total_weight = sum(self.model_weights)
-        self.model_weights = [w / total_weight for w in self.model_weights]
-        
-        # Eğer maksimum model sayısına ulaştıysak, en eski modeli çıkar
-        if len(self.incremental_models) > self.incremental_config['max_models']:
-            self.incremental_models.popleft()
-            self.model_metadata.pop(0)
-            self.model_weights.pop(0)
-        
-        # Ana model olarak ensemble'ı kullan - self.model'i None yaparak ensemble mode'u işaretle
-        self.model = None  # None = ensemble mode aktif
-        self.is_trained = True
-        
-        # Training stats
-        training_stats = {
-            'method': 'incremental',
-            'batch_id': metadata['batch_id'],
-            'batch_size': len(X),
-            'ensemble_size': len(self.incremental_models),
-            'model_weights': self.model_weights.copy(),
-            'training_time': training_time,
-            'anomaly_ratio': anomaly_ratio
-        }
-        
-        logger.debug(f"Incremental training completed:")
-        
-        logger.debug(f"  Ensemble size: {len(self.incremental_models)} models")
-        
-        
-        
-        return training_stats
-    
+        # Thread safety - Ensemble'a yeni model eklenirken Predict yapılmasını engelle
+        with self._training_lock:
+            logger.debug(f"Batch size: {len(X)} samples")
+            logger.debug(f"Current ensemble size: {len(self.incremental_models)} models")
+            
+            # Feature isimlerini sakla
+            if self.feature_names is None:
+                self.feature_names = list(X.columns)
+            
+            # Feature normalization (consistency için)
+            if not self.is_scaler_fitted:
+                X_scaled = self.scaler.fit_transform(X)
+                self.is_scaler_fitted = True
+            else:
+                X_scaled = self.scaler.transform(X)
+            
+            X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
+            
+            # Yeni mini model oluştur
+            mini_model_params = self.model_config['parameters'].copy()
+            mini_model_params['n_estimators'] = min(100, mini_model_params.get('n_estimators', 100))  # Daha küçük model
+            
+            mini_model = IsolationForest(**mini_model_params)
+            
+            # Mini model'i eğit
+            start_time = datetime.now()
+            mini_model.fit(X_scaled_df)
+            training_time = (datetime.now() - start_time).total_seconds()
+            
+            # Model metadata
+            metadata = {
+                'batch_id': batch_id or datetime.now().isoformat(),
+                'timestamp': datetime.now().isoformat(),
+                'n_samples': len(X),
+                'training_time': training_time,
+                'anomaly_ratio': 0  # Henüz bilinmiyor
+            }
+            
+            # Model performansını test et (kendi verisi üzerinde)
+            predictions = mini_model.predict(X_scaled_df)
+            anomaly_ratio = (predictions == -1).mean()
+            metadata['anomaly_ratio'] = float(anomaly_ratio)
+            
+            # Model ağırlığını hesapla (yeni model full ağırlık)
+            model_weight = 1.0
+            
+            # Ensemble'a ekle
+            self.incremental_models.append(mini_model)
+            self.model_metadata.append(metadata)
+            self.model_weights.append(model_weight)
+            
+            # Eski modellerin ağırlıklarını decay et
+            decay_factor = self.incremental_config['weight_decay_factor']
+            for i in range(len(self.model_weights) - 1):
+                self.model_weights[i] *= decay_factor
+            
+            # Ağırlıkları normalize et
+            total_weight = sum(self.model_weights)
+            self.model_weights = [w / total_weight for w in self.model_weights]
+            
+            # Eğer maksimum model sayısına ulaştıysak, en eski modeli çıkar
+            if len(self.incremental_models) > self.incremental_config['max_models']:
+                self.incremental_models.popleft()
+                self.model_metadata.pop(0)
+                self.model_weights.pop(0)
+            
+            # Ana model olarak ensemble'ı kullan - self.model'i None yaparak ensemble mode'u işaretle
+            self.model = None  # None = ensemble mode aktif
+            self.is_trained = True
+            # Training stats
+            training_stats = {
+                'method': 'incremental',
+                'batch_id': metadata['batch_id'],
+                'batch_size': len(X),
+                'ensemble_size': len(self.incremental_models),
+                'model_weights': self.model_weights.copy(),
+                'training_time': training_time,
+                'anomaly_ratio': anomaly_ratio
+            }
+            
+            # train_incremental sonrası da buffer'ı güncelle
+            try:
+                # Anomaly scores hesapla (decision_function) - predictions zaten var
+                anomaly_scores = mini_model.decision_function(X_scaled_df)
+                
+                if self.historical_data['features'] is None:
+                    # İlk kez - direkt ata (orijinal X'i kaydet, scaled değil)
+                    self.historical_data['features'] = X.copy()
+                    self.historical_data['predictions'] = predictions.copy()
+                    self.historical_data['scores'] = anomaly_scores.copy()
+                    logger.info(f"📥 Historical buffer initialized with {len(X)} samples (incremental)")
+                else:
+                    # Mevcut buffer'a ekle (FIFO mantığı)
+                    max_buffer_size = self.model_config.get('max_history_size', 500000)
+                    combined_features = pd.concat([self.historical_data['features'], X], ignore_index=True)
+                    combined_predictions = np.concatenate([self.historical_data['predictions'], predictions])
+                    combined_scores = np.concatenate([self.historical_data['scores'], anomaly_scores])
+                    
+                    # Buffer limiti kontrolü
+                    if len(combined_features) > max_buffer_size:
+                        # FIFO: En eski verileri at
+                        combined_features = combined_features.tail(max_buffer_size)
+                        combined_predictions = combined_predictions[-max_buffer_size:]
+                        combined_scores = combined_scores[-max_buffer_size:]
+                        logger.info(f"📦 Historical buffer trimmed to {max_buffer_size} samples (FIFO)")
+                    
+                    self.historical_data['features'] = combined_features
+                    self.historical_data['predictions'] = combined_predictions
+                    self.historical_data['scores'] = combined_scores
+                    logger.info(f"📥 Historical buffer updated: {len(combined_features)} total samples (incremental)")
+                
+                # Metadata güncelle
+                anomaly_count = int(np.sum(predictions == -1))
+                self.historical_data['metadata']['total_samples'] = len(self.historical_data['features'])
+                self.historical_data['metadata']['anomaly_samples'] = anomaly_count
+                self.historical_data['metadata']['last_update'] = datetime.now().isoformat()
+                
+            except Exception as e:
+                logger.error(f"Error updating historical buffer in train_incremental: {e}")
+
+            logger.debug(f"Incremental training completed:")
+            logger.debug(f"  Ensemble size: {len(self.incremental_models)} models")
+            
+            return training_stats
     def predict_ensemble(self, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         """
         Ensemble prediction - Weighted voting from all mini models

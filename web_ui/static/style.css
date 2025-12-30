@@ -345,9 +345,41 @@ textarea {
     padding: 25px;
     border-radius: 6px;
     border: 1px solid var(--border-color);
-    max-height: 600px;
+    /* Viewport-responsive height */
+    max-height: 70vh;
+    min-height: 400px;
     overflow-y: auto;
+    overflow-x: hidden;
+    /* : Smooth scrolling */
+    scroll-behavior: smooth;
 }
+
+/*  Result Content Scrollbar Styling */
+.result-content::-webkit-scrollbar {
+    width: 10px;
+}
+
+.result-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 5px;
+}
+
+.result-content::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 5px;
+    border: 2px solid #f1f1f1;
+}
+
+.result-content::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+}
+
+/* Firefox scrollbar */
+.result-content {
+    scrollbar-width: thin;
+    scrollbar-color: #c1c1c1 #f1f1f1;
+}
+
 
 /* Result Status */
 .result-status {
@@ -10271,6 +10303,138 @@ input:checked + .toggle-slider:before {
     padding: 20px;
 }
 
+/* ============================================
+   VIEW MODE - HEIGHT OVERRIDES
+   ============================================ */
+
+/* COMPACT MODE - Daha az alan, hızlı bakış */
+.compact-mode .result-content {
+    max-height: 400px !important;
+    min-height: 200px;
+    overflow-y: auto !important;
+}
+
+.compact-mode .critical-anomalies-section {
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.compact-mode .critical-anomaly-card {
+    padding: 10px;
+    margin: 8px 0;
+}
+
+.compact-mode .log-message-pre {
+    max-height: 80px !important;
+    font-size: 12px !important;
+}
+
+/* EXPANDED MODE - Varsayılan geniş görünüm */
+.expanded-mode .result-content {
+    max-height: 75vh !important;
+    min-height: 400px;
+    overflow-y: auto !important;
+}
+
+.expanded-mode .critical-anomalies-section {
+    max-height: none;
+}
+
+.expanded-mode .critical-anomaly-card {
+    padding: 15px 20px;
+    margin: 12px 0;
+}
+
+.expanded-mode .log-message-pre {
+    max-height: 400px !important;
+    font-size: 13px !important;
+}
+
+/* FULLSCREEN MODE - Tam ekran deneyimi */
+.fullscreen-mode {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 9999 !important;
+    background: white !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    overflow: hidden !important;
+}
+
+.fullscreen-mode .result-content {
+    max-height: calc(100vh - 100px) !important;
+    height: calc(100vh - 100px) !important;
+    min-height: auto;
+    overflow-y: auto !important;
+    padding: 25px !important;
+}
+
+.fullscreen-mode .critical-anomalies-section {
+    max-height: none;
+}
+
+.fullscreen-mode .critical-anomaly-card {
+    padding: 20px 25px;
+    margin: 15px 0;
+}
+
+.fullscreen-mode .log-message-pre {
+    max-height: 600px !important;
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+}
+
+/* Fullscreen mode için view controls sticky */
+.fullscreen-mode .view-controls {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 100;
+    padding: 10px 0;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #eee;
+}
+
+/* View Mode Button Stilleri */
+.view-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.btn-view-mode {
+    padding: 6px 14px;
+    border: 1px solid #ddd;
+    background: #f8f9fa;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.btn-view-mode:hover {
+    background: #e9ecef;
+    border-color: #ccc;
+}
+
+.btn-view-mode.active {
+    background: #0047BA;
+    color: white;
+    border-color: #0047BA;
+}
+
+.btn-view-mode.active:hover {
+    background: #003d9e;
+}
+
+
 .expanded-mode .critical-anomalies-section,
 .critical-anomalies-section.expanded-view {
     width: 100%;
@@ -12451,4 +12615,215 @@ mark.text-highlight:hover {
 #validateLogBtn {
     width: 100%;
     margin-top: 10px;
+}
+
+/* ============================================
+   MODEL DETAILS PANEL STYLES
+   ============================================ */
+
+/* Server Info Banner */
+.server-info-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8f9fa;
+    padding: 10px 15px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    border-left: 4px solid #0047BA;
+}
+
+.banner-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.banner-separator {
+    color: #ccc;
+}
+
+.banner-detail {
+    font-size: 0.9em;
+    color: #333;
+}
+
+/* Source Badges */
+.source-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: bold;
+    color: white;
+}
+
+.source-badge.upload {
+    background-color: #27ae60;
+}
+
+.source-badge.opensearch {
+    background-color: #2980b9;
+}
+
+/* Model Badge */
+.model-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+/* Ensemble Badge */
+.ensemble-badge {
+    background: #f39c12;
+    color: white;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 0.75em;
+}
+
+/* Model Details Button */
+.btn-model-details {
+    background: transparent;
+    border: 1px solid #667eea;
+    color: #667eea;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+    transition: all 0.2s;
+    margin-left: auto;
+}
+
+.btn-model-details:hover {
+    background: #667eea;
+    color: white;
+}
+
+/* Model Details Panel */
+.model-details-panel {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    margin: 10px 0;
+    padding: 0;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.model-details-panel.show {
+    animation: modelPanelSlideDown 0.3s ease;
+}
+
+@keyframes modelPanelSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Model Details Header */
+.model-details-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.model-details-header h4 {
+    margin: 0;
+    font-size: 1em;
+}
+
+/* Close Panel Button */
+.btn-close-panel {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+}
+
+.btn-close-panel:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Model Details Grid */
+.model-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    padding: 15px;
+}
+
+/* Model Detail Item */
+.model-detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.model-detail-item .detail-label {
+    font-size: 0.75em;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.model-detail-item .detail-value {
+    font-size: 0.95em;
+    font-weight: 500;
+    color: #333;
+}
+
+.model-detail-item .detail-value.active {
+    color: #27ae60;
+}
+
+.model-detail-item .detail-value.model-path {
+    font-family: monospace;
+    font-size: 0.85em;
+    background: #e9ecef;
+    padding: 2px 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+
+/* Responsive Design for Model Details */
+@media (max-width: 768px) {
+    .server-info-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .btn-model-details {
+        margin-left: 0;
+        width: 100%;
+        text-align: center;
+    }
+
+    .model-details-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .model-detail-item .detail-value.model-path {
+        max-width: 100%;
+    }
 }

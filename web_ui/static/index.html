@@ -55,6 +55,7 @@
                 <button id="anomalyAnalysisBtn" class="btn btn-primary">🔍 ANOMALİ ANALİZİ</button>
                 <button id="dbaAnalysisBtn" class="btn btn-primary">🕐 DBA TAVSİYE SİSTEMİ</button>
                 <button id="logUploadBtn" class="btn btn-secondary">📁 LOG YÜKLE</button>
+                <button id="toggleMLPanelBtn" class="btn btn-secondary">📊 ML MODELİ METRİKLERİ</button>
                 <button id="statusBtn" class="btn btn-secondary">SİSTEM DURUMU</button>
 
             </section>
@@ -132,8 +133,173 @@
 
             <!-- Anomali Analiz Sonuçları -->
             <section id="anomalyResults" class="anomaly-results" style="display: none;">
-                <h3>🎯 Anomali Analiz Sonuçları</h3>
+
+                <div class="section-header">
+
+                    <h3>🎯 Anomali Analiz Sonuçları</h3>
+
+                    <div class="header-actions">
+
+                        <button class="btn-minimize" onclick="document.getElementById('anomalyContent').classList.toggle('hidden')">_</button>
+
+                    </div>
+
+                </div>
+
+                
+
                 <div id="anomalyContent" class="anomaly-content"></div>
+
+
+
+                <div class="dba-explorer-panel" style="margin-top: 30px; border-top: 2px solid #eee; padding-top: 20px;">
+
+                    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+
+                        <h4 style="margin: 0; color: #0047BA;">🛠️ DBA Log Explorer (Detaylı İnceleme)</h4>
+
+                        <span id="currentHostBadge" class="badge badge-info" style="display:none;">Host: --</span>
+
+                    </div>
+
+
+
+                    <div class="filter-controls" style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;">
+
+                        <div class="filter-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+
+                            <div class="form-group">
+
+                                <label style="font-size: 12px; font-weight: bold; color: #555;">Bileşen (Component):</label>
+
+                                <select id="filterComponent" class="form-select text-sm">
+
+                                    <option value="ALL">Tümü</option>
+
+                                    <option value="NETWORK">NETWORK</option>
+
+                                    <option value="QUERY">QUERY / COMMAND</option>
+
+                                    <option value="REPL">REPL (Replication)</option>
+
+                                    <option value="STORAGE">STORAGE / WT</option>
+
+                                    <option value="ACCESS">ACCESS / AUTH</option>
+
+                                    <option value="CONTROL">CONTROL</option>
+
+                                    <option value="WRITE">WRITE</option>
+
+                                    <option value="INDEX">INDEX</option>
+
+                                </select>
+
+                            </div>
+
+
+
+                            <div class="form-group">
+
+                                <label style="font-size: 12px; font-weight: bold; color: #555;">Min. Severity (0-100):</label>
+
+                                <div style="display: flex; align-items: center; gap: 10px;">
+
+                                    <input type="range" id="filterSeverityRange" min="0" max="100" value="0" style="flex: 1;">
+
+                                    <span id="filterSeverityValue" style="font-weight: bold; width: 30px;">0</span>
+
+                                </div>
+
+                            </div>
+
+
+
+                            <div class="form-group" style="grid-column: span 2;">
+
+                                <label style="font-size: 12px; font-weight: bold; color: #555;">Log Pattern / Mesaj İçeriği:</label>
+
+                                <input type="text" id="filterPattern" class="form-input text-sm" placeholder="Örn: 'connection refused', 'timeout', 'duplicate key'...">
+
+                            </div>
+
+                        </div>
+
+
+
+                        <div class="filter-actions" style="margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
+
+                            <button id="btnApplyFilter" class="btn btn-primary btn-sm">
+
+                                🔍 Filtrele & Getir
+
+                            </button>
+
+                            <button id="btnResetFilter" class="btn btn-secondary btn-sm">
+
+                                🗑️ Temizle
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+
+
+                    <div id="dbaResultsTableWrapper" style="margin-top: 20px; overflow-x: auto;">
+
+                        <table class="dba-table" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+
+                            <thead>
+
+                                <tr style="background: #f1f3f5; text-align: left;">
+
+                                    <th style="padding: 10px; border-bottom: 2px solid #ddd;">Zaman</th>
+
+                                    <th style="padding: 10px; border-bottom: 2px solid #ddd;">Severity</th>
+
+                                    <th style="padding: 10px; border-bottom: 2px solid #ddd;">Component</th>
+
+                                    <th style="padding: 10px; border-bottom: 2px solid #ddd;">Log Mesajı</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody id="dbaResultsBody">
+
+                                <tr>
+
+                                    <td colspan="4" style="text-align: center; padding: 20px; color: #777;">
+
+                                        Filtreleme yapmak için yukarıdaki butonu kullanın.
+
+                                    </td>
+
+                                </tr>
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+
+
+                    <div id="dbaPagination" style="text-align: center; margin-top: 15px; display: none;">
+
+                        <button id="btnLoadMoreAnomalies" class="btn btn-secondary btn-sm">
+
+                            ⬇️ Daha Fazla Yükle (+50)
+
+                        </button>
+
+                        <p style="font-size: 11px; color: #777; margin-top: 5px;" id="dbaResultCountInfo"></p>
+
+                    </div>
+
+                </div>
+
             </section>
 
             <!-- Log Yükleme Bölümü -->
@@ -141,7 +307,7 @@
                 <h3>📁 Manuel Log Yükleme (OpenSearch Öncesi Test)</h3>
                 <div class="upload-container">
                     <div class="upload-area">
-                        <input type="file" id="logFileInput" accept=".log,.txt,.json" style="display: none;">
+                        <input type="file" id="logFileInput" accept=".log,.txt,.json,text/plain,application/json,application/octet-stream,*/*" style="display: none;">
                         <div class="upload-dropzone" id="uploadDropzone">
                             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#0047BA" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -177,24 +343,9 @@
                             <h4>Veri Kaynağı Seçin</h4>
                             <div class="source-selection-grid">
                                 <label class="source-option">
-                                    <input type="radio" name="dataSource" value="file">
-                                    <span>📁 Config Dosyası</span>
-                                </label>
-                                
-                                <label class="source-option">
                                     <input type="radio" name="dataSource" value="upload" checked>
                                     <span>📤 Yüklenen Dosya</span>
                                     <small> (Manuel yüklenen loglar) </small>
-                                </label>
-                                
-                                <label class="source-option">
-                                    <input type="radio" name="dataSource" value="mongodb_direct">
-                                    <span>MongoDB Direct</span>
-                                </label>
-                                
-                                <label class="source-option">
-                                    <input type="radio" name="dataSource" value="test_servers">
-                                    <span>Test Linux Sunucuları</span>
                                 </label>
                                 
                                 <label class="source-option">
@@ -206,28 +357,8 @@
                             
                             <!-- Dinamik input alanları -->
                             <div id="sourceSpecificInputs" style="margin-top: 15px;">
-                                <!-- Upload için dosya listesi (varsayılan) -->
+                                <!-- Upload için dosya listesi -->
                                 <div id="uploadSourceInputs" style="display: none;">
-                                    <!-- Mevcut modalFilesList buraya taşınacak -->
-                                </div>
-                                
-                                <!-- MongoDB Direct için -->
-                                <div id="mongoSourceInputs" style="display: none;">
-                                    <label>Connection String:</label>
-                                    <input type="text" id="mongoConnectionString" class="form-input" 
-                                           value="mongodb://lcw_test_user:lcw_test_pass@192.168.56.101:27017,192.168.56.102:27017,192.168.56.103:27017/test_lcw?authSource=admin&replicaSet=rs0"
-                                           placeholder="mongodb://...">
-                                </div>
-                                
-                                <!-- Test Servers için -->
-                                <div id="serverSourceInputs" style="display: none;">
-                                    <label>Test Sunucusu:</label>
-                                    <select id="testServerSelect" class="form-select">
-                                        <option value="">Sunucu seçin...</option>
-                                        <option value="mongodb-node1">MongoDB Node 1 (Primary)</option>
-                                        <option value="mongodb-node2">MongoDB Node 2 (Secondary)</option>
-                                        <option value="mongodb-node3">MongoDB Node 3 (Secondary)</option>
-                                    </select>
                                 </div>
                                 
                                 <!-- OpenSearch için -->
@@ -446,7 +577,10 @@
     
     <!-- Log Filter & Grouping Module -->
     <script src="/static/script-log-filter.js"></script>
-    
+
+    <!-- DBA Explorer Module -->
+    <script src="/static/script-dba-explorer.js"></script>
+
     <script src="/static/script.js"></script>
 </body>
 </html>

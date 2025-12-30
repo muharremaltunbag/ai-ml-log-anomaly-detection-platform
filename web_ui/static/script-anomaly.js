@@ -13,9 +13,13 @@
 
 console.log('🔍 Loading script-anomaly.js...');
 
-// ============================================
-// PARENT ANOMALY QUERY YÖNETİMİ
-// ============================================
+// Pagination durumunu takip etmek için
+window.anomalyPaginationState = {
+    analysisId: null,
+    currentSkip: 0,
+    isLoading: false,
+    listType: 'unfiltered_anomalies'
+};
 
 /**
  * Parent anomali sorgusunu güncelle
@@ -232,14 +236,19 @@ function displayChatQueryResult(result, userQuery) {
         html += '</div>';
     }
     
+    // [FIX] Host bilgisini result objesinden bul
+    const hostName = window.findHostDeep(result) || ''; 
+    const hostSuffix = hostName ? ` (${hostName} sunucusu için)` : '';
+
     // Daha fazla soru önerileri
     html += '<div class="follow-up-suggestions">';
     html += '<p>İlgili sorular:</p>';
     html += '<div class="suggestion-chips">';
-    html += '<span class="chip" onclick="askFollowUp(\'En kritik 5 anomali nedir?\')">En kritik 5 anomali</span>';
-    html += '<span class="chip" onclick="askFollowUp(\'Hangi component en çok anomali içeriyor?\')">Component dağılımı</span>';
-    html += '<span class="chip" onclick="askFollowUp(\'Bu anomaliler için ne önerirsin?\')">Öneriler</span>';
-    html += '<span class="chip" onclick="askFollowUp(\'Anomali pattern\'leri var mı?\')">Pattern analizi</span>';
+    // Sorgulara host bilgisini ekleyerek backend validasyonunu geçmesini sağlıyoruz
+    html += `<span class="chip" onclick="askFollowUp('En kritik 5 anomali nedir?${hostSuffix}')">En kritik 5 anomali</span>`;
+    html += `<span class="chip" onclick="askFollowUp('Hangi component en çok anomali içeriyor?${hostSuffix}')">Component dağılımı</span>`;
+    html += `<span class="chip" onclick="askFollowUp('Bu anomaliler için ne önerirsin?${hostSuffix}')">Öneriler</span>`;
+    html += `<span class="chip" onclick="askFollowUp('Anomali pattern\\'leri var mı?${hostSuffix}')">Pattern analizi</span>`;
     html += '</div>';
     html += '</div>';
     
@@ -1075,6 +1084,33 @@ function displayAnomalyResults(result) {
     console.log('[DEBUG FRONTEND] result.sonuç structure:', Object.keys(result.sonuç || {}));
     const anomalyScoreStats = mlData.anomaly_score_stats || {};
 
+    // ✅ YENİ: Model metadata extraction (çoklu kaynak desteği)
+    const modelInfo = result.model_info || 
+                      result.sonuç?.model_info || 
+                      result.server_info?.model_info ||
+                      mlData.model_info ||
+                      {};
+    
+    // MongoDB'den gelen model_metadata yapısını da kontrol et
+    const modelMetadata = result.model_metadata || 
+                          result.sonuç?.model_metadata ||
+                          {};
+    
+    // Birleştirilmiş model bilgileri (öncelik: modelInfo > modelMetadata > server_info)
+    const combinedModelInfo = {
+        model_version: modelInfo.model_version || modelMetadata.model_version || result.server_info?.model_version || null,
+        model_path: modelInfo.model_path || modelMetadata.model_path || result.server_info?.model_path || null,
+        server_name: modelInfo.server_name || modelMetadata.server_name || result.server_info?.server_name || null,
+        is_ensemble_mode: modelInfo.is_ensemble_mode || modelMetadata.is_ensemble_mode || false,
+        ensemble_model_count: modelInfo.ensemble_model_count || modelMetadata.ensemble_model_count || 0,
+        historical_buffer_samples: modelInfo.historical_buffer_samples || modelMetadata.historical_buffer_samples || 0,
+        model_trained_at: modelInfo.model_trained_at || modelMetadata.model_trained_at || null,
+        feature_count: modelInfo.feature_count || modelMetadata.feature_count || 0,
+        contamination: modelInfo.contamination || modelMetadata.contamination || null
+    };
+    
+    console.log('[DEBUG] Combined Model Info:', combinedModelInfo);
+
     // YENİ: AI açıklaması mevcutsa parse et
     let aiExplanation = result.sonuç?.ai_explanation || result.ai_explanation;
 
@@ -1109,18 +1145,236 @@ function displayAnomalyResults(result) {
     
     // Ana sonuç container'ı oluştur - ML ENHANCED VERSION
     let html = '<div class="anomaly-results ml-enhanced">';
-    
+
     // Başlık
     html += '<div class="anomaly-header">';
     html += '<h2>🔍 Anomali Analiz Sonuçları - ML Detaylı Görünüm</h2>';
     html += '</div>';
 
-    // Server bilgisini göster (eğer varsa)
-    if (result.server_info) {
-        html += `<div class="server-info-banner">
-            📍 Analiz Sunucusu: ${result.server_info.server_name || 'Bilinmiyor'}
-            ${result.server_info.model_version ? `| Model: v${result.server_info.model_version}` : ''}
+    // ✅ YENİ: Kaynak Bilgisi (Upload vs OpenSearch)
+    let sourceBadge = '';
+    let sourceInfoText = '';
+
+    if (result.source_type === 'upload' || result.uploaded_filename) {
+        // Upload Durumu
+        const fileName = result.uploaded_filename || 
+                         (result.sonuç?.server_info?.server_name || 'Dosya').replace('📁 ', '');
+        sourceBadge = '<span class="source-badge upload">📁 Kaynak: Log Upload</span>';
+        sourceInfoText = `<strong>Dosya:</strong> ${fileName}`;
+    } else {
+        // OpenSearch / Diğer Durumlar
+        const serverName = result.server_info?.server_name || combinedModelInfo.server_name || 'Bilinmiyor';
+        sourceBadge = '<span class="source-badge opensearch">🔍 Kaynak: OpenSearch</span>';
+        sourceInfoText = `<strong>Sunucu:</strong> ${serverName}`;
+    }
+
+    // ✅ YENİ: Model bilgisi badge (sadece version varsa göster)
+    const modelVersionBadge = combinedModelInfo.model_version 
+        ? `<span class="model-badge">🤖 Model v${combinedModelInfo.model_version}</span>` 
+        : '';
+    
+    // ✅ YENİ: Ensemble mode badge
+    const ensembleBadge = combinedModelInfo.is_ensemble_mode 
+        ? `<span class="ensemble-badge" title="${combinedModelInfo.ensemble_model_count} model">🔗 Ensemble</span>` 
+        : '';
+
+    // Ana Banner
+    html += `<div class="server-info-banner">
+        <div class="banner-content">
+            ${sourceBadge}
+            <span class="banner-separator">|</span>
+            <span class="banner-detail">${sourceInfoText}</span>
+            ${modelVersionBadge ? `<span class="banner-separator">|</span>${modelVersionBadge}` : ''}
+            ${ensembleBadge}
+        </div>
+        ${combinedModelInfo.model_version ? `
+        <button class="btn-model-details" onclick="toggleModelDetailsPanel()" title="Model detaylarını göster/gizle">
+            ℹ️ Model Detayları
+        </button>
+        ` : ''}
+    </div>`;
+
+    // ✅ YENİ: Detaylı Model Info Panel (Collapsible)
+    if (combinedModelInfo.model_version || combinedModelInfo.model_path) {
+        html += `
+        <div id="modelDetailsPanel" class="model-details-panel" style="display: none;">
+            <div class="model-details-header">
+                <h4>🤖 ML Model Bilgileri</h4>
+                <button class="btn-close-panel" onclick="toggleModelDetailsPanel()">✕</button>
+            </div>
+            <div class="model-details-grid">
+                <div class="model-detail-item">
+                    <span class="detail-label">Model Versiyonu:</span>
+                    <span class="detail-value">${combinedModelInfo.model_version || 'N/A'}</span>
+                </div>
+                <div class="model-detail-item">
+                    <span class="detail-label">Model Dosyası:</span>
+                    <span class="detail-value model-path" title="${combinedModelInfo.model_path || 'N/A'}">
+                        ${combinedModelInfo.model_path ? combinedModelInfo.model_path.split('/').pop() : 'N/A'}
+                    </span>
+                </div>
+                <div class="model-detail-item">
+                    <span class="detail-label">Sunucu:</span>
+                    <span class="detail-value">${combinedModelInfo.server_name || 'Global'}</span>
+                </div>
+                <div class="model-detail-item">
+                    <span class="detail-label">Eğitim Tarihi:</span>
+                    <span class="detail-value">${combinedModelInfo.model_trained_at ? new Date(combinedModelInfo.model_trained_at).toLocaleString('tr-TR') : 'N/A'}</span>
+                </div>
+                <div class="model-detail-item">
+                    <span class="detail-label">Ensemble Modu:</span>
+                    <span class="detail-value ${combinedModelInfo.is_ensemble_mode ? 'active' : ''}">
+                        ${combinedModelInfo.is_ensemble_mode ? `✅ Aktif (${combinedModelInfo.ensemble_model_count} model)` : '❌ Pasif'}
+                    </span>
+                </div>
+                <div class="model-detail-item">
+                    <span class="detail-label">Historical Buffer:</span>
+                    <span class="detail-value">${combinedModelInfo.historical_buffer_samples > 0 ? combinedModelInfo.historical_buffer_samples.toLocaleString('tr-TR') + ' örnek' : 'N/A'}</span>
+                </div>
+                <div class="model-detail-item">
+                    <span class="detail-label">Feature Sayısı:</span>
+                    <span class="detail-value">${combinedModelInfo.feature_count > 0 ? combinedModelInfo.feature_count : 'N/A'}</span>
+                </div>
+                <div class="model-detail-item">
+                    <span class="detail-label">Contamination:</span>
+                    <span class="detail-value">${combinedModelInfo.contamination ? (combinedModelInfo.contamination * 100).toFixed(1) + '%' : 'Auto'}</span>
+                </div>
+            </div>
         </div>`;
+    }
+
+    // CSS stilini dinamik ekleyelim (Bu dosyada CSS yoksa diye garanti olsun)
+    if (!document.getElementById('anomaly-source-style')) {
+        const style = document.createElement('style');
+        style.id = 'anomaly-source-style';
+        style.textContent = `
+            .source-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.85em; font-weight: bold; color: white; }
+            .source-badge.upload { background-color: #27ae60; }
+            .source-badge.opensearch { background-color: #2980b9; }
+            .banner-content { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+            .banner-separator { color: #ccc; }
+            
+            /* Model Badge Stilleri */
+            .model-badge { 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                color: white; 
+                padding: 4px 10px; 
+                border-radius: 12px; 
+                font-size: 0.8em; 
+                font-weight: 600;
+            }
+            .ensemble-badge { 
+                background: #f39c12; 
+                color: white; 
+                padding: 3px 8px; 
+                border-radius: 10px; 
+                font-size: 0.75em;
+            }
+            .btn-model-details {
+                background: transparent;
+                border: 1px solid #667eea;
+                color: #667eea;
+                padding: 4px 12px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 0.8em;
+                transition: all 0.2s;
+                margin-left: auto;
+            }
+            .btn-model-details:hover {
+                background: #667eea;
+                color: white;
+            }
+            
+            /* Model Details Panel */
+            .model-details-panel {
+                background: #f8f9fa;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                margin: 10px 0;
+                padding: 0;
+                overflow: hidden;
+                transition: all 0.3s ease;
+            }
+            .model-details-panel.show {
+                animation: slideDown 0.3s ease;
+            }
+            @keyframes slideDown {
+                from { opacity: 0; transform: translateY(-10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .model-details-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 12px 15px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+            .model-details-header h4 {
+                margin: 0;
+                font-size: 1em;
+            }
+            .btn-close-panel {
+                background: rgba(255,255,255,0.2);
+                border: none;
+                color: white;
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                cursor: pointer;
+                font-size: 14px;
+            }
+            .model-details-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 12px;
+                padding: 15px;
+            }
+            .model-detail-item {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .detail-label {
+                font-size: 0.75em;
+                color: #666;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            .detail-value {
+                font-size: 0.95em;
+                font-weight: 500;
+                color: #333;
+            }
+            .detail-value.active {
+                color: #27ae60;
+            }
+            .detail-value.model-path {
+                font-family: monospace;
+                font-size: 0.85em;
+                background: #e9ecef;
+                padding: 2px 6px;
+                border-radius: 3px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                max-width: 200px;
+            }
+            
+            /* Server Info Banner düzeltmesi */
+            .server-info-banner {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: #f8f9fa;
+                padding: 10px 15px;
+                border-radius: 6px;
+                margin-bottom: 15px;
+                border-left: 4px solid #0047BA;
+            }
+        `;
+        document.head.appendChild(style);
     }
 
     // ML Model Performans Metrikleri
@@ -1282,6 +1536,10 @@ function displayAnomalyResults(result) {
         html += '</div>';
     }
 
+    // -----------------------------------------------------------------------
+    // MEVCUT YAPIYI KORUYARAK BURADAN İTİBAREN GÜNCELLİYORUZ
+    // -----------------------------------------------------------------------
+
     // Eylem butonları
     html += '<div class="analysis-actions">';
     html += '<button class="btn btn-primary" onclick="toggleDetailedAnomalyList()">📋 Detaylı Anomali Listesi</button>';
@@ -1289,39 +1547,103 @@ function displayAnomalyResults(result) {
     html += '<button class="btn btn-info" onclick="scheduleFollowUp()">📅 Takip Planla</button>';
     html += '</div>';
 
-    html += '</div>';
+    // =======================================================================
+    // ✅ YENİ: DBA LOG EXPLORER PANELİ (Mevcut Yapının Altına Ekleniyor)
+    // =======================================================================
+    html += `
+        <div class="dba-explorer-panel" style="margin-top: 40px; border-top: 3px solid #0047BA; padding-top: 20px; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 0 10px;">
+                <h3 style="margin: 0; color: #0047BA; display: flex; align-items: center; gap: 10px; font-size: 1.2rem;">
+                    🛠️ DBA Log Explorer 
+                    <span style="font-size: 13px; color: #666; font-weight: normal; background: #f0f2f5; padding: 2px 8px; border-radius: 10px;">Server-Side Filtering</span>
+                </h3>
+                <span id="currentHostBadge" class="badge badge-info" style="display:none; font-size: 13px; padding: 6px 12px;">Host: --</span>
+            </div>
+
+            <div class="filter-controls" style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef;">
+                <div class="filter-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                    <div class="form-group">
+                        <label style="font-size: 13px; font-weight: 600; color: #444; margin-bottom: 8px; display: block;">Bileşen (Component):</label>
+                        <select id="filterComponent" class="form-select" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ced4da;">
+                            <option value="ALL">Tümü</option>
+                            <option value="NETWORK">NETWORK</option>
+                            <option value="QUERY">QUERY / COMMAND</option>
+                            <option value="REPL">REPL (Replication)</option>
+                            <option value="STORAGE">STORAGE / WT</option>
+                            <option value="ACCESS">ACCESS / AUTH</option>
+                            <option value="CONTROL">CONTROL</option>
+                            <option value="WRITE">WRITE</option>
+                            <option value="INDEX">INDEX</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label style="font-size: 13px; font-weight: 600; color: #444; margin-bottom: 8px; display: block;">Min. Severity Skoru:</label>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <input type="range" id="filterSeverityRange" min="0" max="100" value="0" style="flex: 1; accent-color: #0047BA;">
+                            <span id="filterSeverityValue" style="font-weight: bold; width: 40px; text-align: right; color: #0047BA;">0</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label style="font-size: 13px; font-weight: 600; color: #444; margin-bottom: 8px; display: block;">Log Mesajı İçeriği (Regex Destekli):</label>
+                        <input type="text" id="filterPattern" class="form-input" placeholder="Örn: 'connection refused', 'timeout'..." style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #ced4da;">
+                    </div>
+                </div>
+                <div class="filter-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+                    <button id="btnResetFilter" class="btn btn-secondary" style="padding: 8px 20px;">🗑️ Temizle</button>
+                    <button id="btnApplyFilter" class="btn btn-primary" style="padding: 8px 25px;">🔍 Filtrele & Getir</button>
+                </div>
+            </div>
+
+            <div id="dbaResultsTableWrapper" style="margin-top: 25px; overflow-x: auto; overflow-y: auto; max-height: 500px; border: 1px solid #eee; border-radius: 8px; background: white;">
+                <table class="dba-table" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead>
+                        <tr style="background: #f1f3f5; text-align: left; color: #333;">
+                            <th style="padding: 12px; border-bottom: 2px solid #ddd; width: 160px;">Zaman</th>
+                            <th style="padding: 12px; border-bottom: 2px solid #ddd; width: 80px;">Puan</th>
+                            <th style="padding: 12px; border-bottom: 2px solid #ddd; width: 100px;">Bileşen</th>
+                            <th style="padding: 12px; border-bottom: 2px solid #ddd;">Log Mesajı</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dbaResultsBody">
+                        <tr>
+                            <td colspan="4" style="text-align: center; padding: 30px; color: #777;">
+                                <div style="font-size: 24px; margin-bottom: 10px; opacity: 0.5;">👆</div>
+                                <p>Filtreleme yapmak için yukarıdaki kriterleri seçip <strong>"Filtrele & Getir"</strong> butonuna basınız.</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="dbaPagination" style="text-align: center; margin-top: 20px; display: none; padding-bottom: 20px;">
+                <button id="btnLoadMoreAnomalies" class="btn btn-secondary" style="width: 200px;">⬇️ Daha Fazla Yükle (+50)</button>
+                <p style="font-size: 12px; color: #777; margin-top: 8px;" id="dbaResultCountInfo"></p>
+            </div>
+        </div>
+    `;
+
+    html += '</div>'; // Ana container kapanışı
 
     // Sonuçları göster
     elements.resultContent.innerHTML = html;
     elements.resultSection.style.display = 'block';
     elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-    // Event listener'ları ekle
-    setTimeout(() => {
-        attachMLVisualizationListeners();
-    }, 100);
-
-    // YENİ: Data'yı güvenilir şekilde set et
+    // Global veriyi sakla
     window.lastAnomalyResult = result;
 
-    // Fallback: Eğer critical_anomalies yoksa, normal anomalies'i critical olarak ekle
-    if (result.sonuç && (!result.sonuç.critical_anomalies || result.sonuç.critical_anomalies.length === 0)) {
-        if (result.sonuç.data?.critical_anomalies) {
-            result.sonuç.critical_anomalies = result.sonuç.data.critical_anomalies;
-        } else if (result.anomalies) {
-            result.sonuç.critical_anomalies = result.anomalies;
+    // Event listener'ları ekle (Mevcut görselleştirmeler için)
+    setTimeout(() => {
+        if (typeof attachMLVisualizationListeners === 'function') {
+            attachMLVisualizationListeners();
         }
-    }
+    }, 100);
 
-    console.log('Anomaly result saved to window.lastAnomalyResult');
-    console.log('Critical anomalies count:', result.sonuç?.critical_anomalies?.length || 0);
-    console.log('Feature importance available:', !!(result.sonuç?.feature_importance));
-
-    // Storage info varsa göster
+    // Storage info varsa göster (Mevcut kod)
     if (result.storage_info) {
         console.log('Analysis auto-saved with ID:', result.storage_info.analysis_id);
-
-        // Bildirim göster
         setTimeout(() => {
             window.showNotification(
                 `✅ Analiz otomatik olarak kaydedildi (ID: ${result.storage_info.analysis_id.substring(0, 8)}...)`,
@@ -1329,7 +1651,6 @@ function displayAnomalyResults(result) {
             );
         }, 1000);
 
-        // Geçmişe storage bilgisini ekle
         if (window.lastAnomalyResult) {
             window.lastAnomalyResult.storage_id = result.storage_info.analysis_id;
             window.lastAnomalyResult.storage_path = result.storage_info.file_path;
@@ -1337,64 +1658,56 @@ function displayAnomalyResults(result) {
     }
 
     // ============================================
-    // FILTER SİSTEMİ BAŞLATMA
+    // ✅ DBA EXPLORER BAĞLANTISI (GÜÇLENDİRİLMİŞ HOST TESPİTİ)
     // ============================================
-    // Critical anomalies varsa filter sistemini başlat
-    const criticalAnomaliesForFilter = result.sonuç?.critical_anomalies ||
-                                       result.sonuç?.data?.critical_anomalies ||
-                                       [];
+    if (window.DBAExplorer) {
+        console.log('🔌 Connecting DBA Explorer module...');
 
-    console.log('🔍 [FILTER] Checking for critical anomalies...');
-    console.log('🔍 [FILTER] Critical anomalies count:', criticalAnomaliesForFilter.length);
+        // 1. HTML yeniden oluşturulduğu için event listener'ları tekrar bağla
+        if (typeof window.DBAExplorer.bindEvents === 'function') {
+            window.DBAExplorer.bindEvents();
+        }
 
-    if (criticalAnomaliesForFilter.length > 0) {
-        setTimeout(() => {
-            console.log('🔍 [FILTER] Initializing filter system with', criticalAnomaliesForFilter.length, 'anomalies');
+        // 2. Context'i Ayarla (Recursive Deep Search)
+        console.log('🔍 Searching for host info deeply in result object...');
+
+        // result objesinin tamamını tarar, bulduğu ilk geçerli host bilgisini alır.
+        let hostName = findHostDeep(result);
+
+        // Fallback: Eğer hala bulunamadıysa ve URL/Connection string varsa oradan regex ile çıkarmayı dene
+        if (!hostName && result.connection_string) {
             try {
-                // 1. Filter sistemini başlat (veriyi yükle)
-                window.initializeLogFilter(criticalAnomaliesForFilter);
-                console.log('✅ [FILTER] Filter system initialized');
+                const match = result.connection_string.match(/@([^:/]+)/);
+                if (match) hostName = match[1];
+            } catch (e) { console.warn('Regex host extraction failed', e); }
+        }
 
-                // 2. Filter panelini DOM'a ekle (eğer yoksa)
-                if (!document.getElementById('logFilterPanel')) {
-                    const filterPanelHTML = window.renderLogFilterPanel();
-                    document.body.insertAdjacentHTML('beforeend', filterPanelHTML);
-                    console.log('✅ [FILTER] Filter panel added to DOM');
-                } else {
-                    console.log('ℹ️ [FILTER] Filter panel already exists, updating data...');
-                    const componentOptions = document.getElementById('componentFilterOptions');
-                    const severityOptions = document.getElementById('severityFilterOptions');
-                    const hostOptions = document.getElementById('hostFilterOptions');
+        // Zaman aralığını al
+        let startTime = result.time_range?.start || result.storage_info?.time_range_start || null;
+        let endTime = result.time_range?.end || result.storage_info?.time_range_end || null;
 
-                    if (componentOptions) {
-                        componentOptions.innerHTML = renderComponentOptions();
-                    }
-                    if (severityOptions) {
-                        severityOptions.innerHTML = renderSeverityOptions();
-                    }
-                    if (hostOptions) {
-                        hostOptions.innerHTML = renderHostOptions();
-                    }
-                    console.log('✅ [FILTER] Filter options updated');
-                }
+        // 3. Analysis ID'yi bul (Veri izolasyonu için kritik - ✅ EKLENDİ)
+        let analysisId = result.analysis_id ||
+                         result.storage_info?.analysis_id ||
+                         result.sonuç?.analysis_id ||
+                         result.sonuç?.storage_info?.analysis_id ||
+                         null;
 
-                // 3. İstatistikleri güncelle
-                window.updateFilterStats();
-                console.log('✅ [FILTER] Filter stats updated');
+        // ISO format kontrolü
+        if (startTime && !startTime.includes('T')) startTime = null;
 
-                // 4. Kullanıcıya bildirim göster
-                window.showNotification(
-                    `🔍 ${criticalAnomaliesForFilter.length} anomali filtrelemeye hazır`,
-                    'info'
-                );
-            } catch (error) {
-                console.error('❌ [FILTER] Error initializing filter system:', error);
-                console.error('Error stack:', error.stack);
-            }
-        }, 200);
+        if (hostName) {
+            console.log(`✅ DBA Explorer Context Set: Host=${hostName}, ID=${analysisId}`);
+            // Context'i ayarla (4. parametre olarak analysisId eklendi)
+            window.DBAExplorer.setContext(hostName, startTime, endTime, analysisId);
+        } else {
+            console.error('⚠️ Host name could NOT be determined for DBA Explorer. Result object:', result);
+            window.showNotification('Uyarı: Filtreleme için sunucu bilgisi tespit edilemedi.', 'warning');
+        }
     } else {
-        console.log('ℹ️ [FILTER] No critical anomalies found, filter system not needed');
+        console.warn('❌ DBAExplorer module not found in window object');
     }
+
 }
 
 /**
@@ -1561,20 +1874,53 @@ function toggleDetailedAnomalyList() {
         return;
     }
     
-    // Modal oluştur
+    // [PAGINATION] State'i sıfırla
+
+    window.anomalyPaginationState = {
+        analysisId: window.lastAnomalyResult.storage_info?.analysis_id || window.lastAnomalyResult.analysis_id,
+        currentSkip: allAnomalies.length, // Zaten yüklenen kadarını atla
+        isLoading: false,
+        listType: 'unfiltered_anomalies'
+    };
+
+    // Pagination kontrolü
+    const isTruncated = result.is_truncated || (result.total_available_storage > allAnomalies.length);
+    const totalAvailable = result.total_available_storage || allAnomalies.length;
+
+    // Responsive modal with better height calculation
+
+    const viewportHeight = window.innerHeight;
+    const modalMaxHeight = Math.max(400, viewportHeight * 0.85); // Min 400px, max 85vh
+    const bodyMaxHeight = modalMaxHeight - 140; // Header + footer için pay
+
     let modalHtml = `
     <div id="detailed-anomaly-modal" class="modal" style="display: block;">
-        <div class="modal-content" style="max-width: 90%; height: 80vh;">
-            <div class="modal-header">
-                <h3>📋 Detaylı Anomali Listesi</h3>
+        <div class="modal-content" style="max-width: 90%; max-height: ${modalMaxHeight}px; display: flex; flex-direction: column;">
+            <div class="modal-header" style="flex-shrink: 0;">
+                <div style="display: flex; flex-direction: column;">
+                    <h3>📋 Detaylı Anomali Listesi</h3>
+                    <small style="color: #666; font-size: 0.9em;">
+                        Toplam ${totalAvailable.toLocaleString()} kayıttan ${allAnomalies.length.toLocaleString()} tanesi gösteriliyor
+                    </small>
+                </div>
                 <span class="close" onclick="document.getElementById('detailed-anomaly-modal').remove()">&times;</span>
             </div>
-            <div class="modal-body" style="overflow-y: auto; max-height: calc(80vh - 120px);">
+            <div id="detailed-anomaly-list-body" class="modal-body" style="overflow-y: auto; flex: 1; padding: 20px; max-height: ${bodyMaxHeight}px;">
                 ${renderDetailedAnomalyList(allAnomalies)}
             </div>
+            ${isTruncated ? `
+                <div class="modal-footer" style="padding: 15px; border-top: 1px solid #eee; text-align: center; background: #f9f9f9;">
+                    <button id="btnLoadMorePaged" class="btn btn-primary" onclick="loadMoreDetailedAnomalies()">
+                        ⬇️ Daha Fazla Yükle (+1000)
+                    </button>
+                    <div id="pagedLoader" style="display:none; color: #666; margin-top: 5px;">
+                        <span class="loading-spinner">⏳</span> Veriler sunucudan çekiliyor...
+                    </div>
+                </div>
+            ` : ''}
         </div>
     </div>`;
-    
+
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 }
 
@@ -2507,9 +2853,261 @@ const AnomalyProgress = {
     }
 };
 
+/**
+ * 🔍 Recursive Host Finder
+ * Karmaşık JSON yapılarında host/server bilgisini derinlemesine arar.
+ * Backend yanıt yapısı değişse bile host bilgisini yakalar.
+ */
+function findHostDeep(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+
+    // 1. Öncelikli Anahtarlar (Direkt eşleşme)
+    const priorityKeys = ['host', 'server_name', 'source_host', 'hostname'];
+    for (const key of priorityKeys) {
+        if (obj[key] && typeof obj[key] === 'string' && obj[key].trim() !== '') {
+            return obj[key];
+        }
+    }
+
+    // 2. Alt objeleri tara (Derinlik kontrolü ile)
+    for (const key in obj) {
+        if (obj.hasOwnProperty(key) && typeof obj[key] === 'object') {
+            // Sonsuz döngüyü engellemek için basit kontrol (opsiyonel ama güvenli)
+            if (key === 'parent' || key === 'window' || key === 'document') continue;
+            
+            const found = findHostDeep(obj[key]);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+/**
+ * [PAGINATION] Yeni batch veriyi çek ve listeye ekle
+ */
+async function loadMoreDetailedAnomalies() {
+    const state = window.anomalyPaginationState;
+    if (state.isLoading || !state.analysisId) return;
+
+    const btn = document.getElementById('btnLoadMorePaged');
+    const loader = document.getElementById('pagedLoader');
+    const listBody = document.getElementById('detailed-anomaly-list-body');
+
+    try {
+        state.isLoading = true;
+        if(btn) btn.style.display = 'none';
+        if(loader) loader.style.display = 'block';
+
+        const limit = 1000;
+        const url = `/api/analysis/${state.analysisId}/paged-anomalies?skip=${state.currentSkip}&limit=${limit}&list_type=${state.listType}&api_key=${window.apiKey}`;
+
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (result.status === 'success' && result.anomalies && result.anomalies.length > 0) {
+            // Yeni gelen veriyi işle (Type detection vs.)
+            const newAnomalies = result.anomalies.map(anomaly => ({
+                ...anomaly,
+                anomaly_type: detectAnomalyType(anomaly)
+            }));
+
+            // HTML oluştur ve ekle
+            // Not: renderDetailedAnomalyList grouping yapıyor. 
+            // Pagination'da grouping yapısını korumak zor olduğu için yeni gelenleri
+            // "Eklenen Veriler" başlığı altında veya direkt append ederek gösterebiliriz.
+            // Burada basitçe append ediyoruz.
+            const newHtml = renderDetailedAnomalyList(newAnomalies);
+            
+            // Mevcut listenin sonuna ekle
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = `<div class="paged-batch-separator" style="margin: 20px 0; text-align: center; border-bottom: 2px dashed #eee; padding-bottom: 5px; color: #888;">
+                --- Sayfa ${Math.floor(state.currentSkip / limit) + 2} ---
+            </div>` + newHtml;
+            
+            listBody.appendChild(tempDiv);
+
+            // State güncelle
+            state.currentSkip += result.anomalies.length;
+            
+            // Scroll'u biraz aşağı kaydır (UX)
+            // listBody.scrollTop += 100;
+
+            // Eğer gelen veri limit'ten azsa sonuna geldik demektir
+            if (result.anomalies.length < limit) {
+                if(btn) {
+                    btn.remove(); // Butonu tamamen kaldır
+                    const endMsg = document.createElement('div');
+                    endMsg.innerHTML = '<p style="text-align: center; color: #27ae60; margin-top: 10px;">✅ Tüm kayıtlar yüklendi.</p>';
+                    loader.parentElement.appendChild(endMsg);
+                }
+            } else {
+                if(btn) btn.style.display = 'inline-block';
+            }
+
+        } else {
+            window.showNotification('Başka kayıt bulunamadı.', 'info');
+            if(btn) btn.remove();
+        }
+
+    } catch (error) {
+        console.error('Pagination error:', error);
+        window.showNotification('Veri yüklenirken hata oluştu', 'error');
+        if(btn) btn.style.display = 'inline-block';
+    } finally {
+        state.isLoading = false;
+        if(loader) loader.style.display = 'none';
+    }
+}
+
+
+/**
+ * Anomaly sonuçları için görünüm modunu değiştir
+ * @param {string} mode - 'compact', 'expanded', veya 'fullscreen'
+ */
+function toggleViewMode(mode) {
+    const resultSection = document.querySelector('.result-section');
+    const resultContent = document.getElementById('resultContent');
+    const anomalySection = document.querySelector('.critical-anomalies-section');
+    const viewButtons = document.querySelectorAll('.btn-view-mode');
+    
+    if (!resultSection && !resultContent) {
+        console.warn('Result section not found for view mode toggle');
+        return;
+    }
+    
+    // Tüm modları temizle
+    const allModes = ['compact-mode', 'expanded-mode', 'fullscreen-mode'];
+    allModes.forEach(m => {
+        resultSection?.classList.remove(m);
+        resultContent?.classList.remove(m);
+        anomalySection?.classList.remove('compact-view', 'expanded-view', 'fullscreen-view');
+    });
+    
+    // Inline style'ları temizle (önceki moddan kalan)
+    if (resultContent) {
+        resultContent.style.maxHeight = '';
+        resultContent.style.height = '';
+    }
+    
+    // Buton aktif durumunu güncelle
+    viewButtons.forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.querySelector(`.btn-view-mode[onclick*="${mode}"]`);
+    if (activeBtn) activeBtn.classList.add('active');
+    
+    // Yeni modu uygula
+    switch(mode) {
+        case 'compact':
+            resultSection?.classList.add('compact-mode');
+            resultContent?.classList.add('compact-mode');
+            anomalySection?.classList.add('compact-view');
+            
+            // Kompakt mod için max-height ayarla
+            if (resultContent) {
+                resultContent.style.maxHeight = '400px';
+            }
+            
+            console.log('📱 Compact view mode activated');
+            break;
+            
+        case 'expanded':
+            resultSection?.classList.add('expanded-mode');
+            resultContent?.classList.add('expanded-mode');
+            anomalySection?.classList.add('expanded-view');
+            
+            // Expanded mod için max-height ayarla (viewport'un %75'i)
+            if (resultContent) {
+                resultContent.style.maxHeight = '75vh';
+            }
+            
+            console.log('🖥️ Expanded view mode activated');
+            break;
+            
+        case 'fullscreen':
+            resultSection?.classList.add('fullscreen-mode');
+            resultContent?.classList.add('fullscreen-mode');
+            anomalySection?.classList.add('fullscreen-view');
+            
+            // Fullscreen mod için max-height kaldır
+            if (resultContent) {
+                resultContent.style.maxHeight = 'none';
+                resultContent.style.height = 'calc(100vh - 150px)';
+            }
+            
+            // ESC tuşu ile çıkış
+            const escHandler = (e) => {
+                if (e.key === 'Escape') {
+                    toggleViewMode('expanded');
+                    document.removeEventListener('keydown', escHandler);
+                }
+            };
+            document.addEventListener('keydown', escHandler);
+            
+            // Scroll'u en üste getir
+            resultContent?.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            console.log('⛶ Fullscreen view mode activated (ESC to exit)');
+            if (typeof window.showNotification === 'function') {
+                window.showNotification('Tam ekran modundasınız. Çıkmak için ESC tuşuna basın.', 'info');
+            }
+            break;
+            
+        default:
+            console.warn('Unknown view mode:', mode);
+    }
+    
+    // Görünüm modunu localStorage'a kaydet (sayfa yenilemelerinde hatırlansın)
+    try {
+        localStorage.setItem('anomalyViewMode', mode);
+    } catch (e) {
+        console.warn('Could not save view mode to localStorage:', e);
+    }
+}
+
+/**
+ * Sayfa yüklendiğinde kaydedilmiş görünüm modunu uygula
+ */
+function restoreViewMode() {
+    try {
+        const savedMode = localStorage.getItem('anomalyViewMode');
+        if (savedMode && ['compact', 'expanded', 'fullscreen'].includes(savedMode)) {
+            // Küçük bir gecikme ile uygula (DOM hazır olsun)
+            setTimeout(() => {
+                const resultContent = document.getElementById('resultContent');
+                if (resultContent && resultContent.innerHTML.trim() !== '') {
+                    toggleViewMode(savedMode);
+                }
+            }, 100);
+        }
+    } catch (e) {
+        console.warn('Could not restore view mode from localStorage:', e);
+    }
+}
+
+/**
+ * Model detayları panelini aç/kapat
+ */
+function toggleModelDetailsPanel() {
+    const panel = document.getElementById('modelDetailsPanel');
+    if (panel) {
+        const isVisible = panel.style.display !== 'none';
+        panel.style.display = isVisible ? 'none' : 'block';
+        
+        // Animasyon için class toggle
+        if (!isVisible) {
+            panel.classList.add('show');
+        } else {
+            panel.classList.remove('show');
+        }
+    }
+}
+
+
 // ============================================
 // GLOBAL ERİŞİM İÇİN WINDOW'A ATAMA
 // ============================================
+window.toggleViewMode = toggleViewMode;
+window.restoreViewMode = restoreViewMode;
+window.toggleModelDetailsPanel = toggleModelDetailsPanel;
 window.updateParentAnomalyQuery = updateParentAnomalyQuery;
 window.displayChatQueryResult = displayChatQueryResult;  // Mevcut fonksiyona yönlendir
 window.displayChatAnomalyResult = displayChatQueryResult;  // Chat query sonuçları için (script.js alias)
@@ -2536,5 +3134,7 @@ window.getAnomalyExplanation = getAnomalyExplanation;
 window.renderCriticalAnomaliesTable = renderCriticalAnomaliesTable;
 window.generateMLInsights = generateMLInsights;
 window.AnomalyProgress = AnomalyProgress; 
+window.findHostDeep = findHostDeep; // Debug ve harici kullanım için dışarı açıyoruz
+window.loadMoreDetailedAnomalies = loadMoreDetailedAnomalies;
 console.log('✅ Anomaly module loaded successfully');
 
