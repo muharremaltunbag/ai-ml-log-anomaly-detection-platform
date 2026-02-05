@@ -1,0 +1,244 @@
+{
+    "model_version": "1.0",
+    "config_metadata": {
+        "last_updated": "2026-02-05",
+        "updated_by": "DBA Team",
+        "description": "MSSQL Log Anomaly Detection Configuration",
+        "compatible_detector_versions": ["1.0"]
+    },
+    "server_management": {
+        "cluster_mapping_path": "config/mssql_cluster_mapping.json",
+        "unmapped_host_behavior": "warn_and_process",
+        "model_strategy": "per_server",
+        "fallback_to_global_model": true,
+        "auto_discovery": {
+            "enabled": false,
+            "sync_interval_hours": 24,
+            "add_to_unmapped_cluster": true
+        }
+    },
+    "environments": {
+        "test": {
+            "description": "Test/Development Environment",
+            "data_sources": {
+                "opensearch": {
+                    "enabled": true,
+                    "host": "opslog.lcwaikiki.com",
+                    "port": 443,
+                    "protocol": "https",
+                    "index_pattern": "db-mssql-*",
+                    "verify_ssl": false,
+                    "auth": {
+                        "username": "",
+                        "password": ""
+                    },
+                    "query": {
+                        "size": 10000,
+                        "scroll": "5m"
+                    },
+                    "alternate_hosts": [
+                        "https://10.29.21.30:443",
+                        "https://hqopnsrcmstr01.lcwaikiki.local:9200",
+                        "https://hqopnsrcmstr02.lcwaikiki.local:9200",
+                        "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+                    ]
+                }
+            }
+        },
+        "production": {
+            "description": "Production Environment - LC Waikiki",
+            "data_sources": {
+                "opensearch": {
+                    "enabled": true,
+                    "host": "opslog.lcwaikiki.com",
+                    "port": 443,
+                    "protocol": "https",
+                    "index_pattern": "db-mssql-*",
+                    "verify_ssl": true,
+                    "auth": {
+                        "username": "",
+                        "password": ""
+                    },
+                    "query": {
+                        "size": 10000,
+                        "scroll": "5m",
+                        "time_range": {
+                            "field": "@timestamp",
+                            "gte": "now-1h"
+                        }
+                    },
+                    "alternate_hosts": [
+                        "https://10.29.21.30:443",
+                        "https://hqopnsrcmstr01.lcwaikiki.local:9200",
+                        "https://hqopnsrcmstr02.lcwaikiki.local:9200",
+                        "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+                    ]
+                }
+            }
+        }
+    },
+    "anomaly_detection": {
+        "model": {
+            "type": "IsolationForest",
+            "parameters": {
+                "contamination": 0.05,
+                "n_estimators": 300,
+                "max_samples": 512,
+                "max_features": 0.9,
+                "bootstrap": true,
+                "random_state": 42,
+                "n_jobs": -1
+            }
+        },
+        "features": {
+            "enabled_features": [
+                "is_failed_login",
+                "is_successful_login",
+                "is_local_client",
+                "is_windows_auth",
+                "is_sql_auth",
+                "is_service_account",
+                "is_domain_user",
+                "is_grok_failure",
+                "hour_of_day",
+                "is_weekend",
+                "is_business_hours",
+                "is_night_login",
+                "is_availability_group_error",
+                "is_database_access_error",
+                "is_connection_error",
+                "time_since_last_log",
+                "login_burst_flag",
+                "extreme_burst_flag",
+                "burst_density",
+                "client_ip_frequency",
+                "is_rare_client_ip",
+                "username_frequency",
+                "is_rare_username",
+                "failed_login_ratio_1h",
+                "login_count_1h"
+            ],
+            "filters": {
+                "exclude_service_account_success": false,
+                "rare_threshold": 100,
+                "burst_threshold_ms": 1000
+            },
+            "thresholds": {
+                "night_hour_start": 0,
+                "night_hour_end": 6,
+                "business_hour_start": 8,
+                "business_hour_end": 18,
+                "login_burst_seconds": 1.0,
+                "extreme_burst_seconds": 0.1
+            }
+        },
+        "output": {
+            "save_model": true,
+            "model_path": "models/mssql_isolation_forest.pkl",
+            "export_anomalies": true,
+            "anomaly_path": "output/mssql_anomalies_{timestamp}.csv",
+            "notification": {
+                "enabled": false,
+                "webhook_url": "",
+                "email": ""
+            }
+        },
+        "ensemble": {
+            "enabled": true,
+            "rule_weight": 1.0,
+            "combine_method": "override",
+            "log_rule_hits": true,
+            "rules": {
+                "brute_force_attempt": {
+                    "enabled": true,
+                    "description": "Rapid failed login attempts - possible brute force attack",
+                    "severity": 0.95
+                },
+                "after_hours_login": {
+                    "enabled": true,
+                    "description": "Successful login during unusual hours (non-service account)",
+                    "severity": 0.85
+                },
+                "availability_group_crisis": {
+                    "enabled": true,
+                    "description": "Availability Group accessibility issues",
+                    "severity": 0.90
+                },
+                "mass_failed_logins": {
+                    "enabled": true,
+                    "description": "High ratio of failed logins in time window",
+                    "severity": 0.90
+                },
+                "suspicious_service_account": {
+                    "enabled": true,
+                    "description": "Service account login from unusual/rare IP",
+                    "severity": 0.88
+                },
+                "database_access_failure": {
+                    "enabled": true,
+                    "description": "Failed to access specified database",
+                    "severity": 0.80
+                },
+                "credential_stuffing": {
+                    "enabled": true,
+                    "description": "Multiple different users failing from same IP",
+                    "severity": 0.92
+                }
+            }
+        },
+        "online_learning": {
+            "enabled": true,
+            "max_buffer_samples": 100000,
+            "history_retention": "full",
+            "max_history_size": null,
+            "update_frequency": 1000,
+            "weight_decay": 0.95,
+            "buffer_management": {
+                "warn_size_mb": 500,
+                "max_size_mb": 5000,
+                "compression_enabled": false
+            },
+            "logging": {
+                "log_buffer_stats": true,
+                "log_incremental_updates": true
+            }
+        }
+    },
+    "message_parsing": {
+        "patterns": {
+            "client_ip": "\\[CLIENT:\\s*([^\\]]+)\\]",
+            "login_status": "Login (succeeded|failed) for user",
+            "username": "for user '([^']+)'",
+            "failure_reason": "Reason:\\s*(.+?)(?:\\s*\\[CLIENT:|$)",
+            "auth_type": "Connection made using (SQL Server|Windows) authentication",
+            "database_name": "database '([^']+)'",
+            "availability_group": "availability group|not accessible for queries"
+        },
+        "service_account_patterns": [
+            "^APP_",
+            "^SQL\\.",
+            "^SVC_",
+            "^SYSTEM$",
+            "^sa$",
+            "^NT AUTHORITY",
+            "^NT SERVICE"
+        ]
+    },
+    "processing": {
+        "batch_size": 10000,
+        "max_workers": 4,
+        "memory_limit_gb": 8,
+        "cache_enabled": true,
+        "cache_path": "cache/mssql_anomaly_cache"
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "logs/mssql_anomaly_detection.log",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    },
+    "monitoring": {
+        "performance_tracking": true,
+        "metrics_export": false,
+        "metrics_path": "metrics/mssql_anomaly_metrics.json"
+    }
+}
