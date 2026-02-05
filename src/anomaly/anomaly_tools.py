@@ -19,6 +19,11 @@ from .log_reader import MongoDBLogReader, OpenSearchProxyReader
 from .feature_engineer import MongoDBFeatureEngineer
 from .anomaly_detector import MongoDBAnomalyDetector
 
+# MSSQL Modülleri
+from .mssql_log_reader import MSSQLOpenSearchReader
+from .mssql_feature_engineer import MSSQLFeatureEngineer
+from .mssql_anomaly_detector import MSSQLAnomalyDetector
+
 from ..connectors.openai_connector import OpenAIConnector
 from ..connectors.lcwgpt_connector import LCWGPTConnector
 from langchain.schema import HumanMessage, SystemMessage
@@ -1947,6 +1952,445 @@ class AnomalyDetectionTools:
         
         return suggestions
 
+    # =========================================================================
+    # MSSQL LOG ANALİZİ
+    # =========================================================================
+
+    def analyze_mssql_logs(self, args_input) -> str:
+        """
+        MSSQL loglarında anomali analizi yap
+
+        MongoDB analyze_mongodb_logs() ile aynı yapı, MSSQL modülleri kullanılır.
+        OpenSearch'ten db-mssql-* index'inden logları çeker.
+
+        Args:
+            args_input: {
+                'host_filter': str,  # MSSQL sunucu adı
+                'time_range': str,   # last_hour, last_24h, last_7d
+                'start_time': str,   # ISO format (optional)
+                'end_time': str,     # ISO format (optional)
+                'threshold': float   # Anomaly threshold
+            }
+
+        Returns:
+            JSON formatted analysis result
+        """
+        logger.info("=" * 60)
+        logger.info("MSSQL LOG ANALİZİ BAŞLADI")
+        logger.info("=" * 60)
+
+        try:
+            # Argümanları parse et
+            if isinstance(args_input, str):
+                try:
+                    args_dict = json.loads(args_input)
+                except:
+                    args_dict = {"time_range": "last_hour", "threshold": 0.05}
+            else:
+                args_dict = args_input
+
+            logger.info(f"MSSQL analysis args: {args_dict}")
+
+            # Parametreleri al
+            host_filter = args_dict.get("host_filter")
+            time_range = args_dict.get("time_range", "last_hour")
+            start_time = args_dict.get("start_time")
+            end_time = args_dict.get("end_time")
+            threshold = args_dict.get("threshold", 0.05)
+
+            # Time range dönüşümü
+            time_range_hours = {
+                "last_hour": 1,
+                "last_24h": 24,
+                "last_day": 24,
+                "last_7d": 168,
+                "last_week": 168,
+                "last_30d": 720,
+                "last_month": 720
+            }
+            last_hours = time_range_hours.get(time_range, 24)
+
+            # =====================================================
+            # 1. MSSQL LOG READER - OpenSearch'ten log çekme
+            # =====================================================
+            logger.info("Initializing MSSQL OpenSearch Reader...")
+            mssql_reader = MSSQLOpenSearchReader(config_path="config/mssql_anomaly_config.json")
+
+            if not mssql_reader.connect():
+                logger.error("MSSQL OpenSearch connection failed")
+                return self._format_result(
+                    {"error": "MSSQL OpenSearch bağlantısı kurulamadı"},
+                    "mssql_anomaly_analysis"
+                )
+
+            logger.info(f"Reading MSSQL logs from OpenSearch (host={host_filter}, hours={last_hours})")
+
+            df = mssql_reader.read_logs(
+                limit=50000,
+                last_hours=last_hours,
+                host_filter=host_filter,
+                start_time=start_time,
+                end_time=end_time
+            )
+
+            if df.empty:
+                logger.warning("No MSSQL logs found")
+                return self._format_result(
+                    {"error": f"Belirtilen kriterlerde MSSQL logu bulunamadı (host={host_filter}, last_hours={last_hours})"},
+                    "mssql_anomaly_analysis"
+                )
+
+            logger.info(f"Fetched {len(df)} MSSQL logs")
+
+            # =====================================================
+            # 2. MSSQL FEATURE ENGINEERING
+            # =====================================================
+            logger.info("Starting MSSQL feature engineering...")
+            mssql_feature_engineer = MSSQLFeatureEngineer(config_path="config/mssql_anomaly_config.json")
+
+            X, df_enriched = mssql_feature_engineer.create_features(df)
+
+            logger.info(f"Feature engineering completed: {X.shape[0]} samples, {X.shape[1]} features")
+
+            # =====================================================
+            # 3. MSSQL ANOMALY DETECTOR
+            # =====================================================
+            logger.info(f"Getting MSSQL detector for server: {host_filter or 'global'}")
+            mssql_detector = MSSQLAnomalyDetector.get_instance(
+                server_name=host_filter or "global",
+                config_path="config/mssql_anomaly_config.json"
+            )
+
+            # Model training/update
+            if not mssql_detector.is_trained:
+                logger.info("Training new MSSQL anomaly model...")
+                mssql_detector.train(X, save_model=True, server_name=host_filter)
+                logger.info("MSSQL model training completed")
+            else:
+                logger.info("Using existing MSSQL model, performing incremental update...")
+                mssql_detector.train(X, save_model=True, incremental=True, server_name=host_filter)
+
+            # =====================================================
+            # 4. PREDICTION
+            # =====================================================
+            logger.info("Running MSSQL anomaly predictions...")
+            predictions, anomaly_scores = mssql_detector.predict(X, df=df_enriched)
+
+            anomaly_count = sum(predictions == -1)
+            anomaly_rate = (anomaly_count / len(predictions)) * 100
+            logger.info(f"Found {anomaly_count} anomalies ({anomaly_rate:.2f}%)")
+
+            # =====================================================
+            # 5. ANALİZ VE SONUÇLAR
+            # =====================================================
+            logger.info("Analyzing MSSQL anomalies...")
+            analysis = mssql_detector.analyze_anomalies(df_enriched, X, predictions, anomaly_scores)
+
+            # MSSQL'e özgü ek analizler
+            mssql_specific_analysis = self._analyze_mssql_specific(df_enriched, predictions)
+            analysis['mssql_specific'] = mssql_specific_analysis
+
+            # =====================================================
+            # 6. AI EXPLANATION (Opsiyonel)
+            # =====================================================
+            ai_explanation = {}
+            if self.llm_connector and self.llm_connector.is_connected():
+                logger.info("Generating AI explanation for MSSQL anomalies...")
+                limited_analysis = {
+                    "summary": analysis.get("summary", {}),
+                    "critical_anomalies": analysis.get("critical_anomalies", [])[:15],
+                    "mssql_specific": mssql_specific_analysis
+                }
+                ai_explanation = self._generate_mssql_ai_explanation(limited_analysis, server_name=host_filter)
+
+            # =====================================================
+            # 7. SONUÇ OLUŞTURMA
+            # =====================================================
+            # Özet açıklama
+            server_desc = f" ({host_filter})" if host_filter else ""
+            time_desc = f"son {last_hours} saat" if not (start_time and end_time) else f"{start_time} - {end_time}"
+
+            description = f"MSSQL Log Anomali Analizi{server_desc}\n\n"
+            description += f"• Analiz edilen log: {len(df):,}\n"
+            description += f"• Zaman aralığı: {time_desc}\n"
+            description += f"• Tespit edilen anomali: {anomaly_count:,} ({anomaly_rate:.2f}%)\n"
+
+            # Login istatistikleri
+            if 'is_failed_login' in df_enriched.columns:
+                failed_logins = df_enriched['is_failed_login'].sum()
+                total_logins = len(df_enriched)
+                description += f"• Başarısız login: {int(failed_logins):,} ({failed_logins/total_logins*100:.1f}%)\n"
+
+            # MSSQL özel bulgular
+            if mssql_specific_analysis.get('security_concerns'):
+                description += f"\n⚠️ Güvenlik Uyarıları:\n"
+                for concern in mssql_specific_analysis['security_concerns'][:3]:
+                    description += f"  - {concern}\n"
+
+            # Critical anomalies'i zenginleştir
+            critical_anomalies = analysis.get("critical_anomalies", [])
+            for anomaly in critical_anomalies:
+                # MSSQL'e özgü alanları ekle
+                idx = anomaly.get('index', 0)
+                if idx < len(df_enriched):
+                    row = df_enriched.iloc[idx]
+                    anomaly['username'] = row.get('username', 'unknown')
+                    anomaly['client_ip'] = row.get('client_ip', 'unknown')
+                    anomaly['logintype'] = row.get('logintype', 'unknown')
+                    anomaly['raw_message'] = row.get('raw_message', '')[:500]
+
+            # Öneriler
+            suggestions = self._create_mssql_suggestions(analysis, mssql_specific_analysis)
+
+            result = {
+                "description": description,
+                "data": {
+                    "source": "MSSQL_OpenSearch",
+                    "index_pattern": "db-mssql-*",
+                    "host_filter": host_filter,
+                    "time_range_info": {
+                        "last_hours": last_hours,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "description": time_desc
+                    },
+                    "logs_analyzed": len(df),
+                    "summary": analysis.get("summary", {}),
+                    "critical_anomalies": critical_anomalies[:50],
+                    "mssql_specific": mssql_specific_analysis,
+                    "temporal_analysis": analysis.get("temporal_analysis", {}),
+                    "feature_importance": analysis.get("feature_importance", {}),
+                    "model_info": {
+                        "is_trained": mssql_detector.is_trained,
+                        "model_type": "IsolationForest",
+                        "rules_count": len(mssql_detector.critical_rules)
+                    }
+                },
+                "suggestions": suggestions,
+                "ai_explanation": ai_explanation
+            }
+
+            logger.info("MSSQL analysis completed successfully")
+            return self._format_result(result, "mssql_anomaly_analysis")
+
+        except Exception as e:
+            logger.error(f"MSSQL analysis error: {e}", exc_info=True)
+            return self._format_result(
+                {"error": f"MSSQL analiz hatası: {str(e)}"},
+                "mssql_anomaly_analysis"
+            )
+
+    def _analyze_mssql_specific(self, df: pd.DataFrame, predictions: np.ndarray) -> Dict[str, Any]:
+        """
+        MSSQL'e özgü analizler
+
+        Args:
+            df: Enriched MSSQL DataFrame
+            predictions: Anomaly predictions
+
+        Returns:
+            MSSQL specific analysis dict
+        """
+        result = {
+            'login_analysis': {},
+            'user_analysis': {},
+            'client_analysis': {},
+            'security_concerns': []
+        }
+
+        try:
+            # Login analizi
+            if 'is_failed_login' in df.columns:
+                failed_count = int(df['is_failed_login'].sum())
+                success_count = int(df.get('is_successful_login', pd.Series([0])).sum())
+                total = len(df)
+
+                result['login_analysis'] = {
+                    'total_logins': total,
+                    'failed_logins': failed_count,
+                    'successful_logins': success_count,
+                    'failed_ratio': failed_count / total if total > 0 else 0
+                }
+
+                # Yüksek failed login oranı uyarısı
+                if failed_count / total > 0.2:
+                    result['security_concerns'].append(
+                        f"Yüksek başarısız login oranı: {failed_count/total*100:.1f}%"
+                    )
+
+            # Kullanıcı analizi
+            username_col = 'username' if 'username' in df.columns else 'USERNAME'
+            if username_col in df.columns:
+                user_stats = df.groupby(username_col).agg({
+                    'is_failed_login': 'sum' if 'is_failed_login' in df.columns else 'count'
+                }).sort_values('is_failed_login', ascending=False)
+
+                top_failed_users = user_stats.head(5).to_dict()['is_failed_login']
+                result['user_analysis'] = {
+                    'unique_users': int(df[username_col].nunique()),
+                    'top_failed_users': {str(k): int(v) for k, v in top_failed_users.items()}
+                }
+
+                # Çok fazla failed login olan kullanıcı uyarısı
+                for user, count in top_failed_users.items():
+                    if count > 100:
+                        result['security_concerns'].append(
+                            f"Kullanıcı '{user}' için {count} başarısız login"
+                        )
+
+            # Client IP analizi
+            if 'client_ip' in df.columns:
+                ip_stats = df.groupby('client_ip').size().sort_values(ascending=False)
+                result['client_analysis'] = {
+                    'unique_ips': int(df['client_ip'].nunique()),
+                    'top_ips': {str(k): int(v) for k, v in ip_stats.head(10).to_dict().items()},
+                    'local_connections': int(df.get('is_local_client', pd.Series([0])).sum())
+                }
+
+            # Gece login'leri kontrolü
+            if 'is_night_login' in df.columns:
+                night_logins = int(df['is_night_login'].sum())
+                if night_logins > 0 and 'is_service_account' in df.columns:
+                    non_service_night = int(((df['is_night_login'] == 1) & (df['is_service_account'] == 0)).sum())
+                    if non_service_night > 10:
+                        result['security_concerns'].append(
+                            f"{non_service_night} gece saati login'i (servis hesabı dışı)"
+                        )
+
+            # Availability Group hataları
+            if 'is_availability_group_error' in df.columns:
+                ag_errors = int(df['is_availability_group_error'].sum())
+                if ag_errors > 0:
+                    result['security_concerns'].append(
+                        f"{ag_errors} Availability Group erişim hatası"
+                    )
+
+        except Exception as e:
+            logger.error(f"MSSQL specific analysis error: {e}")
+
+        return result
+
+    def _generate_mssql_ai_explanation(self, analysis: Dict[str, Any], server_name: str = None) -> Dict[str, Any]:
+        """
+        MSSQL anomalileri için AI açıklaması üret
+
+        Args:
+            analysis: Analysis data
+            server_name: MSSQL server name
+
+        Returns:
+            AI explanation dict
+        """
+        if not self.llm_connector or not self.llm_connector.is_connected():
+            return {}
+
+        try:
+            # MSSQL'e özgü prompt
+            system_prompt = """Sen bir MSSQL veritabanı güvenlik ve performans uzmanısın.
+Sana verilen MSSQL login logları anomali analizini değerlendir.
+Özellikle şunlara dikkat et:
+- Brute force saldırı belirtileri
+- Olağandışı saatlerde login'ler
+- Başarısız login pattern'leri
+- Servis hesabı anormallikleri
+- Availability Group sorunları
+
+Yanıtını Türkçe ver ve şu formatta JSON döndür:
+{
+  "ozet": "Kısa analiz özeti",
+  "kritik_bulgular": ["bulgu1", "bulgu2"],
+  "guvenlik_degerlendirmesi": "Düşük/Orta/Yüksek risk",
+  "onerilen_aksiyonlar": ["aksiyon1", "aksiyon2"]
+}"""
+
+            # Analysis verilerini hazırla
+            summary = analysis.get("summary", {})
+            mssql_specific = analysis.get("mssql_specific", {})
+            critical_anomalies = analysis.get("critical_anomalies", [])[:10]
+
+            user_prompt = f"""MSSQL Anomali Analiz Sonuçları:
+
+Sunucu: {server_name or 'Tüm sunucular'}
+Toplam Log: {summary.get('total_logs', 'N/A')}
+Anomali Sayısı: {summary.get('n_anomalies', 'N/A')}
+Anomali Oranı: {summary.get('anomaly_rate', 0):.2f}%
+
+Login İstatistikleri:
+{json.dumps(mssql_specific.get('login_analysis', {}), indent=2, ensure_ascii=False)}
+
+Güvenlik Endişeleri:
+{json.dumps(mssql_specific.get('security_concerns', []), indent=2, ensure_ascii=False)}
+
+İlk 10 Kritik Anomali:
+{json.dumps(critical_anomalies, indent=2, ensure_ascii=False, default=str)[:3000]}
+
+Bu verileri analiz et ve JSON formatında yanıt ver."""
+
+            from langchain.schema import HumanMessage, SystemMessage
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ]
+
+            response = self.llm_connector.invoke(messages)
+
+            if response and hasattr(response, 'content'):
+                # JSON parse
+                content = response.content
+                # JSON bloğunu bul
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', content)
+                if json_match:
+                    return json.loads(json_match.group())
+
+            return {}
+
+        except Exception as e:
+            logger.error(f"MSSQL AI explanation error: {e}")
+            return {}
+
+    def _create_mssql_suggestions(self, analysis: Dict, mssql_specific: Dict) -> List[str]:
+        """
+        MSSQL analizi için öneriler oluştur
+
+        Args:
+            analysis: General analysis
+            mssql_specific: MSSQL specific analysis
+
+        Returns:
+            List of suggestions
+        """
+        suggestions = []
+
+        # Anomali oranına göre
+        anomaly_rate = analysis.get("summary", {}).get("anomaly_rate", 0)
+        if anomaly_rate > 5:
+            suggestions.append("🔴 ACİL: Yüksek anomali oranı! MSSQL güvenlik ekibine bildirin.")
+        elif anomaly_rate > 2:
+            suggestions.append("🟡 ORTA: Normal üstü anomali. Login pattern'lerini inceleyin.")
+        else:
+            suggestions.append("🟢 NORMAL: Anomali seviyesi kabul edilebilir.")
+
+        # Failed login oranı
+        login_analysis = mssql_specific.get('login_analysis', {})
+        if login_analysis.get('failed_ratio', 0) > 0.2:
+            suggestions.append("🚨 GÜVENLİK: Yüksek başarısız login oranı! Brute force kontrolü yapın.")
+            suggestions.append("🔐 YAPILACAK: Account lockout policy'yi gözden geçirin.")
+
+        # Güvenlik endişeleri
+        security_concerns = mssql_specific.get('security_concerns', [])
+        if security_concerns:
+            suggestions.append("⚠️ UYARI: Güvenlik endişeleri tespit edildi:")
+            for concern in security_concerns[:3]:
+                suggestions.append(f"  → {concern}")
+
+        # Availability Group hataları
+        if any('Availability Group' in str(c) for c in security_concerns):
+            suggestions.append("🔧 YAPILACAK: Always On Availability Group durumunu kontrol edin.")
+            suggestions.append("📊 YAPILACAK: Secondary replica'ların erişilebilirliğini doğrulayın.")
+
+        return suggestions
+
     def _generate_ai_explanation(self, anomaly_data: Dict[str, Any], server_name: str = None) -> Dict[str, Any]:
         """LCWGPT kullanarak anomali verisi için zengin açıklama üret"""
         logger.info(f"=== AI EXPLANATION DEBUG ===")
@@ -2967,6 +3411,15 @@ class AnalyzeLogsArgs(BaseModel):
     host_filter: Optional[str] = Field(default=None, description="Belirli bir MongoDB sunucusundan logları filtrele")
 
 
+class AnalyzeMSSQLLogsArgs(BaseModel):
+    """MSSQL Log Anomali Analizi Argümanları"""
+    time_range: str = Field(default="last_hour", description="Zaman aralığı: last_hour, last_day, last_week, last_month")
+    threshold: float = Field(default=0.03, description="Anomali eşik değeri")
+    source_type: Optional[str] = Field(default="opensearch", description="Veri kaynağı: opensearch")
+    last_hours: Optional[int] = Field(default=None, description="Kaç saatlik log okunacak (OpenSearch için)")
+    host_filter: Optional[str] = Field(default=None, description="Belirli bir MSSQL sunucusundan logları filtrele")
+
+
 class SummaryArgs(BaseModel):
     top_n: int = Field(default=10, description="Gösterilecek anomali sayısı")
 
@@ -2990,14 +3443,21 @@ def create_anomaly_tools(config_path: str = "config/anomaly_config.json",
                 func=lambda **kwargs: anomaly_tools.analyze_mongodb_logs(kwargs),
                 args_schema=AnalyzeLogsArgs
             ),
-            
+
+            StructuredTool(
+                name="analyze_mssql_logs",
+                description="MSSQL loglarında anomali analizi yap (OpenSearch üzerinden)",
+                func=lambda **kwargs: anomaly_tools.analyze_mssql_logs(kwargs),
+                args_schema=AnalyzeMSSQLLogsArgs
+            ),
+
             StructuredTool(
                 name="get_anomaly_summary",
                 description="Son anomali analizi özetini getir",
                 func=anomaly_tools.get_anomaly_summary,
                 args_schema=SummaryArgs
             ),
-            
+
             StructuredTool(
                 name="train_anomaly_model",
                 description="Anomali tespit modelini yeniden eğit",

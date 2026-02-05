@@ -271,6 +271,17 @@ class AnomalyFilterRequest(BaseModel):
     limit: int = Field(default=50, description="Sayfa başına kayıt")
     skip: int = Field(default=0, description="Atlanacak kayıt sayısı")
 
+
+class AnalyzeMSSQLLogsRequest(BaseModel):
+    """MSSQL Log Anomali Analizi Request Model"""
+    api_key: str = Field(..., description="API anahtarı")
+    time_range: Optional[str] = Field("last_24h", description="Zaman aralığı")
+    host_filter: Optional[str] = Field(None, description="Belirli bir MSSQL sunucusu (OpenSearch için)")
+    start_time: Optional[str] = Field(None, description="Başlangıç zamanı (ISO format: 2025-09-15T16:09:00Z)")
+    end_time: Optional[str] = Field(None, description="Bitiş zamanı (ISO format: 2025-09-15T16:11:00Z)")
+    request_id: Optional[str] = Field(None, description="Frontend takip ID'si")
+
+
 # Session yönetimi fonksiyonları
 def create_session(api_key: str) -> str:
     """Güvenli session oluştur"""
@@ -1306,6 +1317,168 @@ async def delete_uploaded_log(filename: str, api_key: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# MSSQL LOG ANALİZİ ENDPOINTLERİ
+# =============================================================================
+
+@app.get("/api/mssql/available-hosts")
+async def get_available_mssql_hosts(api_key: str, last_hours: int = 24):
+    """
+    Mevcut MSSQL sunucularını listele (OpenSearch'ten)
+
+    Args:
+        api_key: API anahtarı
+        last_hours: Son kaç saatteki logları tara
+    """
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    try:
+        from src.anomaly.mssql_log_reader import get_available_mssql_hosts
+        hosts = get_available_mssql_hosts(last_hours=last_hours)
+        return {
+            "status": "success",
+            "hosts": hosts,
+            "count": len(hosts),
+            "last_hours": last_hours
+        }
+    except Exception as e:
+        logger.error(f"MSSQL hosts listesi alınamadı: {e}")
+        return {"status": "error", "hosts": [], "count": 0, "error": str(e)}
+
+
+@app.post("/api/analyze-mssql-logs")
+async def analyze_mssql_logs(request: AnalyzeMSSQLLogsRequest):
+    """
+    MSSQL loglarında anomali analizi yap (OpenSearch üzerinden)
+
+    Progress Tracking Destekli - MongoDB analizi ile aynı yapı.
+    """
+    req_id = request.request_id
+    token = request_context.set(req_id)
+
+    try:
+        # 1. Başlangıç
+        update_progress(req_id, "init", "MSSQL analiz isteği alındı...", 5)
+        logger.info(f"MSSQL Log analizi başlatıldı - Host: {request.host_filter}, Time Range: {request.time_range}")
+
+        # API key kontrolü
+        if not await verify_api_key(request.api_key):
+            logger.warning("Geçersiz API anahtarı ile MSSQL log analizi denemesi")
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+        # Host filter kontrolü
+        if not request.host_filter:
+            try:
+                from src.anomaly.mssql_log_reader import get_available_mssql_hosts
+                available_hosts = get_available_mssql_hosts(last_hours=24)
+                error_message = {
+                    "error": "Host filter zorunludur",
+                    "message": "MSSQL sunucusu seçmelisiniz.",
+                    "available_hosts": available_hosts[:20] if available_hosts else []
+                }
+                raise HTTPException(status_code=400, detail=error_message)
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=400, detail="Host filter gerekli")
+
+        # Memory Protection: Concurrent analysis limiti
+        update_progress(req_id, "queue", "Analiz kuyruğunda bekleniyor...", 8)
+
+        async with ANOMALY_ANALYSIS_SEMAPHORE:
+            logger.info(f"🔒 MSSQL Analysis slot acquired for request {req_id}")
+
+            # Tool parametreleri
+            update_progress(req_id, "connect", f"OpenSearch: {request.host_filter} bağlantısı...", 15)
+            tool_params = {
+                "source_type": "opensearch",
+                "host_filter": request.host_filter,
+                "time_range": request.time_range,
+                "last_hours": 24
+            }
+            if request.start_time:
+                tool_params["start_time"] = request.start_time
+            if request.end_time:
+                tool_params["end_time"] = request.end_time
+
+            update_progress(req_id, "fetch", "MSSQL Log okuma başlatılıyor...", 20)
+
+            # MSSQL Analiz çalıştır
+            def run_mssql_analysis():
+                from src.anomaly.anomaly_tools import AnomalyDetectionTools
+                tools = AnomalyDetectionTools(environment='production')
+                return tools.analyze_mssql_logs(tool_params)
+
+            tool_result = await asyncio.to_thread(run_mssql_analysis)
+
+            # Result işleme
+            if isinstance(tool_result, str):
+                try:
+                    result = json.loads(tool_result)
+                except Exception:
+                    result = {"durum": "tamamlandı", "sonuç": {"raw_result": tool_result}}
+            else:
+                result = tool_result
+
+            # Source bilgisini ekle
+            if isinstance(result, dict):
+                result['source_type'] = 'mssql_opensearch'
+                result['database_type'] = 'mssql'
+
+            # Bitiş işlemleri
+            update_progress(req_id, "save", "Son kontroller yapılıyor...", 95)
+
+            # Status normalization
+            if result.get('durum') in (None, 'başarılı', 'success', 'ok'):
+                result['durum'] = 'tamamlandı'
+
+            # Auto-save to storage (MSSQL için ayrı)
+            if result.get('durum') == 'tamamlandı':
+                try:
+                    storage = await get_storage_manager()
+                    save_result = await storage.save_anomaly_analysis(
+                        analysis_result=result,
+                        source_type='mssql_opensearch',
+                        host=request.host_filter,
+                        time_range=request.time_range,
+                        model_info=result.get('model_info')
+                    )
+                    if save_result:
+                        result['storage_info'] = save_result
+                except Exception as e:
+                    logger.error(f"MSSQL Auto-save error: {e}")
+
+            # Frontend Crash Prevention (Payload Protection)
+            if 'sonuç' in result:
+                data = result['sonuç']
+                if 'unfiltered_anomalies' in data:
+                    total_count = len(data['unfiltered_anomalies'])
+                    if total_count > 2000:
+                        logger.info(f"🛡️ Truncating MSSQL response: {total_count} -> 2000 items")
+                        data['unfiltered_anomalies'] = data['unfiltered_anomalies'][:2000]
+                        data['is_truncated'] = True
+                        data['total_available_storage'] = total_count
+
+                if 'critical_anomalies' in data and len(data['critical_anomalies']) > 2000:
+                    data['critical_anomalies'] = data['critical_anomalies'][:2000]
+
+            update_progress(req_id, "complete", "MSSQL analizi tamamlandı!", 100)
+            return result
+
+    except HTTPException:
+        update_progress(req_id, "error", "İstek hatası oluştu.", 0)
+        raise
+    except Exception as e:
+        logger.error(f"MSSQL Log analiz hatası: {e}")
+        update_progress(req_id, "error", f"Hata: {str(e)[:100]}...", 0)
+        return {"durum": "hata", "açıklama": f"MSSQL Analiz Hatası: {str(e)}"}
+
+    finally:
+        request_context.reset(token)
+
 
 @app.post("/api/get-detailed-anomalies")
 async def get_detailed_anomalies(request: Dict[str, Any]):
