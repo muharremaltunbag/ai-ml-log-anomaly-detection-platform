@@ -1,0 +1,853 @@
+# src/anomaly/mssql_log_reader.py
+"""
+MSSQL Log Reader Module
+OpenSearch'ten MSSQL loglarını okuma ve parse etme
+"""
+
+import re
+import json
+import logging
+import os
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional, Tuple
+from pathlib import Path
+
+import pandas as pd
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# MSSQL MESSAGE PARSING PATTERNS
+# =============================================================================
+
+# Client IP: [CLIENT: 10.111.19.20] or [CLIENT: <local machine>]
+CLIENT_IP_PATTERN = re.compile(r'\[CLIENT:\s*([^\]]+)\]')
+
+# Login status: Login succeeded/failed for user
+LOGIN_STATUS_PATTERN = re.compile(r'Login (succeeded|failed) for user')
+
+# Username: for user 'username'
+USERNAME_PATTERN = re.compile(r"for user '([^']+)'")
+
+# Failure reason: Reason: xxx [CLIENT:
+FAILURE_REASON_PATTERN = re.compile(r'Reason:\s*(.+?)(?:\s*\[CLIENT:|$)')
+
+# Auth type: Connection made using SQL Server/Windows authentication
+AUTH_TYPE_PATTERN = re.compile(r'Connection made using (SQL Server|Windows) authentication')
+
+# Database name: database 'dbname'
+DATABASE_PATTERN = re.compile(r"database '([^']+)'")
+
+# Availability Group pattern
+AVAILABILITY_GROUP_PATTERN = re.compile(
+    r'availability group|not accessible for queries|AlwaysOn',
+    re.IGNORECASE
+)
+
+# Error patterns
+DATABASE_ACCESS_ERROR_PATTERN = re.compile(
+    r'Failed to open.*database|database.*not accessible|Cannot open database',
+    re.IGNORECASE
+)
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def extract_client_ip(message: str) -> str:
+    """
+    MSSQL log mesajından client IP adresini çıkarır
+
+    Args:
+        message: Raw log message
+
+    Returns:
+        Client IP or 'unknown'
+    """
+    if not message:
+        return 'unknown'
+
+    match = CLIENT_IP_PATTERN.search(message)
+    if match:
+        return match.group(1).strip()
+    return 'unknown'
+
+
+def extract_auth_type(message: str) -> str:
+    """
+    MSSQL log mesajından authentication tipini çıkarır
+
+    Args:
+        message: Raw log message
+
+    Returns:
+        'SQL Server', 'Windows', or 'unknown'
+    """
+    if not message:
+        return 'unknown'
+
+    match = AUTH_TYPE_PATTERN.search(message)
+    if match:
+        return match.group(1)
+    return 'unknown'
+
+
+def extract_username_from_message(message: str) -> str:
+    """
+    MSSQL log mesajından username'i çıkarır
+
+    Args:
+        message: Raw log message
+
+    Returns:
+        Username or 'unknown'
+    """
+    if not message:
+        return 'unknown'
+
+    match = USERNAME_PATTERN.search(message)
+    if match:
+        return match.group(1)
+    return 'unknown'
+
+
+def extract_login_status(message: str) -> str:
+    """
+    MSSQL log mesajından login durumunu çıkarır
+
+    Args:
+        message: Raw log message
+
+    Returns:
+        'succeeded', 'failed', or 'unknown'
+    """
+    if not message:
+        return 'unknown'
+
+    match = LOGIN_STATUS_PATTERN.search(message)
+    if match:
+        return match.group(1)
+    return 'unknown'
+
+
+def extract_failure_reason(message: str) -> str:
+    """
+    MSSQL failed login mesajından hata nedenini çıkarır
+
+    Args:
+        message: Raw log message
+
+    Returns:
+        Failure reason or empty string
+    """
+    if not message:
+        return ''
+
+    match = FAILURE_REASON_PATTERN.search(message)
+    if match:
+        return match.group(1).strip()
+    return ''
+
+
+def extract_database_name(message: str) -> str:
+    """
+    MSSQL log mesajından database adını çıkarır
+
+    Args:
+        message: Raw log message
+
+    Returns:
+        Database name or empty string
+    """
+    if not message:
+        return ''
+
+    match = DATABASE_PATTERN.search(message)
+    if match:
+        return match.group(1)
+    return ''
+
+
+def normalize_mssql_message(message: str) -> str:
+    """
+    MSSQL mesajını normalize eder (fingerprinting için)
+
+    - IP adreslerini <IP> ile değiştirir
+    - Kullanıcı adlarını <USER> ile değiştirir
+    - Sayıları <NUM> ile değiştirir
+    - Timestamp'leri <TS> ile değiştirir
+
+    Args:
+        message: Raw message
+
+    Returns:
+        Normalized message
+    """
+    if not message:
+        return ''
+
+    normalized = message
+
+    # IP adresleri
+    normalized = re.sub(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', '<IP>', normalized)
+
+    # Kullanıcı adları (for user 'xxx')
+    normalized = re.sub(r"for user '[^']+'", "for user '<USER>'", normalized)
+
+    # Database adları (database 'xxx')
+    normalized = re.sub(r"database '[^']+'", "database '<DB>'", normalized)
+
+    # Timestamp'ler (2026-02-05 16:44:20.70)
+    normalized = re.sub(
+        r'\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+',
+        '<TS>',
+        normalized
+    )
+
+    # Genel sayılar (ama IP ve TS'den sonra)
+    normalized = re.sub(r'\b\d+\b', '<NUM>', normalized)
+
+    return normalized
+
+
+def enrich_mssql_log_entry(log_entry: dict) -> dict:
+    """
+    MSSQL log kaydını zenginleştirir
+
+    Args:
+        log_entry: Raw log entry dict
+
+    Returns:
+        Enriched log entry
+    """
+    enriched = log_entry.copy()
+
+    message = enriched.get('raw_message', '') or enriched.get('message', '')
+
+    # Message fingerprint
+    enriched['message_fingerprint'] = normalize_mssql_message(message)
+
+    # Client IP
+    if 'client_ip' not in enriched or enriched['client_ip'] == 'unknown':
+        enriched['client_ip'] = extract_client_ip(message)
+
+    # Auth type
+    if 'auth_type' not in enriched or enriched['auth_type'] == 'unknown':
+        enriched['auth_type'] = extract_auth_type(message)
+
+    # Username (from message if not in fields)
+    if 'username' not in enriched or enriched['username'] == 'unknown':
+        enriched['username'] = extract_username_from_message(message)
+
+    # Login status (from message if not in fields)
+    if 'logintype' not in enriched or enriched['logintype'] == 'unknown':
+        enriched['logintype'] = extract_login_status(message)
+
+    # Failure reason (for failed logins)
+    if enriched.get('logintype') == 'failed':
+        enriched['failure_reason'] = extract_failure_reason(message)
+
+    # Database name
+    enriched['database_name'] = extract_database_name(message)
+
+    # Error flags
+    enriched['is_availability_group_error'] = bool(
+        AVAILABILITY_GROUP_PATTERN.search(message)
+    )
+    enriched['is_database_access_error'] = bool(
+        DATABASE_ACCESS_ERROR_PATTERN.search(message)
+    )
+
+    return enriched
+
+
+# =============================================================================
+# MSSQL OPENSEARCH READER CLASS
+# =============================================================================
+
+class MSSQLOpenSearchReader:
+    """
+    OpenSearch'ten MSSQL loglarını okuyan sınıf
+
+    MongoDB OpenSearchProxyReader ile aynı yapı, MSSQL'e özgü parsing
+    """
+
+    def __init__(self, config_path: str = "config/mssql_anomaly_config.json"):
+        """
+        MSSQL OpenSearch Reader başlat
+
+        Args:
+            config_path: MSSQL config dosyası yolu
+        """
+        self.config_path = config_path
+        self.config = self._load_config()
+
+        # OpenSearch bağlantı bilgileri
+        self.base_url = os.getenv(
+            'OPENSEARCH_URL',
+            'https://opslog.lcwaikiki.com'
+        )
+        self.index_pattern = "db-mssql-*"  # MSSQL index pattern
+
+        # Session ve auth
+        self.session = None
+        self.cookies = None
+        self.headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'osd-xsrf': 'true'
+        }
+
+        # Auth credentials
+        self.username = os.getenv('OPENSEARCH_USERNAME', '')
+        self.password = os.getenv('OPENSEARCH_PASSWORD', '')
+
+        # Bağlantı durumu
+        self._connected = False
+
+        logger.info(f"MSSQLOpenSearchReader initialized - Index: {self.index_pattern}")
+
+    def _load_config(self) -> dict:
+        """Config dosyasını yükle"""
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            logger.warning(f"Config file not found: {self.config_path}, using defaults")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in config: {e}")
+            return {}
+
+    def _create_session(self) -> requests.Session:
+        """Retry mantığı ile session oluştur"""
+        session = requests.Session()
+
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "POST", "DELETE"]
+        )
+
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
+        # SSL verification
+        session.verify = False  # Production'da True olmalı
+
+        return session
+
+    def _login(self) -> bool:
+        """
+        OpenSearch'e login ol (Kibana proxy üzerinden)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.session:
+            self.session = self._create_session()
+
+        login_url = f"{self.base_url}/auth/login"
+
+        try:
+            # Form-based login
+            login_data = {
+                'username': self.username,
+                'password': self.password
+            }
+
+            response = self.session.post(
+                login_url,
+                data=login_data,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                timeout=30,
+                allow_redirects=True
+            )
+
+            if response.status_code in [200, 302]:
+                self.cookies = self.session.cookies
+                logger.info("OpenSearch login successful")
+                return True
+            else:
+                logger.error(f"OpenSearch login failed: {response.status_code}")
+                return False
+
+        except Exception as e:
+            logger.error(f"OpenSearch login error: {e}")
+            return False
+
+    def _select_tenant(self, tenant: str = "LCW") -> bool:
+        """
+        OpenSearch tenant seç
+
+        Args:
+            tenant: Tenant adı (default: LCW)
+
+        Returns:
+            True if successful
+        """
+        tenant_url = f"{self.base_url}/api/v1/multitenancy/tenant"
+
+        try:
+            response = self.session.post(
+                tenant_url,
+                json={"tenant": tenant, "username": self.username},
+                headers=self.headers,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                logger.info(f"Tenant selected: {tenant}")
+                return True
+            else:
+                logger.warning(f"Tenant selection failed: {response.status_code}")
+                # Devam et, bazı sistemlerde tenant zorunlu değil
+                return True
+
+        except Exception as e:
+            logger.warning(f"Tenant selection error: {e}")
+            return True  # Devam et
+
+    def connect(self) -> bool:
+        """
+        OpenSearch bağlantısını test et
+
+        Returns:
+            True if connected successfully
+        """
+        try:
+            logger.info("Connecting to OpenSearch for MSSQL logs...")
+
+            # Session oluştur
+            self.session = self._create_session()
+
+            # Login
+            if not self._login():
+                logger.error("OpenSearch login failed")
+                return False
+
+            # Tenant seç
+            self._select_tenant("LCW")
+
+            # Bağlantı testi - index'in varlığını kontrol et
+            test_url = f"{self.base_url}/api/console/proxy"
+            test_query = {
+                "path": f"{self.index_pattern}/_count",
+                "method": "GET"
+            }
+
+            response = self.session.post(
+                test_url,
+                json=test_query,
+                headers=self.headers,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                count = result.get('count', 0)
+                logger.info(f"OpenSearch connected - MSSQL index count: {count:,}")
+                self._connected = True
+                return True
+            else:
+                logger.error(f"Connection test failed: {response.status_code}")
+                return False
+
+        except Exception as e:
+            logger.error(f"OpenSearch connection error: {e}")
+            return False
+
+    def is_connected(self) -> bool:
+        """Bağlantı durumunu döndür"""
+        return self._connected
+
+    def read_logs(
+        self,
+        limit: int = 10000,
+        last_hours: int = 24,
+        host_filter: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        login_type_filter: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        OpenSearch'ten MSSQL loglarını oku
+
+        Args:
+            limit: Maximum log sayısı
+            last_hours: Son kaç saat (start_time verilmezse)
+            host_filter: Belirli bir MSSQL sunucusu
+            start_time: Başlangıç zamanı (ISO format)
+            end_time: Bitiş zamanı (ISO format)
+            login_type_filter: 'succeeded' veya 'failed'
+
+        Returns:
+            DataFrame with MSSQL logs
+        """
+        if not self._connected:
+            logger.warning("Not connected, attempting to connect...")
+            if not self.connect():
+                logger.error("Connection failed")
+                return pd.DataFrame()
+
+        logger.info(f"Reading MSSQL logs from OpenSearch (limit={limit}, hours={last_hours})")
+
+        # Zaman aralığı
+        if start_time and end_time:
+            time_range = {
+                "gte": start_time,
+                "lte": end_time
+            }
+        else:
+            time_range = {
+                "gte": f"now-{last_hours}h",
+                "lte": "now"
+            }
+
+        # Query oluştur
+        must_conditions = [
+            {"range": {"@timestamp": time_range}}
+        ]
+
+        # Host filter
+        if host_filter:
+            # FQDN normalize
+            host_short = host_filter.split('.')[0] if '.' in host_filter else host_filter
+            must_conditions.append({
+                "bool": {
+                    "should": [
+                        {"term": {"host.name.keyword": host_filter}},
+                        {"term": {"host.name.keyword": host_short}},
+                        {"term": {"host.name.keyword": host_filter.upper()}},
+                        {"term": {"host.name.keyword": host_short.upper()}}
+                    ],
+                    "minimum_should_match": 1
+                }
+            })
+
+        # Login type filter
+        if login_type_filter:
+            must_conditions.append({
+                "term": {"logintype.keyword": login_type_filter}
+            })
+
+        # Elasticsearch query
+        query = {
+            "size": min(limit, 10000),
+            "sort": [{"@timestamp": "desc"}],
+            "query": {
+                "bool": {
+                    "must": must_conditions
+                }
+            },
+            "_source": True
+        }
+
+        # API çağrısı
+        search_url = f"{self.base_url}/api/console/proxy"
+        search_payload = {
+            "path": f"{self.index_pattern}/_search",
+            "method": "POST",
+            "body": json.dumps(query)
+        }
+
+        try:
+            response = self.session.post(
+                search_url,
+                json=search_payload,
+                headers=self.headers,
+                timeout=120
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Search failed: {response.status_code} - {response.text[:500]}")
+                return pd.DataFrame()
+
+            result = response.json()
+            hits = result.get('hits', {}).get('hits', [])
+
+            logger.info(f"Fetched {len(hits)} MSSQL logs")
+
+            # DataFrame oluştur
+            if not hits:
+                return pd.DataFrame()
+
+            records = []
+            for hit in hits:
+                source = hit.get('_source', {})
+                record = self._parse_mssql_log(source)
+                record['_id'] = hit.get('_id', '')
+                record['_index'] = hit.get('_index', '')
+                records.append(record)
+
+            df = pd.DataFrame(records)
+
+            # Timestamp parsing
+            if '@timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['@timestamp'], errors='coerce')
+                df = df.sort_values('timestamp').reset_index(drop=True)
+
+            logger.info(f"Fetch completed: {len(df)} records")
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            return pd.DataFrame()
+
+    def _parse_mssql_log(self, source: dict) -> dict:
+        """
+        OpenSearch'ten gelen MSSQL log kaydını parse et
+
+        Grok parse failure olan logları da message'dan parse eder
+
+        Args:
+            source: OpenSearch _source dict
+
+        Returns:
+            Parsed and enriched log entry
+        """
+        # Temel alanlar
+        log_entry = {
+            'host': source.get('host', {}).get('name', 'unknown'),
+            '@timestamp': source.get('@timestamp'),
+            'raw_message': source.get('message', ''),
+            'tags': source.get('tags', []),
+            'agent_hostname': source.get('agent', {}).get('hostname', 'unknown'),
+            'log_file_path': source.get('log', {}).get('file', {}).get('path', ''),
+        }
+
+        # Grok parse failure kontrolü
+        is_grok_failure = '_grokparsefailure' in log_entry['tags']
+        log_entry['is_grok_failure'] = is_grok_failure
+
+        if is_grok_failure:
+            # Grok failure: message'dan parse et
+            message = log_entry['raw_message']
+            log_entry['logtype'] = 'Logon'  # Default, genellikle Logon
+            log_entry['logintype'] = extract_login_status(message)
+            log_entry['username'] = extract_username_from_message(message)
+            log_entry['logtime'] = ''  # Parse edilememiş
+        else:
+            # Normal parse edilmiş alanları kullan
+            log_entry['logtype'] = source.get('logtype', 'Unknown')
+            log_entry['logintype'] = source.get('logintype', 'unknown')
+            log_entry['username'] = source.get('USERNAME', 'unknown')
+            log_entry['logtime'] = source.get('logtime', '')
+            log_entry['hostuser'] = source.get('hostuser', '')
+
+        # Zenginleştirme (client IP, auth type, failure reason, etc.)
+        log_entry = enrich_mssql_log_entry(log_entry)
+
+        return log_entry
+
+    def get_available_mssql_hosts(self, last_hours: int = 24) -> List[str]:
+        """
+        Son N saat içinde log üreten MSSQL sunucularını listele
+
+        Args:
+            last_hours: Son kaç saat
+
+        Returns:
+            List of host names
+        """
+        if not self._connected:
+            if not self.connect():
+                return []
+
+        logger.info(f"Getting available MSSQL hosts (last {last_hours}h)")
+
+        # Aggregation query
+        query = {
+            "size": 0,
+            "query": {
+                "range": {
+                    "@timestamp": {
+                        "gte": f"now-{last_hours}h",
+                        "lte": "now"
+                    }
+                }
+            },
+            "aggs": {
+                "hosts": {
+                    "terms": {
+                        "field": "host.name.keyword",
+                        "size": 100
+                    }
+                }
+            }
+        }
+
+        search_url = f"{self.base_url}/api/console/proxy"
+        search_payload = {
+            "path": f"{self.index_pattern}/_search",
+            "method": "POST",
+            "body": json.dumps(query)
+        }
+
+        try:
+            response = self.session.post(
+                search_url,
+                json=search_payload,
+                headers=self.headers,
+                timeout=60
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Host query failed: {response.status_code}")
+                return []
+
+            result = response.json()
+            buckets = result.get('aggregations', {}).get('hosts', {}).get('buckets', [])
+
+            hosts = [b['key'] for b in buckets]
+            logger.info(f"Found {len(hosts)} MSSQL hosts")
+
+            return hosts
+
+        except Exception as e:
+            logger.error(f"Host query error: {e}")
+            return []
+
+    def get_host_log_stats(self, last_hours: int = 24) -> Dict[str, Any]:
+        """
+        MSSQL sunucularının log istatistiklerini getir
+
+        Args:
+            last_hours: Son kaç saat
+
+        Returns:
+            Dict with host stats
+        """
+        if not self._connected:
+            if not self.connect():
+                return {}
+
+        logger.info(f"Getting MSSQL host stats (last {last_hours}h)")
+
+        # Multi-aggregation query
+        query = {
+            "size": 0,
+            "query": {
+                "range": {
+                    "@timestamp": {
+                        "gte": f"now-{last_hours}h",
+                        "lte": "now"
+                    }
+                }
+            },
+            "aggs": {
+                "hosts": {
+                    "terms": {
+                        "field": "host.name.keyword",
+                        "size": 100
+                    },
+                    "aggs": {
+                        "login_types": {
+                            "terms": {
+                                "field": "logintype.keyword",
+                                "size": 10
+                            }
+                        },
+                        "latest_log": {
+                            "max": {
+                                "field": "@timestamp"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        search_url = f"{self.base_url}/api/console/proxy"
+        search_payload = {
+            "path": f"{self.index_pattern}/_search",
+            "method": "POST",
+            "body": json.dumps(query)
+        }
+
+        try:
+            response = self.session.post(
+                search_url,
+                json=search_payload,
+                headers=self.headers,
+                timeout=60
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Stats query failed: {response.status_code}")
+                return {}
+
+            result = response.json()
+            buckets = result.get('aggregations', {}).get('hosts', {}).get('buckets', [])
+
+            stats = {}
+            for bucket in buckets:
+                host = bucket['key']
+                login_types = {
+                    lt['key']: lt['doc_count']
+                    for lt in bucket.get('login_types', {}).get('buckets', [])
+                }
+
+                stats[host] = {
+                    'total_logs': bucket['doc_count'],
+                    'succeeded': login_types.get('succeeded', 0),
+                    'failed': login_types.get('failed', 0),
+                    'latest_log': bucket.get('latest_log', {}).get('value_as_string', ''),
+                    'failed_ratio': login_types.get('failed', 0) / bucket['doc_count']
+                        if bucket['doc_count'] > 0 else 0
+                }
+
+            logger.info(f"Got stats for {len(stats)} MSSQL hosts")
+            return stats
+
+        except Exception as e:
+            logger.error(f"Stats query error: {e}")
+            return {}
+
+
+# =============================================================================
+# MODULE-LEVEL HELPER FUNCTIONS
+# =============================================================================
+
+def get_available_mssql_hosts(last_hours: int = 24) -> List[str]:
+    """
+    Module-level function to get available MSSQL hosts
+
+    Args:
+        last_hours: Son kaç saat
+
+    Returns:
+        List of host names
+    """
+    reader = MSSQLOpenSearchReader()
+    if reader.connect():
+        return reader.get_available_mssql_hosts(last_hours)
+    return []
+
+
+def get_mssql_host_stats(last_hours: int = 24) -> Dict[str, Any]:
+    """
+    Module-level function to get MSSQL host statistics
+
+    Args:
+        last_hours: Son kaç saat
+
+    Returns:
+        Dict with host stats
+    """
+    reader = MSSQLOpenSearchReader()
+    if reader.connect():
+        return reader.get_host_log_stats(last_hours)
+    return {}
