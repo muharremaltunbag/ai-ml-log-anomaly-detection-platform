@@ -51,7 +51,10 @@ window.API_ENDPOINTS = {
     modelRegistry: '/api/model-registry',
     storageCleanup: '/api/storage-cleanup',
     anomalyDetail: '/api/anomaly-history',
-    exportAnalysis: '/api/export-analysis'
+    exportAnalysis: '/api/export-analysis',
+    // MSSQL ENDPOINTS
+    mssqlHosts: '/api/mssql/available-hosts',
+    analyzeMSSQLLog: '/api/analyze-mssql-logs'
 };
 
 // ============================================

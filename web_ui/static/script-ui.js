@@ -695,11 +695,13 @@ function updateSourceInputs(source) {
     const uploadInputs = document.getElementById('uploadSourceInputs');
     const fileSelection = document.getElementById('fileSelectionSection');
     const opensearchInputs = document.getElementById('opensearchSourceInputs');
-    
+    const mssqlInputs = document.getElementById('mssqlSourceInputs');
+
     // Tüm input alanlarını gizle
     if (uploadInputs) uploadInputs.style.display = 'none';
     if (fileSelection) fileSelection.style.display = 'none';
     if (opensearchInputs) opensearchInputs.style.display = 'none';
+    if (mssqlInputs) mssqlInputs.style.display = 'none';
     
     // Seçilen kaynağa göre göster
     switch(source) {
@@ -737,7 +739,17 @@ function updateSourceInputs(source) {
                 }
             }, 500);
             break;
-            
+
+        case 'mssql_opensearch':
+            console.log('Showing MSSQL OpenSearch source inputs');
+            if (mssqlInputs) mssqlInputs.style.display = 'block';
+
+            // MSSQL sunucularını yükle
+            if (window.loadMSSQLHosts) {
+                window.loadMSSQLHosts();
+            }
+            break;
+
         default:
             console.log('Unknown source type:', source);
     }

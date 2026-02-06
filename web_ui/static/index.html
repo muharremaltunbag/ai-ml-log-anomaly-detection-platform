@@ -353,6 +353,12 @@
                                     <span>🔍 OpenSearch</span>
                                     <small>(Production MongoDB Logları)</small>
                                 </label>
+
+                                <label class="source-option">
+                                    <input type="radio" name="dataSource" value="mssql_opensearch">
+                                    <span>🗄️ MSSQL OpenSearch</span>
+                                    <small>(Production MSSQL Logları)</small>
+                                </label>
                             </div>
                             
                             <!-- Dinamik input alanları -->
@@ -402,6 +408,20 @@
                                     
                                     <button id="refreshHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
                                         🔄 Sunucu/Cluster Listesini Yenile
+                                    </button>
+                                </div>
+
+                                <!-- MSSQL OpenSearch için -->
+                                <div id="mssqlSourceInputs" style="display: none;">
+                                    <div style="margin-bottom: 15px;">
+                                        <label>MSSQL Sunucusu:</label>
+                                        <select id="mssqlHostSelect" class="form-select">
+                                            <option value="" disabled selected>MSSQL sunucu seçin...</option>
+                                        </select>
+                                    </div>
+
+                                    <button id="refreshMSSQLHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
+                                        🔄 MSSQL Sunucu Listesini Yenile
                                     </button>
                                 </div>
                             </div>

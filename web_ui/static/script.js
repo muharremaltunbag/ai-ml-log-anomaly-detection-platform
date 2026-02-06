@@ -360,7 +360,17 @@ function initializeEventListeners() {
             }
         });
     }
-    
+
+    // MSSQL Refresh hosts button
+    const refreshMSSQLBtn = document.getElementById('refreshMSSQLHostsBtn');
+    if (refreshMSSQLBtn) {
+        refreshMSSQLBtn.addEventListener('click', () => {
+            if (window.loadMSSQLHosts) window.loadMSSQLHosts();
+            else if (typeof loadMSSQLHosts === 'function') loadMSSQLHosts();
+            showNotification('MSSQL host listesi yenileniyor...', 'info');
+        });
+    }
+
     // Örnek sorgu chip'leri
     document.querySelectorAll('.chip').forEach(chip => {
         chip.addEventListener('click', (e) => {
@@ -418,6 +428,13 @@ function initializeEventListeners() {
                 setTimeout(() => {
                     loadMongoDBHosts();  // Host listesini yükle
                     loadClusters();      // Cluster listesini yükle
+                }, 100);
+            }
+
+            // MSSQL OpenSearch seçildiğinde MSSQL listesini yükle
+            if (e.target.value === 'mssql_opensearch' && isConnected) {
+                setTimeout(() => {
+                    loadMSSQLHosts();  // MSSQL Host listesini yükle
                 }, 100);
             }
         });
@@ -1590,6 +1607,46 @@ async function loadMongoDBHosts() {
     } catch (error) {
         console.error('Error loading MongoDB hosts:', error);
         showNotification('MongoDB sunucuları yüklenemedi', 'error');
+    }
+}
+
+/**
+ * MSSQL sunucularını yükle (OpenSearch'ten)
+ */
+async function loadMSSQLHosts() {
+    console.log('Loading MSSQL hosts from OpenSearch...');
+
+    try {
+        const response = await fetch(`${API_ENDPOINTS.mssqlHosts}?api_key=${apiKey}`);
+        const data = await response.json();
+
+        console.log('MSSQL hosts response:', data);
+
+        const hostSelect = document.getElementById('mssqlHostSelect');
+        if (!hostSelect) return;
+
+        // Mevcut seçenekleri temizle
+        hostSelect.innerHTML = '<option value="" disabled selected>MSSQL sunucu seçin...</option>';
+
+        if (data.hosts && data.hosts.length > 0) {
+            data.hosts.forEach(host => {
+                const option = document.createElement('option');
+                option.value = host;
+                option.textContent = host;
+                hostSelect.appendChild(option);
+            });
+
+            console.log(`Loaded ${data.hosts.length} MSSQL hosts`);
+
+            if (window.selectedDataSource === 'mssql_opensearch') {
+                validateAnalysisButton();
+            }
+        } else {
+            console.log('No MSSQL hosts found');
+        }
+    } catch (error) {
+        console.error('Error loading MSSQL hosts:', error);
+        showNotification('MSSQL sunucuları yüklenemedi', 'error');
     }
 }
 

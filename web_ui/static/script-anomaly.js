@@ -935,6 +935,20 @@ async function handleAnalyzeLog() {
             requestData.file_path = 'opensearch';
             break;
         }
+
+        case 'mssql_opensearch': {
+            // MSSQL OpenSearch analizi
+            const mssqlHostFilter = document.getElementById('mssqlHostSelect')?.value;
+            if (!mssqlHostFilter) {
+                alert('Lütfen bir MSSQL sunucusu seçin!');
+                return;
+            }
+            requestData.host_filter = mssqlHostFilter;
+            requestData.analysis_mode = 'single';
+            requestData.file_path = 'mssql_opensearch';
+            requestData.database_type = 'mssql';
+            break;
+        }
     }
 
     // Modal'ı kapat
@@ -957,7 +971,7 @@ async function handleAnalyzeLog() {
         // API.py'de `analyze_uploaded_log` düzenledik. Upload ve OpenSearch oraya gidiyor.
         // Endpoint URL'sini kontrol edelim:
         
-        let targetEndpoint = window.API_ENDPOINTS.analyzeLog; 
+        let targetEndpoint = window.API_ENDPOINTS.analyzeLog;
         if (window.selectedDataSource === 'upload') {
              // Eğer sisteminizde upload için ayrı bir endpoint URL'i tanımlıysa burayı güncelleyin.
              // Varsayılan olarak analyzeLog endpoint'ine atıyoruz.
@@ -965,6 +979,9 @@ async function handleAnalyzeLog() {
              if (window.API_ENDPOINTS.analyzeUploadedLog) {
                  targetEndpoint = window.API_ENDPOINTS.analyzeUploadedLog;
              }
+        } else if (window.selectedDataSource === 'mssql_opensearch') {
+             // MSSQL için ayrı endpoint kullan
+             targetEndpoint = window.API_ENDPOINTS.analyzeMSSQLLog;
         }
 
         const response = await fetch(targetEndpoint, {
