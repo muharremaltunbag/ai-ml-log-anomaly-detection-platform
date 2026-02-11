@@ -116,16 +116,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 try {
                     // Paralel olarak tüm verileri yükle
                     const results = await Promise.all([
-                        loadHistory(),                    
-                        loadAnomalyHistoryFromMongoDB({limit: 50}),  
-                        loadAndMergeDBAHistory(),         
-                        checkStorageSize()                
+                        loadHistory(),
+                        loadAnomalyHistoryFromMongoDB({limit: 50}),
+                        loadAndMergeDBAHistory(),
+                        loadAndMergeMSSQLHistory(),
+                        checkStorageSize()
                     ]);
-                    
+
                     console.log('✅ All MongoDB data loaded successfully');
                     console.log(`   📝 Query History: ${queryHistory.length} items`);
                     console.log(`   🔍 Anomaly History: ${results[1]?.length || 0} items`);
                     console.log(`   📊 DBA History merged`);
+                    console.log(`   🗄️ MSSQL History merged`);
                     
                     showNotification('Tüm veriler MongoDB\'den yüklendi', 'success');
                     
@@ -160,7 +162,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                             await Promise.all([
                                 loadHistory(),
                                 loadAnomalyHistoryFromMongoDB({limit: 50}),
-                                loadAndMergeDBAHistory()
+                                loadAndMergeDBAHistory(),
+                                loadAndMergeMSSQLHistory()
                             ]);
                             updateHistoryDisplay();
                             
@@ -1812,6 +1815,7 @@ var updateHistoryDisplay = window.updateHistoryDisplay;
 var reloadAllHistory = window.reloadAllHistory;
 var syncSingleItem = window.syncSingleItem;
 var loadAndMergeDBAHistory = window.loadAndMergeDBAHistory;
+var loadAndMergeMSSQLHistory = window.loadAndMergeMSSQLHistory;
 var updateHistoryDisplayWithDBA = window.updateHistoryDisplayWithDBA;
 var loadHistoricalDBAAnalysis = window.loadHistoricalDBAAnalysis;
 var showHistoryDetail = window.showHistoryDetail;

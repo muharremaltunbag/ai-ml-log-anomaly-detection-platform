@@ -3291,6 +3291,69 @@ async def get_dba_analysis_history(
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Geçmiş yüklenirken hata: {str(e)}")
 
+
+@app.get("/api/mssql/analysis-history")
+async def get_mssql_analysis_history(
+    limit: int = Query(20, le=50, description="Maksimum sonuç sayısı"),
+    days_back: int = Query(30, le=90, description="Kaç gün geriye bakılacak"),
+    api_key: str = Query(..., description="API anahtarı")
+):
+    """
+    MSSQL analiz geçmişini MongoDB'den getir
+
+    DBA analysis-history ile aynı yapı, source_type='mssql_opensearch' filtreli.
+
+    Returns:
+        Son yapılan MSSQL analizlerinin özeti
+    """
+    try:
+        # API key kontrolü
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+        # Storage Manager'ı al
+        storage = await get_storage_manager()
+        if not storage:
+            logger.warning("Storage Manager not available, returning empty MSSQL history")
+            return {
+                "status": "success",
+                "analyses": [],
+                "message": "Storage not available",
+                "count": 0
+            }
+
+        # MongoDB'den MSSQL analizlerini çek
+        logger.info(f"Fetching MSSQL analysis history: limit={limit}, days_back={days_back}")
+
+        analyses = await storage.get_dba_analysis_history(
+            source_type="mssql_opensearch",
+            limit=limit,
+            days_back=days_back
+        )
+
+        # Başarılı response
+        logger.info(f"✅ Retrieved {len(analyses)} MSSQL analyses from history")
+
+        return {
+            "status": "success",
+            "analyses": analyses,
+            "count": len(analyses),
+            "database_type": "mssql",
+            "query_params": {
+                "limit": limit,
+                "days_back": days_back
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to get MSSQL analysis history: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"MSSQL geçmiş yüklenirken hata: {str(e)}")
+
+
 @app.get("/api/dba/analysis/{analysis_id}")
 async def get_dba_analysis_details(
     analysis_id: str,

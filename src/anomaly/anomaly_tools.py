@@ -1719,6 +1719,39 @@ class AnomalyDetectionTools:
             logger.error(f"Error getting model info for storage: {e}")
             return None
 
+    def _get_mssql_model_info_for_storage(self, mssql_detector, host_filter: str = None) -> Dict[str, Any]:
+        """
+        MSSQL Detector'dan model metadata bilgilerini topla (Storage için)
+        MongoDB'nin _get_model_info_for_storage() ile paralel yapı.
+
+        Args:
+            mssql_detector: MSSQLAnomalyDetector instance
+            host_filter: MSSQL host adı
+
+        Returns:
+            Model metadata dictionary
+        """
+        if not mssql_detector:
+            return None
+
+        try:
+            safe_host = host_filter.replace('.', '_').replace('/', '_') if host_filter else None
+            return {
+                "model_version": getattr(mssql_detector, 'model_version', None),
+                "model_path": f"models/mssql_isolation_forest_{safe_host}.pkl" if safe_host else "models/mssql_isolation_forest.pkl",
+                "server_name": mssql_detector.current_server or host_filter,
+                "database_type": "mssql",
+                "is_ensemble_mode": bool(mssql_detector.incremental_models) and mssql_detector.incremental_config.get('enabled', True),
+                "ensemble_model_count": len(mssql_detector.incremental_models) if mssql_detector.incremental_models else 0,
+                "historical_buffer_samples": mssql_detector.historical_data['metadata']['total_samples'] if mssql_detector.historical_data.get('features') is not None else 0,
+                "model_trained_at": mssql_detector.training_stats.get('timestamp') if mssql_detector.training_stats else None,
+                "feature_count": len(mssql_detector.feature_names) if mssql_detector.feature_names else 0,
+                "contamination": mssql_detector.model_config['parameters'].get('contamination') if mssql_detector.model_config else None
+            }
+        except Exception as e:
+            logger.error(f"Error getting MSSQL model info for storage: {e}")
+            return None
+
     def _filter_false_positives(self, analysis: Dict[str, Any], source_name: str = "unknown") -> Dict[str, Any]:
         """
         Analiz sonuçlarından false positive'leri filtrele
@@ -2142,6 +2175,9 @@ class AnomalyDetectionTools:
             # Öneriler
             suggestions = self._create_mssql_suggestions(analysis, mssql_specific_analysis)
 
+            # MSSQL model metadata — storage'a kaydedilecek zengin bilgi
+            mssql_model_info = self._get_mssql_model_info_for_storage(mssql_detector, host_filter)
+
             result = {
                 "description": description,
                 "data": {
@@ -2163,11 +2199,20 @@ class AnomalyDetectionTools:
                     "model_info": {
                         "is_trained": mssql_detector.is_trained,
                         "model_type": "IsolationForest",
-                        "rules_count": len(mssql_detector.critical_rules)
+                        "rules_count": len(mssql_detector.critical_rules),
+                        **(mssql_model_info or {})
+                    },
+                    "server_info": {
+                        "server_name": host_filter or "global",
+                        "model_status": "existing" if mssql_detector.is_trained else "newly_trained",
+                        "model_path": f"models/mssql_isolation_forest_{host_filter}.pkl" if host_filter else "models/mssql_isolation_forest.pkl",
+                        "historical_buffer_size": mssql_detector.historical_data['metadata']['total_samples'] if mssql_detector.historical_data.get('features') is not None else 0,
+                        "last_update": mssql_detector.historical_data['metadata'].get('last_update', 'N/A')
                     }
                 },
                 "suggestions": suggestions,
-                "ai_explanation": ai_explanation
+                "ai_explanation": ai_explanation,
+                "model_info": mssql_model_info
             }
 
             logger.info("MSSQL analysis completed successfully")

@@ -405,10 +405,10 @@ class StorageManager:
             # Build filter with date range
             from datetime import datetime, timedelta
             cutoff_date = datetime.utcnow() - timedelta(days=days_back)
-            
+
             filters = {
-                "source.type": source_type,
-                "timestamp": {"$gte": cutoff_date}
+                "source_type": source_type,
+                "start_date": cutoff_date
             }
             
             analyses = await self.mongodb.get_anomaly_history(

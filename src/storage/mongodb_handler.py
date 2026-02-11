@@ -339,6 +339,11 @@ class MongoDBHandler:
                 # Source filter
                 if "source" in filters:
                     query["source"] = filters["source"]
+
+                # Source type filter (maps to source_info.source_type in document)
+                # Used by DBA and MSSQL history queries
+                if "source_type" in filters:
+                    query["source_info.source_type"] = filters["source_type"]
             
             # Execute query
             cursor = collection.find(query).sort("timestamp", DESCENDING).skip(skip).limit(limit)

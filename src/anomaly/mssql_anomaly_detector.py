@@ -260,6 +260,51 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
             'override_stats': self.rule_stats if hasattr(self, 'rule_stats') else {}
         }
 
+    # =================================================================
+    # MODEL PATH İZOLASYONU
+    # MongoDB modelleri: models/isolation_forest_{hostname}.pkl
+    # MSSQL modelleri:   models/mssql_isolation_forest_{hostname}.pkl
+    # Bu override'lar sayesinde iki DB tipi asla çakışmaz.
+    # =================================================================
+
+    def save_model(self, path: str = None, server_name: str = None) -> str:
+        """
+        MSSQL modeli kaydet — ayrı path prefix ile.
+        Tüm ağır iş (joblib, lock, buffer, ensemble) parent'ta kalır.
+
+        Path convention: models/mssql_isolation_forest_{safe_server_name}.pkl
+        """
+        if path is None:
+            if server_name:
+                safe_server_name = server_name.replace('.', '_').replace('/', '_')
+                path = f'models/mssql_isolation_forest_{safe_server_name}.pkl'
+            else:
+                path = self.output_config.get('model_path', 'models/mssql_isolation_forest.pkl')
+        return super().save_model(path=path, server_name=server_name)
+
+    def load_model(self, path: str = None, server_name: str = None) -> bool:
+        """
+        MSSQL modeli yükle — ayrı path prefix ile.
+        Tüm ağır iş (joblib, lock, buffer, ensemble) parent'ta kalır.
+
+        Path convention: models/mssql_isolation_forest_{safe_server_name}.pkl
+        """
+        if path is None:
+            if server_name:
+                safe_server_name = server_name.replace('.', '_').replace('/', '_')
+                path = f'models/mssql_isolation_forest_{safe_server_name}.pkl'
+            else:
+                path = self.output_config.get('model_path', 'models/mssql_isolation_forest.pkl')
+
+            # MSSQL'e özel model yoksa, global MSSQL modeli dene (fallback)
+            if not Path(path).exists() and server_name:
+                fallback_path = self.output_config.get('model_path', 'models/mssql_isolation_forest.pkl')
+                if Path(fallback_path).exists():
+                    logger.info(f"Server-specific MSSQL model not found, using global: {fallback_path}")
+                    path = fallback_path
+
+        return super().load_model(path=path, server_name=server_name)
+
 
 # =============================================================================
 # MODULE-LEVEL HELPER FUNCTIONS

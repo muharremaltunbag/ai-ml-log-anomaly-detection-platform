@@ -1000,22 +1000,25 @@ async function handleAnalyzeLog() {
         // Sonuçları işle (Mevcut kodlar)
         displayAnomalyResults(result);
 
-        // History'ye ekle (Mevcut kodlar)
-        if (result.durum !== 'hata' && result.işlem === 'anomaly_analysis') {
+        // History'ye ekle (Mevcut kodlar — MongoDB + MSSQL destekli)
+        if (result.durum !== 'hata' && (result.işlem === 'anomaly_analysis' || result.işlem === 'mssql_anomaly_analysis')) {
             let queryText = `Anomali analizi (${window.selectedDataSource})`;
             if (requestData.host_filter) queryText = `${requestData.host_filter} analizi`;
             else if (requestData.uploaded_filename) queryText = `Dosya analizi`;
             else if (window.selectedDataSource === 'upload') queryText = `Log Dosyası Analizi`;
             
+            const isMSSQL = result.işlem === 'mssql_anomaly_analysis' || window.selectedDataSource === 'mssql_opensearch';
             const historyItem = {
                 id: Date.now(),
                 timestamp: new Date().toISOString(),
                 query: queryText,
                 type: 'anomaly',
                 category: 'anomaly',
+                subType: isMSSQL ? 'MSSQL' : undefined,
+                database_type: isMSSQL ? 'mssql' : 'mongodb',
                 result: result,
                 durum: 'tamamlandı',
-                işlem: 'anomaly_analysis',
+                işlem: result.işlem || 'anomaly_analysis',
                 isManualAnalysis: true,
                 hasResult: true,
                 childResult: result
