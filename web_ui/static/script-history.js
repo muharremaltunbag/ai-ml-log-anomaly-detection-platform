@@ -1189,38 +1189,41 @@ function updateHistoryDisplayWithDBA(filter = 'all') {
 }
 
 /**
- * Geçmişten DBA analizini yükle ve göster
+ * Geçmişten analizi yükle ve göster (DBA + MSSQL ortak)
+ * MongoDB document top-level field'larından okur (analysis_result key'i yok)
+ * JSON fallback: detailed_data varsa ondan da alır
  */
 async function loadHistoricalDBAAnalysis(analysisId) {
     try {
         window.showLoader(true);
-        
+
         const response = await fetch(`/api/dba/analysis/${analysisId}?api_key=${window.apiKey}`);
         const data = await response.json();
-        
+
         if (data.status === 'success' && data.analysis) {
             const analysis = data.analysis;
-            const result = analysis.analysis_result || {};
-            const sonuc = result.sonuç || {};
-            
-            // DBA sonuçlarını formatla
+            // JSON fallback verileri (include_details=True ile yüklenir)
+            const detailed = analysis.detailed_data || {};
+
+            // Document top-level field'larından oku (mongodb_handler.save_anomaly_result şeması)
+            // Fallback: detailed_data (JSON dosyasından normalize edilmiş veri)
             const formattedResult = {
                 status: 'success',
                 results: {
-                    critical_anomalies: sonuc.critical_anomalies || [],
-                    total_logs_analyzed: sonuc.total_logs || 0,
-                    anomaly_count: sonuc.anomaly_count || 0,
-                    anomaly_rate: sonuc.anomaly_rate || 0,
-                    ai_summary: result.ai_explanation
+                    critical_anomalies: analysis.critical_anomalies_full || analysis.critical_anomalies_display || detailed.critical_anomalies_full || [],
+                    total_logs_analyzed: analysis.logs_analyzed || detailed.logs_analyzed || 0,
+                    anomaly_count: analysis.anomaly_count || detailed.anomaly_count || 0,
+                    anomaly_rate: analysis.anomaly_rate || detailed.anomaly_rate || 0,
+                    ai_summary: analysis.ai_explanation || detailed.ai_explanation
                 },
                 host: analysis.host,
                 time_range: analysis.time_range,
                 storage_id: analysisId
             };
-            
+
             // Pagination'ı resetle
             window.dbaCurrentPage = 1;
-            
+
             // Sonuçları görüntüle
             window.displayDBAAnalysisResults(
                 formattedResult,
@@ -1228,12 +1231,12 @@ async function loadHistoricalDBAAnalysis(analysisId) {
                 analysis.time_range ? analysis.time_range.split(' to ')[0] : '',
                 analysis.time_range ? analysis.time_range.split(' to ')[1] : ''
             );
-            
-            window.showNotification('DBA analizi yüklendi', 'success');
+
+            window.showNotification('Analiz yüklendi', 'success');
         }
     } catch (error) {
-        console.error('Failed to load DBA analysis:', error);
-        window.showNotification('DBA analizi yüklenemedi', 'error');
+        console.error('Failed to load analysis:', error);
+        window.showNotification('Analiz yüklenemedi', 'error');
     } finally {
         window.showLoader(false);
     }

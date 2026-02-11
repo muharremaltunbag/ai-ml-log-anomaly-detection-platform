@@ -1439,12 +1439,15 @@ async def analyze_mssql_logs(request: AnalyzeMSSQLLogsRequest):
             if result.get('durum') == 'tamamlandı':
                 try:
                     storage = await get_storage_manager()
+                    # model_info: _format_result top-level key'i korumaz,
+                    # ama sonuç.model_info içinde zengin metadata mevcut
+                    mssql_model_info = result.get('sonuç', {}).get('model_info')
                     save_result = await storage.save_anomaly_analysis(
                         analysis_result=result,
                         source_type='mssql_opensearch',
                         host=request.host_filter,
                         time_range=request.time_range,
-                        model_info=result.get('model_info')
+                        model_info=mssql_model_info
                     )
                     if save_result:
                         result['storage_info'] = save_result

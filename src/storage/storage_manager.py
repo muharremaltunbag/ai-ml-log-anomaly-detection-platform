@@ -420,31 +420,29 @@ class StorageManager:
             # Format specifically for DBA UI display
             dba_history = []
             for doc in analyses:
-                # Extract nested fields safely
-                analysis_result = doc.get("analysis_result", {})
-                sonuc = analysis_result.get("sonuç", {})
-                source_info = doc.get("source", {})
-                
+                # source_info: mongodb_handler saves as doc["source_info"] (dict)
+                # doc["source"] is the raw string like "unknown" — not what we want
+                source_info = doc.get("source_info", {})
+
                 # ✅ TYPE KONTROLÜ - source_info string mi dict mi?
                 if isinstance(source_info, str):
-                    # String ise default değerler kullan
                     source_info = {"type": source_type, "host": "Unknown", "time_range": ""}
                 elif not isinstance(source_info, dict):
-                    # Ne string ne dict ise boş dict yap
                     source_info = {}
-                
-                # Build DBA-friendly summary
+
+                # Read from document top-level fields (set by mongodb_handler.save_anomaly_result)
+                # NOT from "analysis_result" which doesn't exist in the document schema
                 dba_entry = {
                     "_id": str(doc.get("_id", "")),
                     "analysis_id": doc.get("analysis_id", ""),
                     "host": doc.get("host", source_info.get("host", "Unknown") if isinstance(source_info, dict) else "Unknown"),
                     "timestamp": doc.get("timestamp"),
-                    "anomaly_count": sonuc.get("anomaly_count", sonuc.get("n_anomalies", 0)),
-                    "total_logs": sonuc.get("total_logs", sonuc.get("logs_analyzed", 0)),
-                    "anomaly_rate": sonuc.get("anomaly_rate", 0),
+                    "anomaly_count": doc.get("anomaly_count", 0),
+                    "total_logs": doc.get("logs_analyzed", 0),
+                    "anomaly_rate": doc.get("anomaly_rate", 0),
                     "time_range": doc.get("time_range", source_info.get("time_range", "") if isinstance(source_info, dict) else ""),
                     "source_type": source_info.get("type", source_type) if isinstance(source_info, dict) else source_type,
-                    "has_ai_explanation": "ai_explanation" in analysis_result,
+                    "has_ai_explanation": bool(doc.get("ai_explanation")),
                     "storage_id": doc.get("analysis_id", str(doc.get("_id", "")))
                 }
                 dba_history.append(dba_entry)
