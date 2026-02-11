@@ -20,5 +20,5 @@ scikit-learn
 joblib
 
 # Storage Management için
-motor==3.5.0          # Async MongoDB driver
+motor==3.6.0          # Async MongoDB driver
 aiofiles==24.1.0      # Async file operations
