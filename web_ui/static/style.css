@@ -67,9 +67,9 @@ body {
 }
 
 .container {
-    max-width: 1200px;
+    max-width: 1600px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 20px 24px;
 }
 
 /* Logo ve Header */
@@ -109,13 +109,15 @@ body {
 }
 
 .environment-badge {
-    background-color: var(--lcw-gray);
-    color: white;
-    padding: 5px 15px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
+    background-color: var(--bg-color);
+    color: var(--text-secondary);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border: 1px solid var(--border-color);
 }
 
 /* Header */
@@ -270,8 +272,9 @@ input:focus, textarea:focus {
 .query-section {
     background-color: var(--card-bg);
     padding: 30px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    border: 1px solid var(--border-color);
     margin-bottom: 20px;
 }
 
@@ -335,8 +338,9 @@ textarea {
 .result-section {
     background-color: var(--card-bg);
     padding: 30px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    border: 1px solid var(--border-color);
 }
 
 .result-content {
@@ -1448,11 +1452,25 @@ footer {
 /* ========== Log Upload Section Styles ========== */
 .log-upload-section {
     background-color: var(--card-bg);
-    padding: 30px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    padding: 32px;
+    border-radius: 16px;
+    box-shadow: none;
+    border: 2px dashed rgba(0, 71, 186, 0.2);
     margin-bottom: 20px;
-    border-left: 4px solid var(--lcw-warning);
+    text-align: center;
+}
+
+.log-upload-section h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.log-upload-section > p,
+.log-upload-section > small {
+    font-size: 14px;
+    color: var(--text-secondary);
 }
 
 
@@ -1465,32 +1483,35 @@ footer {
 
 /* Upload Dropzone */
 .upload-dropzone {
-    border: 2px dashed var(--border-color);
-    border-radius: 8px;
-    padding: 40px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 48px 24px;
     text-align: center;
-    background-color: var(--lcw-light-gray);
+    background-color: var(--bg-color);
     cursor: pointer;
     transition: all 0.3s ease;
+    max-width: 480px;
+    margin: 16px auto 0;
 }
 
 .upload-dropzone:hover {
     border-color: var(--lcw-blue);
-    background-color: #E8EAF6;
+    background-color: rgba(0, 71, 186, 0.03);
 }
 
 .upload-dropzone.drag-over {
     border-color: var(--lcw-blue);
     background-color: #E3F2FD;
-    transform: scale(1.02);
+    transform: scale(1.01);
 }
 
 .upload-dropzone svg {
-    margin-bottom: 15px;
+    margin-bottom: 12px;
+    opacity: 0.7;
 }
 
 .upload-dropzone p {
-    font-size: 16px;
+    font-size: 14px;
     color: var(--text-secondary);
     margin-bottom: 5px;
 }
@@ -1664,11 +1685,12 @@ footer {
 /* Anomaly Results Section */
 .anomaly-results {
     background-color: var(--card-bg);
-    padding: 30px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    padding: 0;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    border: 1px solid var(--border-color);
     margin-bottom: 20px;
-    border-left: 4px solid var(--lcw-error);
+    overflow: hidden;
 }
 
 
@@ -1677,6 +1699,7 @@ footer {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    padding: 24px;
 }
 
 /* Anomaly Summary */
@@ -2260,18 +2283,21 @@ footer {
 /* ========== Konuşma Geçmişi Stilleri ========== */
 .history-section {
     background-color: var(--card-bg);
-    padding: 30px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    padding: 0;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    border: 1px solid var(--border-color);
     margin-bottom: 20px;
-    border-left: 4px solid var(--lcw-info);
+    overflow: hidden;
 }
 
 .history-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    padding: 20px 24px;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .history-header h3 {
@@ -2297,9 +2323,9 @@ footer {
 .history-tabs {
     display: flex;
     gap: 10px;
-    margin-bottom: 20px;
-    border-bottom: 2px solid var(--border-color);
-    padding-bottom: 10px;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border-color);
+    padding: 12px 24px;
 }
 
 .history-tab {
@@ -2329,6 +2355,7 @@ footer {
 /* History Content */
 .history-content {
     min-height: 200px;
+    padding: 16px 24px;
 }
 
 .history-empty {
@@ -10194,9 +10221,9 @@ input:checked + .toggle-slider:before {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid #e0e0e0;
+    margin-bottom: 0;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .expand-controls {
@@ -12835,21 +12862,22 @@ mark.text-highlight:hover {
    Not: Mevcut kurallara dokunulmaz, sadece yeni kurallar eklenir.
    ============================================================ */
 
-/* LCWGPT Sidebar — fixed position, sayfanin en saginda */
+/* LCWGPT Sidebar — Figma rounded card stili */
 .lcwgpt-sidebar {
     position: fixed;
-    right: 0;
-    top: 0;
-    width: 380px;
-    height: 100vh;
-    border-left: 1px solid var(--border-color);
+    right: 16px;
+    top: 80px;
+    width: 340px;
+    height: calc(100vh - 96px);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
     background-color: var(--card-bg);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: -4px 0 20px rgba(0,0,0,0.12);
-    z-index: 1000;
-    transform: translateX(100%);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    z-index: 40;
+    transform: translateX(calc(100% + 32px));
     visibility: hidden;
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
                 visibility 0.3s;
@@ -12869,25 +12897,28 @@ mark.text-highlight:hover {
     position: sticky;
     top: 0;
     z-index: 30;
-    background-color: var(--card-bg);
-    border-bottom: 2px solid var(--lcw-blue);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    background-color: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-color);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: background-color 0.2s, box-shadow 0.2s;
 }
 
 .app-header-inner {
-    max-width: 1200px;
+    max-width: 1600px;
     margin: 0 auto;
-    padding: 0 20px;
+    padding: 0 24px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 60px;
+    height: 64px;
 }
 
 .app-header-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
 }
 
 .app-header-left .logo {
@@ -12940,11 +12971,15 @@ mark.text-highlight:hover {
     font-size: 13px;
 }
 
-/* Header icindeki status daha kompakt */
+/* Header icindeki status — Figma pill stili */
 .app-header .status {
     margin-top: 0;
-    padding: 4px 12px;
+    padding: 5px 14px;
     font-size: 12px;
+    border-radius: 9999px;
+    border: 1px solid var(--border-color);
+    background-color: rgba(248, 250, 252, 0.8);
+    backdrop-filter: blur(4px);
 }
 
 /* Responsive header */
@@ -12967,8 +13002,8 @@ mark.text-highlight:hover {
 
 .analysis-config-section {
     background-color: var(--card-bg);
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     border: 1px solid var(--border-color);
     margin-bottom: 20px;
     overflow: hidden;
@@ -12992,12 +13027,14 @@ mark.text-highlight:hover {
 }
 
 .config-status-badge {
-    background-color: var(--lcw-info-bg);
-    color: var(--lcw-blue);
-    padding: 3px 12px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
+    background-color: var(--lcw-success-bg);
+    color: #15803d;
+    padding: 4px 14px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .analysis-config-body {
@@ -13007,9 +13044,10 @@ mark.text-highlight:hover {
 .config-label {
     display: block;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 700;
     color: var(--text-secondary);
-    margin-bottom: 12px;
+    margin-bottom: 14px;
+    text-transform: none;
 }
 
 .config-field {
@@ -13043,17 +13081,18 @@ mark.text-highlight:hover {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 16px 12px;
+    gap: 12px;
+    padding: 24px 16px;
     border: 2px solid var(--border-color);
-    border-radius: 10px;
+    border-radius: 12px;
     text-align: center;
     transition: all 0.2s ease;
     background-color: var(--card-bg);
 }
 
 .datasource-card-inner:hover {
-    background-color: var(--bg-color);
-    border-color: #bbb;
+    border-color: var(--lcw-blue);
+    background-color: var(--card-bg);
 }
 
 .datasource-card input[type="radio"]:checked + .datasource-card-inner {
@@ -13063,20 +13102,35 @@ mark.text-highlight:hover {
 }
 
 .datasource-icon {
-    font-size: 28px;
-    margin-bottom: 8px;
+    font-size: 24px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-color);
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.datasource-card-inner:hover .datasource-icon {
+    background-color: rgba(0, 71, 186, 0.08);
+}
+
+.datasource-card input[type="radio"]:checked + .datasource-card-inner .datasource-icon {
+    background-color: rgba(0, 71, 186, 0.15);
 }
 
 .datasource-title {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 700;
     color: var(--text-primary);
 }
 
 .datasource-desc {
     font-size: 11px;
     color: var(--text-secondary);
-    margin-top: 2px;
+    margin-top: -4px;
 }
 
 /* Time Range Pills — Figma pill butonlari */
@@ -13099,17 +13153,17 @@ mark.text-highlight:hover {
 .timerange-pill span {
     display: inline-block;
     padding: 8px 18px;
-    font-size: 13px;
-    font-weight: 500;
-    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    background-color: var(--card-bg);
+    background-color: var(--bg-color);
     transition: all 0.2s ease;
 }
 
 .timerange-pill span:hover {
-    background-color: var(--bg-color);
+    background-color: #e2e8f0;
     border-color: #bbb;
 }
 
@@ -13117,29 +13171,36 @@ mark.text-highlight:hover {
     background-color: var(--lcw-blue);
     color: white;
     border-color: var(--lcw-blue);
-    box-shadow: 0 2px 8px rgba(0, 71, 186, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 71, 186, 0.25);
+    font-weight: 700;
 }
 
-/* Start Analysis Button */
+/* Start Analysis Button — Figma layout */
 .config-actions {
-    padding-top: 20px;
-    border-top: 1px solid var(--border-color);
+    padding-top: 24px;
+    border-top: none;
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .btn-start-analysis {
-    padding: 12px 32px !important;
+    width: 100%;
+    padding: 16px 32px !important;
     font-size: 15px !important;
-    font-weight: 600 !important;
-    border-radius: 8px !important;
-    box-shadow: 0 4px 12px rgba(0, 71, 186, 0.3);
+    font-weight: 700 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 6px 20px rgba(0, 71, 186, 0.3);
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
 }
 
 .btn-start-analysis:hover {
     transform: translateY(-1px);
-    box-shadow: 0 6px 16px rgba(0, 71, 186, 0.4);
+    box-shadow: 0 8px 24px rgba(0, 71, 186, 0.4);
 }
 
 /* Responsive datasource cards */
@@ -13153,14 +13214,14 @@ mark.text-highlight:hover {
    FIGMA LAYOUT — LCWGPT Sidebar
    ============================================================ */
 
-/* Sidebar Header */
+/* Sidebar Header — Figma stil */
 .sidebar-header {
     padding: 14px 16px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background-color: var(--bg-color);
+    background-color: rgba(248, 250, 252, 0.5);
 }
 
 .sidebar-header-left {
@@ -13170,7 +13231,14 @@ mark.text-highlight:hover {
 }
 
 .sidebar-ai-icon {
-    font-size: 20px;
+    font-size: 16px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--lcw-blue);
+    border-radius: 50%;
 }
 
 .sidebar-title {
@@ -13274,9 +13342,9 @@ mark.text-highlight:hover {
     align-items: center;
     gap: 8px;
     background-color: var(--bg-color);
-    border: 1px solid var(--border-color);
-    border-radius: 20px;
-    padding: 2px 4px 2px 16px;
+    border: none;
+    border-radius: 12px;
+    padding: 4px 4px 4px 16px;
 }
 
 .sidebar-input-wrapper input {
@@ -13290,37 +13358,38 @@ mark.text-highlight:hover {
 }
 
 .sidebar-send-btn {
-    background: none;
+    background-color: var(--lcw-blue);
     border: none;
-    color: var(--lcw-blue);
+    color: white;
     cursor: pointer;
-    font-size: 16px;
-    padding: 6px 10px;
-    border-radius: 50%;
+    font-size: 14px;
+    padding: 8px 10px;
+    border-radius: 8px;
     transition: background-color 0.2s;
+    flex-shrink: 0;
 }
 
 .sidebar-send-btn:hover {
-    background-color: rgba(0, 71, 186, 0.1);
+    background-color: var(--lcw-internet-blue);
 }
 
-/* Sidebar Toggle Button (header'a eklenecek) */
+/* Sidebar Toggle Button — Figma rounded pill stili */
 .sidebar-toggle-btn {
     background: none;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 6px 12px;
+    border-radius: 9999px;
+    padding: 6px 14px;
     cursor: pointer;
     font-size: 13px;
     color: var(--text-secondary);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     transition: all 0.2s;
 }
 
 .sidebar-toggle-btn:hover {
-    background-color: var(--bg-color);
+    background-color: rgba(0, 71, 186, 0.06);
     border-color: var(--lcw-blue);
     color: var(--lcw-blue);
 }
@@ -13429,23 +13498,25 @@ mark.text-highlight:hover {
 .processing-overlay {
     position: fixed;
     inset: 0;
-    z-index: 50;
-    background-color: rgba(17, 24, 39, 0.8);
-    backdrop-filter: blur(4px);
+    z-index: 60;
+    background-color: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 16px;
 }
 
 .processing-modal {
-    background-color: #1f2937;
-    border-radius: 16px;
-    border: 1px solid #374151;
-    max-width: 480px;
-    width: 90%;
-    padding: 36px;
-    color: white;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    background-color: var(--card-bg);
+    border-radius: 24px;
+    border: none;
+    max-width: 420px;
+    width: 100%;
+    padding: 32px;
+    color: var(--text-primary);
+    box-shadow: 0 25px 50px rgba(0,0,0,0.25);
 }
 
 .processing-header {
@@ -13468,12 +13539,12 @@ mark.text-highlight:hover {
     font-size: 20px;
     font-weight: 700;
     margin: 8px 0 4px;
-    color: white;
+    color: var(--text-primary);
 }
 
 .processing-subtitle {
     font-size: 13px;
-    color: #9ca3af;
+    color: var(--text-secondary);
 }
 
 .processing-steps {
@@ -13492,13 +13563,13 @@ mark.text-highlight:hover {
 }
 
 .processing-step.completed {
-    background-color: rgba(16, 185, 129, 0.08);
+    background-color: rgba(16, 185, 129, 0.06);
     border: 1px solid rgba(16, 185, 129, 0.15);
 }
 
 .processing-step.active {
-    background-color: rgba(0, 71, 186, 0.12);
-    border: 1px solid rgba(0, 71, 186, 0.3);
+    background-color: rgba(0, 71, 186, 0.06);
+    border: 1px solid rgba(0, 71, 186, 0.2);
 }
 
 .processing-step.pending {
@@ -13530,7 +13601,7 @@ mark.text-highlight:hover {
 }
 
 .step-pending {
-    border: 1.5px solid #4b5563;
+    border: 1.5px solid var(--border-color);
     background: transparent;
 }
 
@@ -13550,11 +13621,11 @@ mark.text-highlight:hover {
 .step-label {
     font-size: 13px;
     font-weight: 500;
-    color: #e5e7eb;
+    color: var(--text-primary);
 }
 
 .processing-step.pending .step-label {
-    color: #6b7280;
+    color: var(--text-secondary);
 }
 
 .step-label-wrapper {
@@ -13564,7 +13635,7 @@ mark.text-highlight:hover {
 .step-progress-bar {
     width: 100%;
     height: 4px;
-    background-color: #374151;
+    background-color: var(--bg-color);
     border-radius: 2px;
     margin-top: 6px;
     overflow: hidden;
@@ -13581,5 +13652,100 @@ mark.text-highlight:hover {
     text-align: center;
     margin-top: 20px;
     font-size: 12px;
-    color: #9ca3af;
+    color: var(--text-secondary);
+}
+
+/* ============================================================
+   FIGMA LAYOUT — DBA Table Modernization
+   ============================================================ */
+
+.dba-explorer-panel {
+    margin-top: 0 !important;
+    border-top: 1px solid var(--border-color) !important;
+    padding: 24px !important;
+}
+
+.dba-explorer-panel .panel-header {
+    margin-bottom: 16px !important;
+}
+
+.dba-explorer-panel .panel-header h4 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--lcw-blue);
+}
+
+.dba-explorer-panel .filter-controls {
+    background: var(--bg-color) !important;
+    padding: 16px !important;
+    border-radius: 12px !important;
+    border: 1px solid var(--border-color) !important;
+}
+
+/* DBA Tablo stili — Figma modern tablo */
+.dba-explorer-panel table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.dba-explorer-panel table thead tr {
+    background: rgba(248, 250, 252, 0.8) !important;
+    text-align: left !important;
+}
+
+.dba-explorer-panel table thead th {
+    padding: 12px 16px !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    color: var(--text-secondary) !important;
+}
+
+.dba-explorer-panel table tbody tr {
+    transition: background-color 0.15s;
+}
+
+.dba-explorer-panel table tbody tr:hover {
+    background-color: rgba(248, 250, 252, 0.6) !important;
+}
+
+.dba-explorer-panel table tbody td {
+    padding: 12px 16px !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04) !important;
+    vertical-align: top;
+}
+
+/* DBA Result Row — Figma'daki satır stili */
+.dba-result-row td {
+    padding: 12px 16px !important;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04) !important;
+}
+
+.dba-result-row:hover {
+    background-color: rgba(248, 250, 252, 0.6);
+}
+
+/* Component badge — Figma modern stil */
+.dba-result-row .component-badge {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    background-color: var(--bg-color);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+/* Log mesaj hücresi */
+.log-message-cell {
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
