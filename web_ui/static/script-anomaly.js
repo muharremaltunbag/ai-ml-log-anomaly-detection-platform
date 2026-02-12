@@ -1421,8 +1421,12 @@ function displayAnomalyResults(result) {
     // Kritik anomaliler
     if (criticalAnomalies.length > 0) {
         console.log('[DEBUG FRONTEND] About to render critical anomalies section with', criticalAnomalies.length, 'items');
+        const totalCriticalCount = mlData.total_critical_count || criticalAnomalies.length;
+        const truncationNote = totalCriticalCount > criticalAnomalies.length
+            ? ` <span class="truncation-note" style="font-size:0.85em;color:#e67e22;">(${criticalAnomalies.length} / ${totalCriticalCount} gösteriliyor)</span>`
+            : '';
         html += '<div class="critical-anomalies-section expanded-view">'; // expanded-view class'ı eklendi
-        html += `<h3>⚠️ Kritik Anomaliler (${criticalAnomalies.length} toplam)</h3>`;
+        html += `<h3>⚠️ Kritik Anomaliler (${totalCriticalCount} toplam)${truncationNote}</h3>`;
         html += `
             <div class="view-controls">
                 <button class="btn-view-mode" onclick="toggleViewMode('compact')">📱 Kompakt</button>

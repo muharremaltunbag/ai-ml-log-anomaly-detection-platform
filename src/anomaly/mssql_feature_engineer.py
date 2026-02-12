@@ -185,6 +185,12 @@ class MSSQLFeatureEngineer:
             if X[col].dtype == bool:
                 X[col] = X[col].astype(int)
 
+        # Zero-variance feature'ları drop et — sabit kolonlar modeli zayıflatır
+        zero_var_cols = [col for col in X.columns if X[col].nunique() <= 1]
+        if zero_var_cols:
+            logger.warning(f"Dropping {len(zero_var_cols)} zero-variance features: {zero_var_cols}")
+            X = X.drop(columns=zero_var_cols)
+
         logger.info(f"Feature engineering completed. Shape: {X.shape}")
         logger.info(f"Features: {list(X.columns)}")
 
@@ -453,23 +459,30 @@ class MSSQLFeatureEngineer:
         Burst/Pattern features extraction
 
         MSSQL için:
-        - login_burst_flag
-        - extreme_burst_flag
+        - login_burst_flag (yalnızca login event'lerde tetiklenir)
+        - extreme_burst_flag (yalnızca login event'lerde tetiklenir)
         - burst_density
         - failed_login_ratio_1h
         """
         try:
-            # Login burst detection
+            # Login burst detection — yalnızca login event'ler için
+            # Non-login loglar (error, system vb.) arasındaki kısa zaman aralığı
+            # burst değildir; bu loglar doğası gereği rapid-fire gelir.
+            is_login = df.get('is_login_event', pd.Series(0, index=df.index))
+
             if 'time_since_last_log' in df.columns:
                 burst_threshold = self.thresholds.get('login_burst_seconds', 1.0)
-                df['login_burst_flag'] = (
+                raw_burst = (
                     (df['time_since_last_log'] > 0) &
                     (df['time_since_last_log'] < burst_threshold)
                 ).astype(int)
+                # Gate: sadece login event'ler için burst flag'i aktif
+                df['login_burst_flag'] = (raw_burst & (is_login == 1)).astype(int)
 
-                # Extreme burst flag (aynı saniyede)
+                # Extreme burst flag (aynı saniyede) — login gated
                 extreme_threshold = self.thresholds.get('extreme_burst_seconds', 0.1)
-                df['extreme_burst_flag'] = (df['time_since_last_log'] < extreme_threshold).astype(int)
+                raw_extreme = (df['time_since_last_log'] < extreme_threshold).astype(int)
+                df['extreme_burst_flag'] = (raw_extreme & (is_login == 1)).astype(int)
 
                 # Burst density (son 100 log içindeki burst yoğunluğu)
                 df['burst_density'] = df['extreme_burst_flag'].rolling(window=100, min_periods=1).mean()
@@ -493,7 +506,8 @@ class MSSQLFeatureEngineer:
                 df['failed_login_ratio_1h'] = 0
                 df['login_count_1h'] = 0
 
-            logger.info(f"[OK] Burst features extracted")
+            login_count = int(is_login.sum())
+            logger.info(f"[OK] Burst features extracted (login-gated, {login_count} login events)")
             logger.info(f"   Login bursts: {df['login_burst_flag'].sum()}")
             logger.info(f"   Extreme bursts: {df['extreme_burst_flag'].sum()}")
             logger.info(f"   Avg failed login ratio: {df['failed_login_ratio_1h'].mean():.3f}")

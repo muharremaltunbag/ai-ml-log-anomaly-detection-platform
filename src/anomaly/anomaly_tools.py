@@ -2148,10 +2148,18 @@ class AnomalyDetectionTools:
             server_desc = f" ({host_filter})" if host_filter else ""
             time_desc = f"son {last_hours} saat" if not (start_time and end_time) else f"{start_time} - {end_time}"
 
+            # Confidence flag — anomali oranı çok yüksekse uyar
+            low_confidence = anomaly_rate > 50
+            if low_confidence:
+                logger.warning(f"MSSQL anomaly rate very high ({anomaly_rate:.1f}%) — results may have low confidence")
+
             description = f"MSSQL Log Anomali Analizi{server_desc}\n\n"
             description += f"• Analiz edilen log: {len(df):,}\n"
             description += f"• Zaman aralığı: {time_desc}\n"
             description += f"• Tespit edilen anomali: {anomaly_count:,} ({anomaly_rate:.2f}%)\n"
+
+            if low_confidence:
+                description += f"• ⚠️ Güvenilirlik: DÜŞÜK — anomali oranı %{anomaly_rate:.0f} (beklenen <%25). İlk eğitim veya düşük log çeşitliliği nedeniyle olabilir.\n"
 
             # Login istatistikleri
             if 'is_failed_login' in df_enriched.columns:
@@ -2197,6 +2205,7 @@ class AnomalyDetectionTools:
                     },
                     "logs_analyzed": len(df),
                     "summary": analysis.get("summary", {}),
+                    "total_critical_count": len(critical_anomalies),
                     "critical_anomalies": critical_anomalies[:50],
                     "mssql_specific": mssql_specific_analysis,
                     "temporal_analysis": analysis.get("temporal_analysis", {}),
@@ -2414,7 +2423,9 @@ Bu verileri analiz et ve JSON formatında yanıt ver."""
 
         # Anomali oranına göre
         anomaly_rate = analysis.get("summary", {}).get("anomaly_rate", 0)
-        if anomaly_rate > 5:
+        if anomaly_rate > 50:
+            suggestions.append("⚠️ DÜŞÜK GÜVENİLİRLİK: Anomali oranı çok yüksek (%{:.0f}). İlk eğitim veya düşük log çeşitliliği nedeniyle sonuçlar güvenilir olmayabilir. Daha geniş zaman aralığı veya farklı host ile tekrar deneyin.".format(anomaly_rate))
+        elif anomaly_rate > 5:
             suggestions.append("🔴 ACİL: Yüksek anomali oranı! MSSQL güvenlik ekibine bildirin.")
         elif anomaly_rate > 2:
             suggestions.append("🟡 ORTA: Normal üstü anomali. Login pattern'lerini inceleyin.")

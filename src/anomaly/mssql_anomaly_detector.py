@@ -338,11 +338,11 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
             feature_score += 20
             factors.append("Failed Login: +20")
 
-        # 3g. Extreme burst (login olmasa bile yoğun trafik)
+        # 3g. Extreme login burst (yoğun login trafiği sinyali)
         elif (row_features.get('extreme_burst_flag', 0) == 1 and
               row_features.get('burst_density', 0) > 0.5):
             feature_score += 18
-            factors.append("Extreme Burst Density: +18")
+            factors.append("Extreme Login Burst Density: +18")
 
         # 3h. Rare IP + non-service account → olağandışı erişim
         elif (row_features.get('is_rare_client_ip', 0) == 1 and
