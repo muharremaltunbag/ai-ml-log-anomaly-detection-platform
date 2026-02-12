@@ -639,8 +639,15 @@ class MongoDBAnomalyDetector:
                 self.historical_data['features'] = X_new.copy().reset_index(drop=True)
 
                 # Predictions ve scores'u hesapla ve sakla
-                predictions = self.model.predict(X_new)
-                scores = self.model.score_samples(X_new)
+                # Model scaled veri ile eğitildi; predict için de scale etmemiz gerekiyor
+                if self.is_scaler_fitted:
+                    X_for_predict = pd.DataFrame(
+                        self.scaler.transform(X_new), columns=X_new.columns
+                    )
+                else:
+                    X_for_predict = X_new
+                predictions = self.model.predict(X_for_predict)
+                scores = self.model.score_samples(X_for_predict)
 
                 self.historical_data['predictions'] = predictions
                 self.historical_data['scores'] = scores
@@ -682,8 +689,16 @@ class MongoDBAnomalyDetector:
                 gc.collect()
 
                 # Yeni predictions ve scores hesapla (güncel buffer için)
-                predictions = self.model.predict(self.historical_data['features'])
-                scores = self.model.score_samples(self.historical_data['features'])
+                # Model scaled veri ile eğitildi; predict için de scale etmemiz gerekiyor
+                if self.is_scaler_fitted:
+                    buffer_scaled = pd.DataFrame(
+                        self.scaler.transform(self.historical_data['features']),
+                        columns=self.historical_data['features'].columns
+                    )
+                else:
+                    buffer_scaled = self.historical_data['features']
+                predictions = self.model.predict(buffer_scaled)
+                scores = self.model.score_samples(buffer_scaled)
 
                 self.historical_data['predictions'] = predictions
                 self.historical_data['scores'] = scores
@@ -1604,7 +1619,7 @@ class MongoDBAnomalyDetector:
                 
                 # YENİ: Server bilgisini kontrol et ve güncelle
                 loaded_server = model_data.get('server_name', None)
-                if server_name and loaded_server != server_name:
+                if server_name and loaded_server and loaded_server.lower() != server_name.lower():
                     logger.warning(f"Model was trained for server '{loaded_server}' but loading for '{server_name}'")
                 
                 # Current server'ı güncelle

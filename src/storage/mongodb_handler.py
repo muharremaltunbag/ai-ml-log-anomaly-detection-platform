@@ -315,9 +315,19 @@ class MongoDBHandler:
             
             if filters:
 
-                # Analysis ID filter (exact match)
+                # Analysis ID filter (exact match, with _id fallback for legacy documents)
                 if "analysis_id" in filters:
-                    query["analysis_id"] = filters["analysis_id"]
+                    aid = filters["analysis_id"]
+                    # Legacy documents may not have analysis_id field;
+                    # frontend sends MongoDB _id (ObjectId) as storage_id fallback.
+                    # If the value is a valid ObjectId, search both fields.
+                    try:
+                        from bson import ObjectId
+                        oid = ObjectId(aid)
+                        query["$or"] = [{"analysis_id": aid}, {"_id": oid}]
+                    except Exception:
+                        # Not a valid ObjectId (e.g. "analysis_0fefa208896f") — standard lookup
+                        query["analysis_id"] = aid
 
                 # Time range filter
                 if "start_date" in filters or "end_date" in filters:

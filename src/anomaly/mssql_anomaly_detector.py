@@ -585,8 +585,12 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
                 safe_server_name = self._normalize_server_name(server_name)
                 path = f'models/mssql_isolation_forest_{safe_server_name}.pkl'
             else:
+                safe_server_name = None
                 path = self.output_config.get('model_path', 'models/mssql_isolation_forest.pkl')
-        return super().save_model(path=path, server_name=server_name)
+        else:
+            safe_server_name = self._normalize_server_name(server_name) if server_name else server_name
+        # Pass normalized server_name to parent to avoid case mismatch on reload
+        return super().save_model(path=path, server_name=safe_server_name or server_name)
 
     def load_model(self, path: str = None, server_name: str = None) -> bool:
         """
