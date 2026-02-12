@@ -469,28 +469,28 @@ textarea {
 }
 
 .result-content {
-    margin-top: 20px;
-    background-color: #FAFAFA;
-    padding: 25px;
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
+    margin-top: 0;
+    background-color: var(--card-bg);
+    padding: 24px;
+    border-radius: 0 0 16px 16px;
+    border: none;
+    border-top: 1px solid var(--border-color);
     /* Viewport-responsive height */
-    max-height: 70vh;
+    max-height: 80vh;
     min-height: 400px;
     overflow-y: auto;
     overflow-x: hidden;
-    /* : Smooth scrolling */
     scroll-behavior: smooth;
 }
 
 /*  Result Content Scrollbar Styling */
 .result-content::-webkit-scrollbar {
-    width: 10px;
+    width: 6px;
 }
 
 .result-content::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 5px;
+    background: transparent;
+    border-radius: 3px;
 }
 
 .result-content::-webkit-scrollbar-thumb {
@@ -6036,11 +6036,12 @@ footer {
 /* ========== SADELLEŞTIRILMIŞ ML METRICS STYLES ========== */
 
 .ml-metrics-unified {
-    background: var(--lcw-white);
-    border-radius: 12px;
-    padding: 30px;
-    margin: 20px 0;
-    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.08);
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 32px;
+    margin: 24px 0;
+    border: 1px solid var(--border-color);
+    box-shadow: none;
 }
 
 .ml-metrics-unified h3 {
@@ -8625,11 +8626,12 @@ footer {
 
 /* Critical Anomaly Card with Severity */
 .critical-anomaly-card {
-    border: 2px solid var(--severity-color);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--severity-color);
     border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 12px;
-    background: white;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    background: var(--card-bg);
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
@@ -8654,13 +8656,16 @@ footer {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .anomaly-info {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
 .anomaly-time {
@@ -9424,14 +9429,16 @@ message-container {
 .log-message-pre {
     white-space: pre-wrap;
     word-wrap: break-word;
-    font-family: 'Courier New', monospace;
-    font-size: 12px;
-    line-height: 1.5;
-    background: #f5f5f5;
-    padding: 10px;
-    border-radius: 4px;
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    background: var(--bg-color);
+    padding: 16px;
+    border-radius: 10px;
     max-width: 100%;
     overflow-x: auto;
+    margin: 0;
+    border: 1px solid var(--border-color);
 }
 
 .message-text.expandable {
@@ -10722,11 +10729,12 @@ input:checked + .toggle-slider:before {
 
 /* Critical Section Enhanced */
 .critical-anomalies-section {
-    background: #fafbfc;
-    border-radius: 12px;
-    padding: 25px;
-    margin: 20px 0;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    background: var(--bg-color);
+    border-radius: 16px;
+    padding: 32px;
+    margin: 24px 0;
+    box-shadow: none;
+    border: 1px solid var(--border-color);
 }
 
 .critical-anomalies-section h3 {
@@ -13086,9 +13094,10 @@ mark.text-highlight:hover {
 }
 
 .app-header-left .logo {
-    height: 40px;
+    height: 44px;
     display: flex;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .app-header-left .logo svg {
@@ -13096,11 +13105,25 @@ mark.text-highlight:hover {
     width: auto;
 }
 
+.app-header-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
 .app-header-title {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
-    color: var(--lcw-blue);
+    color: var(--text-primary);
     letter-spacing: -0.3px;
+    line-height: 1.2;
+}
+
+.app-header-subtitle {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    letter-spacing: 0.2px;
 }
 
 .app-header-right {

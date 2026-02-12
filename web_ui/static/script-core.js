@@ -384,6 +384,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Sidebar varsayilan olarak acik gelsin
+    const sidebar = document.getElementById('lcwgptSidebar');
+    if (sidebar && !sidebar.classList.contains('open')) {
+        sidebar.classList.add('open');
+    }
+
     console.log('✅ LCWGPT Sidebar event listeners initialized');
 });
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MongoDB Asistanı | LC Waikiki</title>
+    <title>Log Anomaly Detection | LC Waikiki</title>
     <link rel="stylesheet" href="/static/style.css">
     <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230047BA'/><text x='16' y='24' font-family='Arial' font-size='20' fill='white' text-anchor='middle'>LC</text></svg>">
 </head>
@@ -16,14 +16,16 @@
             <!-- Sol: Logo + Baslik -->
             <div class="app-header-left">
                 <div class="logo">
-                    <svg width="120" height="40" viewBox="0 0 150 50" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="0" y="10" width="40" height="30" fill="#0047BA" rx="5"/>
-                        <text x="20" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white" text-anchor="middle">LC</text>
-                        <text x="60" y="30" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#0047BA">WAIKIKI</text>
+                    <svg width="160" height="44" viewBox="0 0 180 50" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="0" y="6" width="44" height="34" fill="#0047BA" rx="6"/>
+                        <text x="22" y="28" font-family="Arial, sans-serif" font-size="17" font-weight="bold" fill="white" text-anchor="middle">LC</text>
+                        <text x="62" y="30" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#0047BA">WAIKIKI</text>
                     </svg>
                 </div>
-                <span class="app-header-title">DBA Anomaly Sentinel</span>
-                <span class="environment-badge">TEST ORTAMI</span>
+                <div class="app-header-title-group">
+                    <span class="app-header-title">Log Anomaly Detection</span>
+                    <span class="app-header-subtitle">ML-Powered Analysis Platform</span>
+                </div>
             </div>
 
             <!-- Sag: Status + API Key + Baglan -->
@@ -261,22 +263,19 @@
                 </div>
             </div>
 
-            <!-- Sorgu Alanı -->
-            <section class="query-section">
+            <!-- Sorgu Alanı — Görsel olarak gizli, sidebar chat bu input'u kullanıyor -->
+            <section class="query-section" style="display: none;" aria-hidden="true">
                 <div class="query-input-wrapper">
-                    <textarea 
-                        id="queryInput" 
-                        placeholder="Sorgunuzu doğal dilde yazın... Örnek: users koleksiyonunda yaşı 30'dan büyük olan kullanıcıları listele"
+                    <textarea
+                        id="queryInput"
+                        placeholder="Sorgunuzu doğal dilde yazın..."
                         rows="3"
                     ></textarea>
                     <button id="queryBtn" class="btn btn-primary">
                         <span>SORGUYU ÇALIŞTIR</span>
                     </button>
                 </div>
-                
-                <!-- Örnek Sorgular -->
                 <div class="examples">
-                    <p>Hızlı erişim için örnek sorgular:</p>
                     <div class="example-chips">
                         <span class="chip" data-query="Mevcut koleksiyonları listele">Koleksiyon Listesi</span>
                         <span class="chip" data-query="users koleksiyonunun şemasını göster">Şema Görüntüleme</span>
@@ -638,7 +637,7 @@
 </div><!-- /appMainColumn -->
 
 <!-- ===== LCWGPT SIDEBAR ===== -->
-<aside id="lcwgptSidebar" class="lcwgpt-sidebar">
+<aside id="lcwgptSidebar" class="lcwgpt-sidebar open">
     <!-- Sidebar Header -->
     <div class="sidebar-header">
         <div class="sidebar-header-left">
