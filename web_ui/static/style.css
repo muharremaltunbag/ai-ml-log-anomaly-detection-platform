@@ -64,6 +64,9 @@ body {
     background-color: var(--bg-color);
     color: var(--text-primary);
     line-height: 1.6;
+    display: flex;
+    min-height: 100vh;
+    overflow: hidden;
 }
 
 .container {
@@ -12835,13 +12838,6 @@ mark.text-highlight:hover {
    Not: Mevcut kurallara dokunulmaz, sadece yeni kurallar eklenir.
    ============================================================ */
 
-/* Body flex layout */
-body {
-    display: flex;
-    min-height: 100vh;
-    overflow: hidden;
-}
-
 /* Sol kolon: mevcut tum icerik */
 #appMainColumn {
     flex: 1;
@@ -12866,13 +12862,21 @@ body {
 
 /* Sidebar acikken */
 .lcwgpt-sidebar.open {
-    display: flex;
+    display: flex !important;
 }
 
 /* Responsive: 1024px altinda sidebar gizlenir */
 @media (max-width: 1024px) {
-    .lcwgpt-sidebar {
+    .lcwgpt-sidebar:not(.open) {
         display: none !important;
+    }
+
+    .lcwgpt-sidebar.open {
+        position: fixed;
+        right: 0;
+        top: 0;
+        z-index: 100;
+        box-shadow: -4px 0 20px rgba(0,0,0,0.15);
     }
 
     body {
