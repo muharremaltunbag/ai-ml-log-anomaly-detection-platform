@@ -8,6 +8,7 @@ import re
 import json
 import logging
 import os
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
@@ -278,8 +279,22 @@ class MSSQLOpenSearchReader:
     """
     OpenSearch'ten MSSQL loglarını okuyan sınıf
 
-    MongoDB OpenSearchProxyReader ile aynı yapı, MSSQL'e özgü parsing
+    MongoDB OpenSearchProxyReader ile aynı yapı, MSSQL'e özgü parsing.
+    Singleton pattern: get_instance() ile paylaşımlı instance kullanılır.
     """
+
+    _instance = None
+    _instance_lock = threading.Lock()
+
+    @classmethod
+    def get_instance(cls, config_path: str = "config/mssql_anomaly_config.json"):
+        """Shared MSSQL reader instance döndürür (Thread-safe)"""
+        with cls._instance_lock:
+            if cls._instance is None:
+                logger.info("Creating GLOBAL MSSQL OpenSearch reader instance...")
+                cls._instance = cls(config_path)
+                cls._instance.connect()
+            return cls._instance
 
     def __init__(self, config_path: str = "config/mssql_anomaly_config.json"):
         """
@@ -537,7 +552,8 @@ class MSSQLOpenSearchReader:
         host_filter: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
-        login_type_filter: Optional[str] = None
+        login_type_filter: Optional[str] = None,
+        logtype_filter: Optional[str] = None
     ) -> pd.DataFrame:
         """
         OpenSearch'ten MSSQL loglarını oku
@@ -549,6 +565,7 @@ class MSSQLOpenSearchReader:
             start_time: Başlangıç zamanı (ISO format)
             end_time: Bitiş zamanı (ISO format)
             login_type_filter: 'succeeded' veya 'failed'
+            logtype_filter: 'Logon', 'Error' vb. (None = tüm loglar)
 
         Returns:
             DataFrame with MSSQL logs
@@ -594,16 +611,30 @@ class MSSQLOpenSearchReader:
                 }
             })
 
-        # Login type filter
+        # Login type filter (succeeded/failed)
         if login_type_filter:
             must_conditions.append({
                 "term": {"logintype.keyword": login_type_filter}
             })
 
-        # Elasticsearch query
-        query = {
-            "size": min(limit, 10000),
-            "sort": [{"@timestamp": "desc"}],
+        # Log type filter (Logon/Error/Backup vb.)
+        if logtype_filter:
+            must_conditions.append({
+                "term": {"logtype.keyword": logtype_filter}
+            })
+
+        # ── search_after pagination ──────────────────────────────
+        # OpenSearch max_result_window = 10000 (varsayılan).
+        # 10K'dan fazla log çekmek için batch'ler halinde search_after.
+        batch_size = min(limit, 10000)  # Her batch max 10K
+        max_batches = 10                # Güvenlik limiti: max 100K log
+
+        base_query = {
+            "size": batch_size,
+            "sort": [
+                {"@timestamp": "desc"},
+                {"_id": "asc"}         # tie-breaker (aynı timestamp için)
+            ],
             "query": {
                 "bool": {
                     "must": must_conditions
@@ -612,34 +643,62 @@ class MSSQLOpenSearchReader:
             "_source": True
         }
 
-        # API çağrısı (_make_request ile - auto-relogin destekli)
-        result = self._make_request(
-            f"{self.index_pattern}/_search",
-            method="POST",
-            body=query
-        )
+        all_records = []
+        search_after = None
 
-        if result is None:
-            logger.error("Search request failed")
-            return pd.DataFrame()
+        for batch_num in range(max_batches):
+            query = base_query.copy()
+            query["size"] = min(batch_size, limit - len(all_records))
 
-        hits = result.get('hits', {}).get('hits', [])
+            if search_after:
+                query["search_after"] = search_after
 
-        logger.info(f"Fetched {len(hits)} MSSQL logs")
+            # API çağrısı
+            result = self._make_request(
+                f"{self.index_pattern}/_search",
+                method="POST",
+                body=query
+            )
+
+            if result is None:
+                logger.error(f"Search request failed at batch {batch_num}")
+                break
+
+            hits = result.get('hits', {}).get('hits', [])
+
+            if not hits:
+                logger.info(f"No more hits at batch {batch_num}")
+                break
+
+            logger.info(f"Batch {batch_num}: fetched {len(hits)} hits "
+                         f"(total so far: {len(all_records) + len(hits)})")
+
+            for hit in hits:
+                source = hit.get('_source', {})
+                record = self._parse_mssql_log(source)
+                record['_id'] = hit.get('_id', '')
+                record['_index'] = hit.get('_index', '')
+                all_records.append(record)
+
+            # search_after: son hit'in sort değerleri
+            last_hit = hits[-1]
+            search_after = last_hit.get('sort')
+            if not search_after:
+                logger.info("No sort values in last hit, stopping pagination")
+                break
+
+            # Limit'e ulaşıldı mı?
+            if len(all_records) >= limit:
+                logger.info(f"Reached limit ({limit}), stopping pagination")
+                break
+
+        logger.info(f"Fetched {len(all_records)} MSSQL logs total")
 
         # DataFrame oluştur
-        if not hits:
+        if not all_records:
             return pd.DataFrame()
 
-        records = []
-        for hit in hits:
-            source = hit.get('_source', {})
-            record = self._parse_mssql_log(source)
-            record['_id'] = hit.get('_id', '')
-            record['_index'] = hit.get('_index', '')
-            records.append(record)
-
-        df = pd.DataFrame(records)
+        df = pd.DataFrame(all_records)
 
         # Timestamp parsing
         if '@timestamp' in df.columns:
@@ -679,8 +738,17 @@ class MSSQLOpenSearchReader:
         if is_grok_failure:
             # Grok failure: message'dan parse et
             message = log_entry['raw_message']
-            log_entry['logtype'] = 'Logon'  # Default, genellikle Logon
-            log_entry['logintype'] = extract_login_status(message)
+            # logtype'ı message içeriğinden çıkar (hardcode 'Logon' YANLIŞ)
+            login_status = extract_login_status(message)
+            if login_status != 'unknown':
+                log_entry['logtype'] = 'Logon'
+            elif AVAILABILITY_GROUP_PATTERN.search(message):
+                log_entry['logtype'] = 'Error'
+            elif DATABASE_ACCESS_ERROR_PATTERN.search(message):
+                log_entry['logtype'] = 'Error'
+            else:
+                log_entry['logtype'] = 'Unknown'
+            log_entry['logintype'] = login_status
             log_entry['username'] = extract_username_from_message(message)
             log_entry['logtime'] = ''  # Parse edilememiş
         else:
@@ -690,6 +758,9 @@ class MSSQLOpenSearchReader:
             log_entry['username'] = source.get('USERNAME', 'unknown')
             log_entry['logtime'] = source.get('logtime', '')
             log_entry['hostuser'] = source.get('hostuser', '')
+
+        # log_level: MSSQL severity bilgisi (Error, Warning, Info vb.)
+        log_entry['log_level'] = source.get('log_level', source.get('loglevel', 'unknown'))
 
         # Zenginleştirme (client IP, auth type, failure reason, etc.)
         log_entry = enrich_mssql_log_entry(log_entry)

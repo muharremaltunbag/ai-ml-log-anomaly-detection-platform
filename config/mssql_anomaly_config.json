@@ -92,6 +92,7 @@
         },
         "features": {
             "enabled_features": [
+                "is_login_event",
                 "is_failed_login",
                 "is_successful_login",
                 "is_local_client",
@@ -100,6 +101,7 @@
                 "is_service_account",
                 "is_domain_user",
                 "is_grok_failure",
+                "is_permission_error",
                 "hour_of_day",
                 "is_weekend",
                 "is_business_hours",

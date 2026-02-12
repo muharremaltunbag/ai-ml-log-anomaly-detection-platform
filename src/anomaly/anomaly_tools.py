@@ -1735,7 +1735,7 @@ class AnomalyDetectionTools:
             return None
 
         try:
-            safe_host = host_filter.replace('.', '_').replace('/', '_') if host_filter else None
+            safe_host = host_filter.lower().replace('.', '_').replace('/', '_') if host_filter else None
             return {
                 "model_version": getattr(mssql_detector, 'model_version', None),
                 "model_path": f"models/mssql_isolation_forest_{safe_host}.pkl" if safe_host else "models/mssql_isolation_forest.pkl",
@@ -2046,15 +2046,20 @@ class AnomalyDetectionTools:
             # =====================================================
             # 1. MSSQL LOG READER - OpenSearch'ten log çekme
             # =====================================================
-            logger.info("Initializing MSSQL OpenSearch Reader...")
-            mssql_reader = MSSQLOpenSearchReader(config_path="config/mssql_anomaly_config.json")
+            logger.info("Initializing MSSQL OpenSearch Reader (singleton)...")
+            mssql_reader = MSSQLOpenSearchReader.get_instance(
+                config_path="config/mssql_anomaly_config.json"
+            )
 
-            if not mssql_reader.connect():
-                logger.error("MSSQL OpenSearch connection failed")
-                return self._format_result(
-                    {"error": "MSSQL OpenSearch bağlantısı kurulamadı"},
-                    "mssql_anomaly_analysis"
-                )
+            if not mssql_reader.is_connected():
+                # Singleton zaten connect() çağırır, ama bağlantı
+                # kopmuş olabilir — yeniden dene
+                if not mssql_reader.connect():
+                    logger.error("MSSQL OpenSearch connection failed")
+                    return self._format_result(
+                        {"error": "MSSQL OpenSearch bağlantısı kurulamadı"},
+                        "mssql_anomaly_analysis"
+                    )
 
             logger.info(f"Reading MSSQL logs from OpenSearch (host={host_filter}, hours={last_hours})")
 
@@ -2205,7 +2210,7 @@ class AnomalyDetectionTools:
                     "server_info": {
                         "server_name": host_filter or "global",
                         "model_status": "existing" if mssql_detector.is_trained else "newly_trained",
-                        "model_path": f"models/mssql_isolation_forest_{host_filter}.pkl" if host_filter else "models/mssql_isolation_forest.pkl",
+                        "model_path": f"models/mssql_isolation_forest_{host_filter.lower()}.pkl" if host_filter else "models/mssql_isolation_forest.pkl",
                         "historical_buffer_size": mssql_detector.historical_data['metadata']['total_samples'] if mssql_detector.historical_data.get('features') is not None else 0,
                         "last_update": mssql_detector.historical_data['metadata'].get('last_update', 'N/A')
                     }

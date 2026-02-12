@@ -140,6 +140,14 @@ class MSSQLFeatureEngineer:
         if 'raw_message' not in df.columns and 'message' in df.columns:
             df['raw_message'] = df['message']
 
+        # Login event flag — logtype alanından (non-login logları ayrıştırmak için)
+        if 'logtype' in df.columns:
+            df['is_login_event'] = (df['logtype'].str.lower() == 'logon').astype(int)
+        else:
+            df['is_login_event'] = 0
+        logger.info(f"[OK] Login events: {df['is_login_event'].sum()} / {len(df)} "
+                     f"({df['is_login_event'].mean()*100:.1f}%)")
+
         # Sırasıyla feature extraction
         df = self.extract_timestamp_features(df)
         df = self.extract_login_features(df)
