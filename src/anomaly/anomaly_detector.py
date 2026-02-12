@@ -707,6 +707,7 @@ class MongoDBAnomalyDetector:
             self.historical_data['metadata']['total_samples'] = len(self.historical_data['features'])
             self.historical_data['metadata']['anomaly_samples'] = int((self.historical_data['predictions'] == -1).sum())
             self.historical_data['metadata']['last_update'] = datetime.now().isoformat()
+            self.historical_data['metadata']['buffer_version'] = 2.0  # Dolu buffer artık v2.0
 
             # İstatistikleri logla
             anomaly_rate = (self.historical_data['predictions'] == -1).mean() * 100
@@ -1651,58 +1652,43 @@ class MongoDBAnomalyDetector:
 
                 logger.info(f"Loaded model version: {model_version}")
 
+                # ── Historical buffer yükleme: yapısal doğrulama ──
+                # model_version'a bağımlı DEĞİL.  Buffer'ın pkl içinde
+                # gerçekten var olup olmadığına ve yapısal bütünlüğüne bakılır.
+                # Bu sayede hem v1.0 hem v2.x buffer'ları güvenle yüklenir.
+                loaded_hist = model_data.get('historical_data')
+
                 logger.info(f"📂 Loading historical buffer check:")
                 logger.info(f"   - model_version: {model_version}")
-                logger.info(f"   - version check (>= 2.0): {model_version >= '2.0'}")
                 logger.info(f"   - 'historical_data' in model_data: {'historical_data' in model_data}")
+                logger.info(f"   - historical_data is dict: {isinstance(loaded_hist, dict)}")
 
-                if (model_version >= '2.0') and ('historical_data' in model_data):
-                    if model_data['historical_data'] is not None:
+                buffer_loaded = False
+                if isinstance(loaded_hist, dict) and loaded_hist.get('features') is not None:
+                    # Yapısal bütünlük kontrolü: metadata dict olmalı
+                    if isinstance(loaded_hist.get('metadata'), dict):
                         logger.info(f"   ✅ historical_data found in model file")
-                        
-                        # Yüklenen veriyi kontrol et
-                        loaded_hist = model_data['historical_data']
-                        logger.info(f"   - features type: {type(loaded_hist.get('features'))}")
-                        logger.info(f"   - metadata: {loaded_hist.get('metadata', {})}")
-                        
-                        if loaded_hist.get('features') is not None:
-                            logger.info(f"   - features shape: {loaded_hist['features'].shape if hasattr(loaded_hist['features'], 'shape') else 'N/A'}")
+                        logger.info(f"   - features type: {type(loaded_hist['features'])}")
+                        logger.info(f"   - metadata: {loaded_hist['metadata']}")
+                        if hasattr(loaded_hist['features'], 'shape'):
+                            logger.info(f"   - features shape: {loaded_hist['features'].shape}")
+                        if hasattr(loaded_hist['features'], 'memory_usage'):
                             buffer_size_mb = loaded_hist['features'].memory_usage(deep=True).sum() / 1024 / 1024
                             logger.info(f"   - features size: {buffer_size_mb:.2f} MB")
-                        else:
-                            logger.warning(f"   ⚠️ historical_data.features is None!")
-                        
+
                         self.historical_data = loaded_hist
-                        logger.info(f"   ✅ Historical buffer loaded: {self.historical_data['metadata']['total_samples']} samples")
+                        # buffer_version yoksa veya eski ise normalize et
+                        self.historical_data['metadata'].setdefault('buffer_version', 1.0)
+                        logger.info(f"   ✅ Historical buffer loaded: {self.historical_data['metadata'].get('total_samples', 'N/A')} samples (buffer_version={self.historical_data['metadata']['buffer_version']})")
+                        buffer_loaded = True
                     else:
-                        logger.warning(f"   ⚠️ historical_data is None in model file")
-                        # Boş buffer oluştur
-                        self.historical_data = {
-                            'features': None,
-                            'predictions': None,
-                            'scores': None,
-                            'metadata': {
-                                'total_samples': 0,
-                                'anomaly_samples': 0,
-                                'last_update': None,
-                                'buffer_version': 1.0
-                            }
-                        }
-                else:
-                    logger.warning(f"   ⚠️ Legacy model format or missing historical_data - initializing empty buffer")
-                    # Legacy model için boş buffer initialize et
-                    self.historical_data = {
-                        'features': None,
-                        'predictions': None,
-                        'scores': None,
-                        'metadata': {
-                            'total_samples': 0,
-                            'anomaly_samples': 0,
-                            'last_update': None,
-                            'buffer_version': 1.0
-                        }
-                    }
-                    # Legacy model için boş buffer initialize et
+                        logger.warning(f"   ⚠️ historical_data.metadata is not a dict — skipping buffer")
+
+                if not buffer_loaded:
+                    reason = "not present" if loaded_hist is None else (
+                        "features is None" if isinstance(loaded_hist, dict) else "not a dict"
+                    )
+                    logger.warning(f"   ⚠️ Historical buffer not loaded ({reason}) — initializing empty buffer")
                     self.historical_data = {
                         'features': None,
                         'predictions': None,
@@ -2690,7 +2676,8 @@ class MongoDBAnomalyDetector:
                 self.historical_data['metadata']['total_samples'] = len(self.historical_data['features'])
                 self.historical_data['metadata']['anomaly_samples'] = anomaly_count
                 self.historical_data['metadata']['last_update'] = datetime.now().isoformat()
-                
+                self.historical_data['metadata']['buffer_version'] = 2.0  # Dolu buffer artık v2.0
+
             except Exception as e:
                 logger.error(f"Error updating historical buffer in train_incremental: {e}")
 
