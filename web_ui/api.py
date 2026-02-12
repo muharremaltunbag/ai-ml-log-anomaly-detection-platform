@@ -4047,8 +4047,9 @@ async def startup_event():
                 logger.info(f"Loading server-specific model for: {server_name}")
 
                 # Model'i yükle - Singleton pattern ile instance al
+                # get_instance() zaten load_model() çağırıyor, tekrar çağırmaya gerek yok
                 detector = MongoDBAnomalyDetector.get_instance(server_name=server_name)
-                success = detector.load_model(str(model_path))
+                success = detector.is_trained  # get_instance() içinde yüklendi
                 # Backward compatibility için global reference'ı güncelle
                 anomaly_detector = detector
 
