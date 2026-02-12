@@ -1021,7 +1021,8 @@ async function handleAnalyzeLog() {
                 işlem: result.işlem || 'anomaly_analysis',
                 isManualAnalysis: true,
                 hasResult: true,
-                childResult: result
+                childResult: result,
+                storage_id: result.storage_info?.analysis_id || undefined
             };
             
             // Global history'ye ekle

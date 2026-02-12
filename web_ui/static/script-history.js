@@ -1170,12 +1170,12 @@ function updateHistoryDisplayWithDBA(filter = 'all') {
                             📊 Sonuçları Göster
                         </button>
                     ` : `
-                        <button class="btn-small" onclick="showHistoryDetail(${item.id})">
+                        <button class="btn-small" onclick="showHistoryDetail('${String(item.id).replace(/'/g, "\\'")}')">
                             👁️ Detay
                         </button>
                     `}
                     ${!item.fromMongoDB ? `
-                        <button class="btn-small" onclick="replayQuery(${item.id})">
+                        <button class="btn-small" onclick="replayQuery('${String(item.id).replace(/'/g, "\\'")}')">
                             🔄 Tekrar
                         </button>
                     ` : ''}
