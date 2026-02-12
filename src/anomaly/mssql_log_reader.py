@@ -298,21 +298,23 @@ class MSSQLOpenSearchReader:
         )
         self.index_pattern = "db-mssql-*"  # MSSQL index pattern
 
+        # Proxy API endpoint (log_reader.py ile aynı)
+        self.proxy_endpoint = f"{self.base_url}/api/console/proxy"
+
         # Session ve auth
         self.session = None
         self.cookies = None
-        self.headers = {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'osd-xsrf': 'true'
-        }
 
         # Auth credentials
-        self.username = os.getenv('OPENSEARCH_USER', '')
+        self.username = os.getenv('OPENSEARCH_USER', 'db_admin')
         self.password = os.getenv('OPENSEARCH_PASS', '')
 
         # Bağlantı durumu
         self._connected = False
+
+        # SSL uyarılarını sustur (log_reader.py ile aynı)
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         logger.info(f"MSSQLOpenSearchReader initialized - Index: {self.index_pattern}")
 
@@ -329,7 +331,7 @@ class MSSQLOpenSearchReader:
             return {}
 
     def _create_session(self) -> requests.Session:
-        """Retry mantığı ile session oluştur"""
+        """Retry mantığı ile session oluştur (log_reader.py ile aynı yapı)"""
         session = requests.Session()
 
         retry_strategy = Retry(
@@ -344,7 +346,15 @@ class MSSQLOpenSearchReader:
         session.mount("https://", adapter)
 
         # SSL verification
-        session.verify = False  # Production'da True olmalı
+        session.verify = False
+
+        # Default headers (log_reader.py ile aynı)
+        session.headers.update({
+            'Content-Type': 'application/json',
+            'osd-version': '2.6.0',
+            'Referer': f'{self.base_url}/app/home',
+            'Origin': self.base_url
+        })
 
         return session
 
@@ -410,7 +420,6 @@ class MSSQLOpenSearchReader:
             response = self.session.post(
                 tenant_url,
                 json={"tenant": tenant, "username": self.username},
-                headers=self.headers,
                 timeout=30
             )
 
@@ -426,9 +435,63 @@ class MSSQLOpenSearchReader:
             logger.warning(f"Tenant selection error: {e}")
             return True  # Devam et
 
+    def _make_request(self, path: str, method: str = "GET", body: dict = None, retry_auth: bool = True) -> dict:
+        """Proxy API üzerinden request yap (Auto-Relogin destekli - log_reader.py ile aynı)"""
+        try:
+            from urllib.parse import quote
+            encoded_path = quote(path, safe='/')
+
+            params = {
+                'path': encoded_path,
+                'method': method
+            }
+
+            data = json.dumps(body) if body else "{}"
+
+            response = self.session.post(
+                self.proxy_endpoint,
+                params=params,
+                data=data,
+                timeout=120
+            )
+
+            # Auto-Relogin on 401/403
+            if response.status_code in [401, 403] and retry_auth:
+                logger.warning(f"Authentication failed ({response.status_code}). Attempting re-login...")
+                if self._login() and self._select_tenant():
+                    logger.info("Re-login successful. Retrying request...")
+                    return self._make_request(path, method, body, retry_auth=False)
+                else:
+                    logger.error("Auto re-login failed.")
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"Request failed: {response.status_code} - {response.text[:500]}")
+                return None
+
+        except Exception as e:
+            if "Read timed out" in str(e) and not hasattr(self, '_retry_count'):
+                logger.warning(f"Timeout detected, retrying with longer timeout: {e}")
+                self._retry_count = True
+                try:
+                    response = self.session.post(
+                        self.proxy_endpoint,
+                        params=params,
+                        data=data,
+                        timeout=300
+                    )
+                    if response.status_code == 200:
+                        return response.json()
+                finally:
+                    delattr(self, '_retry_count')
+
+            logger.error(f"Request error: {e}")
+            return None
+
     def connect(self) -> bool:
         """
-        OpenSearch bağlantısını test et
+        OpenSearch bağlantısını test et (log_reader.py ile aynı flow)
 
         Returns:
             True if connected successfully
@@ -439,36 +502,24 @@ class MSSQLOpenSearchReader:
             # Session oluştur
             self.session = self._create_session()
 
-            # Login
+            # 1. Login
             if not self._login():
                 logger.error("OpenSearch login failed")
                 return False
 
-            # Tenant seç
+            # 2. Tenant seç
             self._select_tenant("LCW")
 
-            # Bağlantı testi - index'in varlığını kontrol et
-            test_url = f"{self.base_url}/api/console/proxy"
-            test_query = {
-                "path": f"{self.index_pattern}/_count",
-                "method": "GET"
-            }
+            # 3. Bağlantı testi - _make_request ile (auto-relogin destekli)
+            result = self._make_request(f"{self.index_pattern}/_count", "GET")
 
-            response = self.session.post(
-                test_url,
-                json=test_query,
-                headers=self.headers,
-                timeout=30
-            )
-
-            if response.status_code == 200:
-                result = response.json()
+            if result is not None:
                 count = result.get('count', 0)
                 logger.info(f"OpenSearch connected - MSSQL index count: {count:,}")
                 self._connected = True
                 return True
             else:
-                logger.error(f"Connection test failed: {response.status_code}")
+                logger.error("Connection test failed")
                 return False
 
         except Exception as e:
@@ -561,57 +612,43 @@ class MSSQLOpenSearchReader:
             "_source": True
         }
 
-        # API çağrısı
-        search_url = f"{self.base_url}/api/console/proxy"
-        search_payload = {
-            "path": f"{self.index_pattern}/_search",
-            "method": "POST",
-            "body": json.dumps(query)
-        }
+        # API çağrısı (_make_request ile - auto-relogin destekli)
+        result = self._make_request(
+            f"{self.index_pattern}/_search",
+            method="POST",
+            body=query
+        )
 
-        try:
-            response = self.session.post(
-                search_url,
-                json=search_payload,
-                headers=self.headers,
-                timeout=120
-            )
-
-            if response.status_code != 200:
-                logger.error(f"Search failed: {response.status_code} - {response.text[:500]}")
-                return pd.DataFrame()
-
-            result = response.json()
-            hits = result.get('hits', {}).get('hits', [])
-
-            logger.info(f"Fetched {len(hits)} MSSQL logs")
-
-            # DataFrame oluştur
-            if not hits:
-                return pd.DataFrame()
-
-            records = []
-            for hit in hits:
-                source = hit.get('_source', {})
-                record = self._parse_mssql_log(source)
-                record['_id'] = hit.get('_id', '')
-                record['_index'] = hit.get('_index', '')
-                records.append(record)
-
-            df = pd.DataFrame(records)
-
-            # Timestamp parsing
-            if '@timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['@timestamp'], errors='coerce')
-                df = df.sort_values('timestamp').reset_index(drop=True)
-
-            logger.info(f"Fetch completed: {len(df)} records")
-
-            return df
-
-        except Exception as e:
-            logger.error(f"Search error: {e}")
+        if result is None:
+            logger.error("Search request failed")
             return pd.DataFrame()
+
+        hits = result.get('hits', {}).get('hits', [])
+
+        logger.info(f"Fetched {len(hits)} MSSQL logs")
+
+        # DataFrame oluştur
+        if not hits:
+            return pd.DataFrame()
+
+        records = []
+        for hit in hits:
+            source = hit.get('_source', {})
+            record = self._parse_mssql_log(source)
+            record['_id'] = hit.get('_id', '')
+            record['_index'] = hit.get('_index', '')
+            records.append(record)
+
+        df = pd.DataFrame(records)
+
+        # Timestamp parsing
+        if '@timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['@timestamp'], errors='coerce')
+            df = df.sort_values('timestamp').reset_index(drop=True)
+
+        logger.info(f"Fetch completed: {len(df)} records")
+
+        return df
 
     def _parse_mssql_log(self, source: dict) -> dict:
         """
@@ -696,36 +733,23 @@ class MSSQLOpenSearchReader:
             }
         }
 
-        search_url = f"{self.base_url}/api/console/proxy"
-        search_payload = {
-            "path": f"{self.index_pattern}/_search",
-            "method": "POST",
-            "body": json.dumps(query)
-        }
+        # _make_request ile (auto-relogin destekli)
+        result = self._make_request(
+            f"{self.index_pattern}/_search",
+            method="POST",
+            body=query
+        )
 
-        try:
-            response = self.session.post(
-                search_url,
-                json=search_payload,
-                headers=self.headers,
-                timeout=60
-            )
-
-            if response.status_code != 200:
-                logger.error(f"Host query failed: {response.status_code}")
-                return []
-
-            result = response.json()
-            buckets = result.get('aggregations', {}).get('hosts', {}).get('buckets', [])
-
-            hosts = [b['key'] for b in buckets]
-            logger.info(f"Found {len(hosts)} MSSQL hosts")
-
-            return hosts
-
-        except Exception as e:
-            logger.error(f"Host query error: {e}")
+        if result is None:
+            logger.error("Host query failed")
             return []
+
+        buckets = result.get('aggregations', {}).get('hosts', {}).get('buckets', [])
+
+        hosts = [b['key'] for b in buckets]
+        logger.info(f"Found {len(hosts)} MSSQL hosts")
+
+        return hosts
 
     def get_host_log_stats(self, last_hours: int = 24) -> Dict[str, Any]:
         """
@@ -777,51 +801,38 @@ class MSSQLOpenSearchReader:
             }
         }
 
-        search_url = f"{self.base_url}/api/console/proxy"
-        search_payload = {
-            "path": f"{self.index_pattern}/_search",
-            "method": "POST",
-            "body": json.dumps(query)
-        }
+        # _make_request ile (auto-relogin destekli)
+        result = self._make_request(
+            f"{self.index_pattern}/_search",
+            method="POST",
+            body=query
+        )
 
-        try:
-            response = self.session.post(
-                search_url,
-                json=search_payload,
-                headers=self.headers,
-                timeout=60
-            )
-
-            if response.status_code != 200:
-                logger.error(f"Stats query failed: {response.status_code}")
-                return {}
-
-            result = response.json()
-            buckets = result.get('aggregations', {}).get('hosts', {}).get('buckets', [])
-
-            stats = {}
-            for bucket in buckets:
-                host = bucket['key']
-                login_types = {
-                    lt['key']: lt['doc_count']
-                    for lt in bucket.get('login_types', {}).get('buckets', [])
-                }
-
-                stats[host] = {
-                    'total_logs': bucket['doc_count'],
-                    'succeeded': login_types.get('succeeded', 0),
-                    'failed': login_types.get('failed', 0),
-                    'latest_log': bucket.get('latest_log', {}).get('value_as_string', ''),
-                    'failed_ratio': login_types.get('failed', 0) / bucket['doc_count']
-                        if bucket['doc_count'] > 0 else 0
-                }
-
-            logger.info(f"Got stats for {len(stats)} MSSQL hosts")
-            return stats
-
-        except Exception as e:
-            logger.error(f"Stats query error: {e}")
+        if result is None:
+            logger.error("Stats query failed")
             return {}
+
+        buckets = result.get('aggregations', {}).get('hosts', {}).get('buckets', [])
+
+        stats = {}
+        for bucket in buckets:
+            host = bucket['key']
+            login_types = {
+                lt['key']: lt['doc_count']
+                for lt in bucket.get('login_types', {}).get('buckets', [])
+            }
+
+            stats[host] = {
+                'total_logs': bucket['doc_count'],
+                'succeeded': login_types.get('succeeded', 0),
+                'failed': login_types.get('failed', 0),
+                'latest_log': bucket.get('latest_log', {}).get('value_as_string', ''),
+                'failed_ratio': login_types.get('failed', 0) / bucket['doc_count']
+                    if bucket['doc_count'] > 0 else 0
+            }
+
+        logger.info(f"Got stats for {len(stats)} MSSQL hosts")
+        return stats
 
 
 # =============================================================================
