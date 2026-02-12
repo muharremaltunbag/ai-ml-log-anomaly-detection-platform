@@ -198,11 +198,26 @@
 
             <!-- Hızlı İşlemler -->
             <section class="quick-actions">
-                <button id="anomalyAnalysisBtn" class="btn btn-primary">🔍 ANOMALİ ANALİZİ</button>
-                <button id="dbaAnalysisBtn" class="btn btn-primary">🕐 DBA TAVSİYE SİSTEMİ</button>
-                <button id="logUploadBtn" class="btn btn-secondary">📁 LOG YÜKLE</button>
-                <button id="toggleMLPanelBtn" class="btn btn-secondary">📊 ML MODELİ METRİKLERİ</button>
-                <button id="statusBtn" class="btn btn-secondary">SİSTEM DURUMU</button>
+                <button id="anomalyAnalysisBtn" class="quick-action-card quick-action-primary">
+                    <span class="qa-icon">🔍</span>
+                    <span class="qa-label">Anomali Analizi</span>
+                </button>
+                <button id="dbaAnalysisBtn" class="quick-action-card quick-action-primary">
+                    <span class="qa-icon">🕐</span>
+                    <span class="qa-label">DBA Tavsiye Sistemi</span>
+                </button>
+                <button id="logUploadBtn" class="quick-action-card">
+                    <span class="qa-icon">📁</span>
+                    <span class="qa-label">Log Yükle</span>
+                </button>
+                <button id="toggleMLPanelBtn" class="quick-action-card">
+                    <span class="qa-icon">📊</span>
+                    <span class="qa-label">ML Metrikleri</span>
+                </button>
+                <button id="statusBtn" class="quick-action-card">
+                    <span class="qa-icon">⚙️</span>
+                    <span class="qa-label">Sistem Durumu</span>
+                </button>
             </section>
 
             <!-- Yükleme Göstergesi — Figma Processing Modal -->
@@ -305,6 +320,7 @@
                 
                 <div id="historyContent" class="history-content">
                     <div class="history-empty">
+                        <div class="empty-icon">📋</div>
                         <p>Henüz sorgu geçmişi bulunmuyor.</p>
                         <small>Yaptığınız sorgular burada görüntülenecek.</small>
                     </div>
