@@ -1099,7 +1099,9 @@ function displayAnomalyResults(result) {
     const temporalAnalysis = mlData.temporal_analysis || {};
     const featureImportance = mlData.feature_importance || {};
     const criticalAnomalies = mlData.critical_anomalies || [];
+    const allAnomalies = mlData.all_anomalies || [];
     console.log('[DEBUG FRONTEND] displayAnomalyResults - criticalAnomalies length:', criticalAnomalies.length);
+    console.log('[DEBUG FRONTEND] displayAnomalyResults - allAnomalies length:', allAnomalies.length);
     console.log('[DEBUG FRONTEND] mlData structure:', Object.keys(mlData));
     console.log('[DEBUG FRONTEND] result.sonuç structure:', Object.keys(result.sonuç || {}));
     const anomalyScoreStats = mlData.anomaly_score_stats || {};
@@ -1501,16 +1503,104 @@ function displayAnomalyResults(result) {
         window.currentlyShownCount = itemsToShow;
     }
 
-    // Tüm anomaliler (eğer kritik anomaliler gösterildiyse atlayabilir)
-    if (result.anomalies && result.anomalies.length > 0 && !criticalAnomalies.length) {
+    // Tüm anomaliler: Kritik anomali yoksa all_anomalies'i göster
+    if (!criticalAnomalies.length && allAnomalies.length > 0) {
+        html += '<div class="critical-anomalies-section expanded-view">';
+        html += `<h3>📊 Tespit Edilen Anomaliler (${allAnomalies.length} adet — kritik seviye yok)</h3>`;
+        html += '<p style="color: #27ae60; margin: 0 0 15px 0; font-size: 0.9em;">Kritik anomali tespit edilmedi. Aşağıda düşük/orta seviye anomaliler listelenmektedir.</p>';
+        html += `
+            <div class="view-controls">
+                <button class="btn-view-mode" onclick="toggleViewMode('compact')">Kompakt</button>
+                <button class="btn-view-mode active" onclick="toggleViewMode('expanded')">Genis</button>
+                <button class="btn-view-mode" onclick="toggleViewMode('fullscreen')">Tam Ekran</button>
+            </div>
+        `;
+        html += '<div class="anomaly-list" id="criticalAnomaliesList">';
+
+        const itemsToShow = 20;
+        const visibleAnomalies = allAnomalies.slice(0, itemsToShow);
+        const remainingCount = allAnomalies.length - itemsToShow;
+
+        visibleAnomalies.forEach(anomaly => {
+            const severityColor = anomaly.severity_color || '#f39c12';
+            const severityLevel = anomaly.severity_level || 'LOW';
+            const severityScore = anomaly.severity_score || 0;
+            const fullMessage = anomaly.message || anomaly.raw_message || 'No message available';
+            const isLongMessage = fullMessage.length > 500;
+
+            html += `
+                <div class="critical-anomaly-card" style="--severity-color: ${severityColor}">
+                    <div class="anomaly-header-with-severity">
+                        <div class="anomaly-info">
+                            <span class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleString('tr-TR') : 'N/A'}</span>
+                            <span class="severity-badge ${severityLevel.toLowerCase()}">${severityLevel}</span>
+                            <span class="severity-score-inline">${severityScore}/100</span>
+                            ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
+                            ${anomaly.username && anomaly.username !== 'unknown' ? `<span class="host-badge">👤 ${anomaly.username}</span>` : ''}
+                            ${anomaly.client_ip && anomaly.client_ip !== 'unknown' ? `<span class="host-badge">🌐 ${anomaly.client_ip}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="anomaly-content">
+                        <div class="anomaly-main-message">
+                            ${isLongMessage ? `
+                                <div class="message-expandable">
+                                    <div class="message-preview">
+                                        <pre class="log-message-pre">${window.escapeHtml(fullMessage.substring(0, 500))}...</pre>
+                                    </div>
+                                    <div class="message-full" style="display: none;">
+                                        <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
+                                    </div>
+                                    <button class="btn-expand" onclick="toggleMessageExpand(this)">
+                                        Tam Mesaji Goster
+                                    </button>
+                                </div>
+                            ` : `
+                                <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
+                            `}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        if (remainingCount > 0) {
+            html += `
+                <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+                    <button class="btn btn-secondary" onclick="loadMoreCriticalAnomalies()" id="loadMoreCriticalBtn">
+                        Daha Fazla Goster (+${remainingCount} anomali)
+                    </button>
+                </div>
+            `;
+        }
+
+        html += '</div>';
+        html += '</div>';
+
+        window.allCriticalAnomalies = allAnomalies;
+        window.currentlyShownCount = itemsToShow;
+    }
+
+    // Hiç anomali yoksa bilgi mesajı göster
+    if (!criticalAnomalies.length && !allAnomalies.length && summary.n_anomalies === 0) {
+        html += '<div class="critical-anomalies-section">';
+        html += '<h3 style="color: #27ae60;">Anomali Tespit Edilmedi</h3>';
+        html += `<p style="margin: 10px 0; color: #666;">
+            Toplam ${summary.total_logs || 0} log analiz edildi. Herhangi bir anomali tespit edilmedi.
+            Sunucu normal calisma durumunda gorunuyor.
+        </p>`;
+        html += '</div>';
+    }
+
+    // Eski format: result.anomalies desteği (geriye uyumluluk)
+    if (result.anomalies && result.anomalies.length > 0 && !criticalAnomalies.length && !allAnomalies.length) {
         html += '<div class="all-anomalies-section">';
-        html += '<h3>📊 Tüm Anomaliler</h3>';
+        html += '<h3>Tum Anomaliler</h3>';
         html += '<div class="anomaly-list">';
 
         result.anomalies.slice(0, 100).forEach(anomaly => {
-            const severityClass = anomaly.anomaly_score > 0.8 ? 'high' : 
+            const severityClass = anomaly.anomaly_score > 0.8 ? 'high' :
                                  anomaly.anomaly_score > 0.6 ? 'medium' : 'low';
-            
+
             html += `
                 <div class="anomaly-item ${severityClass}">
                     <div class="anomaly-score">${anomaly.anomaly_score.toFixed(3)}</div>

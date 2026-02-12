@@ -449,6 +449,21 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
                 # Severity → log_level veya logtype
                 anomaly['severity'] = row.get('log_level', row.get('logtype', None))
 
+        # ── 1b. all_anomalies için de message & field düzeltmesi ──
+        for anomaly in analysis.get('all_anomalies', []):
+            idx = anomaly.get('index', 0)
+            if idx < len(df):
+                row = df.iloc[idx]
+                raw_msg = ''
+                if 'raw_message' in df.columns and pd.notna(row.get('raw_message')):
+                    raw_msg = str(row['raw_message'])
+                elif 'message' in df.columns and pd.notna(row.get('message')):
+                    raw_msg = str(row['message'])
+                if raw_msg:
+                    anomaly['message'] = raw_msg[:1000]
+                anomaly['component'] = row.get('logtype', None)
+                anomaly['severity'] = row.get('log_level', row.get('logtype', None))
+
         # ── 2. MSSQL is_critical_type taraması (kaçırılmış anomalileri ekle) ──
         existing_indices = {a['index'] for a in analysis.get('critical_anomalies', [])}
         anomaly_indices = np.where(anomaly_mask)[0]

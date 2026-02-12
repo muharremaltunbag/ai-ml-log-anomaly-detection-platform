@@ -1061,8 +1061,12 @@ class MongoDBAnomalyDetector:
 
         # Kritik anomalileri göster
         analysis["critical_anomalies"] = critical_only
-        
+
+        # Tüm anomalileri de sakla (UI'da kritik yoksa bunları göstermek için)
+        analysis["all_anomalies"] = anomaly_severities
+
         logger.debug(f"Critical anomalies assigned to analysis: {len(critical_only)}")
+        logger.debug(f"All anomalies (including non-critical): {len(anomaly_severities)}")
         
         
         

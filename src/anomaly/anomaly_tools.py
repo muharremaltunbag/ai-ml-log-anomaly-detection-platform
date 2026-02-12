@@ -164,13 +164,10 @@ class AnomalyDetectionTools:
             
             # Check if JSON result contains expected number
             if '"critical_anomalies"' in json_result:
-                import re
-                matches = re.findall(r'"critical_anomalies":\s*\[([^\]]*)\]', json_result)
-                if matches:
-                    # Count objects in the array (rough estimate)
-                    content = matches[0]
-                    object_count = content.count('"index"')
-                    print(f"[DEBUG] JSON RESULT: Serialized JSON contains approximately {object_count} critical anomaly objects")
+                # Doğrudan response dict'ten say (regex nested array'lerde hata yapıyor)
+                critical_count = len(response.get("sonuç", {}).get("critical_anomalies", []))
+                all_count = len(response.get("sonuç", {}).get("all_anomalies", []))
+                print(f"[DEBUG] JSON RESULT: Serialized JSON contains {critical_count} critical + {all_count} all anomaly objects")
             
             return json_result
         except Exception as e:
@@ -740,6 +737,7 @@ class AnomalyDetectionTools:
                         "filtered_logs": len(df_filtered),
                         "summary": analysis["summary"],
                         "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),
+                        "all_anomalies": analysis.get("all_anomalies", [])[:50],
                         "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),
                         "unfiltered_count": unfiltered_anomaly_count,
                         "security_alerts": analysis.get("security_alerts", {}),
@@ -1079,6 +1077,7 @@ class AnomalyDetectionTools:
                             "filtered_logs": len(df_filtered),  # YENİ
                             "summary": analysis["summary"],
                             "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),
+                            "all_anomalies": analysis.get("all_anomalies", [])[:50],
                             "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),  # TÜM anomaliler
                             "unfiltered_count": unfiltered_anomaly_count,  # Filtrelenmemiş sayı
                             "security_alerts": analysis.get("security_alerts", {}),
@@ -1272,6 +1271,8 @@ class AnomalyDetectionTools:
                     analysis["critical_anomalies"]
                 )
                 print(f"[DEBUG] MAIN FUNCTION: After enhancement, we have {len(enhanced_analysis['critical_anomalies'])} critical anomalies")
+            if "all_anomalies" in analysis:
+                enhanced_analysis["all_anomalies"] = analysis["all_anomalies"][:50]
 
             # Server bilgisini enhanced_analysis'e ekle
             enhanced_analysis["server_info"] = {
@@ -1423,6 +1424,7 @@ class AnomalyDetectionTools:
                     },
                     "summary": analysis["summary"],
                     "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),  # Tüm kritik anomaliler - Enhanced
+                    "all_anomalies": analysis.get("all_anomalies", [])[:50],
                     "security_alerts": analysis.get("security_alerts", {}),
                     "temporal_analysis": analysis.get("temporal_analysis", {})
                 },
@@ -2185,6 +2187,23 @@ class AnomalyDetectionTools:
                     anomaly['logintype'] = row.get('logintype', 'unknown')
                     anomaly['raw_message'] = row.get('raw_message', '')[:500]
 
+            # Tüm anomalileri de zenginleştir (UI'da kritik yoksa bunları göstermek için)
+            all_anomalies = analysis.get("all_anomalies", [])
+            for anomaly in all_anomalies:
+                idx = anomaly.get('index', 0)
+                if idx < len(df_enriched):
+                    row = df_enriched.iloc[idx]
+                    anomaly['username'] = row.get('username', 'unknown')
+                    anomaly['client_ip'] = row.get('client_ip', 'unknown')
+                    anomaly['logintype'] = row.get('logintype', 'unknown')
+                    anomaly['raw_message'] = row.get('raw_message', '')[:500]
+                    # MSSQL mesaj düzeltmesi (raw_message varsa kullan)
+                    raw_msg = row.get('raw_message', '')
+                    if raw_msg and isinstance(raw_msg, str) and len(raw_msg) > 0:
+                        anomaly['message'] = raw_msg[:1000]
+                    anomaly['component'] = row.get('logtype', anomaly.get('component'))
+                    anomaly['severity'] = row.get('log_level', row.get('logtype', anomaly.get('severity')))
+
             # Öneriler
             suggestions = self._create_mssql_suggestions(analysis, mssql_specific_analysis)
 
@@ -2207,6 +2226,7 @@ class AnomalyDetectionTools:
                     "summary": analysis.get("summary", {}),
                     "total_critical_count": len(critical_anomalies),
                     "critical_anomalies": critical_anomalies[:50],
+                    "all_anomalies": analysis.get("all_anomalies", [])[:50],
                     "mssql_specific": mssql_specific_analysis,
                     "temporal_analysis": analysis.get("temporal_analysis", {}),
                     "feature_importance": analysis.get("feature_importance", {}),
