@@ -737,7 +737,7 @@ class AnomalyDetectionTools:
                         "filtered_logs": len(df_filtered),
                         "summary": analysis["summary"],
                         "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),
-                        "all_anomalies": analysis.get("all_anomalies", [])[:50],
+                        "all_anomalies": self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100),
                         "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),
                         "unfiltered_count": unfiltered_anomaly_count,
                         "security_alerts": analysis.get("security_alerts", {}),
@@ -1077,7 +1077,7 @@ class AnomalyDetectionTools:
                             "filtered_logs": len(df_filtered),  # YENİ
                             "summary": analysis["summary"],
                             "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),
-                            "all_anomalies": analysis.get("all_anomalies", [])[:50],
+                            "all_anomalies": self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100),
                             "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),  # TÜM anomaliler
                             "unfiltered_count": unfiltered_anomaly_count,  # Filtrelenmemiş sayı
                             "security_alerts": analysis.get("security_alerts", {}),
@@ -1272,7 +1272,7 @@ class AnomalyDetectionTools:
                 )
                 print(f"[DEBUG] MAIN FUNCTION: After enhancement, we have {len(enhanced_analysis['critical_anomalies'])} critical anomalies")
             if "all_anomalies" in analysis:
-                enhanced_analysis["all_anomalies"] = analysis["all_anomalies"][:50]
+                enhanced_analysis["all_anomalies"] = self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100)
 
             # Server bilgisini enhanced_analysis'e ekle
             enhanced_analysis["server_info"] = {
@@ -1424,7 +1424,7 @@ class AnomalyDetectionTools:
                     },
                     "summary": analysis["summary"],
                     "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),  # Tüm kritik anomaliler - Enhanced
-                    "all_anomalies": analysis.get("all_anomalies", [])[:50],
+                    "all_anomalies": self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100),
                     "security_alerts": analysis.get("security_alerts", {}),
                     "temporal_analysis": analysis.get("temporal_analysis", {})
                 },
@@ -2225,8 +2225,8 @@ class AnomalyDetectionTools:
                     "logs_analyzed": len(df),
                     "summary": analysis.get("summary", {}),
                     "total_critical_count": len(critical_anomalies),
-                    "critical_anomalies": critical_anomalies[:50],
-                    "all_anomalies": analysis.get("all_anomalies", [])[:50],
+                    "critical_anomalies": self._select_diverse_anomalies(critical_anomalies, limit=75, is_mssql=True),
+                    "all_anomalies": self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100, is_mssql=True),
                     "mssql_specific": mssql_specific_analysis,
                     "temporal_analysis": analysis.get("temporal_analysis", {}),
                     "feature_importance": analysis.get("feature_importance", {}),
@@ -3324,6 +3324,84 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         print(f"[DEBUG] Enhancement function returning {len(enhanced_anomalies)} enhanced anomalies")
         logger.debug(f"Enhancement output - enhanced anomalies count: {len(enhanced_anomalies)}")
         return enhanced_anomalies
+
+    def _select_diverse_anomalies(self, anomalies: List[Dict], limit: int = 75, is_mssql: bool = False) -> List[Dict]:
+        """
+        Kategori çeşitliliği sağlayan akıllı anomali örneklemesi.
+
+        Sadece severity_score'a göre top-N almak yerine, farklı kategorilerden
+        temsil sağlar. Bu sayede nadir ama önemli anomali tipleri kaçırılmaz.
+
+        Algoritma:
+        1. Anomalileri kategoriye göre grupla
+        2. Her kategoriden en az min_per_category adet al (en yüksek severity)
+        3. Kalan slotları en yüksek severity'den doldur
+        """
+        if not anomalies or len(anomalies) <= limit:
+            return anomalies
+
+        # Kategori belirleme
+        categorized = {}
+        for a in anomalies:
+            if is_mssql:
+                # MSSQL: logtype veya mesaj pattern'ına göre
+                cat = a.get('component') or 'general'
+                msg = (a.get('message') or '').lower()
+                if 'login failed' in msg or 'authentication failed' in msg:
+                    cat = 'failed_login'
+                elif 'availability group' in msg or 'not accessible' in msg:
+                    cat = 'availability_group'
+                elif 'cannot open database' in msg or 'database' in msg:
+                    cat = 'database_access'
+                elif 'permission' in msg or 'access denied' in msg:
+                    cat = 'permission_error'
+                elif 'connection' in msg or 'socket' in msg:
+                    cat = 'connection_error'
+            else:
+                # MongoDB: component veya anomaly_type'a göre
+                cat = a.get('component') or a.get('anomaly_type') or 'general'
+
+            cat = str(cat).lower()
+            if cat not in categorized:
+                categorized[cat] = []
+            categorized[cat].append(a)
+
+        n_categories = len(categorized)
+        if n_categories <= 1:
+            return sorted(anomalies, key=lambda x: x.get('severity_score', 0), reverse=True)[:limit]
+
+        # Her kategoriden minimum temsil
+        min_per_category = max(2, limit // (n_categories * 2))
+        selected = []
+        selected_indices = set()
+
+        # 1. aşama: Her kategoriden min_per_category kadar al
+        for cat, items in categorized.items():
+            items_sorted = sorted(items, key=lambda x: x.get('severity_score', 0), reverse=True)
+            for item in items_sorted[:min_per_category]:
+                idx = item.get('index')
+                if idx not in selected_indices:
+                    selected.append(item)
+                    selected_indices.add(idx)
+
+        # 2. aşama: Kalan slotları en yüksek severity'den doldur
+        remaining_limit = limit - len(selected)
+        if remaining_limit > 0:
+            all_sorted = sorted(anomalies, key=lambda x: x.get('severity_score', 0), reverse=True)
+            for item in all_sorted:
+                if len(selected) >= limit:
+                    break
+                idx = item.get('index')
+                if idx not in selected_indices:
+                    selected.append(item)
+                    selected_indices.add(idx)
+
+        # Final sıralama: severity_score'a göre
+        selected.sort(key=lambda x: x.get('severity_score', 0), reverse=True)
+
+        logger.info(f"Diverse sampling: {len(anomalies)} anomalies -> {len(selected)} selected "
+                     f"({n_categories} categories, min {min_per_category}/category)")
+        return selected
 
     def _format_component_analysis(self, components: Dict) -> str:
         """Prompt için component analizini formatlar"""

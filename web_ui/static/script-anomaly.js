@@ -1503,6 +1503,98 @@ function displayAnomalyResults(result) {
         window.currentlyShownCount = itemsToShow;
     }
 
+    // Kritik anomaliler varken, all_anomalies'den kritiklerde olmayan ek anomalileri göster
+    if (criticalAnomalies.length > 0 && allAnomalies.length > 0) {
+        const criticalIndices = new Set(criticalAnomalies.map(a => a.index));
+        const otherAnomalies = allAnomalies.filter(a => !criticalIndices.has(a.index));
+
+        if (otherAnomalies.length > 0) {
+            // Kategori dağılımını hesapla
+            const categoryMap = {};
+            otherAnomalies.forEach(a => {
+                const cat = a.component || a.severity_level || 'general';
+                if (!categoryMap[cat]) categoryMap[cat] = 0;
+                categoryMap[cat]++;
+            });
+            const categorySummary = Object.entries(categoryMap)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([cat, count]) => `${cat}: ${count}`)
+                .join(', ');
+
+            html += '<div class="critical-anomalies-section" style="margin-top: 20px;">';
+            html += `<h3 style="cursor: pointer;" onclick="toggleOtherAnomalies()">`;
+            html += `<span id="otherAnomaliesToggle">&#9654;</span> Diger Tespit Edilen Anomaliler (${otherAnomalies.length} adet)`;
+            html += `</h3>`;
+            html += `<p style="color: #7f8c8d; margin: 0 0 10px 0; font-size: 0.85em;">Kategoriler: ${window.escapeHtml(categorySummary)}</p>`;
+            html += '<div id="otherAnomaliesContainer" style="display: none;">';
+            html += '<div class="anomaly-list">';
+
+            const otherItemsToShow = 20;
+            const visibleOther = otherAnomalies.slice(0, otherItemsToShow);
+            const otherRemaining = otherAnomalies.length - otherItemsToShow;
+
+            visibleOther.forEach(anomaly => {
+                const severityColor = anomaly.severity_color || '#95a5a6';
+                const severityLevel = anomaly.severity_level || 'LOW';
+                const severityScore = anomaly.severity_score || 0;
+                const fullMessage = anomaly.message || anomaly.raw_message || 'No message available';
+                const isLongMessage = fullMessage.length > 500;
+
+                html += `
+                    <div class="critical-anomaly-card" style="--severity-color: ${severityColor}; opacity: 0.9;">
+                        <div class="anomaly-header-with-severity">
+                            <div class="anomaly-info">
+                                <span class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleString('tr-TR') : 'N/A'}</span>
+                                <span class="severity-badge ${severityLevel.toLowerCase()}">${severityLevel}</span>
+                                <span class="severity-score-inline">${severityScore}/100</span>
+                                ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
+                                ${anomaly.username && anomaly.username !== 'unknown' ? `<span class="host-badge">👤 ${anomaly.username}</span>` : ''}
+                                ${anomaly.client_ip && anomaly.client_ip !== 'unknown' ? `<span class="host-badge">🌐 ${anomaly.client_ip}</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="anomaly-content">
+                            <div class="anomaly-main-message">
+                                ${isLongMessage ? `
+                                    <div class="message-expandable">
+                                        <div class="message-preview">
+                                            <pre class="log-message-pre">${window.escapeHtml(fullMessage.substring(0, 500))}...</pre>
+                                        </div>
+                                        <div class="message-full" style="display: none;">
+                                            <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
+                                        </div>
+                                        <button class="btn-expand" onclick="toggleMessageExpand(this)">
+                                            Tam Mesaji Goster
+                                        </button>
+                                    </div>
+                                ` : `
+                                    <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            if (otherRemaining > 0) {
+                html += `
+                    <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+                        <button class="btn btn-secondary" onclick="loadMoreOtherAnomalies()" id="loadMoreOtherBtn">
+                            Daha Fazla Goster (+${otherRemaining} anomali)
+                        </button>
+                    </div>
+                `;
+            }
+
+            html += '</div>';
+            html += '</div>';
+            html += '</div>';
+
+            window.allOtherAnomalies = otherAnomalies;
+            window.currentlyShownOtherCount = otherItemsToShow;
+        }
+    }
+
     // Tüm anomaliler: Kritik anomali yoksa all_anomalies'i göster
     if (!criticalAnomalies.length && allAnomalies.length > 0) {
         html += '<div class="critical-anomalies-section expanded-view">';
@@ -1941,6 +2033,93 @@ function loadMoreCriticalAnomalies() {
     }
 
     console.debug(`[ANOMALY PAGINATION] Loaded anomalies: ${startIndex + 1}-${endIndex} of ${totalCount}`);
+}
+
+function toggleOtherAnomalies() {
+    const container = document.getElementById('otherAnomaliesContainer');
+    const toggle = document.getElementById('otherAnomaliesToggle');
+    if (container && toggle) {
+        const isHidden = container.style.display === 'none';
+        container.style.display = isHidden ? 'block' : 'none';
+        toggle.innerHTML = isHidden ? '&#9660;' : '&#9654;';
+    }
+}
+
+function loadMoreOtherAnomalies() {
+    if (!Array.isArray(window.allOtherAnomalies) || typeof window.currentlyShownOtherCount !== 'number') {
+        return;
+    }
+    const nextBatch = 20;
+    const currentCount = window.currentlyShownOtherCount;
+    const totalCount = window.allOtherAnomalies.length;
+    const startIndex = currentCount;
+    const endIndex = Math.min(currentCount + nextBatch, totalCount);
+    const newAnomalies = window.allOtherAnomalies.slice(startIndex, endIndex);
+
+    const container = document.getElementById('otherAnomaliesContainer');
+    const anomalyList = container ? container.querySelector('.anomaly-list') : null;
+    if (!anomalyList) return;
+
+    let html = '';
+    newAnomalies.forEach(anomaly => {
+        const severityColor = anomaly.severity_color || '#95a5a6';
+        const severityLevel = anomaly.severity_level || 'LOW';
+        const severityScore = anomaly.severity_score || 0;
+        const fullMessage = anomaly.message || anomaly.raw_message || 'No message available';
+        const isLongMessage = fullMessage.length > 500;
+        html += `
+            <div class="critical-anomaly-card" style="--severity-color: ${severityColor}; opacity: 0.9;">
+                <div class="anomaly-header-with-severity">
+                    <div class="anomaly-info">
+                        <span class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleString('tr-TR') : 'N/A'}</span>
+                        <span class="severity-badge ${severityLevel.toLowerCase()}">${severityLevel}</span>
+                        <span class="severity-score-inline">${severityScore}/100</span>
+                        ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
+                        ${anomaly.username && anomaly.username !== 'unknown' ? `<span class="host-badge">👤 ${anomaly.username}</span>` : ''}
+                    </div>
+                </div>
+                <div class="anomaly-content">
+                    <div class="anomaly-main-message">
+                        ${isLongMessage ? `
+                            <div class="message-expandable">
+                                <div class="message-preview">
+                                    <pre class="log-message-pre">${window.escapeHtml(fullMessage.substring(0, 500))}...</pre>
+                                </div>
+                                <div class="message-full" style="display: none;">
+                                    <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
+                                </div>
+                                <button class="btn-expand" onclick="toggleMessageExpand(this)">
+                                    Tam Mesaji Goster
+                                </button>
+                            </div>
+                        ` : `
+                            <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
+                        `}
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    const loadMoreBtn = document.getElementById('loadMoreOtherBtn');
+    if (loadMoreBtn && loadMoreBtn.parentElement) {
+        loadMoreBtn.parentElement.remove();
+    }
+
+    anomalyList.insertAdjacentHTML('beforeend', html);
+    window.currentlyShownOtherCount = endIndex;
+
+    const remainingCount = totalCount - endIndex;
+    if (remainingCount > 0) {
+        const loadMoreHtml = `
+            <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+                <button class="btn btn-secondary" onclick="loadMoreOtherAnomalies()" id="loadMoreOtherBtn">
+                    Daha Fazla Goster (+${remainingCount} anomali)
+                </button>
+            </div>
+        `;
+        anomalyList.insertAdjacentHTML('beforeend', loadMoreHtml);
+    }
 }
 
 /**
