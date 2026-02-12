@@ -64,9 +64,6 @@ body {
     background-color: var(--bg-color);
     color: var(--text-primary);
     line-height: 1.6;
-    display: flex;
-    min-height: 100vh;
-    overflow: hidden;
 }
 
 .container {
@@ -12838,55 +12835,30 @@ mark.text-highlight:hover {
    Not: Mevcut kurallara dokunulmaz, sadece yeni kurallar eklenir.
    ============================================================ */
 
-/* Sol kolon: mevcut tum icerik */
-#appMainColumn {
-    flex: 1;
-    min-width: 0;            /* flex child icin overflow korumasi */
-    height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
-
-/* Sag kolon: LCWGPT sidebar */
+/* LCWGPT Sidebar — fixed position, sayfanin en saginda */
 .lcwgpt-sidebar {
-    width: 340px;
-    min-width: 340px;
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 380px;
     height: 100vh;
     border-left: 1px solid var(--border-color);
     background-color: var(--card-bg);
-    display: none;               /* Adim 4'te acilacak */
+    display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: -2px 0 8px rgba(0,0,0,0.05);
+    box-shadow: -4px 0 20px rgba(0,0,0,0.12);
+    z-index: 1000;
+    transform: translateX(100%);
+    visibility: hidden;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                visibility 0.3s;
 }
 
-/* Sidebar acikken */
+/* Sidebar acikken — sag taraftan kayarak acilir */
 .lcwgpt-sidebar.open {
-    display: flex !important;
-}
-
-/* Responsive: 1024px altinda sidebar gizlenir */
-@media (max-width: 1024px) {
-    .lcwgpt-sidebar:not(.open) {
-        display: none !important;
-    }
-
-    .lcwgpt-sidebar.open {
-        position: fixed;
-        right: 0;
-        top: 0;
-        z-index: 100;
-        box-shadow: -4px 0 20px rgba(0,0,0,0.15);
-    }
-
-    body {
-        overflow-y: auto;
-    }
-
-    #appMainColumn {
-        height: auto;
-        overflow-y: visible;
-    }
+    transform: translateX(0);
+    visibility: visible;
 }
 
 /* ============================================================
