@@ -284,10 +284,14 @@ function initializeEventListeners() {
     if (anomalyBtn) {
         anomalyBtn.addEventListener('click', () => {
             console.log('Anomaly Analysis Button clicked!');
-            
-            // Modal'ı göster
-            const modal = document.getElementById('anomalyModal');
-            if (modal) modal.style.display = 'block';
+
+            // Inline config section'a scroll yap (Figma layout)
+            const configSection = document.getElementById('analysisConfigSection');
+            if (configSection) {
+                configSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                configSection.style.outline = '2px solid var(--lcw-blue)';
+                setTimeout(() => { configSection.style.outline = 'none'; }, 2000);
+            }
             
             // Dosyaları güncelle ama data source'u resetleme
             if (window.updateUploadedFilesList) window.updateUploadedFilesList();

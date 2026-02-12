@@ -65,8 +65,57 @@ function showLoader(show) {
         console.warn('DOM elements not initialized yet');
         return;
     }
-    window.elements.loader.style.display = show ? 'block' : 'none';
+    window.elements.loader.style.display = show ? 'flex' : 'none';
+
+    // Adim listesini sifirla (acildiginda)
+    if (show) {
+        const steps = document.querySelectorAll('#processingSteps .processing-step');
+        steps.forEach((step, i) => {
+            step.className = 'processing-step ' + (i === 0 ? 'completed' : i === 1 ? 'active' : 'pending');
+            const fill = step.querySelector('.step-progress-fill');
+            if (fill) fill.style.width = '0%';
+        });
+    }
 }
+
+/**
+ * Processing modal adim guncelleme
+ * @param {string} stepName - Adim ismi (validation, connection, reading, feature_engineering, ml_inference)
+ * @param {string} status - Durum (completed, active, pending)
+ * @param {number} progress - 0-100 arasi ilerleme yuzdesi (opsiyonel)
+ */
+window.updateProcessingStep = function(stepName, status, progress) {
+    const step = document.querySelector(`#processingSteps .processing-step[data-step="${stepName}"]`);
+    if (!step) return;
+
+    step.className = 'processing-step ' + status;
+
+    if (status === 'completed') {
+        const indicator = step.querySelector('.step-indicator');
+        if (indicator) {
+            indicator.className = 'step-indicator step-done';
+            indicator.textContent = '✓';
+        }
+    }
+
+    if (progress !== undefined) {
+        const fill = step.querySelector('.step-progress-fill');
+        if (fill) fill.style.width = progress + '%';
+    }
+
+    // Mesaji guncelle
+    const msgEl = document.getElementById('processingMessage');
+    if (msgEl) {
+        const labels = {
+            'validation': 'Parametreler doğrulanıyor...',
+            'connection': 'Veri kaynağına bağlanılıyor...',
+            'reading': 'Loglar okunuyor...',
+            'feature_engineering': 'Feature engineering yapılıyor...',
+            'ml_inference': 'ML modeli çalıştırılıyor...'
+        };
+        if (labels[stepName]) msgEl.textContent = labels[stepName];
+    }
+};
 
 /**
  * Modal göster

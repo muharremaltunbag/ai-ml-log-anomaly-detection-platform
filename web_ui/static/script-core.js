@@ -290,3 +290,100 @@ console.log('📊 Global variables available:', {
     API_ENDPOINTS: Object.keys(window.API_ENDPOINTS).length + ' endpoints'
 });
 
+// ============================================================
+// LCWGPT Sidebar — Toggle, Close, Send (Figma layout)
+// Mevcut fonksiyonlara dokunmaz, sadece sidebar UI kontrolu
+// ============================================================
+
+window.toggleLcwgptSidebar = function() {
+    const sidebar = document.getElementById('lcwgptSidebar');
+    if (!sidebar) return;
+    sidebar.classList.toggle('open');
+    console.log('LCWGPT Sidebar toggled:', sidebar.classList.contains('open') ? 'open' : 'closed');
+};
+
+window.closeLcwgptSidebar = function() {
+    const sidebar = document.getElementById('lcwgptSidebar');
+    if (sidebar) sidebar.classList.remove('open');
+};
+
+// Sidebar'a AI mesaji ekle
+window.addSidebarAIMessage = function(text) {
+    const container = document.getElementById('sidebarChatMessages');
+    if (!container) return;
+    const bubble = document.createElement('div');
+    bubble.className = 'sidebar-ai-bubble';
+    bubble.innerHTML = `
+        <span class="sidebar-ai-avatar">🤖</span>
+        <div class="sidebar-bubble-content">${text}</div>
+    `;
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+};
+
+// Sidebar'a kullanici mesaji ekle
+window.addSidebarUserMessage = function(text) {
+    const container = document.getElementById('sidebarChatMessages');
+    if (!container) return;
+    const bubble = document.createElement('div');
+    bubble.className = 'sidebar-user-bubble';
+    bubble.innerHTML = `
+        <span class="sidebar-user-avatar">👤</span>
+        <div class="sidebar-bubble-content">${window.escapeHtml ? window.escapeHtml(text) : text}</div>
+    `;
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+};
+
+// Sidebar send — mevcut handleQuery()'yi kullanir
+window.handleSidebarSend = function() {
+    const input = document.getElementById('sidebarChatInput');
+    if (!input || !input.value.trim()) return;
+
+    const query = input.value.trim();
+    input.value = '';
+
+    // Sidebar'a kullanici mesajini goster
+    window.addSidebarUserMessage(query);
+
+    // Mevcut query input'a yaz ve handleQuery cagir
+    const queryInput = document.getElementById('queryInput');
+    if (queryInput) {
+        queryInput.value = query;
+    }
+    if (window.handleQuery) {
+        window.handleQuery();
+    }
+};
+
+// DOMContentLoaded'da event listener'lari bagla
+document.addEventListener('DOMContentLoaded', function() {
+    // Sidebar toggle
+    const toggleBtn = document.getElementById('sidebarToggleBtn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', window.toggleLcwgptSidebar);
+    }
+
+    // Sidebar close
+    const closeBtn = document.getElementById('sidebarCloseBtn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', window.closeLcwgptSidebar);
+    }
+
+    // Sidebar send
+    const sendBtn = document.getElementById('sidebarSendBtn');
+    if (sendBtn) {
+        sendBtn.addEventListener('click', window.handleSidebarSend);
+    }
+
+    // Enter key in sidebar input
+    const sidebarInput = document.getElementById('sidebarChatInput');
+    if (sidebarInput) {
+        sidebarInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') window.handleSidebarSend();
+        });
+    }
+
+    console.log('✅ LCWGPT Sidebar event listeners initialized');
+});
+

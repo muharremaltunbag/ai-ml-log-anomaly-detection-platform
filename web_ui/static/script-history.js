@@ -774,7 +774,7 @@ function updateHistoryDisplay(filter = 'all') {
         return;
     }
 
-    let html = '<div class="history-list">';
+    let html = '';
 
     // MongoDB sync durumu göstergesi
     if (window.isConnected) {
@@ -796,69 +796,58 @@ function updateHistoryDisplay(filter = 'all') {
         `;
     }
 
-    // History item'ları göster
+    // Yatay scroll kart listesi (Figma layout)
+    html += '<div class="history-scroll-container">';
+    html += '<div class="history-cards-row">';
+
     filteredHistory.forEach(item => {
         const date = new Date(item.timestamp);
-        const typeIcon = item.subType === 'DBA' ? '🕐' : 
-                        item.type === 'anomaly' ? '🔍' : 
+        const typeIcon = item.subType === 'DBA' ? '🕐' :
+                        item.type === 'anomaly' ? '🔍' :
                         item.type === 'chat-anomaly' ? '🤖' : '💬';
-        
-        // MongoDB durumu
-        const mongoIcon = item.fromMongoDB ? '✅' : '⏳';
-        const mongoTitle = item.fromMongoDB ? 'MongoDB\'de kayıtlı' : 'MongoDB\'ye kaydedilecek';
-        
-        // Durum kontrolü
-        const statusClass = item.durum === 'tamamlandı' ? 'completed' :
-                           item.durum === 'başarılı' ? 'success' : 
-                           item.durum === 'hata' ? 'error' :
-                           item.durum === 'onay_bekliyor' ? 'pending' : 
-                           item.durum === 'iptal' ? 'cancelled' : 'warning';
-        
-        const statusIcon = item.durum === 'tamamlandı' ? '✅' :
-                          item.durum === 'onay_bekliyor' ? '⏳' :
-                          item.durum === 'başarılı' ? '✔️' :
-                          item.durum === 'iptal' ? '❌' : '⚠️';
-        
-        const itemClass = item.isAnomalyParent ? 'history-item anomaly-parent' : 'history-item';
-        const resultIndicator = item.hasResult && item.childResult ? 
-            '<span class="result-indicator">✅ Analiz Tamamlandı</span>' : 
-            item.awaitingConfirmation && item.durum === 'onay_bekliyor' ? 
-            '<span class="result-indicator pending animated">⏳ Onay Bekliyor</span>' : 
-            item.durum === 'iptal' ?
-            '<span class="result-indicator cancelled">❌ İptal Edildi</span>' : '';
-        
+
+        // Durum rengi (kart ust sag kosesindeki nokta)
+        const dotColor = item.durum === 'tamamlandı' || item.durum === 'başarılı' ? '#28a745' :
+                        item.durum === 'hata' ? '#dc3545' :
+                        item.durum === 'onay_bekliyor' ? '#ffc107' : '#6b7280';
+
+        // Kaynak tipi
+        const sourceLabel = item.subType === 'DBA' ? 'DBA' :
+                           item.source_type === 'opensearch' ? 'MongoDB' :
+                           item.source_type === 'mssql_opensearch' ? 'MSSQL' :
+                           item.type === 'anomaly' ? 'Anomali' : 'Chatbot';
+
+        // Anomali sayisi
+        const anomalyCount = item.anomalyCount || item.summary?.n_anomalies || item.dbaData?.anomaly_count || 0;
+        const anomalyLabel = anomalyCount > 0 ? `${anomalyCount} Anomali` : 'Temiz';
+        const anomalyColor = anomalyCount > 5 ? '#dc3545' : anomalyCount > 0 ? '#ffc107' : '#6b7280';
+
+        // Kart kisa baslik
+        const shortQuery = item.query && item.query.length > 35 ? item.query.substring(0, 35) + '...' : (item.query || 'Analiz');
+
+        // Tarih formati (kisa)
+        const dateStr = date.toLocaleDateString('tr-TR', { month: 'short', day: 'numeric' });
+        const timeStr = date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+
         html += `
-            <div class="${itemClass}" data-id="${item.id}" data-has-result="${item.hasResult || false}" data-from-mongodb="${item.fromMongoDB}">
-                <div class="history-item-header">
-                    <span class="history-type">${typeIcon}</span>
-                    <span class="history-time">${date.toLocaleString('tr-TR')}</span>
-                    <span class="mongodb-status" title="${mongoTitle}">${mongoIcon}</span>
-                    ${resultIndicator}
-                    <span class="history-status ${statusClass}">${statusIcon} ${item.durum}</span>
-                    ${item.executionTime ? `<span class="execution-time">⏱️ ${(item.executionTime/1000).toFixed(1)}s</span>` : ''}
+            <div class="history-card" data-id="${item.id}" data-has-result="${item.hasResult || false}" data-from-mongodb="${item.fromMongoDB}"
+                 onclick="window.showHistoryDetail('${String(item.id).replace(/'/g, "\\'")}')"
+                 title="${window.escapeHtml(item.query || '')}">
+                <div class="history-card-top">
+                    <span class="history-card-date">${dateStr}, ${timeStr}</span>
+                    <span class="history-card-dot" style="background-color: ${dotColor};"></span>
                 </div>
-                <div class="history-query">${window.escapeHtml(item.query)}</div>
-                ${item.id ? `<div class="history-id">ID: ${item.id}</div>` : ''}
-                <div class="history-actions">
-                    ${!item.parentId ? `
-                        <button class="btn-small" onclick="window.replayQuery('${String(item.id).replace(/'/g, "\\'")}')" >
-                            🔄 Tekrar Çalıştır
-                        </button>
-                    ` : ''}
-                    <button class="btn-small" onclick="window.showHistoryDetail('${String(item.id).replace(/'/g, "\\'")}')" >
-                        ${item.hasResult && item.childResult ? '📊 Sonuçları Göster' : '👁️ Detay'}
-                    </button>
-                    ${!item.fromMongoDB ? `
-                        <button class="btn-small" onclick="window.syncSingleItem('${String(item.id).replace(/'/g, "\\'")}')">
-                            💾 MongoDB'ye Kaydet
-                        </button>
-                    ` : ''}
+                <div class="history-card-title">${typeIcon} ${window.escapeHtml(shortQuery)}</div>
+                <div class="history-card-source">${sourceLabel}</div>
+                <div class="history-card-footer">
+                    <span class="history-card-anomaly" style="color: ${anomalyColor};">${anomalyLabel}</span>
+                    <span class="history-card-status">${item.durum || ''}</span>
                 </div>
             </div>
         `;
     });
 
-    html += '</div>';
+    html += '</div></div>';
     historyContent.innerHTML = html;
 };
 

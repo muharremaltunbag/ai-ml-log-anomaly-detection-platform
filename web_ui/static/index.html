@@ -8,41 +8,40 @@
     <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230047BA'/><text x='16' y='24' font-family='Arial' font-size='20' fill='white' text-anchor='middle'>LC</text></svg>">
 </head>
 <body>
-    <!-- Logo Section -->
-    <div class="logo-section">
-        <div class="logo-container">
-            <div class="logo">
-                <!-- LC Waikiki Logo SVG -->
-                <svg width="150" height="50" viewBox="0 0 150 50" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="0" y="10" width="40" height="30" fill="#0047BA" rx="5"/>
-                    <text x="20" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white" text-anchor="middle">LC</text>
-                    <text x="60" y="30" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#0047BA">WAIKIKI</text>
-                </svg>
-                <span class="logo-text">MongoDB Asistanı</span>
+<!-- ===== APP TWO-COLUMN LAYOUT WRAPPER ===== -->
+<div id="appMainColumn">
+    <!-- ===== STICKY HEADER BAR (Figma layout) ===== -->
+    <header id="appHeader" class="app-header">
+        <div class="app-header-inner">
+            <!-- Sol: Logo + Baslik -->
+            <div class="app-header-left">
+                <div class="logo">
+                    <svg width="120" height="40" viewBox="0 0 150 50" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="0" y="10" width="40" height="30" fill="#0047BA" rx="5"/>
+                        <text x="20" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="white" text-anchor="middle">LC</text>
+                        <text x="60" y="30" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#0047BA">WAIKIKI</text>
+                    </svg>
+                </div>
+                <span class="app-header-title">DBA Anomaly Sentinel</span>
+                <span class="environment-badge">TEST ORTAMI</span>
             </div>
-            <span class="environment-badge">TEST ORTAMI</span>
+
+            <!-- Sag: Status + API Key + Baglan -->
+            <div class="app-header-right">
+                <div id="status" class="status">
+                    <span class="status-indicator"></span>
+                    <span class="status-text">Bağlantı kontrol ediliyor...</span>
+                </div>
+                <div class="app-header-apikey">
+                    <input type="password" id="apiKey" placeholder="API anahtarı" value="lcw-test-2024">
+                    <button id="connectBtn" class="btn btn-primary">BAĞLAN</button>
+                </div>
+                <button id="sidebarToggleBtn" class="sidebar-toggle-btn" title="LCWGPT Assistant">🤖 AI</button>
+            </div>
         </div>
-    </div>
+    </header>
 
     <div class="container" id="mainContainer">
-        <!-- Header -->
-        <header>
-            <h1>MongoDB Doğal Dil Sorgu Asistanı</h1>
-            <p class="subtitle">Veritabanı Yönetimi Test Platformu</p>
-            <div id="status" class="status">
-                <span class="status-indicator"></span>
-                <span class="status-text">Bağlantı kontrol ediliyor...</span>
-            </div>
-        </header>
-
-        <!-- API Key Girişi -->
-        <section class="api-section">
-            <div class="input-group">
-                <label for="apiKey">API Anahtarı:</label>
-                <input type="password" id="apiKey" placeholder="API anahtarınızı girin" value="lcw-test-2024">
-                <button id="connectBtn" class="btn btn-primary">BAĞLAN</button>
-            </div>
-        </section>
 
 
         <!-- Main content wrapper -->
@@ -50,6 +49,153 @@
 
         <!-- Ana İçerik -->
         <main id="mainContent" style="display: none;">
+
+            <!-- ===== INLINE ANALYSIS CONFIGURATION (Figma layout) ===== -->
+            <section id="analysisConfigSection" class="analysis-config-section">
+                <div class="analysis-config-header">
+                    <h2>🔍 Analiz Konfigürasyonu</h2>
+                    <span id="analysisConfigStatus" class="config-status-badge">Hazır</span>
+                </div>
+                <div class="analysis-config-body">
+                    <!-- Veri Kaynağı Seçimi — Kart stili (Figma) -->
+                    <div class="config-field">
+                        <label class="config-label">Veri Kaynağı</label>
+                        <div class="datasource-cards">
+                            <label class="datasource-card">
+                                <input type="radio" name="dataSource" value="upload" checked>
+                                <div class="datasource-card-inner">
+                                    <span class="datasource-icon">📤</span>
+                                    <span class="datasource-title">Yüklenen Dosya</span>
+                                    <span class="datasource-desc">Manuel yüklenen loglar</span>
+                                </div>
+                            </label>
+                            <label class="datasource-card">
+                                <input type="radio" name="dataSource" value="opensearch">
+                                <div class="datasource-card-inner">
+                                    <span class="datasource-icon">🔍</span>
+                                    <span class="datasource-title">OpenSearch</span>
+                                    <span class="datasource-desc">Production MongoDB Logları</span>
+                                </div>
+                            </label>
+                            <label class="datasource-card">
+                                <input type="radio" name="dataSource" value="mssql_opensearch">
+                                <div class="datasource-card-inner">
+                                    <span class="datasource-icon">🗄️</span>
+                                    <span class="datasource-title">MSSQL OpenSearch</span>
+                                    <span class="datasource-desc">Production MSSQL Logları</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Kaynağa özel inputlar -->
+                    <div id="sourceSpecificInputs" style="margin-top: 15px;">
+                        <!-- Upload için dosya listesi -->
+                        <div id="uploadSourceInputs" style="display: none;"></div>
+
+                        <!-- OpenSearch için -->
+                        <div id="opensearchSourceInputs" style="display: none;">
+                            <div style="margin-bottom: 15px;">
+                                <label style="display: block; margin-bottom: 10px;">
+                                    <input type="radio" name="hostSelectionMode" value="single" checked>
+                                    🖥️ Tek Sunucu Analizi
+                                </label>
+                                <label style="display: block;">
+                                    <input type="radio" name="hostSelectionMode" value="cluster">
+                                    🔗 Cluster Analizi (Tüm Node'lar)
+                                </label>
+                            </div>
+                            <div id="singleHostSelection" style="margin-bottom: 15px;">
+                                <label>MongoDB Sunucusu:</label>
+                                <select id="mongodbHostSelect" class="form-select">
+                                    <option value="" disabled selected>Sunucu seçin...</option>
+                                </select>
+                            </div>
+                            <div id="clusterSelection" style="display: none; margin-bottom: 15px;">
+                                <label>MongoDB Cluster:</label>
+                                <select id="clusterSelect" class="form-select">
+                                    <option value="" disabled selected>Cluster seçin...</option>
+                                </select>
+                                <div id="clusterHostsInfo" style="margin-top: 10px; display: none;">
+                                    <label style="font-size: 12px; color: #666;">Cluster Node'ları:</label>
+                                    <div id="clusterHostsList" style="padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px;"></div>
+                                </div>
+                            </div>
+                            <button id="refreshHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
+                                🔄 Sunucu/Cluster Listesini Yenile
+                            </button>
+                        </div>
+
+                        <!-- MSSQL OpenSearch için -->
+                        <div id="mssqlSourceInputs" style="display: none;">
+                            <div style="margin-bottom: 15px;">
+                                <label>MSSQL Sunucusu:</label>
+                                <select id="mssqlHostSelect" class="form-select">
+                                    <option value="" disabled selected>MSSQL sunucu seçin...</option>
+                                </select>
+                            </div>
+                            <button id="refreshMSSQLHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
+                                🔄 MSSQL Sunucu Listesini Yenile
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Dosya seçimi (upload modu) -->
+                    <div class="anomaly-file-selection" id="fileSelectionSection" style="display: none;">
+                        <h4>Log Dosyası Seçin</h4>
+                        <div id="modalFilesList" class="files-list"></div>
+                    </div>
+
+                    <!-- Zaman Aralığı + Sunucu yan yana (Figma grid) -->
+                    <div class="config-row">
+                        <div class="config-field">
+                            <label class="config-label">Zaman Aralığı</label>
+                            <div class="timerange-pills">
+                                <label class="timerange-pill">
+                                    <input type="radio" name="modalTimeRange" value="last_24h" checked>
+                                    <span>Son 24 Saat</span>
+                                </label>
+                                <label class="timerange-pill">
+                                    <input type="radio" name="modalTimeRange" value="last_7d">
+                                    <span>Son 7 Gün</span>
+                                </label>
+                                <label class="timerange-pill">
+                                    <input type="radio" name="modalTimeRange" value="last_30d">
+                                    <span>Son 30 Gün</span>
+                                </label>
+                                <label class="timerange-pill">
+                                    <input type="radio" name="modalTimeRange" value="custom">
+                                    <span>📅 Özel</span>
+                                </label>
+                            </div>
+                            <!-- Custom Date Inputs -->
+                            <div id="customDateInputs" style="display: none; margin-top: 15px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div>
+                                        <label>Başlangıç:</label>
+                                        <input type="datetime-local" id="customStartTime" class="form-input">
+                                    </div>
+                                    <div>
+                                        <label>Bitiş:</label>
+                                        <input type="datetime-local" id="customEndTime" class="form-input">
+                                    </div>
+                                </div>
+                                <small style="color: #666; margin-top: 5px; display: block;">
+                                    ⏰ Zaman dilimi: UTC+3 (Türkiye Saati)
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Analizi Başlat butonu -->
+                    <div class="config-actions">
+                        <button id="startAnalysisBtn" class="btn btn-primary btn-start-analysis">
+                            🚀 ML Analizini Başlat
+                        </button>
+                    </div>
+                </div>
+            </section>
+
             <!-- Hızlı İşlemler -->
             <section class="quick-actions">
                 <button id="anomalyAnalysisBtn" class="btn btn-primary">🔍 ANOMALİ ANALİZİ</button>
@@ -57,13 +203,47 @@
                 <button id="logUploadBtn" class="btn btn-secondary">📁 LOG YÜKLE</button>
                 <button id="toggleMLPanelBtn" class="btn btn-secondary">📊 ML MODELİ METRİKLERİ</button>
                 <button id="statusBtn" class="btn btn-secondary">SİSTEM DURUMU</button>
-
             </section>
 
-            <!-- Yükleme Göstergesi -->
-            <div id="loader" class="loader" style="display: none;">
-                <div class="spinner"></div>
-                <p>Sorgu işleniyor, lütfen bekleyin...</p>
+            <!-- Yükleme Göstergesi — Figma Processing Modal -->
+            <div id="loader" class="processing-overlay" style="display: none;">
+                <div class="processing-modal">
+                    <div class="processing-header">
+                        <span class="processing-icon">🧠</span>
+                        <h3>Anomali Analizi İşleniyor</h3>
+                        <p class="processing-subtitle">Log verileri taranıyor ve anomaliler tespit ediliyor...</p>
+                    </div>
+                    <div id="processingSteps" class="processing-steps">
+                        <div class="processing-step completed" data-step="validation">
+                            <span class="step-indicator step-done">✓</span>
+                            <span class="step-label">Parametre Doğrulama</span>
+                        </div>
+                        <div class="processing-step active" data-step="connection">
+                            <span class="step-indicator step-active">
+                                <span class="step-spinner"></span>
+                            </span>
+                            <div class="step-label-wrapper">
+                                <span class="step-label">Veri Kaynağına Bağlanılıyor</span>
+                                <div class="step-progress-bar">
+                                    <div class="step-progress-fill" style="width: 0%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="processing-step pending" data-step="reading">
+                            <span class="step-indicator step-pending"></span>
+                            <span class="step-label">Log Okuma ve Ayrıştırma</span>
+                        </div>
+                        <div class="processing-step pending" data-step="feature_engineering">
+                            <span class="step-indicator step-pending"></span>
+                            <span class="step-label">Feature Engineering</span>
+                        </div>
+                        <div class="processing-step pending" data-step="ml_inference">
+                            <span class="step-indicator step-pending"></span>
+                            <span class="step-label">ML Model Çıkarımı ve Skorlama</span>
+                        </div>
+                    </div>
+                    <p id="processingMessage" class="processing-message">Sorgu işleniyor, lütfen bekleyin...</p>
+                </div>
             </div>
 
             <!-- Sorgu Alanı -->
@@ -329,155 +509,15 @@
 
         </main>
 
-        <!-- Anomali Analiz Modal -->
-        <div id="anomalyModal" class="modal">
+        <!-- Anomali Analiz Modal (icerik inline section'a tasindi, bos shell olarak korunuyor) -->
+        <div id="anomalyModal" class="modal" style="display: none;">
             <div class="modal-content">
                 <div class="modal-header">
                     <h3>🔍 Anomali Analizi</h3>
                     <span class="close">&times;</span>
                 </div>
                 <div class="modal-body">
-                    <div id="anomalyModalContent">
-                        <!-- Veri Kaynağı Seçimi -->
-                        <div class="anomaly-source-selection" style="margin-bottom: 20px;">
-                            <h4>Veri Kaynağı Seçin</h4>
-                            <div class="source-selection-grid">
-                                <label class="source-option">
-                                    <input type="radio" name="dataSource" value="upload" checked>
-                                    <span>📤 Yüklenen Dosya</span>
-                                    <small> (Manuel yüklenen loglar) </small>
-                                </label>
-                                
-                                <label class="source-option">
-                                    <input type="radio" name="dataSource" value="opensearch">
-                                    <span>🔍 OpenSearch</span>
-                                    <small>(Production MongoDB Logları)</small>
-                                </label>
-
-                                <label class="source-option">
-                                    <input type="radio" name="dataSource" value="mssql_opensearch">
-                                    <span>🗄️ MSSQL OpenSearch</span>
-                                    <small>(Production MSSQL Logları)</small>
-                                </label>
-                            </div>
-                            
-                            <!-- Dinamik input alanları -->
-                            <div id="sourceSpecificInputs" style="margin-top: 15px;">
-                                <!-- Upload için dosya listesi -->
-                                <div id="uploadSourceInputs" style="display: none;">
-                                </div>
-                                
-                                <!-- OpenSearch için -->
-                                <div id="opensearchSourceInputs" style="display: none;">
-                                    
-                                    <!-- Cluster veya Tek Sunucu Seçimi -->
-                                    <div style="margin-bottom: 15px;">
-                                        <label style="display: block; margin-bottom: 10px;">
-                                            <input type="radio" name="hostSelectionMode" value="single" checked>
-                                            🖥️ Tek Sunucu Analizi
-                                        </label>
-                                        <label style="display: block;">
-                                            <input type="radio" name="hostSelectionMode" value="cluster">
-                                            🔗 Cluster Analizi (Tüm Node'lar)
-                                        </label>
-                                    </div>
-                                    
-                                    <!-- Tek Sunucu Dropdown -->
-                                    <div id="singleHostSelection" style="margin-bottom: 15px;">
-                                        <label>MongoDB Sunucusu:</label>
-                                        <select id="mongodbHostSelect" class="form-select">
-                                            <option value="" disabled selected>Sunucu seçin...</option>
-                                        </select>
-                                    </div>
-                                    
-                                    <!-- Cluster Dropdown (YENİ) -->
-                                    <div id="clusterSelection" style="display: none; margin-bottom: 15px;">
-                                        <label>MongoDB Cluster:</label>
-                                        <select id="clusterSelect" class="form-select">
-                                            <option value="" disabled selected>Cluster seçin...</option>
-                                        </select>
-                                        
-                                        <!-- Seçilen Cluster'ın Host Listesi (Read-only) -->
-                                        <div id="clusterHostsInfo" style="margin-top: 10px; display: none;">
-                                            <label style="font-size: 12px; color: #666;">Cluster Node'ları:</label>
-                                            <div id="clusterHostsList" style="padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px;">
-                                                <!-- Dinamik olarak doldurulacak -->
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <button id="refreshHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
-                                        🔄 Sunucu/Cluster Listesini Yenile
-                                    </button>
-                                </div>
-
-                                <!-- MSSQL OpenSearch için -->
-                                <div id="mssqlSourceInputs" style="display: none;">
-                                    <div style="margin-bottom: 15px;">
-                                        <label>MSSQL Sunucusu:</label>
-                                        <select id="mssqlHostSelect" class="form-select">
-                                            <option value="" disabled selected>MSSQL sunucu seçin...</option>
-                                        </select>
-                                    </div>
-
-                                    <button id="refreshMSSQLHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
-                                        🔄 MSSQL Sunucu Listesini Yenile
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Dosya seçimi -->
-                        <div class="anomaly-file-selection" id="fileSelectionSection">
-                            <h4>Log Dosyası Seçin</h4>
-                            <div id="modalFilesList" class="files-list"></div>
-                        </div>
-                        
-                        <!-- Analiz seçenekleri -->
-                        <div class="analysis-options" style="margin-top: 20px;">
-                            <h4>Analiz Seçenekleri</h4>
-                            <div class="options-grid">
-                                <label>
-                                    <input type="radio" name="modalTimeRange" value="last_24h" checked>
-                                    Son 24 Saat
-                                </label>
-                                <label>
-                                    <input type="radio" name="modalTimeRange" value="last_7d">
-                                    Son 7 Gün
-                                </label>
-                                <label>
-                                    <input type="radio" name="modalTimeRange" value="last_30d">
-                                    Son 30 Gün
-                                </label>
-                                <!-- Custom Date Range Option -->
-                                <label>
-                                    <input type="radio" name="modal// web_ui\static\script.jsTimeRange" value="custom">
-                                    Özel Tarih Aralığı
-                                </label>
-                            </div>
-                            
-                            <!-- Custom Date Inputs (initially hidden) -->
-                            <div id="customDateInputs" style="display: none; margin-top: 15px;">
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                                    <div>
-                                        <label>Başlangıç:</label>
-                                        <input type="datetime-local" id="customStartTime" class="form-input">
-                                    </div>
-                                    <div>
-                                        <label>Bitiş:</label>
-                                        <input type="datetime-local" id="customEndTime" class="form-input">
-                                    </div>
-                                </div>
-                                <small style="color: #666; margin-top: 5px; display: block;">
-                                    ⏰ Zaman dilimi: UTC+3 (Türkiye Saati)
-                                </small>
-                            </div>
-                            
-                            <button id="startAnalysisBtn" class="btn btn-primary" style="margin-top: 15px; width: 100%;">
-                                <span>🚀 ANALİZİ BAŞLAT</span>
-                            </button>
-                        </div>
-                    </div>
+                    <p style="text-align: center; padding: 20px; color: #777;">Analiz konfigürasyonu artık ana sayfada gösterilmektedir.</p>
                 </div>
             </div>
         </div>
@@ -578,6 +618,40 @@
             </div>
         </div>
     </div>
+
+</div><!-- /appMainColumn -->
+
+<!-- ===== LCWGPT SIDEBAR ===== -->
+<aside id="lcwgptSidebar" class="lcwgpt-sidebar">
+    <!-- Sidebar Header -->
+    <div class="sidebar-header">
+        <div class="sidebar-header-left">
+            <span class="sidebar-ai-icon">🤖</span>
+            <span class="sidebar-title">LCWGPT Assistant</span>
+        </div>
+        <button id="sidebarCloseBtn" class="sidebar-close-btn" title="Sidebar'ı Kapat">✕</button>
+    </div>
+
+    <!-- Chat Messages Area -->
+    <div id="sidebarChatMessages" class="sidebar-chat-messages">
+        <div class="sidebar-welcome-msg">
+            <div class="sidebar-ai-bubble">
+                <span class="sidebar-ai-avatar">🤖</span>
+                <div class="sidebar-bubble-content">
+                    Merhaba! Anomali analizleriniz hakkında sorular sorabilirsiniz. Bir analiz çalıştırdıktan sonra sonuçları burada tartışabiliriz.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Input -->
+    <div class="sidebar-chat-input">
+        <div class="sidebar-input-wrapper">
+            <input type="text" id="sidebarChatInput" placeholder="Soru sorun..." autocomplete="off">
+            <button id="sidebarSendBtn" class="sidebar-send-btn" title="Gönder">➤</button>
+        </div>
+    </div>
+</aside>
 
     <!-- Core Configuration Module - EN ÖNCE YÜKLENMELİ -->
     <script src="/static/script-core.js"></script>
