@@ -13105,6 +13105,12 @@ mark.text-highlight:hover {
     width: auto;
 }
 
+.app-header-left .logo .logo-img {
+    height: 32px;
+    width: auto;
+    object-fit: contain;
+}
+
 .app-header-title-group {
     display: flex;
     flex-direction: column;
