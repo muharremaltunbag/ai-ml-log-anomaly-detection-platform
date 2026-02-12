@@ -308,8 +308,8 @@ class MSSQLOpenSearchReader:
         }
 
         # Auth credentials
-        self.username = os.getenv('OPENSEARCH_USERNAME', '')
-        self.password = os.getenv('OPENSEARCH_PASSWORD', '')
+        self.username = os.getenv('OPENSEARCH_USER', '')
+        self.password = os.getenv('OPENSEARCH_PASS', '')
 
         # Bağlantı durumu
         self._connected = False
@@ -361,16 +361,23 @@ class MSSQLOpenSearchReader:
         login_url = f"{self.base_url}/auth/login"
 
         try:
-            # Form-based login
+            # JSON-based login (OpenSearch Dashboards format)
             login_data = {
                 'username': self.username,
                 'password': self.password
             }
 
+            login_headers = {
+                'Content-Type': 'application/json',
+                'osd-version': '2.6.0',
+                'Referer': f'{self.base_url}/app/login?',
+                'Origin': self.base_url
+            }
+
             response = self.session.post(
                 login_url,
-                data=login_data,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                json=login_data,
+                headers=login_headers,
                 timeout=30,
                 allow_redirects=True
             )
