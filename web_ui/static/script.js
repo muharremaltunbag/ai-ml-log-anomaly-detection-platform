@@ -537,6 +537,14 @@ function initializeEventListeners() {
             validateAnalysisButton();
         }
     });
+
+    // MSSQL host seçildiğinde validate tetikle
+    document.getElementById('mssqlHostSelect')?.addEventListener('change', (e) => {
+        console.log('MSSQL host selected:', e.target.value);
+        if (selectedDataSource === 'mssql_opensearch') {
+            validateAnalysisButton();
+        }
+    });
     
     // Dosya radio button'larına event listener ekle (Event delegation)
     document.addEventListener('change', function(e) {

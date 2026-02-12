@@ -836,7 +836,7 @@ function validateAnalysisButton() {
         case 'opensearch':
             // Single/Cluster mode kontrolü
             const hostMode = document.querySelector('input[name="hostSelectionMode"]:checked')?.value || 'single';
-            
+
             if (hostMode === 'cluster') {
                 // Cluster mode validation - CLUSTER DROPDOWN DESTEĞİ
                 const selectedCluster = document.getElementById('clusterSelect')?.value;
@@ -848,6 +848,12 @@ function validateAnalysisButton() {
                 isValid = selectedHost && selectedHost.length > 0;
                 console.log('OpenSearch single mode - selected host:', selectedHost, 'isValid:', isValid);
             }
+            break;
+        case 'mssql_opensearch':
+            // MSSQL OpenSearch - sunucu seçildi mi kontrol et
+            const mssqlHost = document.getElementById('mssqlHostSelect')?.value;
+            isValid = mssqlHost && mssqlHost.length > 0;
+            console.log('MSSQL OpenSearch - selected host:', mssqlHost, 'isValid:', isValid);
             break;
         default:
             console.log('Unknown data source for validation:', window.selectedDataSource); // DEBUG LOG
