@@ -13859,6 +13859,10 @@ mark.text-highlight:hover {
     color: var(--text-primary);
 }
 
+.progress-step .step-label {
+    color: inherit;
+}
+
 .processing-step.pending .step-label {
     color: var(--text-secondary);
 }
