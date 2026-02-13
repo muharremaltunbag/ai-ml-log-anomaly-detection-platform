@@ -412,6 +412,98 @@ window.showServerSelection = function() {
     });
 };
 
+// ============================================
+// ÖRNEK SORULAR — Veri Seti ve Render
+// ============================================
+
+/**
+ * Source type bazli ornek soru setleri.
+ * 'general' → sunucu secilmeden once
+ * 'mssql'   → MSSQL sunucu secildiginde
+ * 'mongodb' → MongoDB sunucu secildiginde
+ */
+window.EXAMPLE_QUESTIONS = {
+    general: [
+        { icon: '📊', text: 'Hangi sunucularda en cok anomali tespit edildi?' },
+        { icon: '🔍', text: 'En son yapilan analizlerde kritik bulgular neler?' },
+        { icon: '📈', text: 'Anomali analizlerinin genel ozetini goster' }
+    ],
+    mssql: [
+        { icon: '🔐', text: 'Basarisiz login denemelerini raporla' },
+        { icon: '🔄', text: 'Availability Group erisim sorunlarini incele' },
+        { icon: '🛡️', text: 'Yetkilendirme hatalarini analiz et' },
+        { icon: '⏱️', text: 'Deadlock ve blocking durumlarini listele' },
+        { icon: '📋', text: 'En kritik 5 anomaliyi ozetle' }
+    ],
+    mongodb: [
+        { icon: '🔑', text: 'DuplicateKey hatalarinin kok nedenini bul' },
+        { icon: '⏱️', text: 'Uzun suren transactionlari listele' },
+        { icon: '💚', text: 'Replica set saglik durumunu analiz et' },
+        { icon: '🔌', text: 'Baglanti havuzu sorunlarini incele' },
+        { icon: '📋', text: 'En kritik 5 anomaliyi ozetle' }
+    ]
+};
+
+/**
+ * Secili sunucunun source type'ini chatServerList'ten bul.
+ * Bulamazsa null doner.
+ */
+window.getSelectedServerSourceType = function() {
+    if (!window.selectedChatServer || !window.chatServerList) return null;
+    var server = window.chatServerList.find(function(s) {
+        return s.host === window.selectedChatServer;
+    });
+    if (!server) return null;
+    var src = (server.source || '').toLowerCase();
+    if (src.includes('mssql')) return 'mssql';
+    if (src.includes('mongo') || src.includes('opensearch')) return 'mongodb';
+    return null;
+};
+
+/**
+ * Ornek soru chip'lerini renderla.
+ * @param {string|null} sourceType — 'mssql', 'mongodb', veya null (genel)
+ */
+window.renderExampleQuestions = function(sourceType) {
+    var container = document.getElementById('exampleQuestionsContainer');
+    if (!container) return;
+
+    var questions = window.EXAMPLE_QUESTIONS[sourceType] || window.EXAMPLE_QUESTIONS.general;
+    var dataSource = sourceType || 'general';
+
+    container.innerHTML = '';
+    questions.forEach(function(q) {
+        var chip = document.createElement('button');
+        chip.className = 'example-question-chip';
+        chip.setAttribute('data-source', dataSource);
+        chip.setAttribute('type', 'button');
+        chip.innerHTML = '<span class="chip-icon">' + q.icon + '</span><span>' + q.text + '</span>';
+        chip.addEventListener('click', function() {
+            var input = document.getElementById('sidebarChatInput');
+            if (input) {
+                input.value = q.text;
+                input.focus();
+            }
+            // Otomatik gonder
+            if (typeof window.handleSidebarSend === 'function') {
+                window.handleSidebarSend();
+            }
+        });
+        container.appendChild(chip);
+    });
+
+    console.log('LCWGPT: Example questions rendered for source:', dataSource, '(' + questions.length + ' chips)');
+};
+
+/**
+ * Mevcut secili sunucuya gore ornek sorulari guncelle.
+ * Sunucu secilmemisse genel soru setini gosterir.
+ */
+window.updateExampleQuestions = function() {
+    var sourceType = window.getSelectedServerSourceType();
+    window.renderExampleQuestions(sourceType);
+};
+
 // Sunucu seçimini uygula
 window.selectChatServer = function(serverName, analysisId) {
     window.selectedChatServer = serverName;
@@ -438,6 +530,11 @@ window.selectChatServer = function(serverName, analysisId) {
     });
 
     console.log('LCWGPT: Server selected:', serverName, 'analysis_id:', analysisId);
+
+    // Ornek sorulari secilen sunucunun source type'ina gore guncelle
+    if (typeof window.updateExampleQuestions === 'function') {
+        window.updateExampleQuestions();
+    }
 };
 
 // Sidebar send — mevcut handleQuery()'yi kullanir + sunucu seçim kontrolü
@@ -453,6 +550,10 @@ window.handleSidebarSend = function() {
         window.selectedChatServer = null;
         window.selectedChatAnalysisId = null;
         window.addSidebarUserMessage(query);
+        // Ornek sorulari genel sete dondur
+        if (typeof window.renderExampleQuestions === 'function') {
+            window.renderExampleQuestions(null);
+        }
         window.loadAnalyzedServers().then(function() {
             window.showServerSelection();
         });
@@ -533,6 +634,11 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     }, 1500);
+
+    // Baslangicta genel ornek sorulari renderla
+    if (typeof window.renderExampleQuestions === 'function') {
+        window.renderExampleQuestions(null);
+    }
 
     console.log('✅ LCWGPT Sidebar event listeners initialized');
 });

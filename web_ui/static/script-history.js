@@ -138,6 +138,10 @@ async function autoLoadHistoryOnStartup() {
                         window.showServerSelection();
                     }
                 }
+                // Ornek sorulari guncelle (sunucu listesi yuklendikten sonra)
+                if (typeof window.updateExampleQuestions === 'function') {
+                    window.updateExampleQuestions();
+                }
             });
         }
 

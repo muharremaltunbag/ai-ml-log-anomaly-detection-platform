@@ -1881,6 +1881,10 @@ function displayAnomalyResults(result) {
                 if (!window.selectedChatServer && typeof window.showServerSelection === 'function') {
                     window.showServerSelection();
                 }
+                // Ornek sorulari da guncelle (sunucu seciliyse source type'a gore, degilse genel)
+                if (typeof window.updateExampleQuestions === 'function') {
+                    window.updateExampleQuestions();
+                }
             }).catch(e => console.warn('LCWGPT: Server list refresh failed:', e));
         }, refreshDelay);
     }
