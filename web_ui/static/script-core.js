@@ -426,13 +426,23 @@ window.EXAMPLE_QUESTIONS = {
     general: [
         { icon: '📊', text: 'Hangi sunucularda en cok anomali tespit edildi?' },
         { icon: '🔍', text: 'En son yapilan analizlerde kritik bulgular neler?' },
-        { icon: '📈', text: 'Anomali analizlerinin genel ozetini goster' }
+        { icon: '📈', text: 'Anomali analizlerinin genel ozetini goster' },
+        { icon: '⚠️', text: 'Son 24 saatteki anomali trendlerini analiz et' },
+        { icon: '🏥', text: 'Sunucu saglik durumlarini karsilastir' },
+        { icon: '🔁', text: 'Tum analizlerdeki tekrarlayan oruntuleri bul' },
+        { icon: '🚨', text: 'Acil mudahale gerektiren anomalileri listele' },
+        { icon: '📉', text: 'Anomali sikliginda artis olan sunuculari goster' }
     ],
     mssql: [
         { icon: '🔐', text: 'Basarisiz login denemelerini raporla' },
         { icon: '🔄', text: 'Availability Group erisim sorunlarini incele' },
         { icon: '🛡️', text: 'Yetkilendirme hatalarini analiz et' },
         { icon: '⏱️', text: 'Deadlock ve blocking durumlarini listele' },
+        { icon: '👤', text: 'Devre disi hesaplarla yapilan giris denemelerini goster' },
+        { icon: '🌐', text: 'Hangi client IP adreslerinden en cok hata geliyor?' },
+        { icon: '🗄️', text: 'Veritabani erisim sorunlarini ozetle' },
+        { icon: '🔁', text: 'Tekrarlayan login hatasi oruntularini bul' },
+        { icon: '📊', text: 'Hata kategorilerine gore dagilimi goster' },
         { icon: '📋', text: 'En kritik 5 anomaliyi ozetle' }
     ],
     mongodb: [
@@ -440,6 +450,11 @@ window.EXAMPLE_QUESTIONS = {
         { icon: '⏱️', text: 'Uzun suren transactionlari listele' },
         { icon: '💚', text: 'Replica set saglik durumunu analiz et' },
         { icon: '🔌', text: 'Baglanti havuzu sorunlarini incele' },
+        { icon: '🔒', text: 'Unauthorized erisim denemelerini raporla' },
+        { icon: '📝', text: 'WiredTiger checkpoint sorunlarini analiz et' },
+        { icon: '🔄', text: 'Transaction commit surelerindeki anomalileri goster' },
+        { icon: '👤', text: 'Hangi kullanicilar en cok hata uretiyor?' },
+        { icon: '🌐', text: 'Baglanti kaynaklarini (client IP) analiz et' },
         { icon: '📋', text: 'En kritik 5 anomaliyi ozetle' }
     ]
 };
