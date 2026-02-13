@@ -13578,18 +13578,14 @@ mark.text-highlight:hover {
    EXAMPLE QUESTIONS — Chip Container (Figma uyumlu)
    ============================================================ */
 
-/* Container — yatay scroll, input'un üzerinde */
+/* Container — flex-wrap ile tum chip'ler gorunur */
 .example-questions-container {
     display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    padding-bottom: 10px;
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-}
-
-.example-questions-container::-webkit-scrollbar {
-    display: none;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 12px;
+    max-height: 140px;
+    overflow-y: auto;
 }
 
 /* Icerik yokken gizle — padding/border olmasin */
@@ -13597,39 +13593,41 @@ mark.text-highlight:hover {
     display: none;
 }
 
-/* Chip buton — Figma rounded pill stili */
+/* Chip buton — okunabilir boyut, rahat padding */
 .example-question-chip {
-    flex-shrink: 0;
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 6px 12px;
-    font-size: 11px;
-    font-weight: 500;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
     color: var(--text-secondary);
     background-color: var(--bg-color);
     border: 1px solid var(--border-color);
-    border-radius: 9999px;
+    border-radius: 10px;
     cursor: pointer;
-    white-space: nowrap;
     transition: all 0.2s ease;
-    line-height: 1.3;
+    line-height: 1.4;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    text-align: left;
 }
 
 .example-question-chip:hover {
     border-color: var(--lcw-blue);
     color: var(--lcw-blue);
-    background-color: rgba(0, 71, 186, 0.04);
+    background-color: rgba(0, 71, 186, 0.05);
+    box-shadow: 0 2px 6px rgba(0, 71, 186, 0.1);
+    transform: translateY(-1px);
 }
 
 .example-question-chip:active {
-    transform: scale(0.96);
+    transform: scale(0.97) translateY(0);
     background-color: rgba(0, 71, 186, 0.08);
 }
 
 /* Chip icindeki ikon */
 .example-question-chip .chip-icon {
-    font-size: 13px;
+    font-size: 14px;
     line-height: 1;
     flex-shrink: 0;
 }
@@ -13638,12 +13636,14 @@ mark.text-highlight:hover {
 .example-question-chip[data-source="mssql"]:hover {
     border-color: #2563eb;
     color: #2563eb;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.12);
 }
 
 /* MongoDB chip'leri icin yesil vurgu */
 .example-question-chip[data-source="mongodb"]:hover {
     border-color: #059669;
     color: #059669;
+    box-shadow: 0 2px 6px rgba(5, 150, 105, 0.12);
 }
 
 /* Chat Input Area */
