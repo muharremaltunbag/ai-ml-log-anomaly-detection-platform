@@ -1862,9 +1862,9 @@ async def export_analysis(
 
 
 def estimate_token_count(text: str) -> int:
-    """Yaklaşık token sayısını hesapla"""
-    # Ortalama olarak 4 karakter = 1 token
-    return len(text) // 4
+    """Yaklaşık token sayısını hesapla (Türkçe+İngilizce karışık metin)"""
+    # Türkçe diacritics ve uzun kelimeler nedeniyle ~3 char/token daha gerçekçi
+    return len(text) // 3
 
 def _calculate_chunk_relevance(query: str, chunk_anomalies: list, chunk_index: int) -> float:
     """
@@ -2139,6 +2139,30 @@ async def chat_query_anomalies(request: Dict[str, Any]):
             filters = {"analysis_id": analysis_id}
             context_analyses = []
 
+            # analysis_id varsa bile o sunucunun geçmiş analizlerini context olarak çek
+            try:
+                storage = await get_storage_manager()
+                # Önce bu analizi çekip host bilgisini al
+                _preview = await storage.get_anomaly_history(
+                    filters={"analysis_id": analysis_id}, limit=1, include_details=False
+                )
+                if _preview:
+                    _host = _preview[0].get("host")
+                    if _host:
+                        _host_analyses = await storage.get_anomaly_history(
+                            filters={"host": _host}, limit=5, include_details=False
+                        )
+                        # Mevcut analiz hariç, en son 2 geçmiş analizi context olarak al
+                        context_analyses = [
+                            a for a in _host_analyses
+                            if a.get("analysis_id") != analysis_id
+                        ][:2]
+                        if context_analyses:
+                            logger.info(f"Context: Found {len(context_analyses)} past analyses for host {_host}")
+            except Exception as e:
+                logger.warning(f"Could not load context analyses for analysis_id path: {e}")
+                context_analyses = []
+
         storage = await get_storage_manager()
         analyses = await storage.get_anomaly_history(
             filters=filters,
@@ -2154,6 +2178,8 @@ async def chat_query_anomalies(request: Dict[str, Any]):
             }
 
         analysis = analyses[0]
+        analysis_source = (analysis.get("source") or "").lower()
+        is_mssql = "mssql" in analysis_source
 
         all_anomalies = analysis.get("unfiltered_anomalies", [])
         if not all_anomalies:
@@ -2207,8 +2233,26 @@ async def chat_query_anomalies(request: Dict[str, Any]):
             sev = a.get('severity_level', 'N/A')
             severity_dist[sev] = severity_dist.get(sev, 0) + 1
 
-        # LCWGPT system prompt
-        system_prompt = """Sen MongoDB anomali analizi ve performans optimizasyonu konusunda uzman bir DBA'sin. 
+        # LCWGPT system prompt — kaynak tipine göre dinamik
+        if is_mssql:
+            system_prompt = """Sen MSSQL veritabanı anomali analizi ve performans optimizasyonu konusunda uzman bir DBA'sin.
+MSSQL loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve spesifik çözüm önerileri sunabilirsin.
+
+MSSQL LOG PATTERN BİLGİSİ:
+- DEADLOCK: Kilitlenme sorunları (deadlock graph, victim selection)
+- BLOCKING: Uzun süreli kilitler, wait chain
+- SLOW QUERY: Yavaş sorgular, execution plan sorunları
+- TEMPDB: TempDB darboğazları, version store
+- IO: Disk I/O gecikmesi, page split, autogrow
+- MEMORY: Buffer pool, memory grant, plan cache pressure
+- CONNECTIVITY: Login failure, connection pool, timeout
+- AGENT: SQL Agent job hataları, schedule sorunları
+- REPLICATION: Always On, AG failover, log shipping
+- BACKUP: Backup/restore hataları, chain broken
+
+ANALİZ YÖNTEMİ:"""
+        else:
+            system_prompt = """Sen MongoDB anomali analizi ve performans optimizasyonu konusunda uzman bir DBA'sin.
 MongoDB loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve spesifik çözüm önerileri sunabilirsin.
 
 MONGODB LOG PATTERN BİLGİSİ:
@@ -2332,9 +2376,9 @@ GÖREV:
 """
 
             estimated_tokens = estimate_token_count(chunk_prompt)
-            if estimated_tokens > 3000:
-                logger.warning(f"[TOKEN WARNING] Chunk {chunk_idx} may exceed token limit: {estimated_tokens}")
-                current_chunk = current_chunk[:25]
+            if estimated_tokens > 15000:
+                logger.warning(f"[TOKEN WARNING] Chunk {chunk_idx} exceeds soft limit: {estimated_tokens} tokens, truncating to 15 anomalies")
+                current_chunk = current_chunk[:15]
                 # Optionally, prompt regeneration (left as original source for brevity)
                 # It's crucial that LLM uses context; only top anomalies/first 25 shown for safety
 
@@ -2382,12 +2426,14 @@ SEVERITY DAĞILIMI:
 CHUNK ANALİZ SONUÇLARI:
 """
             for cr in chunk_responses:
-                aggregate_prompt += f"\n\n[Chunk {cr['chunk_idx']}] ({cr['anomaly_count']} anomali):\n{cr['response'][:500]}..."
+                aggregate_prompt += f"\n\n[Chunk {cr['chunk_idx']}] ({cr['anomaly_count']} anomali):\n{cr['response'][:1500]}..."
 
             aggregate_prompt += "\n\nYukarıdaki chunk analizlerini birleştirerek, kullanıcının sorusuna kapsamlı ve net bir yanıt oluştur."
 
+            merge_system = "Sen MSSQL anomali analiz uzmanısın." if is_mssql else "Sen MongoDB anomali analiz uzmanısın."
+            merge_system += " Birden fazla analizi birleştirip özet çıkarabilirsin."
             final_messages = [
-                SystemMessage(content="Sen MongoDB anomali analiz uzmanısın. Birden fazla analizi birleştirip özet çıkarabilirsin."),
+                SystemMessage(content=merge_system),
                 HumanMessage(content=aggregate_prompt)
             ]
 
