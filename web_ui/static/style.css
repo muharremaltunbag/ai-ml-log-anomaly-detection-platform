@@ -13565,6 +13565,15 @@ mark.text-highlight:hover {
     font-weight: 600;
 }
 
+.server-anomaly-count {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background-color: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+    font-weight: 600;
+}
+
 /* Chat Input Area */
 .sidebar-chat-input {
     padding: 12px 16px;

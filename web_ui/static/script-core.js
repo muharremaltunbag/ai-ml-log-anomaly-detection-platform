@@ -383,11 +383,13 @@ window.showServerSelection = function() {
 
     let serverButtons = window.chatServerList.map(function(server) {
         const shortName = server.host.split('.')[0];
-        const sourceTag = (server.source || '').toLowerCase().includes('mssql') ? 'MSSQL' : 'MongoDB';
+        const src = (server.source || '').toLowerCase();
+        const sourceTag = src.includes('mssql') ? 'MSSQL' : src.includes('opensearch') ? 'OpenSearch' : 'MongoDB';
+        const anomalyBadge = server.anomaly_count ? ' <span class="server-anomaly-count">' + server.anomaly_count + '</span>' : '';
         return '<button class="server-select-btn" data-server="' + server.host + '" ' +
                'data-analysis-id="' + (server.analysis_id || '') + '" ' +
-               'title="Son analiz: ' + (server.last_analysis || 'N/A') + '">' +
-               shortName + ' <span class="server-tag">' + sourceTag + '</span></button>';
+               'title="Son analiz: ' + (server.last_analysis || 'N/A') + ' | Anomali: ' + (server.anomaly_count || 0) + '">' +
+               shortName + anomalyBadge + ' <span class="server-tag">' + sourceTag + '</span></button>';
     }).join('');
 
     bubble.innerHTML =

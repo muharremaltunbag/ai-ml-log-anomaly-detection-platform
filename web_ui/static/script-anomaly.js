@@ -1865,6 +1865,24 @@ function displayAnomalyResults(result) {
     }
 
     // ============================================
+    // ✅ LCWGPT SIDEBAR SUNUCU LİSTESİ OTOMATİK GÜNCELLEME
+    // ============================================
+    // Analiz tamamlandığında sidebar'daki sunucu listesini yenile
+    if (typeof window.loadAnalyzedServers === 'function') {
+        console.log('🔄 LCWGPT: Refreshing server list after analysis completion...');
+        setTimeout(() => {
+            window.loadAnalyzedServers().then(() => {
+                console.log('✅ LCWGPT: Server list refreshed. Servers:',
+                    (window.chatServerList || []).map(s => s.host).join(', '));
+                // Eğer henüz sunucu seçilmemişse, güncel listeyi sidebar'da göster
+                if (!window.selectedChatServer && typeof window.showServerSelection === 'function') {
+                    window.showServerSelection();
+                }
+            }).catch(e => console.warn('LCWGPT: Server list refresh failed:', e));
+        }, 2000); // Backend'in kaydetmesi için 2sn bekle
+    }
+
+    // ============================================
     // ✅ DBA EXPLORER BAĞLANTISI (GÜÇLENDİRİLMİŞ HOST TESPİTİ)
     // ============================================
     if (window.DBAExplorer) {

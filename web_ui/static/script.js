@@ -819,7 +819,10 @@ async function handleQuery() {
                                query.toLowerCase().includes('log');
         console.log('Has anomaly or log keyword:', hasAnomalyOrLog);
         
-        const isChatAnomalyQuery = hasKeyword && (hasAnomalyOrLog || window.lastAnomalyResult);
+        // Sidebar'dan sunucu seçildiyse her zaman chat anomaly query olarak değerlendir
+        const hasSidebarServer = !!(window.selectedChatServer && window.selectedChatAnalysisId);
+        const isChatAnomalyQuery = hasSidebarServer || (hasKeyword && (hasAnomalyOrLog || window.lastAnomalyResult));
+        console.log('Has sidebar server:', hasSidebarServer);
         console.log('Is chat anomaly query:', isChatAnomalyQuery);
         console.log('=== END DEBUG ===');
 
@@ -827,25 +830,24 @@ async function handleQuery() {
         if (isChatAnomalyQuery) {
             console.log('🔍 DEBUG: Chat anomaly query detected, checking lastAnomalyResult...');
             console.log('🔍 DEBUG: window.lastAnomalyResult exists:', !!window.lastAnomalyResult);
+            console.log('🔍 DEBUG: window.selectedChatAnalysisId:', window.selectedChatAnalysisId);
 
-            // Eğer lastAnomalyResult yoksa storage'dan yüklemeyi dene
-            if (!window.lastAnomalyResult) {
-                console.log('🔍 DEBUG: No lastAnomalyResult found, attempting to load from storage...');
-                console.log('🔍 DEBUG: Calling loadLastAnomalyFromStorage()...');
+            // Sidebar'dan sunucu seçildiyse ve analysis_id varsa, lastAnomalyResult olmasa da devam edebilir
+            const hasSidebarAnalysisId = !!(window.selectedChatServer && window.selectedChatAnalysisId);
+
+            // Eğer lastAnomalyResult yoksa ve sidebar'dan da seçim yapılmamışsa storage'dan yüklemeyi dene
+            if (!window.lastAnomalyResult && !hasSidebarAnalysisId) {
+                console.log('🔍 DEBUG: No lastAnomalyResult and no sidebar selection, attempting to load from storage...');
 
                 try {
                     const loaded = await loadLastAnomalyFromStorage();
                     console.log('🔍 DEBUG: loadLastAnomalyFromStorage() returned:', loaded);
-                    console.log('🔍 DEBUG: window.lastAnomalyResult after storage load:', !!window.lastAnomalyResult);
 
                     if (!loaded) {
-                        console.log('❌ DEBUG: Storage load failed, showing warning and exiting');
                         console.log('⚠️ DEBUG: No storage data found, will proceed with normal query');
-                        // Storage'da da veri yoksa kullanıcıyı bilgilendir
                         showNotification('Önceki analiz bulunamadı, yeni analiz yapılacak', 'info');
                         showLoader(false);
                         elements.queryBtn.disabled = false;
-                        //return;
                     } else {
                         console.log('✅ DEBUG: Storage load successful, window.lastAnomalyResult now available');
                     }
@@ -856,20 +858,25 @@ async function handleQuery() {
                     elements.queryBtn.disabled = false;
                     return;
                 }
+            } else if (hasSidebarAnalysisId) {
+                console.log('✅ DEBUG: Using sidebar-selected server:', window.selectedChatServer, 'analysis_id:', window.selectedChatAnalysisId);
             } else {
                 console.log('✅ DEBUG: window.lastAnomalyResult already exists, skipping storage load');
             }
 
-            // Artık window.lastAnomalyResult kesinlikle var
-            if (window.lastAnomalyResult) {
+            // Sidebar seçimi veya lastAnomalyResult varsa devam et
+            if (window.lastAnomalyResult || hasSidebarAnalysisId) {
                 console.log('✅ Chat anomaly query CONFIRMED, using LCWGPT endpoint');
                 console.log('🔍 DEBUG: lastAnomalyResult structure check:');
-                console.log('🔍 DEBUG: - storage_info:', !!window.lastAnomalyResult.storage_info);
-                console.log('🔍 DEBUG: - storage_id:', !!window.lastAnomalyResult.storage_id);
-                console.log('🔍 DEBUG: - analysis_id from storage_info:', window.lastAnomalyResult.storage_info?.analysis_id);
+                console.log('🔍 DEBUG: - storage_info:', !!window.lastAnomalyResult?.storage_info);
+                console.log('🔍 DEBUG: - storage_id:', !!window.lastAnomalyResult?.storage_id);
+                console.log('🔍 DEBUG: - analysis_id from storage_info:', window.lastAnomalyResult?.storage_info?.analysis_id);
+                console.log('🔍 DEBUG: - selectedChatAnalysisId:', window.selectedChatAnalysisId);
 
-                const lastAnalysisId = window.lastAnomalyResult.storage_info?.analysis_id ||
-                                      window.lastAnomalyResult.storage_id;
+                // Sidebar'dan sunucu seçildiyse o sunucunun analysis_id'sini öncelikli kullan
+                const lastAnalysisId = window.selectedChatAnalysisId ||
+                                      window.lastAnomalyResult?.storage_info?.analysis_id ||
+                                      window.lastAnomalyResult?.storage_id;
 
                 // ✅ YENİ: Request ID Oluştur
                 const requestId = generateUUID();
