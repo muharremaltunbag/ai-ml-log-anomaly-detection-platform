@@ -820,7 +820,7 @@ async function handleQuery() {
         console.log('Has anomaly or log keyword:', hasAnomalyOrLog);
         
         // Sidebar'dan sunucu seçildiyse her zaman chat anomaly query olarak değerlendir
-        const hasSidebarServer = !!(window.selectedChatServer && window.selectedChatAnalysisId);
+        const hasSidebarServer = !!window.selectedChatServer;
         const isChatAnomalyQuery = hasSidebarServer || (hasKeyword && (hasAnomalyOrLog || window.lastAnomalyResult));
         console.log('Has sidebar server:', hasSidebarServer);
         console.log('Is chat anomaly query:', isChatAnomalyQuery);
@@ -830,10 +830,11 @@ async function handleQuery() {
         if (isChatAnomalyQuery) {
             console.log('🔍 DEBUG: Chat anomaly query detected, checking lastAnomalyResult...');
             console.log('🔍 DEBUG: window.lastAnomalyResult exists:', !!window.lastAnomalyResult);
+            console.log('🔍 DEBUG: window.selectedChatServer:', window.selectedChatServer);
             console.log('🔍 DEBUG: window.selectedChatAnalysisId:', window.selectedChatAnalysisId);
 
-            // Sidebar'dan sunucu seçildiyse ve analysis_id varsa, lastAnomalyResult olmasa da devam edebilir
-            const hasSidebarAnalysisId = !!(window.selectedChatServer && window.selectedChatAnalysisId);
+            // Sidebar'dan sunucu seçildiyse (analysis_id olsun olmasın) lastAnomalyResult gerekmez
+            const hasSidebarAnalysisId = !!window.selectedChatServer;
 
             // Eğer lastAnomalyResult yoksa ve sidebar'dan da seçim yapılmamışsa storage'dan yüklemeyi dene
             if (!window.lastAnomalyResult && !hasSidebarAnalysisId) {

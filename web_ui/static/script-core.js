@@ -415,10 +415,8 @@ window.showServerSelection = function() {
 // Sunucu seçimini uygula
 window.selectChatServer = function(serverName, analysisId) {
     window.selectedChatServer = serverName;
-    // Opsiyonel: Son analysis_id'yi de sakla
-    if (analysisId) {
-        window.selectedChatAnalysisId = analysisId;
-    }
+    // analysis_id'yi her zaman güncelle — boş/null olsa bile eski sunucunun ID'si kalmasın
+    window.selectedChatAnalysisId = analysisId || null;
 
     const shortName = serverName.split('.')[0];
 
@@ -439,7 +437,7 @@ window.selectChatServer = function(serverName, analysisId) {
         }
     });
 
-    console.log('LCWGPT: Server selected:', serverName);
+    console.log('LCWGPT: Server selected:', serverName, 'analysis_id:', analysisId);
 };
 
 // Sidebar send — mevcut handleQuery()'yi kullanir + sunucu seçim kontrolü

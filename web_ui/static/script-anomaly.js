@@ -1868,8 +1868,11 @@ function displayAnomalyResults(result) {
     // ✅ LCWGPT SIDEBAR SUNUCU LİSTESİ OTOMATİK GÜNCELLEME
     // ============================================
     // Analiz tamamlandığında sidebar'daki sunucu listesini yenile
+    // storage_info varsa kayıt zaten tamamlanmış — hemen yenile
+    // yoksa backend'in kaydetme süresini bekle
     if (typeof window.loadAnalyzedServers === 'function') {
-        console.log('🔄 LCWGPT: Refreshing server list after analysis completion...');
+        const refreshDelay = result.storage_info ? 500 : 2000;
+        console.log(`🔄 LCWGPT: Refreshing server list in ${refreshDelay}ms...`);
         setTimeout(() => {
             window.loadAnalyzedServers().then(() => {
                 console.log('✅ LCWGPT: Server list refreshed. Servers:',
@@ -1879,7 +1882,7 @@ function displayAnomalyResults(result) {
                     window.showServerSelection();
                 }
             }).catch(e => console.warn('LCWGPT: Server list refresh failed:', e));
-        }, 2000); // Backend'in kaydetmesi için 2sn bekle
+        }, refreshDelay);
     }
 
     // ============================================
