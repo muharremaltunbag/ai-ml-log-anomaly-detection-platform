@@ -2870,7 +2870,7 @@ const AnomalyProgress = {
             .progress-body { padding: 10px 0; max-height: 60vh; overflow-y: auto; }
             .progress-step {
                 display: flex; align-items: center; padding: 12px 25px;
-                border-bottom: 1px solid #2a2a2a; color: #aaa; transition: all 0.3s ease;
+                border-bottom: 1px solid #2a2a2a; color: #d5d5d5; transition: all 0.3s ease;
             }
             .progress-step:last-child { border-bottom: none; }
             .step-icon {
@@ -2890,7 +2890,7 @@ const AnomalyProgress = {
             }
             
             /* Completed State */
-            .progress-step.completed { color: #b0b0b0; }
+            .progress-step.completed { color: #e0e0e0; }
             .progress-step.completed .step-icon {
                 background: #27ae60; border-color: #27ae60; color: #fff;
                 font-weight: bold; border-width: 0;
