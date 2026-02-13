@@ -365,26 +365,32 @@ class MongoDBAnomalyDetector:
             X_historical = self.historical_data['features']
             
             # Feature uyumluluğunu kontrol et
-            # === STRICT FEATURE SAFETY BEFORE CONCAT (NEW) ===
-            hist_cols = list(X_historical.columns)
-            new_cols = list(X_new.columns)
+            # === GRACEFUL FEATURE ALIGNMENT BEFORE CONCAT ===
+            hist_cols = set(X_historical.columns)
+            new_cols = set(X_new.columns)
 
             if hist_cols != new_cols:
-                # Set-based farklar
-                missing = set(hist_cols) - set(new_cols)
-                extra   = set(new_cols) - set(hist_cols)
+                missing_in_new = hist_cols - new_cols
+                missing_in_hist = new_cols - hist_cols
 
-                if missing or extra:
-                    # Kritik hata - model tutarsızlığı oluşmasın
-                    raise ValueError(
-                        f"[FEATURE MISMATCH] Historical buffer and new data have inconsistent "
-                        f"feature sets. Missing: {missing} | Extra: {extra}. "
-                        f"Retraining required."
+                if missing_in_new or missing_in_hist:
+                    logger.warning(
+                        f"[Feature Alignment] Feature set difference detected. "
+                        f"In historical but not in new: {missing_in_new or 'none'} | "
+                        f"In new but not in historical: {missing_in_hist or 'none'}. "
+                        f"Aligning both sides with default 0.0"
                     )
+                    # Yeni data'da eksik feature'ları 0.0 ile ekle
+                    for col in missing_in_new:
+                        X_new[col] = 0.0
+                    # Historical'da eksik feature'ları 0.0 ile ekle
+                    for col in missing_in_hist:
+                        X_historical[col] = 0.0
 
-                # Sadece order mismatch varsa düzelt
-                logger.warning("Feature order mismatch between historical and new data. Reordering new data.")
-                X_new = X_new[hist_cols]
+            # Ortak kolon sırasını belirle (new data'nın sırasını temel al)
+            unified_cols = list(X_new.columns)
+            X_historical = X_historical[unified_cols]
+            X_new = X_new[unified_cols]
 
             # Full History Strategy - Tüm historical data'yı koru
             X_combined = pd.concat([X_historical, X_new], ignore_index=True)
@@ -516,35 +522,43 @@ class MongoDBAnomalyDetector:
             # Index'i reset et (sklearn için kritik!)
             X_train = X_train.reset_index(drop=True)
 
-            # === STRICT FEATURE ORDER ALIGNMENT BEFORE MODEL FIT ===
+            # === GRACEFUL FEATURE ALIGNMENT BEFORE MODEL FIT ===
 
-            # 1) Eğer geçmiş feature_names varsa, önce onlarla hizala
+            # 1) Eğer geçmiş feature_names varsa, hizala veya güncelle
             if self.feature_names and list(X_train.columns) != self.feature_names:
                 missing = set(self.feature_names) - set(X_train.columns)
                 extra   = set(X_train.columns) - set(self.feature_names)
                 if missing or extra:
-                    raise ValueError(
-                        f"[TRAIN MISMATCH] X_train columns do not match saved feature_names. "
-                        f"Missing: {missing} | Extra: {extra}"
+                    # Feature set değişmiş → yeni run'ın feature setini kabul et
+                    logger.warning(
+                        f"[Feature Alignment] Saved feature_names differ from X_train. "
+                        f"Missing: {missing or 'none'} | Extra: {extra or 'none'}. "
+                        f"Updating feature_names to current run's feature set."
                     )
-                # Saved feature order'a göre sıralama
-                X_train = X_train[self.feature_names]
-                logger.debug("Reordered X_train to match saved feature_names before fit().")
+                    self.feature_names = list(X_train.columns)
+                else:
+                    # Sadece order farkı — saved order'a göre sırala
+                    X_train = X_train[self.feature_names]
+                    logger.debug("Reordered X_train to match saved feature_names before fit().")
 
-            # 2) Eğer incremental retraining ve mevcut model sklearn feature_names_in_ içeriyorsa, onunla hizala
+            # 2) Eğer incremental retraining ve mevcut model sklearn feature_names_in_ içeriyorsa
             if hasattr(self.model, 'feature_names_in_'):
                 sklearn_cols = list(self.model.feature_names_in_)
                 if sklearn_cols != list(X_train.columns):
                     missing = set(sklearn_cols) - set(X_train.columns)
                     extra   = set(X_train.columns) - set(sklearn_cols)
                     if missing or extra:
-                        raise ValueError(
-                            f"[SKLEARN MISMATCH] X_train columns mismatch with model.feature_names_in_. "
-                            f"Missing: {missing} | Extra: {extra}"
+                        # Eski model feature set'i ile uyumsuz → controlled retrain (yeni model)
+                        logger.warning(
+                            f"[Controlled Retrain] sklearn feature_names_in_ mismatch. "
+                            f"Missing: {missing or 'none'} | Extra: {extra or 'none'}. "
+                            f"Creating new model instance for clean training."
                         )
-                    # sklearn'ün iç order'ına göre sıralama
-                    X_train = X_train[sklearn_cols]
-                    logger.debug("Reordered X_train to sklearn feature_names_in_ before fit().")
+                        self.model = IsolationForest(**params)
+                    else:
+                        # Sadece order farkı — sklearn order'a göre sırala
+                        X_train = X_train[sklearn_cols]
+                        logger.debug("Reordered X_train to sklearn feature_names_in_ before fit().")
 
             # Model oluştur veya mevcut modeli kullan
             if not self.is_trained:
@@ -786,16 +800,20 @@ class MongoDBAnomalyDetector:
                 extra_features = [f for f in input_features if f not in model_set]
 
                 if missing_features or extra_features:
-                    # Burada hard fail veriyoruz, çünkü IsolationForest feature sayısına hassas
-                    logger.error(
-                        "Feature mismatch between trained model and input data. "
-                        f"Missing in input: {missing_features} | "
-                        f"Extra in input: {extra_features}"
+                    logger.warning(
+                        f"[Predict Alignment] Feature mismatch detected. "
+                        f"Missing in input: {missing_features or 'none'} | "
+                        f"Extra in input: {extra_features or 'none'}. "
+                        f"Aligning input to match model's feature set."
                     )
-                    raise ValueError(
-                        "Feature mismatch between trained model and input data. "
-                        "Check feature engineering pipeline and retrain the model if necessary."
-                    )
+                    # Eksik feature'ları 0.0 ile ekle
+                    for feat in missing_features:
+                        X[feat] = 0.0
+                    # Fazla feature'ları kaldır
+                    if extra_features:
+                        X = X.drop(columns=extra_features)
+                    # feature_names'i güncelle
+                    self.feature_names = list(X.columns)
 
                 # Sadece sıra farklıysa reorder et
                 # 1) Column presence check (en kritik guard)
@@ -804,20 +822,22 @@ class MongoDBAnomalyDetector:
                 if self.model is not None and hasattr(self.model, 'feature_names_in_'):
                     missing = set(self.model.feature_names_in_) - set(X.columns)
                     if missing:
-                        raise ValueError(
-                            f"Missing required features for prediction: {missing}. "
-                            "Prediction aborted."
+                        logger.warning(
+                            f"[Predict Alignment] Adding {len(missing)} missing features for sklearn model: {missing}"
                         )
+                        for col in missing:
+                            X[col] = 0.0
                 elif self.incremental_models:
                     # Ensemble mode - ilk modeli kontrol et
                     first_model = self.incremental_models[0]
                     if hasattr(first_model, 'feature_names_in_'):
                         missing = set(first_model.feature_names_in_) - set(X.columns)
                         if missing:
-                            raise ValueError(
-                                f"Missing required features for prediction: {missing}. "
-                                "Prediction aborted."
+                            logger.warning(
+                                f"[Predict Alignment] Adding {len(missing)} missing features for ensemble model: {missing}"
                             )
+                            for col in missing:
+                                X[col] = 0.0
 
                 # 2) Training feature order vs input order mismatch
                 input_features = list(X.columns)

@@ -185,11 +185,12 @@ class MSSQLFeatureEngineer:
             if X[col].dtype == bool:
                 X[col] = X[col].astype(int)
 
-        # Zero-variance feature'ları drop et — sabit kolonlar modeli zayıflatır
+        # Zero-variance feature'ları logla ama DROP ETME
+        # IsolationForest sabit kolonları otomatik ignore eder (tree split'te bilgi kazancı = 0)
+        # Drop etmek run'lar arası feature set tutarsızlığına yol açar → incremental training mismatch
         zero_var_cols = [col for col in X.columns if X[col].nunique() <= 1]
         if zero_var_cols:
-            logger.warning(f"Dropping {len(zero_var_cols)} zero-variance features: {zero_var_cols}")
-            X = X.drop(columns=zero_var_cols)
+            logger.info(f"[Feature Stability] {len(zero_var_cols)} zero-variance features detected (kept for consistency): {zero_var_cols}")
 
         logger.info(f"Feature engineering completed. Shape: {X.shape}")
         logger.info(f"Features: {list(X.columns)}")

@@ -130,6 +130,17 @@ async function autoLoadHistoryOnStartup() {
         window.apiKey = apiKey;
         window.isConnected = true;
         
+        // LCWGPT: Bağlantı kurulunca sunucu listesini çek ve sidebar'da göster
+        if (typeof window.loadAnalyzedServers === 'function') {
+            window.loadAnalyzedServers().then(function() {
+                if (window.chatServerList && window.chatServerList.length > 0 && !window.selectedChatServer) {
+                    if (typeof window.showServerSelection === 'function') {
+                        window.showServerSelection();
+                    }
+                }
+            });
+        }
+
         // Paralel olarak tüm history türlerini yükle
         const results = await Promise.allSettled([
             loadQueryHistoryFromMongoDB(),

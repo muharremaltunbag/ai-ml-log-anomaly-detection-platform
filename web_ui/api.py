@@ -1705,6 +1705,46 @@ async def get_anomaly_detail(analysis_id: str, api_key: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/analyzed-servers")
+async def get_analyzed_servers(api_key: str):
+    """Anomali analizi yapılmış sunucu listesini döndür (LCWGPT sunucu seçimi için)"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    try:
+        storage = await get_storage_manager()
+
+        # Son analizlerden unique host listesi çek
+        all_analyses = await storage.get_anomaly_history(limit=500, include_details=False)
+
+        # Host bazında grupla — en son analizi tut
+        servers = {}
+        for analysis in all_analyses:
+            host = analysis.get("host")
+            if not host:
+                continue
+            if host not in servers or (analysis.get("timestamp") or "") > (servers[host].get("last_analysis") or ""):
+                servers[host] = {
+                    "host": host,
+                    "source": analysis.get("source", "unknown"),
+                    "last_analysis": analysis.get("timestamp"),
+                    "anomaly_count": analysis.get("anomaly_count", 0),
+                    "analysis_id": analysis.get("analysis_id")
+                }
+
+        server_list = sorted(servers.values(), key=lambda x: x.get("last_analysis") or "", reverse=True)
+
+        return {
+            "status": "success",
+            "servers": server_list,
+            "count": len(server_list)
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting analyzed servers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/model-registry")
 async def get_model_registry(api_key: str, active_only: bool = False):
     """Get model registry"""

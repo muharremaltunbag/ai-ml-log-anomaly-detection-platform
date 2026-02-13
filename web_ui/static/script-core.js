@@ -22,6 +22,12 @@ window.currentSessionId = `session_${Date.now()}_${Math.random().toString(36).su
 console.log('Session initialized:', window.currentSessionId);
 
 // ============================================
+// LCWGPT ASSISTANT STATE
+// ============================================
+window.selectedChatServer = null;   // Seçilen sunucu (LCWGPT chat için)
+window.chatServerList = [];         // Analiz yapılmış sunucu listesi
+
+// ============================================
 // KONUŞMA GEÇMİŞİ SABİTLERİ
 // ============================================
 window.HISTORY_KEY = 'mongodb_query_history';
@@ -54,7 +60,9 @@ window.API_ENDPOINTS = {
     exportAnalysis: '/api/export-analysis',
     // MSSQL ENDPOINTS
     mssqlHosts: '/api/mssql/available-hosts',
-    analyzeMSSQLLog: '/api/analyze-mssql-logs'
+    analyzeMSSQLLog: '/api/analyze-mssql-logs',
+    // LCWGPT ASSISTANT
+    analyzedServers: '/api/analyzed-servers'
 };
 
 // ============================================
@@ -335,7 +343,104 @@ window.addSidebarUserMessage = function(text) {
     container.scrollTop = container.scrollHeight;
 };
 
-// Sidebar send — mevcut handleQuery()'yi kullanir
+// ============================================
+// LCWGPT SUNUCU LİSTESİ VE SEÇİM FONKSİYONLARI
+// ============================================
+
+// Analiz yapılmış sunucu listesini backend'den çek
+window.loadAnalyzedServers = async function() {
+    if (!window.apiKey) return;
+    try {
+        const response = await fetch(`${window.API_ENDPOINTS.analyzedServers}?api_key=${encodeURIComponent(window.apiKey)}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.status === 'success' && data.servers) {
+            window.chatServerList = data.servers;
+            console.log('LCWGPT: Loaded', data.servers.length, 'analyzed servers');
+        }
+    } catch (e) {
+        console.warn('LCWGPT: Could not load analyzed servers:', e);
+    }
+};
+
+// Sidebar'da sunucu seçim butonlarını göster
+window.showServerSelection = function() {
+    const container = document.getElementById('sidebarChatMessages');
+    if (!container) return;
+
+    // Sunucu listesi boşsa bilgi ver
+    if (!window.chatServerList || window.chatServerList.length === 0) {
+        window.addSidebarAIMessage(
+            'Henüz analiz yapılmış sunucu bulunamadı. ' +
+            'Önce bir MongoDB veya MSSQL sunucusu için anomali analizi çalıştırın.'
+        );
+        return;
+    }
+
+    // Sunucu seçim mesajı oluştur
+    const bubble = document.createElement('div');
+    bubble.className = 'sidebar-ai-bubble';
+
+    let serverButtons = window.chatServerList.map(function(server) {
+        const shortName = server.host.split('.')[0];
+        const sourceTag = (server.source || '').toLowerCase().includes('mssql') ? 'MSSQL' : 'MongoDB';
+        return '<button class="server-select-btn" data-server="' + server.host + '" ' +
+               'data-analysis-id="' + (server.analysis_id || '') + '" ' +
+               'title="Son analiz: ' + (server.last_analysis || 'N/A') + '">' +
+               shortName + ' <span class="server-tag">' + sourceTag + '</span></button>';
+    }).join('');
+
+    bubble.innerHTML =
+        '<span class="sidebar-ai-avatar">&#129302;</span>' +
+        '<div class="sidebar-bubble-content">' +
+            '<p>Hangi sunucu hakkinda yardimci olabilirim?</p>' +
+            '<div class="server-selection-grid">' + serverButtons + '</div>' +
+        '</div>';
+
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+
+    // Butonlara click handler ekle
+    bubble.querySelectorAll('.server-select-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const serverName = this.getAttribute('data-server');
+            const analysisId = this.getAttribute('data-analysis-id');
+            window.selectChatServer(serverName, analysisId);
+        });
+    });
+};
+
+// Sunucu seçimini uygula
+window.selectChatServer = function(serverName, analysisId) {
+    window.selectedChatServer = serverName;
+    // Opsiyonel: Son analysis_id'yi de sakla
+    if (analysisId) {
+        window.selectedChatAnalysisId = analysisId;
+    }
+
+    const shortName = serverName.split('.')[0];
+
+    // Seçim onay mesajı
+    window.addSidebarAIMessage(
+        '<strong>' + shortName + '</strong> sunucusu secildi. ' +
+        'Bu sunucudaki anomaliler hakkinda sorularinizi sorabilirsiniz.<br>' +
+        '<small style="opacity:0.6">Farkli bir sunucu secmek icin "sunucu degistir" yazabilirsiniz.</small>'
+    );
+
+    // Seçim butonlarını devre dışı bırak (tekrar tıklanmasın)
+    document.querySelectorAll('.server-select-btn').forEach(function(btn) {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        if (btn.getAttribute('data-server') === serverName) {
+            btn.style.opacity = '1';
+            btn.style.border = '2px solid #3498db';
+        }
+    });
+
+    console.log('LCWGPT: Server selected:', serverName);
+};
+
+// Sidebar send — mevcut handleQuery()'yi kullanir + sunucu seçim kontrolü
 window.handleSidebarSend = function() {
     const input = document.getElementById('sidebarChatInput');
     if (!input || !input.value.trim()) return;
@@ -343,13 +448,40 @@ window.handleSidebarSend = function() {
     const query = input.value.trim();
     input.value = '';
 
+    // "sunucu değiştir" komutu kontrolü
+    if (query.toLowerCase().includes('sunucu degistir') || query.toLowerCase().includes('sunucu değiştir')) {
+        window.selectedChatServer = null;
+        window.selectedChatAnalysisId = null;
+        window.addSidebarUserMessage(query);
+        window.loadAnalyzedServers().then(function() {
+            window.showServerSelection();
+        });
+        return;
+    }
+
+    // Sunucu seçilmemişse, önce seçim yaptır
+    if (!window.selectedChatServer) {
+        window.addSidebarUserMessage(query);
+        window.addSidebarAIMessage('Lutfen once bir sunucu secin:');
+        window.loadAnalyzedServers().then(function() {
+            window.showServerSelection();
+        });
+        return;
+    }
+
     // Sidebar'a kullanici mesajini goster
     window.addSidebarUserMessage(query);
+
+    // Sunucu adını query'ye ekle (backend server detection için)
+    const serverShort = window.selectedChatServer.split('.')[0];
+    const enrichedQuery = query.toLowerCase().includes(serverShort.toLowerCase())
+        ? query  // Zaten sunucu adı varsa ekleme
+        : serverShort + ' ' + query;
 
     // Mevcut query input'a yaz ve handleQuery cagir
     const queryInput = document.getElementById('queryInput');
     if (queryInput) {
-        queryInput.value = query;
+        queryInput.value = enrichedQuery;
     }
     if (window.handleQuery) {
         window.handleQuery();
@@ -389,6 +521,18 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sidebar && !sidebar.classList.contains('open')) {
         sidebar.classList.add('open');
     }
+
+    // LCWGPT: Sunucu listesini yükle ve seçim göster
+    // apiKey henüz set edilmemiş olabilir — bağlantı kurulunca tekrar çekilecek
+    setTimeout(function() {
+        if (window.apiKey) {
+            window.loadAnalyzedServers().then(function() {
+                if (window.chatServerList.length > 0 && !window.selectedChatServer) {
+                    window.showServerSelection();
+                }
+            });
+        }
+    }, 1500);
 
     console.log('✅ LCWGPT Sidebar event listeners initialized');
 });
