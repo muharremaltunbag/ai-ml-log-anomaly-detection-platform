@@ -670,6 +670,12 @@ class MongoDBAnomalyDetector:
                     )
                 else:
                     X_for_predict = X_new
+
+                # FIX: self.model None ise ensemble'dan recover et
+                if self.model is None and self.incremental_models:
+                    self.model = self.incremental_models[-1]
+                    logger.warning("_update_historical_buffer: recovered model from ensemble (new mode)")
+
                 predictions = self.model.predict(X_for_predict)
                 scores = self.model.score_samples(X_for_predict)
 
@@ -721,6 +727,12 @@ class MongoDBAnomalyDetector:
                     )
                 else:
                     buffer_scaled = self.historical_data['features']
+
+                # FIX: self.model None ise ensemble'dan recover et
+                if self.model is None and self.incremental_models:
+                    self.model = self.incremental_models[-1]
+                    logger.warning("_update_historical_buffer: recovered model from ensemble (incremental mode)")
+
                 predictions = self.model.predict(buffer_scaled)
                 scores = self.model.score_samples(buffer_scaled)
 
@@ -878,7 +890,22 @@ class MongoDBAnomalyDetector:
                 predictions, anomaly_scores = self.predict_ensemble(X)
             else:
                 # Legacy single model prediction
-                
+
+                # FIX: self.model can be None if ensemble mode was active.
+                # Recover from ensemble models if possible, otherwise raise clear error.
+                if self.model is None:
+                    if self.incremental_models:
+                        self.model = self.incremental_models[-1]
+                        logger.warning(
+                            "predict(): self.model was None in single-model path. "
+                            f"Recovered from last ensemble model (ensemble size: {len(self.incremental_models)})"
+                        )
+                    else:
+                        raise ValueError(
+                            "Cannot predict: self.model is None and no ensemble models available. "
+                            "Model may not have been trained or loaded correctly."
+                        )
+
                 # === FIX: APPLY SCALING FOR PREDICTION ===
                 X_prediction = X
 
@@ -1529,6 +1556,19 @@ class MongoDBAnomalyDetector:
                 # Model ve metadata'yı kaydet
                 # Ensemble mode kontrolü: incremental_models doluysa ensemble aktif
                 is_ensemble_mode = bool(self.incremental_models) and self.incremental_config.get('enabled', True)
+
+                # FIX: self.model None ise ve ensemble varsa, kaydetmeden önce recover et
+                if self.model is None and self.incremental_models:
+                    self.model = self.incremental_models[-1]
+                    logger.warning(
+                        f"save_model: self.model was None. Recovered from last ensemble model "
+                        f"before saving (ensemble size: {len(self.incremental_models)})"
+                    )
+                elif self.model is None:
+                    logger.warning(
+                        "save_model: self.model is None and no ensemble models available. "
+                        "Saving None model to disk - next load will need retraining."
+                    )
 
                 model_data = {
                     'model': self.model,
