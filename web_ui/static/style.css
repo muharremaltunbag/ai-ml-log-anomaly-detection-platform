@@ -13191,6 +13191,33 @@ mark.text-highlight:hover {
     letter-spacing: 0.1px;
 }
 
+/* ---- Model Dosyasi Row ---- */
+.ml-model-file-row {
+    padding-top: 10px;
+}
+
+.ml-model-file-path {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.ml-model-file-path .ml-info-icon {
+    flex-shrink: 0;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.ml-info-value-filepath {
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    color: var(--accent-color, #4fc3f7);
+    word-break: break-all;
+    line-height: 1.5;
+    letter-spacing: 0.2px;
+}
+
 /* ---- Section 5: Log Validasyon ---- */
 .ml-validation-area {
     display: flex;

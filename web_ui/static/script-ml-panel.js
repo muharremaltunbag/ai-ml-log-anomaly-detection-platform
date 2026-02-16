@@ -137,6 +137,11 @@
                         updateElement('mlBufferInfo', info.buffer_samples.toLocaleString('tr-TR') + (bufferMB ? ' / ' + bufferMB : ''));
                     }
 
+                    // Model dosya yolu
+                    if (info.model_path) {
+                        updateElement('mlModelFilePath', info.model_path);
+                    }
+
                     console.log('✅ Model info loaded from /api/ml/model-info');
                 }
             }
@@ -170,6 +175,11 @@
             }
             if (serverName) {
                 updateElement('mlServerName', serverName.split('.')[0]);
+            }
+
+            // Model dosya yolu — server_info.model_path'ten
+            if (serverInfo.model_path) {
+                updateElement('mlModelFilePath', serverInfo.model_path);
             }
 
             // Model info from analysis result
@@ -236,7 +246,8 @@
             mlModelType: 'Isolation Forest',
             mlTrainingSamples: '--',
             mlFeatureCount: '--',
-            mlBufferInfo: '--'
+            mlBufferInfo: '--',
+            mlModelFilePath: '--'
         };
 
         Object.keys(defaults).forEach(function(key) {
@@ -457,13 +468,18 @@
             updateElement('mlServerName', window.selectedChatServer.split('.')[0]);
         }
 
-        // 3) Feature importance — dinamik render (Bug #2 fix)
+        // 3) Model dosya yolu — server_info.model_path'ten
+        if (serverInfo.model_path) {
+            updateElement('mlModelFilePath', serverInfo.model_path);
+        }
+
+        // 4) Feature importance — dinamik render (Bug #2 fix)
         var featureImportance = sonuc.feature_importance || {};
         if (Object.keys(featureImportance).length > 0) {
             renderDynamicFeatures(featureImportance);
         }
 
-        // 4) Ek model/buffer bilgisi — server_info'dan
+        // 5) Ek model/buffer bilgisi — server_info'dan
         if (serverInfo.historical_buffer_size !== undefined) {
             updateElement('mlBufferInfo', serverInfo.historical_buffer_size.toLocaleString('tr-TR'));
         }

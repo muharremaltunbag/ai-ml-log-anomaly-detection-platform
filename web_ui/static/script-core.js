@@ -105,7 +105,8 @@ window.initializeElements = function() {
         mlModelType: document.getElementById('mlModelType'),
         mlTrainingSamples: document.getElementById('mlTrainingSamples'),
         mlFeatureCount: document.getElementById('mlFeatureCount'),
-        mlBufferInfo: document.getElementById('mlBufferInfo')
+        mlBufferInfo: document.getElementById('mlBufferInfo'),
+        mlModelFilePath: document.getElementById('mlModelFilePath')
     };
     console.log('✅ DOM elements initialized');
     return window.elements;

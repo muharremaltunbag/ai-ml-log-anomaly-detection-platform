@@ -3981,14 +3981,31 @@ async def get_ml_model_info(api_key: str = Query(...)):
                 "contamination_factor": info.get('contamination', 0.05),
                 "online_learning_enabled": info.get('online_learning', False)
             })
-            
+
             # Buffer info
             buffer_info = anomaly_detector.get_historical_buffer_info()
             if buffer_info.get('enabled'):
                 stats = buffer_info.get('buffer_stats', {})
                 model_info["buffer_samples"] = stats.get('total_samples', 0)
                 model_info["buffer_size_mb"] = stats.get('size_mb', 0)
-        
+
+            # Model dosya yolu — gercek .pkl dosyasini bul
+            models_dir = Path("models")
+            server = getattr(anomaly_detector, 'current_server', None)
+            if server:
+                safe_name = server.replace('.', '_').replace('/', '_')
+                candidate = models_dir / f"isolation_forest_{safe_name}.pkl"
+                if candidate.exists():
+                    model_info["model_path"] = str(candidate.resolve())
+                else:
+                    model_info["model_path"] = str(candidate)
+            else:
+                candidate = models_dir / "isolation_forest.pkl"
+                if candidate.exists():
+                    model_info["model_path"] = str(candidate.resolve())
+                else:
+                    model_info["model_path"] = str(candidate)
+
         return {
             "status": "success",
             "model_info": model_info,
