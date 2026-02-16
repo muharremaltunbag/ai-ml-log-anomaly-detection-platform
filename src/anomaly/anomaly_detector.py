@@ -504,20 +504,59 @@ class MongoDBAnomalyDetector:
             # Model parametreleri
             params = self.model_config['parameters'].copy()
 
-            # ÇÖZÜM: Combined dataset boyutuna göre max_samples'ı dinamik ayarla
-            if incremental and self.is_trained and X_train.shape[0] < params.get('max_samples', 512) * 2:
-                original_max_samples = params.get('max_samples', 512)
+            # === DYNAMIC PARAMETER ADJUSTMENT (tüm training modları için) ===
+            # Küçük veri setlerinde (< 2000 sample) sabit contamination ve max_samples
+            # modelin yeterli anomali üretememesine neden olur. Veri boyutuna göre
+            # dinamik ayarlama yaparak her sunucuda anlamlı sonuç üretmeyi garanti ederiz.
+            dataset_size = X_train.shape[0]
+            original_contamination = params.get('contamination', 0.05)
+            original_max_samples = params.get('max_samples', 512)
+
+            if dataset_size < 500:
+                # Çok küçük veri seti: daha yüksek contamination, auto max_samples
+                params['contamination'] = min(0.10, original_contamination * 2)
+                params['max_samples'] = 'auto'
+                logger.info(
+                    f"[Dynamic Params] Very small dataset ({dataset_size} samples). "
+                    f"contamination: {original_contamination} -> {params['contamination']}, "
+                    f"max_samples: {original_max_samples} -> auto"
+                )
+            elif dataset_size < 2000:
+                # Küçük veri seti: hafif artırılmış contamination, orantılı max_samples
+                params['contamination'] = min(0.08, original_contamination * 1.5)
+                adjusted_max_samples = min(int(dataset_size * 0.8), original_max_samples)
+                params['max_samples'] = max(adjusted_max_samples, 64)  # Minimum 64
+                logger.info(
+                    f"[Dynamic Params] Small dataset ({dataset_size} samples). "
+                    f"contamination: {original_contamination} -> {params['contamination']}, "
+                    f"max_samples: {original_max_samples} -> {params['max_samples']}"
+                )
+            else:
+                # Normal/büyük veri seti: config değerlerini koru
+                logger.debug(
+                    f"[Dynamic Params] Normal dataset ({dataset_size} samples). "
+                    f"Using config values: contamination={original_contamination}, "
+                    f"max_samples={original_max_samples}"
+                )
+
+            # EK: Incremental mode'da combined dataset boyutuna göre max_samples ayarla
+            # (mevcut mantık korundu, dynamic params'ın üzerine yazabilir)
+            # NOT: max_samples 'auto' (string) olabilir, bu durumu güvenli şekilde atla
+            current_max_samples = params.get('max_samples', 512)
+            if (incremental and self.is_trained
+                    and isinstance(current_max_samples, (int, float))
+                    and dataset_size < current_max_samples * 2):
                 # Dataset'in %80'ini kullan veya 256 (hangisi küçükse)
-                new_max_samples = min(int(X_train.shape[0] * 0.8), 256)
+                inc_max_samples = min(int(dataset_size * 0.8), 256)
 
                 # Minimum 10 sample kontrolü
-                if new_max_samples < 10:
-                    logger.debug(f"WARNING: Very few samples after deduplication ({X_train.shape[0]})")
+                if inc_max_samples < 10:
+                    logger.debug(f"WARNING: Very few samples after deduplication ({dataset_size})")
                     params['max_samples'] = 'auto'  # sklearn'ün otomatik hesaplamasına bırak
                 else:
-                    params['max_samples'] = new_max_samples
+                    params['max_samples'] = inc_max_samples
 
-                logger.debug(f"Adjusted max_samples from {original_max_samples} to {params['max_samples']} (dataset size: {X_train.shape[0]})")
+                logger.debug(f"[Incremental] Adjusted max_samples to {params['max_samples']} (dataset size: {dataset_size})")
 
             # Index'i reset et (sklearn için kritik!)
             X_train = X_train.reset_index(drop=True)
@@ -1119,8 +1158,10 @@ class MongoDBAnomalyDetector:
                     'shutdown' in msg_lower
                 ])
             
-            # Severity score > 50 veya kritik tip ise ekle
-            if a['severity_score'] > 50 or is_critical_type:
+            # Severity score > 40 veya kritik tip ise ekle
+            # (40'a düşürüldü: orta seviye anomaliler de görünür olsun,
+            #  _filter_false_positives zaten ikinci katman filtre olarak çalışıyor)
+            if a['severity_score'] > 40 or is_critical_type:
                 critical_only.append(a)
 
         
@@ -1349,11 +1390,14 @@ class MongoDBAnomalyDetector:
         severity_score += comp_score
         factors.append(f"Component ({component}): +{comp_score}")
 
-        # 3. Critical Features (0-40 puan)
+        # 3. Critical Features (birikimli puanlama — birden fazla kural eşleşebilir)
+        # NOT: elif yerine if kullanılıyor, böylece hem slow_query hem collscan
+        # hem yüksek docs_examined olan bir log tüm puanları birikimli toplar.
+        # Toplam severity_score zaten min(100, ...) ile cap'leniyor.
 
         feature_score = 0
 
-        # === PROD LOG OPTIMIZASYONU (EN KRİTİKLER EN ÜSTE) ===
+        # === PROD LOG OPTIMIZASYONU (BİRİKİMLİ PUANLAMA) ===
 
         # 1. Massive Scan (>1.5M docs) - Sunucu Kilitleyici
         if row_features.get('docs_examined_count', 0) > 1500000:
@@ -1361,48 +1405,48 @@ class MongoDBAnomalyDetector:
             factors.append("Massive Scan (>1.5M): +40")
 
         # 2. Fatal errors
-        elif row_features.get('is_fatal', 0) == 1:
+        if row_features.get('is_fatal', 0) == 1:
             feature_score += 30
             factors.append("Fatal Error: +30")
 
         # 3. Replication issues - Veri güvenliği
-        elif row_features.get('is_replication_issue', 0) == 1:
-            feature_score += 35 
+        if row_features.get('is_replication_issue', 0) == 1:
+            feature_score += 35
             factors.append("Replication Issue: +35")
 
         # 4. Long Transaction (>5s) - Locking Risk
-        elif (row_features.get('is_long_transaction', 0) == 1 and 
+        if (row_features.get('is_long_transaction', 0) == 1 and
               row_features.get('query_duration_ms', 0) > 5000):
             feature_score += 30
             factors.append("Long Transaction (>5s): +30")
 
         # 5. Out of memory
-        elif row_features.get('is_out_of_memory', 0) == 1:
+        if row_features.get('is_out_of_memory', 0) == 1:
             feature_score += 28
             factors.append("Out of Memory: +28")
 
         # 6. Memory limit / Eviction
-        elif row_features.get('is_memory_limit', 0) == 1:
+        if row_features.get('is_memory_limit', 0) == 1:
             feature_score += 25
             factors.append("Memory Limit: +25")
 
         # 7. Shutdown / Restart
-        elif row_features.get('is_shutdown', 0) == 1 or row_features.get('is_restart', 0) == 1:
+        if row_features.get('is_shutdown', 0) == 1 or row_features.get('is_restart', 0) == 1:
             feature_score += 25
             factors.append("System Restart/Shutdown: +25")
 
         # 8. Drop operation
-        elif row_features.get('is_drop_operation', 0) == 1:
+        if row_features.get('is_drop_operation', 0) == 1:
             feature_score += 25
             factors.append("DROP Operation: +25")
 
         # 9. Inefficient Index (High Key Scan)
-        elif row_features.get('keys_examined_count', 0) > 50000:
+        if row_features.get('keys_examined_count', 0) > 50000:
             feature_score += 15
             factors.append("High Key Scan (>50k): +15")
 
         # 10. COLLSCAN (Ağır vs Hafif)
-        elif row_features.get('is_collscan', 0) == 1:
+        if row_features.get('is_collscan', 0) == 1:
             if row_features.get('docs_examined_count', 0) > 100000:
                 feature_score += 20
                 factors.append("Heavy COLLSCAN: +20")
@@ -1411,12 +1455,12 @@ class MongoDBAnomalyDetector:
                 factors.append("COLLSCAN: +12")
 
         # 11. Assertion failure
-        elif row_features.get('is_assertion', 0) == 1:
+        if row_features.get('is_assertion', 0) == 1:
             feature_score += 22
             factors.append("Assertion Failure: +22")
 
         # 12. Regular slow query
-        elif row_features.get('is_slow_query', 0) == 1:
+        if row_features.get('is_slow_query', 0) == 1:
             feature_score += 8
             factors.append("Slow Query: +8")
 

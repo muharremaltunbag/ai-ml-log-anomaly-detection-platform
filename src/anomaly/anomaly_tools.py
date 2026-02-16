@@ -1839,7 +1839,9 @@ class AnomalyDetectionTools:
                     logger.debug(f"Critical pattern matched for anomaly {i}")
                 
                 # Yüksek severity score olanlar
-                elif severity_score > 35: 
+                # (30'a düşürüldü: birikimli puanlama ile orta seviye anomaliler de geçsin,
+                #  max 2000 cap zaten aşırı büyümeyi önlüyor)
+                elif severity_score > 30:
                     is_critical = True
                     logger.debug(f"High severity score: {severity_score} for anomaly {i}")
                 
