@@ -3975,9 +3975,11 @@ async def get_ml_model_info(api_key: str = Query(...)):
         
         if anomaly_detector.is_trained:
             info = anomaly_detector.get_model_info()
+            # training_stats iç içe dict — n_samples oradan okunmalı
+            training_stats = info.get('training_stats', {})
             model_info.update({
                 "features_count": info.get('n_features', 0),
-                "training_samples": info.get('n_samples', 0),
+                "training_samples": training_stats.get('n_samples', 0) if isinstance(training_stats, dict) else 0,
                 "contamination_factor": info.get('contamination', 0.05),
                 "online_learning_enabled": info.get('online_learning', False)
             })

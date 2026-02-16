@@ -191,6 +191,9 @@
             if (modelInfo.feature_count) {
                 updateElement('mlFeatureCount', modelInfo.feature_count.toString());
             }
+            if (modelInfo.training_samples) {
+                updateElement('mlTrainingSamples', modelInfo.training_samples.toLocaleString('tr-TR') + ' Satir');
+            }
 
             // Feature importance varsa, feature listesini dinamik guncelle
             var featureImportance = mlData.feature_importance || {};
@@ -482,6 +485,13 @@
         // 5) Ek model/buffer bilgisi — server_info'dan
         if (serverInfo.historical_buffer_size !== undefined) {
             updateElement('mlBufferInfo', serverInfo.historical_buffer_size.toLocaleString('tr-TR'));
+        }
+
+        // 6) Eğitim Seti (training_samples) — model_info'dan
+        var mlData = sonuc.data || sonuc;
+        var modelInfoObj = sonuc.model_info || mlData.model_info || {};
+        if (modelInfoObj.training_samples) {
+            updateElement('mlTrainingSamples', modelInfoObj.training_samples.toLocaleString('tr-TR') + ' Satir');
         }
 
         console.log('✅ ML Sidebar auto-updated after analysis (full data)');

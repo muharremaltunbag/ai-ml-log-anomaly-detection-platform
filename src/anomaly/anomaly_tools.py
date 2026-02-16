@@ -1713,6 +1713,7 @@ class AnomalyDetectionTools:
                 "is_ensemble_mode": bool(self.detector.incremental_models) and self.detector.incremental_config.get('enabled', True),
                 "ensemble_model_count": len(self.detector.incremental_models) if self.detector.incremental_models else 0,
                 "historical_buffer_samples": self.detector.historical_data['metadata']['total_samples'] if self.detector.historical_data.get('features') is not None else 0,
+                "training_samples": self.detector.training_stats.get('n_samples', 0) if self.detector.training_stats else 0,
                 "model_trained_at": self.detector.training_stats.get('timestamp') if self.detector.training_stats else None,
                 "feature_count": len(self.detector.feature_names) if self.detector.feature_names else 0,
                 "contamination": self.detector.model_config['parameters'].get('contamination') if self.detector.model_config else None
