@@ -159,13 +159,13 @@
                 updateElement('totalLogs', summary.total_logs.toLocaleString('tr-TR'));
             }
 
-            // Sunucu adı — storage_info veya analysis metadata'dan
-            var serverName = null;
-            if (result.storage_info && result.storage_info.host) {
-                serverName = result.storage_info.host;
-            } else if (window.lastAnomalyResult.storage_info && window.lastAnomalyResult.storage_info.host) {
-                serverName = window.lastAnomalyResult.storage_info.host;
-            } else if (window.selectedChatServer) {
+            // Sunucu adı — sonuç.server_info.server_name'den (Bug #4 fix)
+            var serverInfo = result.server_info || {};
+            var serverName = serverInfo.server_name || null;
+            if (!serverName && window.lastAnomalyResult.sonuç && window.lastAnomalyResult.sonuç.server_info) {
+                serverName = window.lastAnomalyResult.sonuç.server_info.server_name;
+            }
+            if (!serverName && window.selectedChatServer) {
                 serverName = window.selectedChatServer;
             }
             if (serverName) {
@@ -194,21 +194,28 @@
 
     /**
      * Analiz sonucundan metrikleri güncelle (backward compat)
+     * NOT: f1_score, precision, recall Isolation Forest (unsupervised) modelde
+     * gercek deger uretmez — /api/ml/metrics'ten gelen degerleri koruyoruz.
      */
     function updateMetricsFromAnalysis(summary) {
-        var accuracy = summary.anomaly_rate ? (100 - summary.anomaly_rate).toFixed(1) : '95.2';
-        var f1Score = summary.f1_score || '0.89';
-        var precision = summary.precision || '0.92';
-        var recall = summary.recall || '0.87';
+        // Accuracy: anomaly_rate'den hesapla (gercek veri)
+        if (summary.anomaly_rate !== undefined) {
+            var accuracy = (100 - summary.anomaly_rate).toFixed(1);
+            updateElement('modelAccuracy', '%' + accuracy);
+        }
+        // f1_score, precision, recall: unsupervised model, gercek deger yok
+        // /api/ml/metrics'ten gelen mevcut degerleri koruyoruz, uzerine yazmiyoruz
 
-        updateElement('modelAccuracy', '%' + accuracy);
-        updateElement('modelF1', f1Score);
-        updateElement('modelPrecision', precision);
-        updateElement('modelRecall', recall);
-
-        updateElement('totalLogs', (summary.total_logs || 0).toLocaleString('tr-TR'));
-        updateElement('detectedAnomalies', (summary.n_anomalies || 0).toLocaleString('tr-TR'));
-        updateElement('anomalyRate', '%' + (summary.anomaly_rate || 0).toFixed(2));
+        // Anomali Istatistikleri — gercek veriler
+        if (summary.total_logs !== undefined) {
+            updateElement('totalLogs', summary.total_logs.toLocaleString('tr-TR'));
+        }
+        if (summary.n_anomalies !== undefined) {
+            updateElement('detectedAnomalies', summary.n_anomalies.toLocaleString('tr-TR'));
+        }
+        if (summary.anomaly_rate !== undefined) {
+            updateElement('anomalyRate', '%' + summary.anomaly_rate.toFixed(2));
+        }
     }
 
     /**
@@ -429,15 +436,39 @@
 
     /**
      * Panel'i anomali analizi sonrası otomatik güncelle
+     * Tam sonuç objesinden summary, server_info, feature_importance cikarilir
      */
     function autoUpdatePanelAfterAnalysis(analysisResult) {
         if (!analysisResult || !analysisResult.sonuç) return;
 
-        var summary = analysisResult.sonuç.summary || (analysisResult.sonuç.data ? analysisResult.sonuç.data.summary : null);
-        if (summary) {
+        var sonuc = analysisResult.sonuç;
+        var summary = sonuc.summary || (sonuc.data ? sonuc.data.summary : null) || {};
+
+        // 1) Anomali istatistikleri ve accuracy (updateMetricsFromAnalysis ile)
+        if (summary.total_logs !== undefined || summary.n_anomalies !== undefined) {
             updateMetricsFromAnalysis(summary);
-            console.log('✅ ML Sidebar auto-updated after analysis');
         }
+
+        // 2) Sunucu adi — sonuç.server_info.server_name'den (Bug #4 fix)
+        var serverInfo = sonuc.server_info || {};
+        if (serverInfo.server_name) {
+            updateElement('mlServerName', serverInfo.server_name);
+        } else if (window.selectedChatServer) {
+            updateElement('mlServerName', window.selectedChatServer.split('.')[0]);
+        }
+
+        // 3) Feature importance — dinamik render (Bug #2 fix)
+        var featureImportance = sonuc.feature_importance || {};
+        if (Object.keys(featureImportance).length > 0) {
+            renderDynamicFeatures(featureImportance);
+        }
+
+        // 4) Ek model/buffer bilgisi — server_info'dan
+        if (serverInfo.historical_buffer_size !== undefined) {
+            updateElement('mlBufferInfo', serverInfo.historical_buffer_size.toLocaleString('tr-TR'));
+        }
+
+        console.log('✅ ML Sidebar auto-updated after analysis (full data)');
     }
 
     // Public API (tüm eski fonksiyonlar + yeniler)
