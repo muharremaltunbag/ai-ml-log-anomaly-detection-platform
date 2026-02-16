@@ -1,120 +1,118 @@
 // web_ui/static/script-ml-panel.js
 /**
  * ML Model Panel Management Module
- * ML panel görünürlüğü ve veri yönetimi
+ * ML Metrics Sidebar gorünürlüğü ve veri yönetimi
+ *
+ * GUNCELLENDİ: Figma sidebar layout'una uyarlandı.
+ * - showMLPanel / hideMLPanel artık CSS class 'open' ile çalışıyor
+ * - Yeni element ID'leri (mlServerName, mlModelType, vb.) destekleniyor
+ * - /api/ml/model-info endpoint'i de çekilip sidebar'a yansitiliyor
+ * - Feature listesi dinamik render ediliyor (lastAnomalyResult'tan)
+ * - Backward compatibility (window.showMLPanel vb.) korunuyor
  */
 
 (function() {
     'use strict';
-    
+
     console.log('🤖 Loading script-ml-panel.js...');
-    
+
     /**
      * ML Panel'i initialize et
      */
     function initializeMLPanel() {
-        console.log('Initializing ML Panel...');
-        
-        // Panel minimize/maximize butonu
-        const minimizeBtn = document.querySelector('.panel-minimize');
-        if (minimizeBtn) {
-            minimizeBtn.addEventListener('click', togglePanelMinimize);
+        console.log('Initializing ML Panel (sidebar mode)...');
+
+        // Close butonu event listener
+        var closeBtn = document.getElementById('mlSidebarCloseBtn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', hideMLPanel);
         }
-        
+
         // Validate log butonu
-        const validateBtn = document.getElementById('validateLogBtn');
+        var validateBtn = document.getElementById('validateLogBtn');
         if (validateBtn) {
             validateBtn.addEventListener('click', handleLogValidation);
         }
-        
-        // Eğer API zaten bağlıysa panel'i göster
+
+        // Eğer API zaten bağlıysa metrikleri yükle
         if (window.isConnected) {
-            console.log('API already connected, showing ML Panel...');
-            // showMLPanel();
+            console.log('API already connected, loading ML metrics...');
             loadMLMetrics();
         }
-        
-        console.log('✅ ML Panel initialized');
+
+        console.log('✅ ML Panel initialized (sidebar mode)');
     }
-    
+
     /**
-     * ML Panel'i göster
+     * ML Sidebar'i göster (CSS class toggle — LCWGPT ile aynı mantık)
      */
     function showMLPanel() {
-        const panel = document.getElementById('mlModelPanel');
+        var panel = document.getElementById('mlModelPanel');
         if (panel) {
-            panel.style.display = 'block';
-            console.log('✅ ML Panel shown');
-            
+            panel.classList.add('open');
+            console.log('✅ ML Sidebar opened');
+
             // Metrikleri yükle
             loadMLMetrics();
         }
     }
+
     /**
-     * ML Panel'i gizle
+     * ML Sidebar'i gizle
      */
     function hideMLPanel() {
-        const panel = document.getElementById('mlModelPanel');
+        var panel = document.getElementById('mlModelPanel');
         if (panel) {
-            panel.style.display = 'none';
-            console.log('ML Panel hidden');
+            panel.classList.remove('open');
+            console.log('ML Sidebar closed');
         }
     }
-    
+
     /**
-     * Panel'i küçült/büyüt
+     * ML Sidebar'i toggle et (aç/kapat)
      */
-    function togglePanelMinimize() {
-        const panel = document.getElementById('mlModelPanel');
-        if (panel) {
-            panel.classList.toggle('minimized');
-            const btn = document.querySelector('.panel-minimize');
-            if (btn) {
-                btn.textContent = panel.classList.contains('minimized') ? '□' : '_';
-            }
+    function toggleMLPanel() {
+        var panel = document.getElementById('mlModelPanel');
+        if (!panel) return;
+
+        if (panel.classList.contains('open')) {
+            hideMLPanel();
+        } else {
+            showMLPanel();
         }
     }
-    
+
     /**
-     * ML Model metriklerini yükle ve paneli güncelle
+     * ML Model metriklerini yükle ve sidebar'ı güncelle
+     * İki endpoint çağrılır: /api/ml/metrics + /api/ml/model-info
      */
     async function loadMLMetrics() {
-        console.log('Loading ML metrics...');
+        console.log('Loading ML metrics for sidebar...');
 
+        // 1) /api/ml/metrics — performans + istatistik
         try {
-            const response = await fetch(`/api/ml/metrics?api_key=${window.apiKey}`);
+            var response = await fetch('/api/ml/metrics?api_key=' + encodeURIComponent(window.apiKey));
             if (response.ok) {
-                const data = await response.json();
+                var data = await response.json();
                 if (data.status === 'success' && data.metrics) {
-                    const metrics = data.metrics;
+                    var metrics = data.metrics;
 
-                    // Model Performansı - Direkt ID ile güncelle
-                    const accuracyEl = document.getElementById('modelAccuracy');
-                    const f1El = document.getElementById('modelF1');
-                    const precisionEl = document.getElementById('modelPrecision');
-                    const recallEl = document.getElementById('modelRecall');
+                    // Model Performansı — ID-based update
+                    updateElement('modelAccuracy', '%' + metrics.model_accuracy.toFixed(1));
+                    updateElement('modelF1', metrics.f1_score.toFixed(2));
+                    updateElement('modelPrecision', metrics.precision.toFixed(2));
+                    updateElement('modelRecall', metrics.recall.toFixed(2));
 
-                    if (accuracyEl) accuracyEl.textContent = `%${metrics.model_accuracy.toFixed(1)}`;
-                    if (f1El) f1El.textContent = metrics.f1_score.toFixed(2);
-                    if (precisionEl) precisionEl.textContent = metrics.precision.toFixed(2);
-                    if (recallEl) recallEl.textContent = metrics.recall.toFixed(2);
+                    // Anomali İstatistikleri — ID-based update
+                    updateElement('totalLogs', metrics.total_logs_analyzed.toLocaleString('tr-TR'));
+                    updateElement('detectedAnomalies', metrics.total_anomalies_detected.toLocaleString('tr-TR'));
+                    updateElement('anomalyRate', '%' + metrics.anomaly_rate.toFixed(2));
 
-                    // Anomali İstatistikleri ve Model Bilgisi - stat-item span'ları ile güncelle
-                    const statItems = document.querySelectorAll('.stat-item span:last-child');
-                    if (statItems.length >= 5) {
-                        // Toplam Log
-                        statItems[0].textContent = metrics.total_logs_analyzed.toLocaleString('tr-TR');
-                        // Tespit Edilen
-                        statItems[1].textContent = metrics.total_anomalies_detected.toLocaleString('tr-TR');
-                        // Anomali Oranı
-                        statItems[2].textContent = `%${metrics.anomaly_rate.toFixed(2)}`;
-                        // Model
-                        statItems[3].textContent = metrics.model_version;
-                        // Son Eğitim
-                        statItems[4].textContent = new Date(metrics.last_training_date).toLocaleDateString('tr-TR');
-                    }
+                    // Model versiyonu ve eğitim tarihi
+                    updateElement('modelVersion', metrics.model_version);
+                    updateElement('lastTrainingDate', new Date(metrics.last_training_date).toLocaleDateString('tr-TR'));
 
-                    console.log('✅ ML metrics loaded from backend API');
+                    console.log('✅ ML metrics loaded from /api/ml/metrics');
                 }
             }
         } catch (error) {
@@ -122,61 +120,102 @@
             updateMLPanelWithDefaults();
         }
 
-        // lastAnomalyResult varsa onu da güncelle
+        // 2) /api/ml/model-info — model detay bilgileri
+        try {
+            var infoResponse = await fetch('/api/ml/model-info?api_key=' + encodeURIComponent(window.apiKey));
+            if (infoResponse.ok) {
+                var infoData = await infoResponse.json();
+                if (infoData.status === 'success' && infoData.model_info) {
+                    var info = infoData.model_info;
+
+                    updateElement('mlModelType', info.model_type || 'Isolation Forest');
+                    updateElement('mlTrainingSamples', info.training_samples ? info.training_samples.toLocaleString('tr-TR') + ' Satir' : '--');
+                    updateElement('mlFeatureCount', info.features_count ? info.features_count.toString() : '--');
+
+                    if (info.buffer_samples !== undefined) {
+                        var bufferMB = info.buffer_size_mb ? info.buffer_size_mb.toFixed(1) + ' MB' : '';
+                        updateElement('mlBufferInfo', info.buffer_samples.toLocaleString('tr-TR') + (bufferMB ? ' / ' + bufferMB : ''));
+                    }
+
+                    console.log('✅ Model info loaded from /api/ml/model-info');
+                }
+            }
+        } catch (error) {
+            console.warn('Could not load model info:', error);
+        }
+
+        // 3) lastAnomalyResult varsa, onunla üzerine yaz (en güncel veri)
         if (window.lastAnomalyResult && window.lastAnomalyResult.sonuç) {
-            const result = window.lastAnomalyResult.sonuç;
-            const summary = result.summary || result.data?.summary || {};
+            var result = window.lastAnomalyResult.sonuç;
+            var summary = result.summary || (result.data ? result.data.summary : null) || {};
 
-            // Sadece anomaly-specific verileri güncelle
-            const statItems = document.querySelectorAll('.stat-item span:last-child');
-            if (statItems.length >= 3 && summary.n_anomalies !== undefined) {
-                statItems[1].textContent = summary.n_anomalies.toLocaleString('tr-TR');
+            if (summary.n_anomalies !== undefined) {
+                updateElement('detectedAnomalies', summary.n_anomalies.toLocaleString('tr-TR'));
             }
-            if (statItems.length >= 3 && summary.anomaly_rate !== undefined) {
-                statItems[2].textContent = `%${summary.anomaly_rate.toFixed(2)}`;
+            if (summary.anomaly_rate !== undefined) {
+                updateElement('anomalyRate', '%' + summary.anomaly_rate.toFixed(2));
+            }
+            if (summary.total_logs !== undefined) {
+                updateElement('totalLogs', summary.total_logs.toLocaleString('tr-TR'));
             }
 
-            console.log('✅ ML metrics updated from lastAnomalyResult');
+            // Sunucu adı — storage_info veya analysis metadata'dan
+            var serverName = null;
+            if (result.storage_info && result.storage_info.host) {
+                serverName = result.storage_info.host;
+            } else if (window.lastAnomalyResult.storage_info && window.lastAnomalyResult.storage_info.host) {
+                serverName = window.lastAnomalyResult.storage_info.host;
+            } else if (window.selectedChatServer) {
+                serverName = window.selectedChatServer;
+            }
+            if (serverName) {
+                updateElement('mlServerName', serverName.split('.')[0]);
+            }
+
+            // Model info from analysis result
+            var mlData = result.data || result;
+            var modelInfo = result.model_info || mlData.model_info || {};
+            if (modelInfo.model_version) {
+                updateElement('modelVersion', modelInfo.model_version);
+            }
+            if (modelInfo.feature_count) {
+                updateElement('mlFeatureCount', modelInfo.feature_count.toString());
+            }
+
+            // Feature importance varsa, feature listesini dinamik guncelle
+            var featureImportance = mlData.feature_importance || {};
+            if (Object.keys(featureImportance).length > 0) {
+                renderDynamicFeatures(featureImportance);
+            }
+
+            console.log('✅ ML sidebar updated from lastAnomalyResult');
         }
     }
+
     /**
-     * Analiz sonucundan metrikleri güncelle
+     * Analiz sonucundan metrikleri güncelle (backward compat)
      */
     function updateMetricsFromAnalysis(summary) {
-        // Model performans metriklerini hesapla
-        const accuracy = summary.anomaly_rate ? (100 - summary.anomaly_rate).toFixed(1) : '95.2';
-        const f1Score = summary.f1_score || '0.89';
-        const precision = summary.precision || '0.92';
-        const recall = summary.recall || '0.87';
-        
-        // Model performans metriklerini güncelle
-        updateElement('modelAccuracy', `%${accuracy}`);
+        var accuracy = summary.anomaly_rate ? (100 - summary.anomaly_rate).toFixed(1) : '95.2';
+        var f1Score = summary.f1_score || '0.89';
+        var precision = summary.precision || '0.92';
+        var recall = summary.recall || '0.87';
+
+        updateElement('modelAccuracy', '%' + accuracy);
         updateElement('modelF1', f1Score);
         updateElement('modelPrecision', precision);
         updateElement('modelRecall', recall);
-        
-        // İstatistikleri güncelle
+
         updateElement('totalLogs', (summary.total_logs || 0).toLocaleString('tr-TR'));
         updateElement('detectedAnomalies', (summary.n_anomalies || 0).toLocaleString('tr-TR'));
-        updateElement('anomalyRate', `%${(summary.anomaly_rate || 0).toFixed(2)}`);
+        updateElement('anomalyRate', '%' + (summary.anomaly_rate || 0).toFixed(2));
     }
-    
-    /**
-     * Model bilgilerini güncelle
-     */
-    function updateModelInfo() {
-        updateElement('modelVersion', 'v2.1.0');
-        
-        const lastTraining = new Date();
-        lastTraining.setDate(lastTraining.getDate() - 2); // 2 gün önce
-        updateElement('lastTrainingDate', lastTraining.toLocaleDateString('tr-TR'));
-    }
-    
+
     /**
      * ML Panel'i default değerlerle güncelle
      */
     function updateMLPanelWithDefaults() {
-        const defaults = {
+        var defaults = {
             modelAccuracy: '%95.2',
             modelF1: '0.89',
             modelPrecision: '0.92',
@@ -185,179 +224,241 @@
             detectedAnomalies: '0',
             anomalyRate: '%0.00',
             modelVersion: 'v2.1.0',
-            lastTrainingDate: new Date().toLocaleDateString('tr-TR')
+            lastTrainingDate: new Date().toLocaleDateString('tr-TR'),
+            mlServerName: '--',
+            mlModelType: 'Isolation Forest',
+            mlTrainingSamples: '--',
+            mlFeatureCount: '--',
+            mlBufferInfo: '--'
         };
-        
-        Object.keys(defaults).forEach(key => {
+
+        Object.keys(defaults).forEach(function(key) {
             updateElement(key, defaults[key]);
         });
-        
-        console.log('✅ ML panel updated with default values');
+
+        console.log('✅ ML sidebar updated with default values');
     }
-    
+
     /**
-     * Element'i güncelle ve loading class'ını kaldır
+     * Element'i güncelle (ID-based — yeni DOM yapısı ile uyumlu)
      */
     function updateElement(elementId, value) {
-        // Önce ID ile dene
-        let element = document.getElementById(elementId);
+        var element = document.getElementById(elementId);
+        if (element) {
+            element.textContent = value;
+            element.classList.remove('loading');
+        }
+    }
 
-        // Element bulunamazsa, stat-item'lar içinde ara
-        if (!element) {
-            const statItems = document.querySelectorAll('.stat-item span:last-child');
-            
-            switch(elementId) {
-                case 'totalLogs':
-                    element = statItems[0];
-                    break;
-                case 'detectedAnomalies':
-                    element = statItems[1];
-                    break;
-                case 'anomalyRate':
-                    element = statItems[2];
-                    break;
-                case 'modelVersion':
-                    element = statItems[3];
-                    break;
-                case 'lastTrainingDate':
-                    element = statItems[4];
-                    break;
+    /**
+     * Feature importance verisinden dinamik feature listesi render et
+     * Mevcut statik listeyi korur, sadece importance badge'lerini günceller
+     */
+    function renderDynamicFeatures(featureImportance) {
+        // Kritik feature'lar
+        var criticalFeatures = ['is_fatal', 'is_out_of_memory', 'is_shutdown', 'is_memory_limit', 'is_assertion'];
+        // Diger feature'lar
+        var otherFeatures = ['query_duration_ms', 'docs_examined_count', 'keys_examined_count', 'is_restart',
+                             'is_collscan', 'is_index_build', 'is_slow_query', 'is_high_doc_scan', 'is_replication_issue'];
+
+        // Kisa isim mapping (UI icin)
+        var shortNames = {
+            'is_fatal': 'is_fatal',
+            'is_out_of_memory': 'is_out_of_mem',
+            'is_shutdown': 'is_shutdown',
+            'is_memory_limit': 'is_mem_limit',
+            'is_assertion': 'is_assertion',
+            'query_duration_ms': 'query_dur',
+            'docs_examined_count': 'docs_exam',
+            'keys_examined_count': 'keys_exam',
+            'is_restart': 'is_restart',
+            'is_collscan': 'is_collscan',
+            'is_index_build': 'is_idx_build',
+            'is_slow_query': 'is_slow_qry',
+            'is_high_doc_scan': 'is_hi_scan',
+            'is_replication_issue': 'is_repl_iss'
+        };
+
+        // Kritik container'i guncelle
+        var criticalContainer = document.getElementById('mlCriticalFeatures');
+        if (criticalContainer) {
+            var criticalHtml = '';
+            criticalFeatures.forEach(function(feat) {
+                var importance = featureImportance[feat];
+                var shortName = shortNames[feat] || feat;
+                var isWide = feat === 'is_assertion';
+                var isCritical = feat === 'is_fatal' || feat === 'is_out_of_memory' || feat === 'is_shutdown';
+
+                if (importance !== undefined && importance > 0.01) {
+                    criticalHtml += '<div class="ml-feature-item' + (isCritical ? ' ml-feature-critical' : '') + (isWide ? ' ml-feature-wide' : '') + '">';
+                    criticalHtml += '<span class="ml-feature-name">' + shortName + '</span>';
+                    if (isWide) {
+                        var level = importance > 0.1 ? 'Yuksek' : 'Normal';
+                        criticalHtml += '<span class="ml-feature-badge-warning">' + level + '</span>';
+                    } else {
+                        var dotClass = isCritical ? 'ml-feature-dot-red' : 'ml-feature-dot-orange';
+                        criticalHtml += '<span class="ml-feature-dot ' + dotClass + '"></span>';
+                    }
+                    criticalHtml += '</div>';
+                }
+            });
+            if (criticalHtml) {
+                criticalContainer.innerHTML = criticalHtml;
             }
         }
 
-        if (element) {
-            element.textContent = value;
-            element.classList?.remove('loading');
-        } else {
-            console.warn(`Element not found: ${elementId}`);
+        // Diger container'i guncelle
+        var otherContainer = document.getElementById('mlOtherFeatures');
+        if (otherContainer) {
+            var otherHtml = '';
+            var dotColors = ['ml-feature-dot-blue', 'ml-feature-dot-blue', 'ml-feature-dot-blue', 'ml-feature-dot-purple',
+                           'ml-feature-dot-orange', 'ml-feature-dot-blue', 'ml-feature-dot-orange', 'ml-feature-dot-blue', 'ml-feature-dot-purple'];
+
+            otherFeatures.forEach(function(feat, idx) {
+                var importance = featureImportance[feat];
+                var shortName = shortNames[feat] || feat;
+
+                if (importance !== undefined && importance > 0.005) {
+                    var dotClass = dotColors[idx] || 'ml-feature-dot-blue';
+                    otherHtml += '<div class="ml-feature-item">';
+                    otherHtml += '<span class="ml-feature-name">' + shortName + '</span>';
+                    otherHtml += '<span class="ml-feature-dot ' + dotClass + '"></span>';
+                    otherHtml += '</div>';
+                }
+            });
+            if (otherHtml) {
+                otherContainer.innerHTML = otherHtml;
+            }
         }
     }
-    
+
     /**
-     * Canlı log validasyonu
+     * Canlı log validasyonu (mevcut işlevsellik korunuyor)
      */
     async function handleLogValidation() {
-        const input = window.elements?.sampleLogInput;
-        const resultDiv = window.elements?.validationResult;
-        
+        var input = document.getElementById('sampleLogInput');
+        var resultDiv = document.getElementById('validationResult');
+
+        if (!input || !resultDiv) {
+            // Fallback: window.elements uzerinden
+            input = input || (window.elements ? window.elements.sampleLogInput : null);
+            resultDiv = resultDiv || (window.elements ? window.elements.validationResult : null);
+        }
         if (!input || !resultDiv) return;
-        
-        const logSample = input.value.trim();
+
+        var logSample = input.value.trim();
         if (!logSample) {
-            window.showNotification?.('Lütfen test edilecek log satırını girin', 'warning');
+            if (window.showNotification) {
+                window.showNotification('Lutfen test edilecek log satirini girin', 'warning');
+            }
             return;
         }
-        
-        // Loading göster
+
         resultDiv.style.display = 'block';
         resultDiv.innerHTML = '<div class="loading">Analiz ediliyor...</div>';
-        
+
         try {
-            // Backend'e gerçek istek at
-            const response = await fetch('/api/ml/validate-log', {
+            var response = await fetch('/api/ml/validate-log', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     api_key: window.apiKey,
                     log_text: logSample
                 })
             });
-            
+
             if (response.ok) {
-                const data = await response.json();
+                var data = await response.json();
                 if (data.status === 'success' && data.analysis) {
-                    const analysis = data.analysis;
-                    const isAnomaly = analysis.is_anomaly;
-                    
-                    resultDiv.innerHTML = `
-                        <div class="validation-result-content ${isAnomaly ? 'anomaly' : 'normal'}">
-                            <div class="result-label">${isAnomaly ? '⚠️ ANOMALİ TESPİT EDİLDİ' : '✅ NORMAL LOG'}</div>
-                            <div class="result-score">Anomali Skoru: ${analysis.anomaly_score.toFixed(3)}</div>
-                            <div class="result-severity">Severity: ${analysis.severity}</div>
-                            <div class="result-details">${analysis.explanation}</div>
-                            ${analysis.recommendations && analysis.recommendations.length > 0 ? 
-                                '<div class="result-recommendations">' + 
-                                analysis.recommendations.map(r => `<li>${r}</li>`).join('') + 
+                    var analysis = data.analysis;
+                    var isAnomaly = analysis.is_anomaly;
+
+                    resultDiv.innerHTML =
+                        '<div class="validation-result-content ' + (isAnomaly ? 'anomaly' : 'normal') + '">' +
+                            '<div class="result-label">' + (isAnomaly ? '⚠️ ANOMALI TESPIT EDILDI' : '✅ NORMAL LOG') + '</div>' +
+                            '<div class="result-score">Anomali Skoru: ' + analysis.anomaly_score.toFixed(3) + '</div>' +
+                            '<div class="result-severity">Severity: ' + analysis.severity + '</div>' +
+                            '<div class="result-details">' + analysis.explanation + '</div>' +
+                            (analysis.recommendations && analysis.recommendations.length > 0 ?
+                                '<div class="result-recommendations">' +
+                                analysis.recommendations.map(function(r) { return '<li>' + r + '</li>'; }).join('') +
                                 '</div>' : ''
-                            }
-                        </div>
-                    `;
-                    
+                            ) +
+                        '</div>';
+
                     console.log('✅ Log validation completed via backend');
+                    return;
                 }
-            } else {
-                throw new Error('Backend validation failed');
             }
-            
+            throw new Error('Backend validation failed');
+
         } catch (error) {
             console.error('Validation error:', error);
-            // Fallback to simulation
-            const anomalyScore = simulateAnomalyScore(logSample);
-            const isAnomaly = anomalyScore > 0.5;
-            
-            resultDiv.innerHTML = `
-                <div class="validation-result-content ${isAnomaly ? 'anomaly' : 'normal'}">
-                    <div class="result-label">${isAnomaly ? '⚠️ ANOMALİ TESPİT EDİLDİ (Offline)' : '✅ NORMAL LOG (Offline)'}</div>
-                    <div class="result-score">Anomali Skoru: ${anomalyScore.toFixed(3)}</div>
-                    <div class="result-details">
-                        ${isAnomaly ? 
-                            'Bu log satırı anormal pattern içeriyor. Detaylı analiz için tam log dosyasını yükleyin.' : 
-                            'Bu log satırı normal görünüyor.'}
-                    </div>
-                </div>
-            `;
+            var anomalyScore = simulateAnomalyScore(logSample);
+            var isAnomaly2 = anomalyScore > 0.5;
+
+            resultDiv.innerHTML =
+                '<div class="validation-result-content ' + (isAnomaly2 ? 'anomaly' : 'normal') + '">' +
+                    '<div class="result-label">' + (isAnomaly2 ? '⚠️ ANOMALI TESPIT EDILDI (Offline)' : '✅ NORMAL LOG (Offline)') + '</div>' +
+                    '<div class="result-score">Anomali Skoru: ' + anomalyScore.toFixed(3) + '</div>' +
+                    '<div class="result-details">' +
+                        (isAnomaly2 ?
+                            'Bu log satiri anormal pattern iceriyor. Detayli analiz icin tam log dosyasini yukleyin.' :
+                            'Bu log satiri normal gorunuyor.') +
+                    '</div>' +
+                '</div>';
         }
     }
-    
+
     /**
      * Basit anomali skoru simülasyonu (test amaçlı)
      */
     function simulateAnomalyScore(logText) {
-        const anomalyKeywords = ['error', 'fatal', 'exception', 'failed', 'crash', 'timeout', 'refused'];
-        const lowerLog = logText.toLowerCase();
-        
-        let score = 0.1; // Base score
-        anomalyKeywords.forEach(keyword => {
+        var anomalyKeywords = ['error', 'fatal', 'exception', 'failed', 'crash', 'timeout', 'refused'];
+        var lowerLog = logText.toLowerCase();
+
+        var score = 0.1;
+        anomalyKeywords.forEach(function(keyword) {
             if (lowerLog.includes(keyword)) {
                 score += 0.15;
             }
         });
-        
+
         return Math.min(score, 0.99);
     }
-    
+
     /**
      * Panel'i anomali analizi sonrası otomatik güncelle
      */
     function autoUpdatePanelAfterAnalysis(analysisResult) {
         if (!analysisResult || !analysisResult.sonuç) return;
-        
-        const summary = analysisResult.sonuç.summary || analysisResult.sonuç.data?.summary;
+
+        var summary = analysisResult.sonuç.summary || (analysisResult.sonuç.data ? analysisResult.sonuç.data.summary : null);
         if (summary) {
             updateMetricsFromAnalysis(summary);
-            console.log('✅ ML Panel auto-updated after analysis');
+            console.log('✅ ML Sidebar auto-updated after analysis');
         }
     }
-    
-    // Public API
+
+    // Public API (tüm eski fonksiyonlar + yeniler)
     window.MLPanel = {
         initialize: initializeMLPanel,
         show: showMLPanel,
         hide: hideMLPanel,
+        toggle: toggleMLPanel,
         loadMetrics: loadMLMetrics,
         updateWithDefaults: updateMLPanelWithDefaults,
         autoUpdate: autoUpdatePanelAfterAnalysis,
-        toggleMinimize: togglePanelMinimize
+        toggleMinimize: toggleMLPanel  // backward compat: eski toggleMinimize artik toggle yapar
     };
-    
-    // Backward compatibility
+
+    // Backward compatibility — eski global fonksiyonlar
     window.showMLPanel = showMLPanel;
     window.hideMLPanel = hideMLPanel;
     window.loadMLMetrics = loadMLMetrics;
     window.updateMLPanelWithDefaults = updateMLPanelWithDefaults;
-    
-    console.log('✅ ML Panel module loaded successfully');
-    
+    window.toggleMLPanel = toggleMLPanel;
+
+    console.log('✅ ML Panel module loaded successfully (sidebar mode)');
+
 })();

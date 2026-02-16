@@ -34,6 +34,7 @@
                     <input type="password" id="apiKey" placeholder="API anahtarı" value="lcw-test-2024">
                     <button id="connectBtn" class="btn btn-primary">BAĞLAN</button>
                 </div>
+                <button id="mlSidebarToggleBtn" class="ml-sidebar-toggle-btn" title="ML Model Metrikleri">📊 ML</button>
                 <button id="sidebarToggleBtn" class="sidebar-toggle-btn" title="LCWGPT Assistant">🤖 AI</button>
             </div>
         </div>
@@ -551,84 +552,194 @@
         </div>
     </div>
 
-    <!-- ML Model Panel -->
-    <div id="mlModelPanel" class="ml-panel" style="display: none;">
-        <div class="panel-header">
-            <h3>🤖 ML Model Metrikleri</h3>
-            <button class="panel-minimize" onclick="window.MLPanel?.toggleMinimize()">_</button>
+    <!-- ===== ML MODEL METRICS SIDEBAR (Figma layout — sol panel) ===== -->
+    <aside id="mlModelPanel" class="ml-metrics-sidebar">
+        <!-- Sidebar Header -->
+        <div class="ml-sidebar-header">
+            <div class="ml-sidebar-header-left">
+                <span class="ml-sidebar-icon">🤖</span>
+                <h3 class="ml-sidebar-title">ML Model Metrikleri</h3>
+            </div>
+            <button id="mlSidebarCloseBtn" class="ml-sidebar-close-btn" title="Paneli Kapat">✕</button>
         </div>
-        
-        <div class="panel-content">
-            <!-- Model Metrikleri -->
-            <div class="panel-section">
-                <h4>📊 Model Performansı</h4>
-                <div class="metrics-grid">
-                    <div class="metric-card">
-                        <span class="metric-label">Accuracy</span>
-                        <span class="metric-value" id="modelAccuracy">--</span>
+
+        <!-- Scrollable Content -->
+        <div class="ml-sidebar-content">
+
+            <!-- Section 1: Model Performansi -->
+            <div class="ml-sidebar-section">
+                <h4 class="ml-section-title">
+                    <span class="ml-section-icon ml-section-icon-green">📊</span>
+                    Model Performansi
+                </h4>
+                <div class="ml-perf-grid">
+                    <div class="ml-perf-card">
+                        <div class="ml-perf-label">Accuracy</div>
+                        <div class="ml-perf-value" id="modelAccuracy">--</div>
                     </div>
-                    <div class="metric-card">
-                        <span class="metric-label">F1 Score</span>
-                        <span class="metric-value" id="modelF1">--</span>
+                    <div class="ml-perf-card">
+                        <div class="ml-perf-label">F1 Score</div>
+                        <div class="ml-perf-value" id="modelF1">--</div>
                     </div>
-                    <div class="metric-card">
-                        <span class="metric-label">Precision</span>
-                        <span class="metric-value" id="modelPrecision">--</span>
+                    <div class="ml-perf-card">
+                        <div class="ml-perf-label">Precision</div>
+                        <div class="ml-perf-value" id="modelPrecision">--</div>
                     </div>
-                    <div class="metric-card">
-                        <span class="metric-label">Recall</span>
-                        <span class="metric-value" id="modelRecall">--</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Anomali İstatistikleri -->
-            <div class="panel-section">
-                <h4>📈 Anomali İstatistikleri</h4>
-                <div class="stats-list">
-                    <div class="stat-item">
-                        <span>Toplam Log:</span>
-                        <span id="totalLogs">--</span>
-                    </div>
-                    <div class="stat-item">
-                        <span>Tespit Edilen:</span>
-                        <span id="detectedAnomalies">--</span>
-                    </div>
-                    <div class="stat-item">
-                        <span>Anomali Oranı:</span>
-                        <span id="anomalyRate">--</span>
+                    <div class="ml-perf-card">
+                        <div class="ml-perf-label">Recall</div>
+                        <div class="ml-perf-value" id="modelRecall">--</div>
                     </div>
                 </div>
             </div>
-            
-            <!-- Model Bilgisi -->
-            <div class="panel-section">
-                <h4>ℹ️ Model Bilgisi</h4>
-                <div class="stats-list">
-                    <div class="stat-item">
-                        <span>Model:</span>
-                        <span id="modelVersion">--</span>
+
+            <div class="ml-sidebar-divider"></div>
+
+            <!-- Section 2: Anomali Istatistikleri -->
+            <div class="ml-sidebar-section">
+                <h4 class="ml-section-title">
+                    <span class="ml-section-icon ml-section-icon-purple">📈</span>
+                    Anomali Istatistikleri
+                </h4>
+                <div class="ml-stats-grid">
+                    <div class="ml-stat-card">
+                        <span class="ml-stat-label">Toplam Log</span>
+                        <span class="ml-stat-value" id="totalLogs">--</span>
                     </div>
-                    <div class="stat-item">
-                        <span>Son Eğitim:</span>
-                        <span id="lastTrainingDate">--</span>
+                    <div class="ml-stat-card">
+                        <span class="ml-stat-label">Tespit</span>
+                        <span class="ml-stat-value" id="detectedAnomalies">--</span>
+                    </div>
+                    <div class="ml-stat-card ml-stat-card-danger">
+                        <span class="ml-stat-label">Oran</span>
+                        <span class="ml-stat-value ml-stat-value-danger" id="anomalyRate">--</span>
                     </div>
                 </div>
             </div>
-            
-            <!-- Log Validasyon -->
-            <div class="panel-section">
-                <h4>🔍 Log Validasyon</h4>
-                <div class="validation-area">
-                    <textarea id="sampleLogInput" placeholder="Test edilecek log satırını buraya yapıştırın..."></textarea>
-                    <button id="validateLogBtn" class="btn btn-primary" onclick="window.MLPanel?.validateLog()">
-                        ANOMALİ TESTİ YAP
+
+            <div class="ml-sidebar-divider"></div>
+
+            <!-- Section 3: Analiz Edilen Featurelar -->
+            <div class="ml-sidebar-section">
+                <h4 class="ml-section-title">
+                    <span class="ml-section-icon ml-section-icon-indigo">🏷️</span>
+                    Analiz Edilen Featurelar
+                </h4>
+                <div id="mlFeaturesContainer" class="ml-features-container">
+                    <!-- Kritik Durumlar -->
+                    <div class="ml-feature-group">
+                        <h5 class="ml-feature-group-title">Kritik Durumlar</h5>
+                        <div class="ml-feature-grid" id="mlCriticalFeatures">
+                            <div class="ml-feature-item ml-feature-critical">
+                                <span class="ml-feature-name">is_fatal</span>
+                                <span class="ml-feature-dot ml-feature-dot-red"></span>
+                            </div>
+                            <div class="ml-feature-item ml-feature-critical">
+                                <span class="ml-feature-name">is_out_of_mem</span>
+                                <span class="ml-feature-dot ml-feature-dot-red"></span>
+                            </div>
+                            <div class="ml-feature-item ml-feature-critical">
+                                <span class="ml-feature-name">is_shutdown</span>
+                                <span class="ml-feature-dot ml-feature-dot-red"></span>
+                            </div>
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">is_mem_limit</span>
+                                <span class="ml-feature-dot ml-feature-dot-orange"></span>
+                            </div>
+                            <div class="ml-feature-item ml-feature-wide">
+                                <span class="ml-feature-name">is_assertion</span>
+                                <span class="ml-feature-badge-warning">Yuksek</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Diger Metrikler -->
+                    <div class="ml-feature-group">
+                        <h5 class="ml-feature-group-title">Diger Metrikler</h5>
+                        <div class="ml-feature-grid" id="mlOtherFeatures">
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">query_dur</span>
+                                <span class="ml-feature-dot ml-feature-dot-blue"></span>
+                            </div>
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">docs_exam</span>
+                                <span class="ml-feature-dot ml-feature-dot-blue"></span>
+                            </div>
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">keys_exam</span>
+                                <span class="ml-feature-dot ml-feature-dot-blue"></span>
+                            </div>
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">is_restart</span>
+                                <span class="ml-feature-dot ml-feature-dot-purple"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ml-sidebar-divider"></div>
+
+            <!-- Section 4: Model Bilgisi -->
+            <div class="ml-sidebar-section">
+                <h4 class="ml-section-title">
+                    <span class="ml-section-icon ml-section-icon-blue">ℹ️</span>
+                    Model Bilgisi
+                </h4>
+                <div class="ml-model-info-card">
+                    <div class="ml-info-row ml-info-row-border">
+                        <span class="ml-info-label">Sunucu Adi</span>
+                        <div class="ml-info-value-row">
+                            <span class="ml-info-icon">🖥️</span>
+                            <span class="ml-info-value-mono" id="mlServerName">--</span>
+                        </div>
+                    </div>
+                    <div class="ml-info-row ml-info-row-border">
+                        <span class="ml-info-label">Kullanilan Teknik</span>
+                        <span class="ml-info-value-mono" id="mlModelType">Isolation Forest</span>
+                    </div>
+                    <div class="ml-info-row-grid">
+                        <div class="ml-info-cell ml-info-cell-border-right">
+                            <span class="ml-info-label">Egitim Seti</span>
+                            <span class="ml-info-value-mono" id="mlTrainingSamples">--</span>
+                        </div>
+                        <div class="ml-info-cell">
+                            <span class="ml-info-label">Versiyon</span>
+                            <span class="ml-info-value-mono" id="modelVersion">--</span>
+                        </div>
+                    </div>
+                    <div class="ml-info-row ml-info-row-border">
+                        <span class="ml-info-label">Egitim Tarihi</span>
+                        <span class="ml-info-value-bold" id="lastTrainingDate">--</span>
+                    </div>
+                    <div class="ml-info-row">
+                        <div class="ml-info-sub">
+                            <span class="ml-info-label">Feature Sayisi</span>
+                            <span class="ml-info-value-small" id="mlFeatureCount">--</span>
+                        </div>
+                        <div class="ml-info-sub">
+                            <span class="ml-info-label">Buffer</span>
+                            <span class="ml-info-value-small" id="mlBufferInfo">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 5: Log Validasyon (mevcut islevsellik korunuyor) -->
+            <div class="ml-sidebar-section">
+                <h4 class="ml-section-title">
+                    <span class="ml-section-icon ml-section-icon-green">🔍</span>
+                    Log Validasyon
+                </h4>
+                <div class="ml-validation-area">
+                    <textarea id="sampleLogInput" placeholder="Test edilecek log satirini buraya yapistirin..." class="ml-validation-input"></textarea>
+                    <button id="validateLogBtn" class="btn btn-primary ml-validation-btn" onclick="window.MLPanel?.validateLog()">
+                        ANOMALI TESTI YAP
                     </button>
                     <div id="validationResult" class="validation-result" style="display: none;"></div>
                 </div>
             </div>
-        </div>
-    </div>
+
+        </div><!-- /ml-sidebar-content -->
+    </aside><!-- /mlModelPanel -->
 
 </div><!-- /appMainColumn -->
 

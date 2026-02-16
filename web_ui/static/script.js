@@ -586,34 +586,10 @@ function initializeEventListeners() {
         console.error('Global error caught:', e.message);
     });
 
-    // ML Panel Toggle butonu
-    const mlPanelBtn = document.getElementById('toggleMLPanelBtn');
-    if (mlPanelBtn) {
-        mlPanelBtn.addEventListener('click', () => {
-            const panel = document.getElementById('mlModelPanel');
-            if (panel) {
-                // Panelin mevcut durumunu kontrol et
-                const isHidden = (panel.style.display === 'none' || panel.style.display === '');
-                if (isHidden) {
-                    // Paneli aç
-                    if (window.MLPanel && typeof window.MLPanel.show === 'function') {
-                        window.MLPanel.show();
-                    } else {
-                        panel.style.display = 'block';
-                    }
-                    mlPanelBtn.classList.add('active'); // Opsiyonel: butonu aktif stil yap
-                } else {
-                    // Paneli kapat
-                    if (window.MLPanel && typeof window.MLPanel.hide === 'function') {
-                        window.MLPanel.hide();
-                    } else {
-                        panel.style.display = 'none';
-                    }
-                    mlPanelBtn.classList.remove('active');
-                }
-            }
-        });
-    }
+    // ML Panel Toggle butonu — Yeni sidebar class-based toggle
+    // Not: Asil event listener script-core.js DOMContentLoaded'da baglaniyor.
+    // Burasi backward compat icin korunuyor ama cifte listener onleniyor.
+    // (script-core.js zaten toggleMLPanelBtn'i bagliyor)
     
     console.log('✅ Event listeners initialized successfully');
 }

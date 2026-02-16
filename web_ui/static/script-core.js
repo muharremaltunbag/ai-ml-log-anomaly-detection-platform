@@ -90,9 +90,8 @@ window.initializeElements = function() {
         modal: document.getElementById('modal'),
         modalTitle: document.getElementById('modalTitle'),
         modalBody: document.getElementById('modalBody'),
-        // ML Panel Elementleri - YENİ
-        mlPanel: document.getElementById('mlPanel'),
-        mlPanelMinimizeBtn: document.getElementById('panelMinimizeBtn'),
+        // ML Metrics Sidebar Elementleri
+        mlPanel: document.getElementById('mlModelPanel'),
         modelAccuracy: document.getElementById('modelAccuracy'),
         modelF1: document.getElementById('modelF1'),
         modelPrecision: document.getElementById('modelPrecision'),
@@ -102,6 +101,11 @@ window.initializeElements = function() {
         anomalyRate: document.getElementById('anomalyRate'),
         modelVersion: document.getElementById('modelVersion'),
         lastTrainingDate: document.getElementById('lastTrainingDate'),
+        mlServerName: document.getElementById('mlServerName'),
+        mlModelType: document.getElementById('mlModelType'),
+        mlTrainingSamples: document.getElementById('mlTrainingSamples'),
+        mlFeatureCount: document.getElementById('mlFeatureCount'),
+        mlBufferInfo: document.getElementById('mlBufferInfo'),
         sampleLogInput: document.getElementById('sampleLogInput'),
         validateLogBtn: document.getElementById('validateLogBtn'),
         validationResult: document.getElementById('validationResult')
@@ -655,6 +659,30 @@ document.addEventListener('DOMContentLoaded', function() {
         window.renderExampleQuestions(null);
     }
 
-    console.log('✅ LCWGPT Sidebar event listeners initialized');
+    // ---- ML Metrics Sidebar toggle (header butonu) ----
+    var mlToggleBtn = document.getElementById('mlSidebarToggleBtn');
+    if (mlToggleBtn) {
+        mlToggleBtn.addEventListener('click', function() {
+            if (typeof window.toggleMLPanel === 'function') {
+                window.toggleMLPanel();
+            } else if (window.MLPanel && typeof window.MLPanel.toggle === 'function') {
+                window.MLPanel.toggle();
+            }
+        });
+    }
+
+    // Quick-action ML butonunu da yeni toggle'a bagla
+    var quickActionMLBtn = document.getElementById('toggleMLPanelBtn');
+    if (quickActionMLBtn) {
+        quickActionMLBtn.addEventListener('click', function() {
+            if (typeof window.toggleMLPanel === 'function') {
+                window.toggleMLPanel();
+            } else if (window.MLPanel && typeof window.MLPanel.toggle === 'function') {
+                window.MLPanel.toggle();
+            }
+        });
+    }
+
+    console.log('✅ LCWGPT Sidebar + ML Sidebar event listeners initialized');
 });
 
