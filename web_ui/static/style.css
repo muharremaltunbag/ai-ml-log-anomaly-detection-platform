@@ -11049,8 +11049,7 @@ input:checked + .toggle-slider:before {
 
 .ai-message .message-content strong {
     color: #212529;
-    background: linear-gradient(to bottom, transparent 60%, #fff3cd 60%);
-    padding: 0 2px;
+    /* sarı alt çizgi kaldırıldı — Fix 5 */
 }
 
 /* Loading state for chunks */
@@ -11071,6 +11070,22 @@ input:checked + .toggle-slider:before {
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}
+
+/* LCWGPT Analysis Context Header (Fix 4) */
+.analysis-context-header {
+    background: linear-gradient(135deg, rgba(0, 71, 186, 0.06), rgba(52, 152, 219, 0.06));
+    border: 1px solid rgba(0, 71, 186, 0.15);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #34495e;
+}
+
+.analysis-context-header strong {
+    color: #2c3e50;
 }
 
 /* AI Response Formatting */
@@ -13961,11 +13976,36 @@ mark.text-highlight:hover {
     background-color: var(--bg-color);
     border-radius: 12px;
     border-top-left-radius: 4px;
-    padding: 10px 14px;
-    font-size: 13px;
-    line-height: 1.5;
+    padding: 12px 16px;
+    font-size: 14px;
+    line-height: 1.65;
     color: var(--text-primary);
     max-width: calc(100% - 42px);
+}
+
+/* LCWGPT Sidebar — AI Response Header & Body */
+.sidebar-response-header {
+    background: rgba(0, 71, 186, 0.06);
+    border: 1px solid rgba(0, 71, 186, 0.12);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.sidebar-response-header strong {
+    color: var(--text-primary);
+}
+
+.sidebar-response-body {
+    font-size: 13.5px;
+    line-height: 1.65;
+    word-break: break-word;
+}
+
+.sidebar-response-body strong {
+    color: var(--text-primary);
 }
 
 /* User Bubble */

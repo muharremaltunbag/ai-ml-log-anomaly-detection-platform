@@ -155,6 +155,22 @@ function displayChatQueryResult(result, userQuery) {
     html += '<div class="message-content">';
     
     if (result.status === 'success' && result.ai_response) {
+        // ✅ FIX 4: Cevap başına sunucu/tarih/anomali header'ı ekle
+        const headerServer = result.host || window.selectedChatServer || '';
+        const headerServerShort = headerServer ? headerServer.split('.')[0] : '';
+        const headerTimestamp = result.timestamp || '';
+        const headerAnomalyCount = (typeof result.total_anomalies === 'number') ? result.total_anomalies : '?';
+
+        if (headerServerShort) {
+            html += '<div class="analysis-context-header">';
+            html += '<span><strong>Analiz edilen sunucu:</strong> ' + (window.escapeHtml ? window.escapeHtml(headerServerShort) : headerServerShort) + '</span>';
+            if (headerTimestamp) {
+                html += ' · <span><strong>Kullanılan analiz:</strong> ' + (window.escapeHtml ? window.escapeHtml(headerTimestamp) : headerTimestamp) + '</span>';
+            }
+            html += ' · <span><strong>Anomali adedi:</strong> ' + headerAnomalyCount + '</span>';
+            html += '</div>';
+        }
+
         // AI yanıtını önce decode et, sonra formatla
         const decodedResponse = decodeHtmlEntities(result.ai_response);
         const formattedResponse = formatAIResponse(decodedResponse);
@@ -1891,17 +1907,29 @@ function displayAnomalyResults(result) {
     if (typeof window.loadAnalyzedServers === 'function') {
         const refreshDelay = result.storage_info ? 500 : 2000;
         console.log(`🔄 LCWGPT: Refreshing server list in ${refreshDelay}ms...`);
+
+        // ✅ FIX 3: Yeni analiz tamamlandığında mevcut sunucu seçimini sıfırla
+        // Kullanıcı yeni (veya güncellenmiş) verilerle çalışabilsin
+        window.selectedChatServer = null;
+        window.selectedChatAnalysisId = null;
+        console.log('🔄 LCWGPT: Server selection reset for new analysis');
+
         setTimeout(() => {
             window.loadAnalyzedServers().then(() => {
                 console.log('✅ LCWGPT: Server list refreshed. Servers:',
                     (window.chatServerList || []).map(s => s.host).join(', '));
-                // Eğer henüz sunucu seçilmemişse, güncel listeyi sidebar'da göster
-                if (!window.selectedChatServer && typeof window.showServerSelection === 'function') {
+
+                // ✅ FIX 3: Her zaman yeni sunucu seçim ekranını göster
+                if (typeof window.addSidebarAIMessage === 'function') {
+                    window.addSidebarAIMessage('Yeni analiz tamamlandi! Lütfen incelemek istediginiz sunucuyu secin:');
+                }
+                if (typeof window.showServerSelection === 'function') {
                     window.showServerSelection();
                 }
-                // Ornek sorulari da guncelle (sunucu seciliyse source type'a gore, degilse genel)
-                if (typeof window.updateExampleQuestions === 'function') {
-                    window.updateExampleQuestions();
+
+                // Ornek sorulari genel sete dondur (sunucu henuz secilmedi)
+                if (typeof window.renderExampleQuestions === 'function') {
+                    window.renderExampleQuestions(null);
                 }
             }).catch(e => console.warn('LCWGPT: Server list refresh failed:', e));
         }, refreshDelay);

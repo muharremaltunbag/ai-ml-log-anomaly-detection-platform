@@ -2193,6 +2193,31 @@ async def chat_query_anomalies(request: Dict[str, Any]):
 
         logger.info(f"Found {len(all_anomalies)} anomalies for LCWGPT processing")
 
+        # ✅ GUARD: 0 anomali durumunda güvenli erken dönüş — IndexError önlenir
+        if len(all_anomalies) == 0:
+            logger.warning("No anomalies found for LCWGPT processing — returning safe fallback response")
+            update_progress(request_id, "complete", "İşlem tamamlandı!", 100)
+            return {
+                "status": "success",
+                "total_anomalies": 0,
+                "ai_response": (
+                    "Bu sunucu için kayıtlı anomali verisi bulunamadı.\n\n"
+                    "Olası nedenler:\n"
+                    "- Seçilen zaman aralığında anomali tespit edilmemiş olabilir.\n"
+                    "- Analiz henüz tamamlanmamış olabilir.\n\n"
+                    "Lütfen farklı bir zaman aralığı seçerek yeni bir analiz başlatın "
+                    "veya farklı bir sunucu deneyin."
+                ),
+                "analysis_id": analysis.get("analysis_id"),
+                "timestamp": str(analysis.get("timestamp")),
+                "host": analysis.get("host"),
+                "chunks_processed": 0,
+                "processed_chunks": [],
+                "processing_mode": "no-anomalies",
+                "chunk_info": "Anomali bulunamadı",
+                "total_chunks": 0
+            }
+
         # 2. ADIM: Bağlantı
         update_progress(request_id, "connect", "LCWGPT servisi ile güvenli bağlantı kuruluyor...", 20)
         llm_connector = await get_llm_connector()
@@ -2451,14 +2476,18 @@ CHUNK ANALİZ SONUÇLARI:
                     ai_response += f"[Chunk {cr['chunk_idx']}]:\n{cr['response']}\n\n"
         else:
             ai_response = chunk_responses[0]['response'] if chunk_responses else "Analiz yapılamadı"
-            logger.info(f"Single chunk response used (chunk {selected_chunk_indices[0] + 1})")
+            if selected_chunk_indices:
+                logger.info(f"Single chunk response used (chunk {selected_chunk_indices[0] + 1})")
+            else:
+                logger.info("Single chunk response used (no chunk indices available)")
 
         response_data = {
             "status": "success",
             "total_anomalies": len(all_anomalies),
             "ai_response": ai_response,
             "analysis_id": analysis.get("analysis_id"),
-            "timestamp": str(analysis.get("timestamp"))
+            "timestamp": str(analysis.get("timestamp")),
+            "host": analysis.get("host")
         }
 
         if len(chunk_responses) > 1:
@@ -2481,7 +2510,7 @@ CHUNK ANALİZ SONUÇLARI:
                 "status": "processed"
             }]
             response_data["processing_mode"] = "single-chunk"
-            response_data["chunk_info"] = f"Chunk {selected_chunk_indices[0] + 1}/{total_chunks} işlendi"
+            response_data["chunk_info"] = f"Chunk {selected_chunk_indices[0] + 1}/{total_chunks} işlendi" if selected_chunk_indices else "Tek parça işlendi"
 
         response_data["total_chunks"] = total_chunks
         response_data["performance_metrics"] = {

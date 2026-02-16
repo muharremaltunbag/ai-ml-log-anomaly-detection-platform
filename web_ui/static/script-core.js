@@ -291,6 +291,50 @@ window.loadLastAnomalyFromStorage = async function() {
     return false;
 };
 
+// ============================================
+// LCWGPT SIDEBAR — AI Yanıt Formatlayıcı
+// ============================================
+
+/**
+ * LCWGPT sidebar AI yanıtını formatla.
+ * Backend response objesini alır, header + içerik HTML döner.
+ * Fix 2 (boş cevap) + Fix 4 (header formatı) birlikte çözülür.
+ */
+window.formatSidebarAIResponse = function(chatResult) {
+    var parts = [];
+
+    // ── Header: sunucu, tarih, anomali adedi ──
+    var server = chatResult.host || window.selectedChatServer || '';
+    var serverShort = server ? server.split('.')[0] : '';
+    var ts = chatResult.timestamp || '';
+    var anomalyCount = (typeof chatResult.total_anomalies === 'number') ? chatResult.total_anomalies : '?';
+
+    if (serverShort) {
+        parts.push('<div class="sidebar-response-header">');
+        parts.push('<div><strong>Analiz edilen sunucu:</strong> ' + (window.escapeHtml ? window.escapeHtml(serverShort) : serverShort) + '</div>');
+        if (ts) {
+            parts.push('<div><strong>Kullanılan analiz (en son):</strong> ' + (window.escapeHtml ? window.escapeHtml(ts) : ts) + '</div>');
+        }
+        parts.push('<div><strong>Anomali adedi:</strong> ' + anomalyCount + '</div>');
+        parts.push('</div>');
+    }
+
+    // ── İçerik ──
+    var body = chatResult.ai_response || '';
+    // Basit markdown → HTML dönüşümü (sidebar için hafif versiyon)
+    body = body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    body = body.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    body = body.replace(/^### (.*?)$/gm, '<strong>$1</strong>');
+    body = body.replace(/^## (.*?)$/gm, '<strong>$1</strong>');
+    body = body.replace(/^# (.*?)$/gm, '<strong>$1</strong>');
+    body = body.replace(/```([\s\S]*?)```/g, '<pre style="background:#f4f4f4;padding:6px 8px;border-radius:6px;font-size:12px;overflow-x:auto;white-space:pre-wrap;">$1</pre>');
+    body = body.replace(/\n/g, '<br>');
+
+    parts.push('<div class="sidebar-response-body">' + body + '</div>');
+
+    return parts.join('');
+};
+
 console.log('✅ Core module loaded successfully');
 console.log('📊 Global variables available:', {
     apiKey: typeof window.apiKey,

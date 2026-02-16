@@ -916,6 +916,22 @@ async function handleQuery() {
 
                     console.log('LCWGPT result:', chatResult);
 
+                    // ✅ SIDEBAR AI YANIT — sidebar'da boş cevap sorununu gider
+                    if (typeof window.addSidebarAIMessage === 'function') {
+                        if (chatResult.status === 'success' && chatResult.ai_response) {
+                            // Sidebar'a formatlanmış AI yanıtı ekle
+                            const sidebarHtml = window.formatSidebarAIResponse
+                                ? window.formatSidebarAIResponse(chatResult)
+                                : chatResult.ai_response.substring(0, 2000) + (chatResult.ai_response.length > 2000 ? '...' : '');
+                            window.addSidebarAIMessage(sidebarHtml);
+                        } else {
+                            // Hata veya boş yanıt durumunda bilgilendirme
+                            window.addSidebarAIMessage(
+                                '⚠️ ' + (chatResult.message || 'Yanıt alınamadı. Lütfen tekrar deneyin.')
+                            );
+                        }
+                    }
+
                     // ✅ YENİ: Güvenli fonksiyon çağrısı - Race condition önleme
                     if (typeof window.displayChatAnomalyResult === 'function') {
                         window.displayChatAnomalyResult(chatResult, query);
@@ -954,6 +970,10 @@ async function handleQuery() {
                     console.error('LCWGPT request failed:', chatResponse.status);
                     const errorText = await chatResponse.text();
                     console.error('Error response:', errorText);
+                    // ✅ Sidebar'a HTTP hata mesajı
+                    if (typeof window.addSidebarAIMessage === 'function') {
+                        window.addSidebarAIMessage('❌ Yanıt alınamadı (HTTP ' + chatResponse.status + '). Lütfen tekrar deneyin.');
+                    }
                 }
             } catch (error) {
                 console.error('LCWGPT error:', error);
@@ -962,6 +982,10 @@ async function handleQuery() {
                 else showLoader(false);
 
                 showNotification('Yapay zeka yanıtı alınırken hata oluştu.', 'error');
+                // ✅ Sidebar'a exception hata mesajı
+                if (typeof window.addSidebarAIMessage === 'function') {
+                    window.addSidebarAIMessage('❌ Bir hata oluştu. Lütfen tekrar deneyin.');
+                }
             }
             }
         } else {
