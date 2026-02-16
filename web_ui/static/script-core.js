@@ -105,10 +105,7 @@ window.initializeElements = function() {
         mlModelType: document.getElementById('mlModelType'),
         mlTrainingSamples: document.getElementById('mlTrainingSamples'),
         mlFeatureCount: document.getElementById('mlFeatureCount'),
-        mlBufferInfo: document.getElementById('mlBufferInfo'),
-        sampleLogInput: document.getElementById('sampleLogInput'),
-        validateLogBtn: document.getElementById('validateLogBtn'),
-        validationResult: document.getElementById('validationResult')
+        mlBufferInfo: document.getElementById('mlBufferInfo')
     };
     console.log('✅ DOM elements initialized');
     return window.elements;
