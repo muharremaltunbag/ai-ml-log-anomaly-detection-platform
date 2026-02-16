@@ -12827,7 +12827,7 @@ mark.text-highlight:hover {
     position: fixed;
     left: 16px;
     top: 80px;
-    width: 300px;
+    width: 340px;
     height: calc(100vh - 96px);
     border: 1px solid var(--border-color);
     border-radius: 16px;
@@ -12852,7 +12852,7 @@ mark.text-highlight:hover {
 
 /* Sidebar Header */
 .ml-sidebar-header {
-    padding: 12px 14px;
+    padding: 14px 18px;
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
@@ -12864,13 +12864,13 @@ mark.text-highlight:hover {
 .ml-sidebar-header-left {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 }
 
 .ml-sidebar-icon {
-    font-size: 14px;
-    width: 28px;
-    height: 28px;
+    font-size: 16px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -12879,7 +12879,7 @@ mark.text-highlight:hover {
 }
 
 .ml-sidebar-title {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 700;
     color: var(--lcw-blue);
     margin: 0;
@@ -12888,10 +12888,10 @@ mark.text-highlight:hover {
 .ml-sidebar-close-btn {
     background: none;
     border: none;
-    font-size: 14px;
+    font-size: 16px;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 6px 10px;
     border-radius: 4px;
     transition: background-color 0.2s;
 }
@@ -12905,7 +12905,7 @@ mark.text-highlight:hover {
 .ml-sidebar-content {
     flex: 1;
     overflow-y: auto;
-    padding: 10px;
+    padding: 14px;
     scrollbar-width: thin;
     scrollbar-color: rgba(0,0,0,0.12) transparent;
 }
@@ -12927,28 +12927,28 @@ mark.text-highlight:hover {
 .ml-sidebar-divider {
     height: 1px;
     background: var(--border-color);
-    margin: 10px 0;
+    margin: 12px 0;
 }
 
 /* Section Titles */
 .ml-sidebar-section {
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 
 .ml-section-title {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
 }
 
 .ml-section-icon {
-    font-size: 12px;
+    font-size: 14px;
 }
 
 .ml-section-icon-green { color: #22c55e; }
@@ -12956,46 +12956,44 @@ mark.text-highlight:hover {
 .ml-section-icon-indigo { color: #6366f1; }
 .ml-section-icon-blue { color: #3b82f6; }
 
-/* ---- Section 1: Model Performansi (4-column grid) ---- */
+/* ---- Section 1: Model Performansi (2x2 grid — ferah) ---- */
 .ml-perf-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
 }
 
 .ml-perf-card {
     background: var(--bg-color);
-    padding: 6px 4px;
-    border-radius: 8px;
+    padding: 10px 8px;
+    border-radius: 10px;
     border: 1px solid var(--border-color);
     text-align: center;
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 
 .ml-perf-label {
-    font-size: 8px;
+    font-size: 10px;
     color: var(--text-secondary);
     text-transform: uppercase;
     font-weight: 600;
     letter-spacing: 0.3px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    margin-bottom: 2px;
 }
 
 .ml-perf-value {
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 700;
     color: var(--lcw-blue);
     line-height: 1.3;
-    margin-top: 2px;
+    margin-top: 3px;
 }
 
 /* ---- Section 2: Anomali Istatistikleri (3-column grid) ---- */
 .ml-stats-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
+    gap: 8px;
 }
 
 .ml-stat-card {
@@ -13003,8 +13001,8 @@ mark.text-highlight:hover {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 8px 6px;
-    border-radius: 6px;
+    padding: 10px 8px;
+    border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--card-bg);
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
@@ -13021,7 +13019,7 @@ mark.text-highlight:hover {
 }
 
 .ml-stat-label {
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 500;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -13030,8 +13028,8 @@ mark.text-highlight:hover {
 .ml-stat-value {
     font-weight: 700;
     color: var(--text-primary);
-    font-size: 11px;
-    margin-top: 2px;
+    font-size: 14px;
+    margin-top: 3px;
 }
 
 .ml-stat-value-danger {
@@ -13046,26 +13044,26 @@ mark.text-highlight:hover {
 }
 
 .ml-feature-group-title {
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 700;
     color: #9ca3af;
     text-transform: uppercase;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     margin-left: 2px;
 }
 
 .ml-feature-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 5px;
+    gap: 6px;
 }
 
 .ml-feature-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 8px;
-    border-radius: 4px;
+    padding: 6px 10px;
+    border-radius: 6px;
     background: var(--bg-color);
     border: 1px solid var(--border-color);
 }
@@ -13080,7 +13078,7 @@ mark.text-highlight:hover {
 }
 
 .ml-feature-name {
-    font-size: 10px;
+    font-size: 11px;
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
     font-weight: 500;
     color: var(--text-primary);
@@ -13091,8 +13089,8 @@ mark.text-highlight:hover {
 }
 
 .ml-feature-dot {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
 }
@@ -13103,13 +13101,13 @@ mark.text-highlight:hover {
 .ml-feature-dot-purple { background-color: #a855f7; }
 
 .ml-feature-badge-warning {
-    padding: 1px 6px;
-    border-radius: 3px;
-    font-size: 8px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
     font-weight: 700;
     background: rgba(249, 115, 22, 0.12);
     color: #c2410c;
-    line-height: 1.2;
+    line-height: 1.3;
 }
 
 /* ---- Section 4: Model Bilgisi Karti ---- */
@@ -13121,7 +13119,7 @@ mark.text-highlight:hover {
 }
 
 .ml-info-row {
-    padding: 8px 10px;
+    padding: 10px 14px;
 }
 
 .ml-info-row-border {
@@ -13129,22 +13127,22 @@ mark.text-highlight:hover {
 }
 
 .ml-info-label {
-    font-size: 9px;
+    font-size: 10px;
     color: var(--text-secondary);
     display: block;
     text-transform: uppercase;
     letter-spacing: 0.3px;
-    margin-bottom: 2px;
+    margin-bottom: 3px;
 }
 
 .ml-info-value-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 
 .ml-info-icon {
-    font-size: 10px;
+    font-size: 12px;
     color: #9ca3af;
 }
 
@@ -13152,14 +13150,14 @@ mark.text-highlight:hover {
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
     font-weight: 700;
     color: var(--lcw-blue);
-    font-size: 11px;
+    font-size: 13px;
     letter-spacing: -0.3px;
 }
 
 .ml-info-value-bold {
     font-weight: 700;
     color: var(--text-primary);
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .ml-info-row-grid {
@@ -13169,7 +13167,7 @@ mark.text-highlight:hover {
 }
 
 .ml-info-cell {
-    padding: 8px 10px;
+    padding: 10px 14px;
 }
 
 .ml-info-cell-border-right {
@@ -13177,12 +13175,12 @@ mark.text-highlight:hover {
 }
 
 .ml-info-sub {
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 
 .ml-info-value-small {
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-    font-size: 9px;
+    font-size: 11px;
     color: var(--text-secondary);
     display: block;
 }
@@ -13191,17 +13189,17 @@ mark.text-highlight:hover {
 .ml-validation-area {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
 }
 
 .ml-validation-input {
     width: 100%;
-    min-height: 50px;
-    padding: 8px 10px;
+    min-height: 60px;
+    padding: 10px 12px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-    font-size: 11px;
+    font-size: 12px;
     resize: vertical;
     transition: border-color 0.2s;
     background: var(--card-bg);
@@ -13216,8 +13214,8 @@ mark.text-highlight:hover {
 
 .ml-validation-btn {
     width: 100%;
-    font-size: 11px;
-    padding: 6px 12px;
+    font-size: 12px;
+    padding: 8px 14px;
 }
 
 /* ---- ML Sidebar Toggle Button (Header icinde) ---- */
@@ -13244,7 +13242,7 @@ mark.text-highlight:hover {
 /* ---- Responsive: ML Sidebar ---- */
 @media (max-width: 1200px) {
     .ml-metrics-sidebar {
-        width: 280px;
+        width: 310px;
     }
 }
 

@@ -1841,6 +1841,24 @@ function displayAnomalyResults(result) {
     // Global veriyi sakla
     window.lastAnomalyResult = result;
 
+    // ML Sidebar'i guncelle ve ac (analiz sonrasi otomatik)
+    if (window.MLPanel && window.MLPanel.autoUpdate) {
+        try {
+            window.MLPanel.autoUpdate(result);
+            // Sidebar acik degilse ac
+            var mlPanel = document.getElementById('mlModelPanel');
+            if (mlPanel && !mlPanel.classList.contains('open') && window.MLPanel.show) {
+                window.MLPanel.show();
+            } else if (window.MLPanel.loadMetrics) {
+                // Zaten aciksa sadece metrikleri tazele
+                window.MLPanel.loadMetrics();
+            }
+            console.log('✅ ML Sidebar auto-updated after displayAnomalyResults');
+        } catch (error) {
+            console.error('ML Sidebar update error:', error);
+        }
+    }
+
     // Event listener'ları ekle (Mevcut görselleştirmeler için)
     setTimeout(() => {
         if (typeof attachMLVisualizationListeners === 'function') {

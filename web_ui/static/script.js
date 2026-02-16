@@ -671,11 +671,10 @@ async function handleConnect() {
             elements.mainContent.style.display = 'block';
             elements.apiKeyInput.disabled = true;
 
-            // YENİ: ML Panel verilerini yükle (AMA PANELİ AÇMA)
+            // ML Sidebar: Baglaninca otomatik ac ve metrik yukle
             if (window.MLPanel) {
-                // window.MLPanel.show(); // Artık otomatik açılmayacak
                 setTimeout(() => {
-                    if(window.MLPanel.loadMetrics) window.MLPanel.loadMetrics();
+                    if (window.MLPanel.show) window.MLPanel.show();
                 }, 500);
             }
             elements.connectBtn.textContent = 'BAĞLANDI';
