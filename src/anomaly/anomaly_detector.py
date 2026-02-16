@@ -571,6 +571,16 @@ class MongoDBAnomalyDetector:
             elif incremental and self.is_trained:
                 logger.debug("INCREMENTAL MODE: Retraining existing model with combined data")
 
+                # FIX: Ensemble mode'dan yüklenen model None olabilir (train_incremental
+                # self.model = None yapar, save_model bu None'ı diske yazar, load_model
+                # geri yükler). Bu durumda yeni IsolationForest oluştur.
+                if self.model is None:
+                    logger.warning(
+                        "self.model is None (loaded from ensemble-mode save). "
+                        "Creating new IsolationForest for incremental retraining."
+                    )
+                    self.model = IsolationForest(**params)
+
                 # Mevcut model parametrelerini güncelle ama instance'ı değiştirme
                 if hasattr(self.model, 'contamination'):
                     self.model.contamination = params.get('contamination', 0.03)
@@ -1747,6 +1757,16 @@ class MongoDBAnomalyDetector:
                 else:
                     # Ensemble mode değil - incremental_models boş kalacak
                     logger.debug("Single model mode - no ensemble to load")
+
+                # FIX: Ensemble mode'dan kaydedilen model None olabilir.
+                # Ensemble models yüklendiyse, son ensemble model'i ana model olarak ata.
+                if self.model is None and self.incremental_models:
+                    self.model = self.incremental_models[-1]
+                    logger.warning(
+                        f"Loaded model was None (ensemble-mode save). "
+                        f"Recovered main model from last ensemble model. "
+                        f"Ensemble size: {len(self.incremental_models)}"
+                    )
 
                 # Online learning config'i güncelle
                 if 'online_learning_config' in model_data:
