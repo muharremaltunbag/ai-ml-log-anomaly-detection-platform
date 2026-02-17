@@ -14214,6 +14214,583 @@ mark.text-highlight:hover {
     background-color: var(--lcw-internet-blue);
 }
 
+/* ============================================================
+   BENTO-BOX AI TECHNICAL REPORT — Sidebar İçi Rapor Kartları
+   Figma "AI Teknik Çözüm Raporu" düzenini sidebar genişliğine
+   (340px) uyarlayan izole CSS sınıfları.
+   Sadece .sidebar-bubble-content içinde geçerlidir.
+   ============================================================ */
+
+/* ── Ana Rapor Container ── */
+.report-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+/* ── Rapor Başlığı ── */
+.report-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.report-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.report-header-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--lcw-blue), #4338ca);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.report-header-text h3 {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+    line-height: 1.3;
+}
+
+.report-header-text .report-id {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.report-id .pulse-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background-color: var(--lcw-blue);
+    display: inline-block;
+    animation: reportPulse 2s ease-in-out infinite;
+}
+
+@keyframes reportPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* ── Context Bar (Sunucu / Kaynak / Anomali adedi) ── */
+.report-context-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 10px;
+}
+
+.report-context-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    flex: 1;
+    min-width: 80px;
+}
+
+.report-context-item .ctx-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+.report-context-item .ctx-value {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.report-context-divider {
+    width: 1px;
+    align-self: stretch;
+    background-color: var(--border-color);
+    margin: 2px 0;
+}
+
+/* ── Genel Bento Kart ── */
+.report-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--card-bg);
+    overflow: hidden;
+}
+
+.report-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--bg-color);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+}
+
+.report-card-header .card-icon {
+    font-size: 13px;
+    line-height: 1;
+}
+
+.report-card-body {
+    padding: 10px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+
+.report-card-body p {
+    margin: 0 0 6px 0;
+}
+
+.report-card-body p:last-child {
+    margin-bottom: 0;
+}
+
+/* ── ML Insights — Mor vurgu kartı ── */
+.report-card.ml-insights {
+    border-color: rgba(139, 92, 246, 0.2);
+}
+
+.report-card.ml-insights .report-card-header {
+    background-color: rgba(139, 92, 246, 0.06);
+    color: #7c3aed;
+    border-bottom-color: rgba(139, 92, 246, 0.15);
+}
+
+.report-card.ml-insights .card-icon {
+    color: #8b5cf6;
+}
+
+/* ── Anomaly Score Bar ── */
+.report-score-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+}
+
+.report-score-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.report-score-bar {
+    flex: 1;
+    height: 6px;
+    background-color: var(--bg-color);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.report-score-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #8b5cf6, #ec4899);
+    transition: width 0.6s ease-out;
+}
+
+.report-score-value {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-family: 'Courier New', monospace;
+    min-width: 28px;
+    text-align: right;
+}
+
+/* ── Key Metrics Grid ── */
+.report-metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.report-metric-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+    background-color: var(--card-bg);
+}
+
+.report-metric-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.report-metric-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.1;
+    font-family: 'Courier New', monospace;
+}
+
+.report-metric-change {
+    font-size: 10px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 2px;
+}
+
+.report-metric-change.up { color: var(--lcw-error); }
+.report-metric-change.down { color: var(--lcw-success); }
+
+.report-metric-baseline {
+    font-size: 9px;
+    color: var(--text-secondary);
+    margin-top: 3px;
+}
+
+/* ── Impact Analysis — Uyarı kartı ── */
+.report-impact {
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+    background-color: var(--lcw-warning-bg);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 8px;
+    align-items: flex-start;
+}
+
+.report-impact-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.report-impact-content h4 {
+    font-size: 11px;
+    font-weight: 700;
+    color: #92400e;
+    margin: 0 0 3px 0;
+}
+
+.report-impact-content p {
+    font-size: 11px;
+    color: #a16207;
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ── Resolution Steps — Timeline ── */
+.report-steps {
+    position: relative;
+    padding-left: 20px;
+}
+
+.report-steps::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    background-color: var(--border-color);
+    border-radius: 1px;
+}
+
+.report-step {
+    position: relative;
+    margin-bottom: 12px;
+    padding-left: 4px;
+}
+
+.report-step:last-child {
+    margin-bottom: 0;
+}
+
+.report-step-number {
+    position: absolute;
+    left: -20px;
+    top: 0;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: var(--lcw-blue);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+}
+
+.report-step-number.step-done {
+    background-color: var(--lcw-success);
+}
+
+.report-step h4 {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 2px 0;
+    line-height: 1.3;
+}
+
+.report-step p {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.45;
+}
+
+/* ── Terminal-Style Code Window ── */
+.report-code-window {
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #333;
+    background-color: #1e1e1e;
+}
+
+.report-code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    background-color: #252526;
+    border-bottom: 1px solid #333;
+}
+
+.report-code-dots {
+    display: flex;
+    gap: 5px;
+}
+
+.report-code-dots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.report-code-dots .dot-red { background-color: #ff5f56; }
+.report-code-dots .dot-yellow { background-color: #ffbd2e; }
+.report-code-dots .dot-green { background-color: #27c93f; }
+
+.report-code-title {
+    font-size: 10px;
+    color: #999;
+    font-family: 'Courier New', monospace;
+    flex: 1;
+    text-align: center;
+}
+
+.report-code-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.report-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #ccc;
+    background-color: #2d2d2e;
+    border: 1px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+}
+
+.report-copy-btn:hover {
+    background-color: #3c3c3d;
+    color: #fff;
+}
+
+.report-copy-btn.copied {
+    background-color: rgba(39, 174, 96, 0.2);
+    border-color: rgba(39, 174, 96, 0.4);
+    color: #27ae60;
+}
+
+.report-code-body {
+    padding: 10px 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.6;
+    color: #d4d4d4;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+/* Kod syntax renkleri */
+.report-code-body .code-keyword { color: #569cd6; }
+.report-code-body .code-string { color: #ce9178; }
+.report-code-body .code-number { color: #b5cea8; }
+.report-code-body .code-comment { color: #6a9955; }
+.report-code-body .code-func { color: #dcdcaa; }
+.report-code-body .code-prop { color: #9cdcfe; }
+
+/* ── Technical Specs — Key/Value Listesi ── */
+.report-specs {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.report-specs li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--border-color);
+    font-size: 11px;
+}
+
+.report-specs li:last-child {
+    border-bottom: none;
+}
+
+.report-specs .spec-label {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.report-specs .spec-value {
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    color: var(--text-primary);
+    background-color: var(--bg-color);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    border: 1px solid var(--border-color);
+}
+
+/* ── Rapor Footer ── */
+.report-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color);
+    font-size: 10px;
+    color: var(--text-secondary);
+}
+
+.report-footer-left {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 500;
+}
+
+.report-footer-left .pulse-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background-color: var(--lcw-success);
+    display: inline-block;
+    animation: reportPulse 2s ease-in-out infinite;
+}
+
+.report-footer-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.report-footer-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+}
+
+.report-footer-actions button:hover {
+    background-color: var(--bg-color);
+    border-color: var(--border-color);
+    color: var(--lcw-blue);
+}
+
+/* ── Kod bloğu olmayan satır içi vurgular ── */
+.report-inline-code {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    padding: 0px 4px;
+    border-radius: 3px;
+    color: var(--lcw-blue);
+    font-weight: 500;
+}
+
+/* ── Section separator ── */
+.report-section-sep {
+    height: 1px;
+    background-color: var(--border-color);
+    margin: 2px 0;
+}
+
+/* ── Report içeren bubble — avatar'ı gizle, tam genişlik ── */
+.sidebar-bubble-content:has(.report-container) {
+    max-width: 100%;
+    border-radius: 12px;
+    padding: 14px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+}
+
+.sidebar-ai-bubble:has(.report-container) .sidebar-ai-avatar {
+    display: none;
+}
+
 /* Sidebar Toggle Button — Figma rounded pill stili */
 .sidebar-toggle-btn {
     background: none;
