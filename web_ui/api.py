@@ -1715,24 +1715,53 @@ async def get_analyzed_servers(api_key: str):
         storage = await get_storage_manager()
 
         # Son analizlerden unique host listesi çek
-        all_analyses = await storage.get_anomaly_history(limit=500, include_details=False)
+        # ✅ limit=2000: Eski session'lardaki sunucuların da kesinlikle dahil olması için
+        all_analyses = await storage.get_anomaly_history(limit=2000, include_details=False)
 
         # Host bazında grupla — en son analizi tut
+        # ✅ Sadece gerçekten anomali verisi olan sunucuları dahil et
         servers = {}
+        skipped_zero = 0
         for analysis in all_analyses:
             host = analysis.get("host")
             if not host:
                 continue
+
+            # Anomali sayısını belirle — birden fazla alan kontrol et
+            anomaly_count = analysis.get("anomaly_count", 0) or 0
+            if anomaly_count == 0:
+                # Alternatif alanlardan anomali sayısı bulmayı dene
+                anomaly_count = analysis.get("critical_count", 0) or 0
+            if anomaly_count == 0:
+                # unfiltered_anomalies listesi varsa say
+                unfiltered = analysis.get("unfiltered_anomalies")
+                if isinstance(unfiltered, list):
+                    anomaly_count = len(unfiltered)
+                else:
+                    critical = analysis.get("critical_anomalies")
+                    if isinstance(critical, list):
+                        anomaly_count = len(critical)
+
+            # 0 anomali varsa bu sunucuyu atla (LCWGPT çalışacak veri yok)
+            if anomaly_count == 0:
+                skipped_zero += 1
+                continue
+
             if host not in servers or (analysis.get("timestamp") or "") > (servers[host].get("last_analysis") or ""):
                 servers[host] = {
                     "host": host,
                     "source": analysis.get("source", "unknown"),
                     "last_analysis": analysis.get("timestamp"),
-                    "anomaly_count": analysis.get("anomaly_count", 0),
+                    "anomaly_count": anomaly_count,
                     "analysis_id": analysis.get("analysis_id")
                 }
 
+        if skipped_zero > 0:
+            logger.info(f"LCWGPT server list: Skipped {skipped_zero} analyses with 0 anomalies")
+
         server_list = sorted(servers.values(), key=lambda x: x.get("last_analysis") or "", reverse=True)
+
+        logger.info(f"LCWGPT server list: Returning {len(server_list)} servers with anomaly data")
 
         return {
             "status": "success",

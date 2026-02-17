@@ -964,7 +964,29 @@ async function handleQuery() {
                     }
                     saveHistory();
                     updateHistoryDisplay();
-                    
+
+                    // ✅ SORGU SONRASI SUNUCU SEÇİMİ — her yanıttan sonra tekrar göster
+                    window.selectedChatServer = null;
+                    window.selectedChatAnalysisId = null;
+
+                    // Kısa gecikme ile (yanıt render olduktan sonra) sunucu seçim ekranını göster
+                    setTimeout(function() {
+                        if (typeof window.loadAnalyzedServers === 'function') {
+                            window.loadAnalyzedServers().then(function() {
+                                if (typeof window.addSidebarAIMessage === 'function') {
+                                    window.addSidebarAIMessage('Başka bir sunucu hakkında soru sormak ister misiniz?');
+                                }
+                                if (typeof window.showServerSelection === 'function') {
+                                    window.showServerSelection();
+                                }
+                                // Örnek soruları genel sete döndür
+                                if (typeof window.renderExampleQuestions === 'function') {
+                                    window.renderExampleQuestions(null);
+                                }
+                            });
+                        }
+                    }, 800);
+
                     return; // Burada return ediyoruz
                 } else {
                     console.error('LCWGPT request failed:', chatResponse.status);
@@ -974,6 +996,12 @@ async function handleQuery() {
                     if (typeof window.addSidebarAIMessage === 'function') {
                         window.addSidebarAIMessage('❌ Yanıt alınamadı (HTTP ' + chatResponse.status + '). Lütfen tekrar deneyin.');
                     }
+                    // Hata sonrası da sunucu seçimini tekrar göster
+                    window.selectedChatServer = null;
+                    window.selectedChatAnalysisId = null;
+                    setTimeout(function() {
+                        if (typeof window.showServerSelection === 'function') window.showServerSelection();
+                    }, 500);
                 }
             } catch (error) {
                 console.error('LCWGPT error:', error);
@@ -986,6 +1014,12 @@ async function handleQuery() {
                 if (typeof window.addSidebarAIMessage === 'function') {
                     window.addSidebarAIMessage('❌ Bir hata oluştu. Lütfen tekrar deneyin.');
                 }
+                // Hata sonrası da sunucu seçimini tekrar göster
+                window.selectedChatServer = null;
+                window.selectedChatAnalysisId = null;
+                setTimeout(function() {
+                    if (typeof window.showServerSelection === 'function') window.showServerSelection();
+                }, 500);
             }
             }
         } else {
