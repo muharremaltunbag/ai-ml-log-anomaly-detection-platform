@@ -2289,8 +2289,8 @@ async def chat_query_anomalies(request: Dict[str, Any]):
 
         # LCWGPT system prompt — kaynak tipine göre dinamik
         if is_mssql:
-            system_prompt = """Sen MSSQL veritabanı anomali analizi ve performans optimizasyonu konusunda uzman bir DBA'sin.
-MSSQL loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve spesifik çözüm önerileri sunabilirsin.
+            system_prompt = """Sen MSSQL veritabanı anomali analizi ve performans optimizasyonu konusunda uzman bir Senior DBA'sin.
+MSSQL loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve ÇALIŞTIRILABİLİR T-SQL çözüm komutları sunabilirsin.
 
 MSSQL LOG PATTERN BİLGİSİ:
 - DEADLOCK: Kilitlenme sorunları (deadlock graph, victim selection)
@@ -2304,10 +2304,70 @@ MSSQL LOG PATTERN BİLGİSİ:
 - REPLICATION: Always On, AG failover, log shipping
 - BACKUP: Backup/restore hataları, chain broken
 
-ANALİZ YÖNTEMİ:"""
+ML MODEL YORUM KURALLARI:
+- severity_score 0-100 arasıdır. 80+ KRİTİK, 60-80 YÜKSEK, 40-60 ORTA, 0-40 DÜŞÜK demektir.
+- Kullanıcıya ML modelinin neden bu skoru verdiğini açıkla (hangi pattern, hangi frekans, hangi bileşen).
+- Anomali grupları arasındaki korelasyonları belirt (ör: BLOCKING + MEMORY = memory grant wait kaynaklı).
+
+ÇÖZÜM KOMUTLARI KURALI (KRİTİK):
+Her öneride MUTLAKA gerçek, kopyala-yapıştır ile çalıştırılabilir T-SQL komutu ver. Genel tavsiye VERME.
+
+Örnek KÖTÜ yanıt: "Index eklemenizi öneririm."
+Örnek İYİ yanıt:
+```sql
+-- Missing index önerisi (DMV'den tespit edilen)
+CREATE NONCLUSTERED INDEX IX_Orders_CustomerDate
+ON dbo.Orders (CustomerID, OrderDate DESC)
+INCLUDE (TotalAmount, Status)
+WITH (ONLINE = ON, SORT_IN_TEMPDB = ON);
+```
+
+Komut türleri (duruma göre kullan):
+- Deadlock analizi: SELECT * FROM sys.dm_tran_locks; DBCC INPUTBUFFER(spid)
+- Blocking tespiti: sp_who2, sys.dm_exec_requests, sys.dm_os_waiting_tasks
+- Slow query: sys.dm_exec_query_stats, sys.dm_exec_cached_plans + CROSS APPLY sys.dm_exec_sql_text
+- Index önerisi: sys.dm_db_missing_index_details, CREATE INDEX komutu
+- TempDB: sys.dm_db_file_space_usage, ALTER DATABASE tempdb MODIFY FILE
+- Memory: sys.dm_exec_query_memory_grants, DBCC MEMORYSTATUS, sp_configure 'max server memory'
+- IO: sys.dm_io_virtual_file_stats, sys.dm_exec_query_stats (logical_reads)
+- Wait stats: sys.dm_os_wait_stats, sys.dm_exec_session_wait_stats
+- AG/Replication: sys.dm_hadr_availability_replica_states, ALTER AVAILABILITY GROUP
+
+ANALİZ YÖNTEMİ:
+1. Pattern Tespiti: Benzer anomalileri grupla
+2. Root Cause: Kök nedeni belirle
+3. Impact Analizi: İş etkisini değerlendir
+4. Çözüm Önerisi: ÇALIŞTIRILABİLİR T-SQL komutları sun
+
+YANIT FORMATI:
+📊 ÖZET: [Tek cümlede ana bulgu + ML modelinin genel değerlendirmesi]
+
+🔍 DETAYLI ANALİZ:
+Her kritik anomali için:
+- ML Severity Score ve ne anlama geldiğinin açıklaması
+- Pattern açıklaması ve root cause
+- **GERÇEK LOG ÖRNEKLERİ** (```code block``` içinde tam log mesajı)
+- Pattern grupları ve sayıları
+- Zaman dağılımı (peak saatler varsa)
+
+⚠️ RİSKLER:
+- Mevcut riskler (somut: "X tablosunda lock escalation var, Y ms süren sorgular Z dakikada bir tekrar ediyor")
+- Potansiyel zincir etkiler (ör: "Bu blocking chain birikerek timeout'lara yol açabilir")
+
+✅ ÖNERİLER:
+Her öneri şu formatta olmalı:
+1. [ACİL/ORTA/DÜŞÜK] Başlık
+   - Neden: Sorunun açıklaması
+   - Çözüm komutu (```sql``` kod bloğu içinde çalıştırılabilir T-SQL)
+   - Beklenen etki: "Lock wait süresi ~Xms'den ~Yms'ye düşecek" gibi somut
+
+Türkçe yanıt ver, teknik terimleri açıkla, DBA'ların anlayacağı detay seviyesinde ol.
+MUTLAKA gerçek log mesajlarını kod bloğu içinde göster.
+MUTLAKA çözüm komutlarını ```sql``` kod bloğu içinde ver.
+Önce log örneklerini göster, sonra pattern açıklamasını, sonra ÇALIŞTIRILABİLİR T-SQL komut önerilerini göster."""
         else:
-            system_prompt = """Sen MongoDB anomali analizi ve performans optimizasyonu konusunda uzman bir DBA'sin.
-MongoDB loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve spesifik çözüm önerileri sunabilirsin.
+            system_prompt = """Sen MongoDB anomali analizi ve performans optimizasyonu konusunda uzman bir Senior DBA'sin.
+MongoDB loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve ÇALIŞTIRILAB İLİR çözüm komutları sunabilirsin.
 
 MONGODB LOG PATTERN BİLGİSİ:
 - REPL: Replikasyon sorunları (lag, oplog, election)
@@ -2324,27 +2384,60 @@ ANALİZ YÖNTEMİ:
 3. Impact Analizi: İş etkisini değerlendir
 4. Çözüm Önerisi: Spesifik, uygulanabilir adımlar sun
 
+ML MODEL YORUM KURALLARI:
+- severity_score 0-100 arasıdır. 80+ KRİTİK, 60-80 YÜKSEK, 40-60 ORTA, 0-40 DÜŞÜK demektir.
+- Kullanıcıya ML modelinin neden bu skoru verdiğini açıkla (hangi pattern, hangi frekans, hangi bileşen).
+- Anomali grupları arasındaki korelasyonları belirt (ör: REPL lag + STORAGE I/O = disk darboğazı).
+
+ÇÖZÜM KOMUTLARI KURALI (KRİTİK):
+Her öneride MUTLAKA gerçek, kopyala-yapıştır ile çalıştırılabilir komut ver. Genel tavsiye VERME.
+
+Örnek KÖTÜ yanıt: "Index oluşturmanız önerilir."
+Örnek İYİ yanıt:
+```mongodb
+// Yavaş sorgu için compound index oluştur
+db.orders.createIndex(
+  { "customer_id": 1, "created_at": -1 },
+  { name: "idx_orders_customer_date", background: true }
+)
+```
+
+Komut türleri (duruma göre kullan):
+- Index: db.collection.createIndex({...})
+- Profiler: db.setProfilingLevel(1, { slowms: 100 })
+- Explain: db.collection.find({...}).explain("executionStats")
+- Stats: db.collection.stats(), db.serverStatus(), rs.status()
+- Config: db.adminCommand({setParameter:1, ...})
+- Replikasyon: rs.conf(), rs.stepDown(), rs.syncFrom()
+- Sorgu optimizasyonu: db.collection.aggregate([...]) ile pipeline iyileştirme
+- WiredTiger: db.serverStatus().wiredTiger.cache
+
 YANIT FORMATI:
-📊 ÖZET: [Tek cümlede ana bulgu]
+📊 ÖZET: [Tek cümlede ana bulgu + ML modelinin genel değerlendirmesi]
 
 🔍 DETAYLI ANALİZ:
 Her kritik anomali için:
-- Pattern açıklaması
-- **GERÇEK LOG ÖRNEKLERİ:**[Timestamp] [Component] [Severity] Tam gövdesiyle log mesajı
+- ML Severity Score ve ne anlama geldiğinin açıklaması
+- Pattern açıklaması ve root cause
+- **GERÇEK LOG ÖRNEKLERİ** (```code block``` içinde tam log mesajı)
 - Pattern grupları ve sayıları
-- En kritik 6-7 spesifik log örneği
 - Zaman dağılımı (peak saatler varsa)
 
 ⚠️ RİSKLER:
-- Mevcut riskler
-- Potansiyel sorunlar
+- Mevcut riskler (somut: "X collection'da full scan var, Y ms süren sorgular Z dakikada bir tekrar ediyor")
+- Potansiyel zincir etkiler (ör: "Bu slow query birikerek connection pool'u tüketebilir")
 
 ✅ ÖNERİLER:
-- Acil aksiyon gerektiren adımlar
-- Orta vadeli iyileştirmeler
-- Monitoring önerileri
+Her öneri şu formatta olmalı:
+1. [ACİL/ORTA/DÜŞÜK] Başlık
+   - Neden: Sorunun açıklaması
+   - Çözüm komutu (```mongodb``` kod bloğu içinde)
+   - Beklenen etki: "Sorgu süresi ~Xms'den ~Yms'ye düşecek" gibi somut
 
-Türkçe yanıt ver, teknik terimleri açıkla, DBA'ların anlayacağı detay seviyesinde ol. MUTLAKA gerçek log mesajlarını kod bloğu içinde göster. Önce log örneklerini göster sonra pattern açıklamasını ve sonra önerileri göster."""
+Türkçe yanıt ver, teknik terimleri açıkla, DBA'ların anlayacağı detay seviyesinde ol.
+MUTLAKA gerçek log mesajlarını kod bloğu içinde göster.
+MUTLAKA çözüm komutlarını ```mongodb``` kod bloğu içinde ver.
+Önce log örneklerini göster, sonra pattern açıklamasını, sonra ÇALIŞTIRILABİLİR komut önerilerini göster."""
 
         if context_analyses:
             system_prompt += f"""
@@ -2398,9 +2491,12 @@ GÖREV:
 3. Root cause analizi yap
 4. Kullanıcının sorusuna odaklan
 5. Spesifik log mesajlarına referans ver
-6.Spesifik log gövdesini kullanıcıya direk göster
+6. Spesifik log gövdesini kullanıcıya direk göster
 7. HER ANOMALİ İÇİN GERÇEK LOG MESAJINI KOD BLOĞU İÇİNDE GÖSTER
 8. Log mesajlarındaki önemli bilgileri (tablo adı, sorgu süresi, hata kodu vb.) vurgula
+9. ML severity score'larını yorumla: 80+ KRİTİK, 60-80 YÜKSEK, 40-60 ORTA, 0-40 DÜŞÜK — neden bu skor verildiğini açıkla
+10. Her sorun için ÇALIŞTIRILABİLİR veritabanı komutu öner (kopyala-yapıştır çalışacak şekilde, kod bloğu içinde)
+11. Genel tavsiye VERME — her komut spesifik tablo/index/collection adı içermeli (loglardan çıkar)
 """
             else:
                 chunk_prompt = f"""
@@ -2424,9 +2520,12 @@ GÖREV:
 3. Root cause analizi yap
 4. Kullanıcının sorusuna odaklan
 5. Spesifik log mesajlarına referans ver
-6.Spesifik log gövdesini kullanıcıya direk göster
+6. Spesifik log gövdesini kullanıcıya direk göster
 7. HER ANOMALİ İÇİN GERÇEK LOG MESAJINI KOD BLOĞU İÇİNDE GÖSTER
 8. Log mesajlarındaki önemli bilgileri (tablo adı, sorgu süresi, hata kodu vb.) vurgula
+9. ML severity score'larını yorumla: 80+ KRİTİK, 60-80 YÜKSEK, 40-60 ORTA, 0-40 DÜŞÜK — neden bu skor verildiğini açıkla
+10. Her sorun için ÇALIŞTIRILABİLİR veritabanı komutu öner (kopyala-yapıştır çalışacak şekilde, kod bloğu içinde)
+11. Genel tavsiye VERME — her komut spesifik tablo/index/collection adı içermeli (loglardan çıkar)
 """
 
             estimated_tokens = estimate_token_count(chunk_prompt)
@@ -2482,10 +2581,49 @@ CHUNK ANALİZ SONUÇLARI:
             for cr in chunk_responses:
                 aggregate_prompt += f"\n\n[Chunk {cr['chunk_idx']}] ({cr['anomaly_count']} anomali):\n{cr['response'][:1500]}..."
 
-            aggregate_prompt += "\n\nYukarıdaki chunk analizlerini birleştirerek, kullanıcının sorusuna kapsamlı ve net bir yanıt oluştur."
+            aggregate_prompt += """
 
-            merge_system = "Sen MSSQL anomali analiz uzmanısın." if is_mssql else "Sen MongoDB anomali analiz uzmanısın."
-            merge_system += " Birden fazla analizi birleştirip özet çıkarabilirsin."
+Yukarıdaki chunk analizlerini birleştirerek, kullanıcının sorusuna kapsamlı ve net bir yanıt oluştur.
+
+BİRLEŞTİRME KURALLARI:
+1. Tekrar eden pattern'leri grupla, aynı sorunu tekrar tekrar yazma.
+2. Her chunk'tan gelen EN KRİTİK bulguları öne çıkar.
+3. Çözüm komutlarını birleştir — aynı soruna aynı komutu iki kez yazma.
+4. MUTLAKA çalıştırılabilir komutlar içersin (genel tavsiye yazma).
+5. Aşağıdaki YANIT FORMATINI kullan."""
+
+            if is_mssql:
+                merge_system = """Sen MSSQL anomali analiz uzmanı bir Senior DBA'sin. Birden fazla analizi birleştirip tek tutarlı rapor oluşturabilirsin.
+
+YANIT FORMATI:
+📊 ÖZET: [Birleştirilmiş ana bulgu + toplam anomali sayısı + en kritik pattern]
+
+🔍 DETAYLI ANALİZ:
+- Her kritik pattern grubu için root cause + gerçek log örnekleri (```code block``` içinde)
+
+⚠️ RİSKLER:
+- Somut riskler ve zincir etkileri
+
+✅ ÖNERİLER:
+Her öneri: [ACİL/ORTA/DÜŞÜK] Başlık + Neden + ```sql``` çalıştırılabilir T-SQL komutu + Beklenen etki
+
+Türkçe yanıt ver. MUTLAKA gerçek çalıştırılabilir T-SQL komutları ```sql``` kod bloğu içinde ver."""
+            else:
+                merge_system = """Sen MongoDB anomali analiz uzmanı bir Senior DBA'sin. Birden fazla analizi birleştirip tek tutarlı rapor oluşturabilirsin.
+
+YANIT FORMATI:
+📊 ÖZET: [Birleştirilmiş ana bulgu + toplam anomali sayısı + en kritik pattern]
+
+🔍 DETAYLI ANALİZ:
+- Her kritik pattern grubu için root cause + gerçek log örnekleri (```code block``` içinde)
+
+⚠️ RİSKLER:
+- Somut riskler ve zincir etkileri
+
+✅ ÖNERİLER:
+Her öneri: [ACİL/ORTA/DÜŞÜK] Başlık + Neden + ```mongodb``` çalıştırılabilir MongoDB komutu + Beklenen etki
+
+Türkçe yanıt ver. MUTLAKA gerçek çalıştırılabilir MongoDB komutları ```mongodb``` kod bloğu içinde ver."""
             final_messages = [
                 SystemMessage(content=merge_system),
                 HumanMessage(content=aggregate_prompt)
@@ -2711,49 +2849,64 @@ def _format_dict_for_prompt(data: dict, limit: int = None) -> str:
         result.append(f"- {key}: {value} adet")
     return "\n".join(result)
 
+def _get_severity_category(score):
+    """ML severity score'unu insan-okunur kategoriye çevir"""
+    if score >= 80: return "KRİTİK"
+    elif score >= 60: return "YÜKSEK"
+    elif score >= 40: return "ORTA"
+    else: return "DÜŞÜK"
+
 def _format_top_anomalies_with_full_logs(anomalies: list, limit: int = 5) -> str:
-    """En kritik anomalileri FULL LOG MESAJLARIYLA formatla"""
-    sorted_anomalies = sorted(anomalies, 
-                             key=lambda x: x.get('severity_score', 0), 
+    """En kritik anomalileri FULL LOG MESAJLARIYLA formatla (ML score yorumuyla)"""
+    sorted_anomalies = sorted(anomalies,
+                             key=lambda x: x.get('severity_score', 0),
                              reverse=True)[:limit]
-    
+
     result = []
     for i, a in enumerate(sorted_anomalies, 1):
+        score = a.get('severity_score', 0)
+        category = _get_severity_category(score)
+        context = a.get('context', {})
+        # Fingerprint bilgisi varsa pattern tekrar sayısını göster
+        fingerprint = a.get('message_fingerprint', '')
+        fp_note = f"\n   Pattern Fingerprint: {fingerprint[:12]}..." if fingerprint else ""
+
         result.append(f"""
 {i}. ANOMALİ #{a.get('index', i)}
    Timestamp: {a.get('timestamp', 'N/A')}
    Component: {a.get('component', 'N/A')}
-   Severity: {a.get('severity_score', 0):.1f} ({a.get('severity_level', 'N/A')})
-   
-   LOG MESAJI:
+   ML Severity Score: {score:.1f}/100 → {category} ({a.get('severity_level', 'N/A')})
+   Anomaly Type: {a.get('anomaly_type', 'N/A')}{fp_note}
+
+   TAM LOG MESAJI:
 {a.get('message', 'Log mesajı mevcut değil')}
 
-Context: {a.get('context', {}).get('operation', 'N/A')}
-Anomaly Type: {a.get('anomaly_type', 'N/A')}
-Host: {a.get('host', 'N/A')}
+   Context — Operation: {context.get('operation', 'N/A')} | Host: {a.get('host', 'N/A')}
 """)
-    
+
     return "\n".join(result)
 
 def _format_anomalies_with_full_messages(anomalies: list) -> str:
-    """Anomalileri FULL LOG MESAJLARIYLA formatla"""
+    """Anomalileri FULL LOG MESAJLARIYLA formatla (ML score yorumuyla)"""
     result = []
     for i, a in enumerate(anomalies[:20], 1):  # İlk 20 anomali
         context = a.get('context', {})
+        score = a.get('severity_score', 0)
+        category = _get_severity_category(score)
         result.append(f"""
 --- Anomali #{i} ---
-Component: {a.get('component', 'N/A')} | Score: {a.get('severity_score', 0):.1f}
+Component: {a.get('component', 'N/A')} | ML Score: {score:.1f}/100 ({category})
 Timestamp: {a.get('timestamp', 'N/A')}
-Operation: {context.get('operation', 'N/A')}
+Anomaly Type: {a.get('anomaly_type', 'N/A')} | Operation: {context.get('operation', 'N/A')}
 
-Log Mesajı:
+Tam Log Mesajı:
 {a.get('message', 'Mesaj yok')}
 
 ---""")
-    
+
     if len(anomalies) > 20:
         result.append(f"\n... ve {len(anomalies) - 20} anomali daha (token limiti nedeniyle kısaltıldı)")
-    
+
     return "\n".join(result)
 
 def _format_anomalies_for_prompt(anomalies: list) -> str:
