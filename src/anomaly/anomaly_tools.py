@@ -2474,7 +2474,7 @@ class AnomalyDetectionTools:
 
             result = {
                 "description": description,
-                "analysis": {
+                "data": {
                     "source": "Elasticsearch_OpenSearch",
                     "index_pattern": "db-elasticsearch-*",
                     "host_filter": host_filter,
@@ -2562,7 +2562,7 @@ class AnomalyDetectionTools:
             ]
             for col in pattern_cols:
                 if col in X.columns:
-                    anomaly_count = int((X[col] == 1) & anomaly_mask).sum() if anomaly_mask.any() else 0
+                    anomaly_count = int(((X[col] == 1) & anomaly_mask).sum()) if anomaly_mask.any() else 0
                     total_count = int((X[col] == 1).sum())
                     if total_count > 0:
                         es_analysis['critical_patterns'][col] = {

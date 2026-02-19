@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Elasticsearch log line format:
 # [2026-02-19T10:30:00,000][WARN ][o.e.c.r.a.DiskThresholdMonitor][ECAZTRDBESRW003] flood stage disk watermark...
 ES_LOG_LINE_PATTERN = re.compile(
-    r'^\[([^\]]+)\]\[([^\]]+)\]\[([^\]]+)\]\[([^\]]+)\]\s*(.*)',
+    r'^\[([^\]]+)\]\[([^\]]+)\]\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)',
     re.DOTALL
 )
 
@@ -305,6 +305,10 @@ def enrich_es_log_entry(log_entry: dict) -> dict:
     enriched['logger_name'] = enriched.get('logger_name') or parsed['logger_name']
     enriched['node_name'] = enriched.get('node_name') or parsed['node_name']
     enriched['message_text'] = parsed['message_text']
+
+    # Event timestamp: log satırından parse edilen gerçek olay zamanı
+    # @timestamp Filebeat ingest time olabilir (aylarca sapma görüldü)
+    enriched['event_timestamp'] = parsed['parsed_timestamp']
 
     # Logger category
     enriched['logger_category'] = classify_logger(enriched['logger_name'])
@@ -800,6 +804,9 @@ class ElasticsearchOpenSearchReader:
             'tags': source.get('tags', []),
             'agent_hostname': source.get('agent', {}).get('hostname', 'unknown'),
             'log_file_path': source.get('log', {}).get('file', {}).get('path', ''),
+            # Gerçek veriden keşfedilen metadata alanları
+            'event_dataset': source.get('event', {}).get('dataset', ''),
+            'fileset_name': source.get('fileset', {}).get('name', ''),
         }
 
         # Zenginleştirme (log_level, logger_name, pattern flags vb.)

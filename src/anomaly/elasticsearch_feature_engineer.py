@@ -222,9 +222,27 @@ class ElasticsearchFeatureEngineer:
         - time_since_last_log (seconds)
         """
         try:
-            # Timestamp parse
+            # Timestamp parse — event_timestamp (log satırından) tercih edilir
+            # @timestamp Filebeat ingest time olabilir (aylarca sapma görüldü)
             if 'timestamp' not in df.columns:
-                if '@timestamp' in df.columns:
+                if 'event_timestamp' in df.columns:
+                    # Log satırından parse edilen gerçek olay zamanı
+                    df['timestamp'] = pd.to_datetime(
+                        df['event_timestamp'], format='mixed',
+                        errors='coerce', utc=True
+                    )
+                    valid_count = df['timestamp'].notna().sum()
+                    logger.info(f"[Timestamp] Using event_timestamp from log line "
+                                f"({valid_count}/{len(df)} valid)")
+                    # Parse edilemeyenler için @timestamp fallback
+                    if valid_count < len(df) and '@timestamp' in df.columns:
+                        fallback = pd.to_datetime(
+                            df['@timestamp'], errors='coerce', utc=True
+                        )
+                        df['timestamp'] = df['timestamp'].fillna(fallback)
+                        logger.info(f"[Timestamp] Fallback to @timestamp for "
+                                    f"{len(df) - valid_count} rows")
+                elif '@timestamp' in df.columns:
                     df['timestamp'] = pd.to_datetime(
                         df['@timestamp'], errors='coerce', utc=True
                     )
@@ -286,7 +304,10 @@ class ElasticsearchFeatureEngineer:
             if 'log_level' in df.columns:
                 level_upper = df['log_level'].str.upper().str.strip()
                 df['is_warn'] = (level_upper == 'WARN').astype(int)
-                df['is_error'] = (level_upper == 'ERROR').astype(int)
+                # CRITICAL da is_error olarak sayılır (en tehlikeli seviye)
+                df['is_error'] = (
+                    (level_upper == 'ERROR') | (level_upper == 'CRITICAL')
+                ).astype(int)
                 df['is_deprecation'] = level_upper.str.contains(
                     'DEPRECAT', na=False
                 ).astype(int)
@@ -296,8 +317,9 @@ class ElasticsearchFeatureEngineer:
                     df['is_warn'] = df['raw_message'].str.contains(
                         r'\[WARN\s*\]', na=False, regex=True
                     ).astype(int)
+                    # CRITICAL da yakalanmalı
                     df['is_error'] = df['raw_message'].str.contains(
-                        r'\[ERROR\s*\]', na=False, regex=True
+                        r'\[(ERROR|CRITICAL)\s*\]', na=False, regex=True
                     ).astype(int)
                     df['is_deprecation'] = df['raw_message'].str.contains(
                         r'deprecat', case=False, na=False
