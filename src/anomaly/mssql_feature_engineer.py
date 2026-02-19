@@ -443,14 +443,21 @@ class MSSQLFeatureEngineer:
                     ).astype(int)
 
                 # Connection errors
+                # "timeout" tek basina cok genis — MSSQL'e ozgu kaliplar kullaniliyor
                 df['is_connection_error'] = df[message_col].str.contains(
-                    r'connection.*failed|cannot connect|timeout|network error',
+                    r'connection.*failed|cannot connect|connection timeout|'
+                    r'TCP Provider.*error|network error|transport-level error|'
+                    r'connection.*forcibly closed|login timeout',
                     case=False, na=False, regex=True
                 ).astype(int)
 
                 # Permission errors
+                # "permission" ve "denied" tek basina cok genis — MSSQL hata mesaj
+                # formatlarina ozgu kaliplar kullaniliyor
                 df['is_permission_error'] = df[message_col].str.contains(
-                    r'permission|denied|not authorized|access.*denied',
+                    r'permission was denied|access is denied|not authorized|'
+                    r'EXECUTE permission|permission denied|'
+                    r'server principal.*cannot access|does not have permission',
                     case=False, na=False, regex=True
                 ).astype(int)
 
