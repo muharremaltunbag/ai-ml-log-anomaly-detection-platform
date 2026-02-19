@@ -4463,6 +4463,198 @@ async def startup_event():
         traceback.print_exc()
 
 
+# ============= SYSTEM RESET ENDPOINT =============
+@app.post("/api/system-reset")
+async def system_reset(request: Dict[str, Any]):
+    """
+    Sistem reset endpoint - secili kategorileri temizler.
+    system_reset.py scriptinin web API versiyonu.
+    """
+    import glob as glob_module
+
+    categories = request.get("categories", [])
+    dry_run = request.get("dry_run", True)
+
+    if not categories:
+        raise HTTPException(status_code=400, detail="En az bir kategori secilmeli")
+
+    PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
+    # Kategori -> hedef dosya/dizin eslesmesi
+    CATEGORY_TARGETS = {
+        "ml_models": [
+            {"pattern": "models/*.pkl", "type": "file"},
+            {"pattern": "models/**/*.pkl", "type": "file"},
+            {"pattern": "storage/models/*.pkl", "type": "file"},
+            {"pattern": "storage/models/**/*.pkl", "type": "file"},
+            {"pattern": "models_backup_*", "type": "dir"},
+        ],
+        "anomaly_output": [
+            {"pattern": "output/*.csv", "type": "file"},
+            {"pattern": "output/*.json", "type": "file"},
+            {"pattern": "storage/exports/anomaly/*.json", "type": "file"},
+            {"pattern": "storage/exports/anomaly/*.pkl", "type": "file"},
+            {"pattern": "storage/exports/anomaly/*.csv", "type": "file"},
+        ],
+        "storage_depot": [
+            {"pattern": "storage/temp/*", "type": "file"},
+            {"pattern": "storage/backups/*", "type": "any"},
+            {"pattern": "storage/uploads/*", "type": "any"},
+        ],
+        "cache": [
+            {"pattern": "cache/**/*", "type": "any"},
+            {"pattern": "cache/*", "type": "any"},
+        ],
+        "logs": [
+            {"pattern": "logs/*.log", "type": "file"},
+            {"pattern": "temp_logs/*", "type": "any"},
+        ],
+        "metrics": [
+            {"pattern": "metrics/*.json", "type": "file"},
+        ],
+        "pycache": [
+            {"pattern": "**/__pycache__", "type": "dir"},
+        ],
+    }
+
+    MONGODB_COLLECTIONS_LIST = [
+        "anomaly_history", "model_registry", "user_feedback",
+        "analysis_cache", "query_history", "user_preferences",
+    ]
+
+    def find_items(cat_key):
+        targets = CATEGORY_TARGETS.get(cat_key, [])
+        found = []
+        for target in targets:
+            pattern = str(PROJECT_ROOT / target["pattern"])
+            items = glob_module.glob(pattern, recursive=True)
+            for item in items:
+                if "/.git/" in item or "/.git" == item:
+                    continue
+                if "/config/" in item:
+                    continue
+                if target["type"] == "file" and os.path.isfile(item):
+                    found.append((item, "file"))
+                elif target["type"] == "dir" and os.path.isdir(item):
+                    found.append((item, "dir"))
+                elif target["type"] == "any":
+                    if os.path.isfile(item):
+                        found.append((item, "file"))
+                    elif os.path.isdir(item):
+                        found.append((item, "dir"))
+        # Tekrarlari kaldir
+        seen = set()
+        unique = []
+        for p, t in found:
+            if p not in seen:
+                seen.add(p)
+                unique.append((p, t))
+        return unique
+
+    def get_size(path):
+        if os.path.isfile(path):
+            return os.path.getsize(path)
+        elif os.path.isdir(path):
+            total = 0
+            for dp, dn, fns in os.walk(path):
+                for f in fns:
+                    fp = os.path.join(dp, f)
+                    if os.path.exists(fp):
+                        total += os.path.getsize(fp)
+            return total
+        return 0
+
+    def format_size(b):
+        if b < 1024: return f"{b} B"
+        elif b < 1024*1024: return f"{b/1024:.1f} KB"
+        elif b < 1024*1024*1024: return f"{b/(1024*1024):.1f} MB"
+        else: return f"{b/(1024*1024*1024):.2f} GB"
+
+    file_results = {}
+    total_files = 0
+    total_bytes = 0
+
+    for cat in categories:
+        if cat == "mongodb":
+            continue  # MongoDB ayri islenecek
+        if cat not in CATEGORY_TARGETS:
+            continue
+
+        items = find_items(cat)
+        deleted = 0
+        failed = 0
+        cat_bytes = 0
+
+        for path, ftype in items:
+            size = get_size(path)
+            if not dry_run:
+                try:
+                    if ftype == "file":
+                        os.remove(path)
+                    elif ftype == "dir":
+                        shutil.rmtree(path)
+                    deleted += 1
+                    cat_bytes += size
+                except Exception as e:
+                    logger.warning(f"[SYSTEM RESET] Silinemedi: {path} - {e}")
+                    failed += 1
+            else:
+                deleted += 1
+                cat_bytes += size
+
+        file_results[cat] = {
+            "deleted": deleted,
+            "failed": failed,
+            "total_bytes": cat_bytes,
+            "total_bytes_formatted": format_size(cat_bytes)
+        }
+        total_files += deleted
+        total_bytes += cat_bytes
+
+    # MongoDB temizligi
+    mongodb_results = {"cleared": 0, "failed": 0, "total_docs": 0}
+    if "mongodb" in categories:
+        try:
+            from pymongo import MongoClient as SyncMongoClient
+            conn_str = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+            db_name = os.getenv('MONGODB_STORAGE_DB', 'anomaly_detection')
+            client = SyncMongoClient(conn_str, serverSelectionTimeoutMS=5000)
+            client.admin.command('ping')
+            db = client[db_name]
+            existing = db.list_collection_names()
+            for coll_name in MONGODB_COLLECTIONS_LIST:
+                if coll_name not in existing:
+                    continue
+                try:
+                    doc_count = db[coll_name].count_documents({})
+                    if not dry_run:
+                        result = db[coll_name].delete_many({})
+                        mongodb_results["total_docs"] += result.deleted_count
+                    else:
+                        mongodb_results["total_docs"] += doc_count
+                    mongodb_results["cleared"] += 1
+                except Exception as e:
+                    logger.warning(f"[SYSTEM RESET] MongoDB '{coll_name}' temizlenemedi: {e}")
+                    mongodb_results["failed"] += 1
+            client.close()
+        except Exception as e:
+            logger.warning(f"[SYSTEM RESET] MongoDB baglanti hatasi: {e}")
+
+    mode = "dry_run" if dry_run else "executed"
+    logger.info(f"[SYSTEM RESET] mode={mode}, categories={categories}, "
+                f"files={total_files}, bytes={total_bytes}, "
+                f"mongo_docs={mongodb_results['total_docs']}")
+
+    return JSONResponse({
+        "status": "success",
+        "mode": mode,
+        "file_results": file_results,
+        "mongodb_results": mongodb_results,
+        "total_files": total_files,
+        "total_size_formatted": format_size(total_bytes)
+    })
+
+
 # Shutdown
 @app.on_event("shutdown")
 async def shutdown_event():

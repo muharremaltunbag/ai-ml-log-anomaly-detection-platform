@@ -212,11 +212,12 @@ function initializeEventListeners() {
         });
     }
     
-    // Hızlı işlem butonları
-    const statusBtn = document.getElementById('statusBtn');
-    if (statusBtn) {
-        statusBtn.addEventListener('click', handleStatus);
+    // Sistem Reset butonu
+    const systemResetBtn = document.getElementById('systemResetBtn');
+    if (systemResetBtn) {
+        systemResetBtn.addEventListener('click', openSystemResetModal);
     }
+    initSystemResetModal();
     
     // Log Yükle butonu
     const logUploadBtn = document.getElementById('logUploadBtn');
@@ -1521,69 +1522,193 @@ async function handleCollections() {
 }
 
 /**
- * Sistem durumunu göster
+ * Sistem Reset Modal - Acar/Kapar/Islem
  */
-async function handleStatus() {
-    if (!isConnected) {
-        showNotification('Önce bağlantı kurmalısınız', 'error');
+function openSystemResetModal() {
+    const modal = document.getElementById('systemResetModal');
+    if (modal) {
+        modal.style.display = 'flex';
+        // Onceki sonuclari gizle
+        const resultsPanel = document.getElementById('srResultsPanel');
+        if (resultsPanel) resultsPanel.style.display = 'none';
+    }
+}
+
+function closeSystemResetModal() {
+    const modal = document.getElementById('systemResetModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function initSystemResetModal() {
+    // Kapat butonu
+    const closeBtn = document.getElementById('systemResetCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', closeSystemResetModal);
+
+    // Overlay tiklayinca kapat
+    const overlay = document.getElementById('systemResetModal');
+    if (overlay) {
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) closeSystemResetModal();
+        });
+    }
+
+    // Tumunu sec toggle
+    const selectAll = document.getElementById('srSelectAll');
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('input[name="srCategory"]');
+            checkboxes.forEach(cb => { cb.checked = selectAll.checked; });
+        });
+    }
+
+    // Kategori checkboxlari - selectAll senkronizasyonu
+    const categoryBoxes = document.querySelectorAll('input[name="srCategory"]');
+    categoryBoxes.forEach(cb => {
+        cb.addEventListener('change', function() {
+            const allChecked = Array.from(categoryBoxes).every(c => c.checked);
+            if (selectAll) selectAll.checked = allChecked;
+        });
+    });
+
+    // DRY RUN butonu
+    const dryRunBtn = document.getElementById('srDryRunBtn');
+    if (dryRunBtn) dryRunBtn.addEventListener('click', () => executeSystemReset(true));
+
+    // FULL RESET butonu
+    const fullResetBtn = document.getElementById('srFullResetBtn');
+    if (fullResetBtn) fullResetBtn.addEventListener('click', () => {
+        if (confirm('UYARI: Secili tum veriler kalici olarak silinecek.\nBu islem geri alinamaz.\n\nDevam etmek istiyor musunuz?')) {
+            executeSystemReset(false);
+        }
+    });
+
+    // Sonuc paneli kapat
+    const resultsCloseBtn = document.getElementById('srResultsCloseBtn');
+    if (resultsCloseBtn) {
+        resultsCloseBtn.addEventListener('click', function() {
+            const panel = document.getElementById('srResultsPanel');
+            if (panel) panel.style.display = 'none';
+        });
+    }
+}
+
+function getSelectedCategories() {
+    const checkboxes = document.querySelectorAll('input[name="srCategory"]:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+async function executeSystemReset(dryRun) {
+    const categories = getSelectedCategories();
+    if (categories.length === 0) {
+        showNotification('En az bir kategori secmelisiniz', 'warning');
         return;
     }
-    
-    showLoader(true);
-    
+
+    // Butonlari disable et + spinner goster
+    const dryRunBtn = document.getElementById('srDryRunBtn');
+    const fullResetBtn = document.getElementById('srFullResetBtn');
+    const activeBtn = dryRun ? dryRunBtn : fullResetBtn;
+
+    const origContent = activeBtn.innerHTML;
+    activeBtn.innerHTML = '<span class="sr-spinner"></span><span>Isleniyor...</span>';
+    activeBtn.disabled = true;
+    if (dryRunBtn) dryRunBtn.disabled = true;
+    if (fullResetBtn) fullResetBtn.disabled = true;
+
     try {
-        const response = await fetch(API_ENDPOINTS.status);
-        const data = await response.json();
-        
-        let content = '<h4>Sistem Durumu</h4>';
-        content += '<div class="status-grid">';
-        
-        if (data.agent_status) {
-            const status = data.agent_status;
-            content += `
-                <div class="status-item">
-                    <span class="status-label">MongoDB Bağlantısı:</span>
-                    <span class="status-value ${status.mongodb_connected ? 'success' : 'error'}">
-                        ${status.mongodb_connected ? 'Aktif' : 'Kapalı'}
-                    </span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">OpenAI Bağlantısı:</span>
-                    <span class="status-value ${status.openai_connected ? 'success' : 'error'}">
-                        ${status.openai_connected ? 'Aktif' : 'Kapalı'}
-                    </span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Agent Durumu:</span>
-                    <span class="status-value ${status.agent_ready ? 'success' : 'error'}">
-                        ${status.agent_ready ? 'Hazır' : 'Hazır Değil'}
-                    </span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Konuşma Geçmişi:</span>
-                    <span class="status-value">${status.conversation_length} mesaj</span>
-                </div>
-            `;
-            
-            if (status.available_tools) {
-                content += `
-                    <div class="status-item">
-                        <span class="status-label">Mevcut Araçlar:</span>
-                        <span class="status-value">${status.available_tools.join(', ')}</span>
-                    </div>
-                `;
-            }
+        const response = await fetch(API_ENDPOINTS.systemReset, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                categories: categories,
+                dry_run: dryRun
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
-        content += '</div>';
-        content += `<p class="status-timestamp">Kontrol zamanı: ${new Date().toLocaleString('tr-TR')}</p>`;
-        
-        showModal('Sistem Durumu', content);
+
+        const data = await response.json();
+        displayResetResults(data, dryRun);
+
+        if (!dryRun && data.status === 'success') {
+            showNotification('Sistem basariyla sifirlandi', 'success');
+        }
     } catch (error) {
-        showNotification('Durum bilgisi alınamadı', 'error');
+        console.error('[SYSTEM RESET] Error:', error);
+        const resultsPanel = document.getElementById('srResultsPanel');
+        const resultsContent = document.getElementById('srResultsContent');
+        const resultsTitle = document.getElementById('srResultsTitle');
+        if (resultsPanel && resultsContent && resultsTitle) {
+            resultsTitle.textContent = 'Hata';
+            resultsContent.innerHTML = `<div class="sr-result-error">Islem sirasinda hata olustu: ${error.message}</div>`;
+            resultsPanel.style.display = 'flex';
+        }
+        showNotification('Sistem reset sirasinda hata olustu', 'error');
     } finally {
-        showLoader(false);
+        activeBtn.innerHTML = origContent;
+        activeBtn.disabled = false;
+        if (dryRunBtn) dryRunBtn.disabled = false;
+        if (fullResetBtn) fullResetBtn.disabled = false;
     }
+}
+
+function displayResetResults(data, dryRun) {
+    const resultsPanel = document.getElementById('srResultsPanel');
+    const resultsContent = document.getElementById('srResultsContent');
+    const resultsTitle = document.getElementById('srResultsTitle');
+
+    if (!resultsPanel || !resultsContent || !resultsTitle) return;
+
+    const prefix = dryRun ? '[DRY-RUN] ' : '';
+    resultsTitle.textContent = prefix + 'Islem Sonucu';
+
+    let html = '';
+
+    // Kategori sonuclari
+    const categoryLabels = {
+        ml_models: 'ML Modelleri',
+        anomaly_output: 'Anomali Analizleri',
+        storage_depot: 'Storage Deposu',
+        cache: 'Cache Dosyalari',
+        mongodb: 'MongoDB',
+        logs: 'Loglar',
+        metrics: 'Metrikler',
+        pycache: 'Python Cache'
+    };
+
+    if (data.file_results) {
+        for (const [key, stats] of Object.entries(data.file_results)) {
+            const label = categoryLabels[key] || key;
+            const count = stats.deleted || 0;
+            const size = stats.total_bytes_formatted || '0 B';
+            const failed = stats.failed || 0;
+            let stat = `${count} oge (${size})`;
+            if (failed > 0) stat += ` | ${failed} hata`;
+            html += `<div class="sr-result-category"><span class="sr-result-cat-name">${label}</span><span class="sr-result-cat-stat">${stat}</span></div>`;
+        }
+    }
+
+    if (data.mongodb_results) {
+        const mongo = data.mongodb_results;
+        const cleared = mongo.cleared || 0;
+        const docs = mongo.total_docs || 0;
+        html += `<div class="sr-result-category"><span class="sr-result-cat-name">MongoDB</span><span class="sr-result-cat-stat">${cleared} koleksiyon (${docs} dokuman)</span></div>`;
+    }
+
+    // Ozet
+    const totalFiles = data.total_files || 0;
+    const totalSize = data.total_size_formatted || '0 B';
+
+    if (dryRun) {
+        html += `<div class="sr-result-summary sr-result-dryrun">Simulasyon: ${totalFiles} dosya/dizin (${totalSize}) silinecek</div>`;
+    } else {
+        html += `<div class="sr-result-summary">Tamamlandi: ${totalFiles} dosya/dizin (${totalSize}) silindi</div>`;
+    }
+
+    resultsContent.innerHTML = html;
+    resultsPanel.style.display = 'flex';
 }
 
 
@@ -3415,8 +3540,8 @@ if (typeof handleConnect !== 'undefined') {
 if (typeof handleCollections !== 'undefined') {
     window.handleCollections = handleCollections;
 }
-if (typeof handleStatus !== 'undefined') {
-    window.handleStatus = handleStatus;
+if (typeof openSystemResetModal !== 'undefined') {
+    window.openSystemResetModal = openSystemResetModal;
 }
 if (typeof handleClear !== 'undefined') {
     window.handleClear = handleClear;
@@ -3468,7 +3593,7 @@ const exportedFunctions = {
     formatMetricBox: typeof window.formatMetricBox,
     toggleDetailedAnomalyList: typeof window.toggleDetailedAnomalyList,
     handleConnect: typeof window.handleConnect,
-    handleStatus: typeof window.handleStatus
+    openSystemResetModal: typeof window.openSystemResetModal
 };
 
 console.log('✅ Script.js functions exported to window for testing');

@@ -213,11 +213,131 @@
                     <span class="qa-icon">📊</span>
                     <span class="qa-label">ML Metrikleri</span>
                 </button>
-                <button id="statusBtn" class="quick-action-card">
-                    <span class="qa-icon">⚙️</span>
-                    <span class="qa-label">Sistem Durumu</span>
+                <button id="systemResetBtn" class="quick-action-card">
+                    <span class="qa-icon">🔄</span>
+                    <span class="qa-label">Sistem Reset</span>
                 </button>
             </section>
+
+            <!-- ===== SYSTEM RESET MODAL ===== -->
+            <div id="systemResetModal" class="system-reset-overlay" style="display: none;">
+                <div class="system-reset-modal">
+                    <!-- Header -->
+                    <div class="sr-modal-header">
+                        <div class="sr-header-left">
+                            <div class="sr-header-icon">
+                                <span>🔄</span>
+                            </div>
+                            <div class="sr-header-text">
+                                <h2>Sistem Reset Konfigurasyonu</h2>
+                                <p>Sifirlanacak bilesenleri seciniz</p>
+                            </div>
+                        </div>
+                        <button id="systemResetCloseBtn" class="sr-close-btn" title="Kapat">✕</button>
+                    </div>
+
+                    <!-- Body -->
+                    <div class="sr-modal-body">
+                        <!-- Select All Toggle -->
+                        <div class="sr-select-all-bar">
+                            <div class="sr-select-all-left">
+                                <span class="sr-select-all-icon">☑</span>
+                                <span class="sr-select-all-label">Tumunu Sec (--all)</span>
+                            </div>
+                            <label class="sr-toggle">
+                                <input type="checkbox" id="srSelectAll">
+                                <span class="sr-toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- Category Header -->
+                        <h3 class="sr-categories-title">Sifirlama Kategorileri</h3>
+
+                        <!-- Category Grid -->
+                        <div class="sr-categories-grid">
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="ml_models" checked>
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">ML Modelleri</span>
+                                    <span class="sr-cat-desc">Egitilmis model dosyalari</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="anomaly_output">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Anomali Analizleri</span>
+                                    <span class="sr-cat-desc">Gecmis analiz raporlari</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="storage_depot">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Storage Deposu</span>
+                                    <span class="sr-cat-desc">Yerel dosya saklama alani</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="cache">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Cache</span>
+                                    <span class="sr-cat-desc">Feature cache ve baseline</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="mongodb">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">MongoDB</span>
+                                    <span class="sr-cat-desc">Veritabani kayitlari</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="logs">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Loglar</span>
+                                    <span class="sr-cat-desc">Sistem ve hata gunlukleri</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="metrics">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Metrikler</span>
+                                    <span class="sr-cat-desc">Performans olcumleri</span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- Info Banner -->
+                        <div class="sr-info-banner">
+                            <span class="sr-info-icon">ℹ</span>
+                            <div>
+                                <span class="sr-info-title">Bilgilendirme</span>
+                                Config dosyalari ve kaynak kodlari bu islemden etkilenmez ve korunur.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="sr-modal-footer">
+                        <button id="srDryRunBtn" class="sr-btn sr-btn-secondary">
+                            <span>🔬</span>
+                            <span>DRY RUN (SIMULASYON)</span>
+                        </button>
+                        <button id="srFullResetBtn" class="sr-btn sr-btn-danger">
+                            <span>⚠</span>
+                            <span>SISTEMI SIFIRLA</span>
+                        </button>
+                    </div>
+
+                    <!-- Results Panel (hidden initially) -->
+                    <div id="srResultsPanel" class="sr-results-panel" style="display: none;">
+                        <div class="sr-results-header">
+                            <h3 id="srResultsTitle">Islem Sonucu</h3>
+                            <button id="srResultsCloseBtn" class="sr-close-btn" title="Kapat">✕</button>
+                        </div>
+                        <div id="srResultsContent" class="sr-results-content"></div>
+                    </div>
+                </div>
+            </div>
 
             <!-- Yükleme Göstergesi — Figma Processing Modal -->
             <div id="loader" class="processing-overlay" style="display: none;">

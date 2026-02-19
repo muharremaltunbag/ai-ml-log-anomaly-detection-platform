@@ -62,7 +62,9 @@ window.API_ENDPOINTS = {
     mssqlHosts: '/api/mssql/available-hosts',
     analyzeMSSQLLog: '/api/analyze-mssql-logs',
     // LCWGPT ASSISTANT
-    analyzedServers: '/api/analyzed-servers'
+    analyzedServers: '/api/analyzed-servers',
+    // SYSTEM RESET
+    systemReset: '/api/system-reset'
 };
 
 // ============================================
