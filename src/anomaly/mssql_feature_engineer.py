@@ -242,8 +242,23 @@ class MSSQLFeatureEngineer:
                     (df['hour_of_day'] < night_end)
                 ).astype(int)
 
-                # Time since last log
+                # Time since last log (tüm log türleri arası — genel aralık bilgisi)
                 df['time_since_last_log'] = df['timestamp'].diff().dt.total_seconds().fillna(0)
+
+                # Time since last LOGIN event (sadece login→login arası fark)
+                # Burst detection için daha temiz sinyal: error/system logları arası
+                # kısa aralıklar bu feature'ı kirletmez.
+                if 'is_login_event' in df.columns:
+                    login_mask = df['is_login_event'] == 1
+                    if login_mask.any():
+                        login_timestamps = df.loc[login_mask, 'timestamp']
+                        login_diffs = login_timestamps.diff().dt.total_seconds().fillna(0)
+                        df['time_since_last_login'] = 0.0
+                        df.loc[login_mask, 'time_since_last_login'] = login_diffs.values
+                    else:
+                        df['time_since_last_login'] = 0.0
+                else:
+                    df['time_since_last_login'] = 0.0
 
             logger.info(f"[OK] Temporal features extracted")
             if 'is_night_login' in df.columns:
