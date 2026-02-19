@@ -381,9 +381,12 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
         severity_score += temporal_score
 
         # ── 5. Rule Engine Bonus (0-20) ──────────────────────────
-        if anomaly_score == -1.0:  # Rule override edilmiş
+        # Rule override skorları -severity olarak ayarlanır (ör. -0.95, -0.90).
+        # IsolationForest normal score_samples çıktısı genelde > -0.5 olduğundan,
+        # <= -0.70 eşiği rule override'ları güvenilir şekilde yakalar.
+        if anomaly_score <= -0.70:  # Rule override sinyali (severity >= 0.70)
             severity_score += 20
-            factors.append("Rule Override: +20")
+            factors.append(f"Rule Override: +20 (score={anomaly_score:.2f})")
 
         # ── Normalize & Level ────────────────────────────────────
         severity_score = min(100, max(0, severity_score))
