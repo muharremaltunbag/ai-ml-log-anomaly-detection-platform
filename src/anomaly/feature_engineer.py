@@ -12,6 +12,7 @@ import logging
 from typing import Dict, List, Tuple, Any, Optional
 from pathlib import Path
 import re
+import ast
 
 logger = logging.getLogger(__name__)
 
@@ -701,7 +702,11 @@ class MongoDBFeatureEngineer:
                     if isinstance(attr_obj, dict):
                         return attr_obj
                     if isinstance(attr_obj, str):
-                        return eval(attr_obj)
+                        # Güvenli parse: eval() yerine json.loads + ast.literal_eval
+                        try:
+                            return json.loads(attr_obj)
+                        except (json.JSONDecodeError, ValueError):
+                            return ast.literal_eval(attr_obj)
                     return {}
                 except:
                     return {}
