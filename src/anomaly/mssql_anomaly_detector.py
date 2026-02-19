@@ -305,6 +305,8 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
         factors.append(f"LogType ({logtype}): +{logtype_score}")
 
         # ── 3. Critical MSSQL Features (0-40) ────────────────────
+        # Bağımsız if'ler: birden fazla kritik durum eş zamanlı olabilir.
+        # Toplam feature_score cap=40 ile sınırlanır (0-40 skalası).
         feature_score = 0
 
         # 3a. Availability Group hatası — en kritik (üretim etkisi yüksek)
@@ -313,48 +315,51 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
             factors.append("Availability Group Error: +35")
 
         # 3b. Database erişim hatası
-        elif row_features.get('is_database_access_error', 0) == 1:
+        if row_features.get('is_database_access_error', 0) == 1:
             feature_score += 30
             factors.append("Database Access Error: +30")
 
         # 3c. Failed login + burst → brute force sinyali
-        elif (row_features.get('is_failed_login', 0) == 1 and
+        if (row_features.get('is_failed_login', 0) == 1 and
               row_features.get('login_burst_flag', 0) == 1):
             feature_score += 35
             factors.append("Failed Login Burst (Brute Force Signal): +35")
 
         # 3d. Permission / denied hatası
-        elif row_features.get('is_permission_error', 0) == 1:
+        if row_features.get('is_permission_error', 0) == 1:
             feature_score += 25
             factors.append("Permission Error: +25")
 
         # 3e. Connection hatası
-        elif row_features.get('is_connection_error', 0) == 1:
+        if row_features.get('is_connection_error', 0) == 1:
             feature_score += 22
             factors.append("Connection Error: +22")
 
-        # 3f. Failed login (burst olmadan)
-        elif row_features.get('is_failed_login', 0) == 1:
+        # 3f. Failed login (burst olmadan — 3c ile çakışmayı önle)
+        if (row_features.get('is_failed_login', 0) == 1 and
+              row_features.get('login_burst_flag', 0) == 0):
             feature_score += 20
             factors.append("Failed Login: +20")
 
         # 3g. Extreme login burst (yoğun login trafiği sinyali)
-        elif (row_features.get('extreme_burst_flag', 0) == 1 and
+        if (row_features.get('extreme_burst_flag', 0) == 1 and
               row_features.get('burst_density', 0) > 0.5):
             feature_score += 18
             factors.append("Extreme Login Burst Density: +18")
 
         # 3h. Rare IP + non-service account → olağandışı erişim
-        elif (row_features.get('is_rare_client_ip', 0) == 1 and
+        if (row_features.get('is_rare_client_ip', 0) == 1 and
               row_features.get('is_service_account', 0) == 0):
             feature_score += 15
             factors.append("Rare IP (non-service): +15")
 
         # 3i. Grok parse failure (bilinmeyen log formatı)
-        elif row_features.get('is_grok_failure', 0) == 1:
+        if row_features.get('is_grok_failure', 0) == 1:
             feature_score += 8
             factors.append("Grok Parse Failure: +8")
 
+        # Cap: 0-40 skalası korunsun
+        feature_score = min(feature_score, 40)
         severity_score += feature_score
 
         # ── 4. Temporal Factor (0-10) ────────────────────────────
