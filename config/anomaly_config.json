@@ -286,6 +286,17 @@
           "log_buffer_stats": true,
           "log_incremental_updates": true
         }
+      },
+      "false_positive_filter": {
+        "severity_min_score_stage1": 40,
+        "max_critical_anomalies_stage1": 500,
+        "severity_min_score_stage2": 30,
+        "slow_query_severity_threshold": 45,
+        "collscan_severity_threshold": 40,
+        "high_doc_scan_severity_threshold": 40,
+        "suspicious_component_anomaly_rate": 99.5,
+        "suspicious_component_min_count": 100,
+        "max_filtered_anomalies": 2000
       }
     },
     "processing": {

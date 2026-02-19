@@ -83,10 +83,13 @@ class AnomalyDetectionTools:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 full_config = json.load(f)
                 self.config = full_config['environments'][self.environment]
+                # False positive filter config'i top-level anomaly_detection'dan al
+                self.fp_filter_config = full_config.get('anomaly_detection', {}).get('false_positive_filter', {})
                 logger.debug(f"Config loaded successfully for environment: {self.environment}")
         except Exception as e:
             logger.error(f"Error loading config: {e}")
             self.config = {}
+            self.fp_filter_config = {}
             logger.debug("Using empty config as fallback")
     
     def _format_result(self, result: Dict[str, Any], operation: str) -> str:
@@ -1767,16 +1770,26 @@ class AnomalyDetectionTools:
             Filtrelenmiş analiz sonucu
         """
         logger.info(f"Applying smart post-processing filter for {source_name}...")
-        
+
+        # Config'den false positive filter threshold'ları oku (fallback: hardcoded defaults)
+        fpc = getattr(self, 'fp_filter_config', {})
+        stage2_min_score = fpc.get('severity_min_score_stage2', 30)
+        slow_query_threshold = fpc.get('slow_query_severity_threshold', 45)
+        collscan_threshold = fpc.get('collscan_severity_threshold', 40)
+        high_doc_scan_threshold = fpc.get('high_doc_scan_severity_threshold', 40)
+        suspicious_rate = fpc.get('suspicious_component_anomaly_rate', 99.5)
+        suspicious_min_count = fpc.get('suspicious_component_min_count', 100)
+        max_filtered = fpc.get('max_filtered_anomalies', 2000)
+
         # Orijinal anomali sayısını logla
         original_count = len(analysis.get('critical_anomalies', []))
         logger.info(f"Original critical anomalies: {original_count}")
-        
+
         # Component analysis debug logs
         logger.info(f"Input critical_anomalies count: {original_count}")
         if original_count > 0:
             logger.info(f"First anomaly sample: {analysis['critical_anomalies'][0]}")
-        
+
         # 1. Component-based filtering
         suspicious_components = []
         if 'component_analysis' in analysis:
@@ -1784,15 +1797,15 @@ class AnomalyDetectionTools:
             for comp, stats in analysis['component_analysis'].items():
                 # ÖZEL DURUM: Bazı component'ler her zaman önemlidir
                 important_components = ['COMMAND', 'REPL', 'CONTROL', 'NETWORK', 'STORAGE']
-                
+
                 # Eğer önemli component ise filtreleme
                 if comp in important_components:
                     logger.debug(f"Component {comp} is important, skipping filter")
                     continue
-                    
-                # %99.5'ten fazla anomali oranı VE 100'den fazla log varsa şüpheli
-                if (stats.get('anomaly_rate', 0) > 99.5 and 
-                    stats.get('total_count', 0) > 100):
+
+                # Şüpheli component tespiti (config'den threshold)
+                if (stats.get('anomaly_rate', 0) > suspicious_rate and
+                    stats.get('total_count', 0) > suspicious_min_count):
                     suspicious_components.append(comp)
                     logger.warning(f"Component {comp} has {stats['anomaly_rate']:.1f}% anomaly rate - marking as suspicious")
                     logger.warning(f"Component {comp} marked as suspicious")
@@ -1831,17 +1844,15 @@ class AnomalyDetectionTools:
                     'assertion' in msg,
                     'shutdown' in msg,
                     'restart' in msg,
-                    'slow query' in msg and severity_score > 45  # YENİ: Slow query için düşük threshold
+                    'slow query' in msg and severity_score > slow_query_threshold
                 ]
                 
                 if any(critical_patterns):
                     is_critical = True
                     logger.debug(f"Critical pattern matched for anomaly {i}")
                 
-                # Yüksek severity score olanlar
-                # (30'a düşürüldü: birikimli puanlama ile orta seviye anomaliler de geçsin,
-                #  max 2000 cap zaten aşırı büyümeyi önlüyor)
-                elif severity_score > 30:
+                # Yüksek severity score olanlar (config'den threshold)
+                elif severity_score > stage2_min_score:
                     is_critical = True
                     logger.debug(f"High severity score: {severity_score} for anomaly {i}")
                 
@@ -1850,11 +1861,11 @@ class AnomalyDetectionTools:
                     is_critical = True
                     logger.debug(f"Severity level: {severity_level} for anomaly {i}")
 
-                # Performance kritik anomaliler
+                # Performance kritik anomaliler (config'den threshold)
                 elif any([
-                    'collscan' in msg and severity_score > 40,
-                    'slow' in msg and 'ms' in msg and severity_score > 45,
-                    'high_doc_scan' in anomaly.get('anomaly_type', '') and severity_score > 40
+                    'collscan' in msg and severity_score > collscan_threshold,
+                    'slow' in msg and 'ms' in msg and severity_score > slow_query_threshold,
+                    'high_doc_scan' in anomaly.get('anomaly_type', '') and severity_score > high_doc_scan_threshold
                 ]):
                     is_critical = True
                     logger.debug(f"Performance critical anomaly {i}")
@@ -1866,17 +1877,14 @@ class AnomalyDetectionTools:
             
             logger.info(f"Filter results: {len(filtered_anomalies)} anomalies kept, {filtered_out_count} filtered out")
             
-            # Maximum 2000 anomali limiti (DBA Görünürlüğü için artırıldı)
+            # Maximum anomali limiti (config'den, fallback: 2000)
+            if len(filtered_anomalies) > max_filtered:
 
-            LIMIT = 2000
+                logger.info(f"Limiting from {len(filtered_anomalies)} to {max_filtered} most critical")
 
-            if len(filtered_anomalies) > LIMIT:
-
-                logger.info(f"Limiting from {len(filtered_anomalies)} to {LIMIT} most critical")
-
-                # Severity score'a göre sırala ve ilk LIMIT kadarını al
+                # Severity score'a göre sırala ve ilk max_filtered kadarını al
                 filtered_anomalies.sort(key=lambda x: x.get('severity_score', 0), reverse=True)
-                filtered_anomalies = filtered_anomalies[:LIMIT]
+                filtered_anomalies = filtered_anomalies[:max_filtered]
 
             # Analizi güncelle
             analysis['critical_anomalies'] = filtered_anomalies

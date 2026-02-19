@@ -1141,6 +1141,11 @@ class MongoDBAnomalyDetector:
         
         
         # YENİ: İki aşamalı akıllı filtreleme
+        # Config'den false positive filter threshold'ları oku (fallback: hardcoded defaults)
+        fp_config = self.config.get('anomaly_detection', {}).get('false_positive_filter', {})
+        stage1_min_score = fp_config.get('severity_min_score_stage1', 40)
+        max_critical_stage1 = fp_config.get('max_critical_anomalies_stage1', 500)
+
         # 1. Aşama: Yüksek severity score veya kritik tip
         critical_only = []
         for a in anomaly_severities:
@@ -1158,18 +1163,16 @@ class MongoDBAnomalyDetector:
                     'shutdown' in msg_lower
                 ])
             
-            # Severity score > 40 veya kritik tip ise ekle
-            # (40'a düşürüldü: orta seviye anomaliler de görünür olsun,
-            #  _filter_false_positives zaten ikinci katman filtre olarak çalışıyor)
-            if a['severity_score'] > 40 or is_critical_type:
+            # Severity score threshold veya kritik tip ise ekle
+            if a['severity_score'] > stage1_min_score or is_critical_type:
                 critical_only.append(a)
 
-        
 
-        # 2. Aşama: Maximum limit uygula 
-        if len(critical_only) > 500:
+
+        # 2. Aşama: Maximum limit uygula
+        if len(critical_only) > max_critical_stage1:
             
-            critical_only = critical_only[:500]
+            critical_only = critical_only[:max_critical_stage1]
 
         
 
