@@ -43,6 +43,11 @@ class MSSQLFeatureEngineer:
             ['^APP_', '^SQL\\.', '^SVC_', '^SYSTEM$', '^sa$', '^NT AUTHORITY', '^NT SERVICE']
         )
 
+        # Frequency baseline — IP ve username frekanslarini batchler arasi tutarli yapar
+        cache_path = self.config.get('processing', {}).get('cache_path', 'cache/mssql_anomaly_cache')
+        self._baseline_path = str(Path(cache_path).parent / 'mssql_frequency_baseline.json')
+        self._baseline = self._load_baseline()
+
         logger.info(f"MSSQLFeatureEngineer initialized with {len(self.enabled_features)} features")
 
     def _load_config(self, config_path: str) -> Dict:
@@ -62,6 +67,55 @@ class MSSQLFeatureEngineer:
                     }
                 }
             }
+
+    def _load_baseline(self) -> Dict:
+        """Frequency baseline dosyasini yukle (IP/username kumulatif frekanslar)"""
+        try:
+            with open(self._baseline_path, 'r', encoding='utf-8') as f:
+                baseline = json.load(f)
+                logger.info(f"Frequency baseline loaded: {baseline.get('total_batches', 0)} batches, "
+                            f"{len(baseline.get('ip_counts', {}))} IPs, "
+                            f"{len(baseline.get('username_counts', {}))} usernames")
+                return baseline
+        except FileNotFoundError:
+            logger.info("No frequency baseline found — first run, will use batch-relative")
+            return {}
+        except Exception as e:
+            logger.warning(f"Error loading frequency baseline: {e}")
+            return {}
+
+    def _save_baseline(self, batch_ip_counts: Dict[str, int],
+                       batch_username_counts: Dict[str, int]) -> None:
+        """Frequency baseline dosyasini guncelle (kumulatif)"""
+        try:
+            # Mevcut baseline'i al veya bos dict
+            ip_counts = dict(self._baseline.get('ip_counts', {}))
+            username_counts = dict(self._baseline.get('username_counts', {}))
+
+            # Batch count'lari ekle (kumulatif)
+            for ip, count in batch_ip_counts.items():
+                ip_counts[ip] = ip_counts.get(ip, 0) + count
+            for user, count in batch_username_counts.items():
+                username_counts[user] = username_counts.get(user, 0) + count
+
+            # Kaydet
+            baseline = {
+                'ip_counts': ip_counts,
+                'username_counts': username_counts,
+                'total_batches': self._baseline.get('total_batches', 0) + 1,
+                'last_updated': datetime.now().isoformat()
+            }
+
+            Path(self._baseline_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(self._baseline_path, 'w', encoding='utf-8') as f:
+                json.dump(baseline, f, indent=2)
+
+            # Runtime baseline'i guncelle
+            self._baseline = baseline
+            logger.info(f"Frequency baseline saved: {len(ip_counts)} IPs, "
+                        f"{len(username_counts)} usernames, batch #{baseline['total_batches']}")
+        except Exception as e:
+            logger.warning(f"Error saving frequency baseline: {e}")
 
     def stabilize_features(self, df: pd.DataFrame, expected_schema: Dict[str, Any]) -> pd.DataFrame:
         """
@@ -155,6 +209,16 @@ class MSSQLFeatureEngineer:
         df = self.extract_user_features(df)
         df = self.extract_error_features(df)
         df = self.extract_burst_features(df)
+
+        # Frequency baseline güncelle (kümülatif IP/username frekansları)
+        try:
+            batch_ip = df['client_ip'].value_counts().to_dict() if 'client_ip' in df.columns else {}
+            username_col = 'username' if 'username' in df.columns else 'USERNAME'
+            batch_user = df[username_col].value_counts().to_dict() if username_col in df.columns else {}
+            if batch_ip or batch_user:
+                self._save_baseline(batch_ip, batch_user)
+        except Exception as e:
+            logger.warning(f"Baseline save skipped: {e}")
 
         # Schema stabilizer
         if hasattr(self, "model_feature_schema") and self.model_feature_schema:
@@ -346,9 +410,19 @@ class MSSQLFeatureEngineer:
                     (df['client_ip'] == '127.0.0.1')
                 ).astype(int)
 
-                # IP frequency (aynı IP'den gelen log sayısı)
-                ip_counts = df['client_ip'].value_counts()
-                df['client_ip_frequency'] = df['client_ip'].map(ip_counts).fillna(0).astype(int)
+                # IP frequency — baseline varsa kümülatif, yoksa batch-relative
+                batch_ip_counts = df['client_ip'].value_counts().to_dict()
+                baseline_ip = self._baseline.get('ip_counts', {})
+                if baseline_ip:
+                    # Kümülatif: baseline + batch
+                    merged_ip = {ip: baseline_ip.get(ip, 0) + batch_ip_counts.get(ip, 0)
+                                 for ip in set(list(baseline_ip.keys()) + list(batch_ip_counts.keys()))}
+                    df['client_ip_frequency'] = df['client_ip'].map(
+                        lambda ip: merged_ip.get(ip, 0)
+                    ).fillna(0).astype(int)
+                    logger.debug(f"IP frequency: baseline-enhanced ({len(baseline_ip)} historical IPs)")
+                else:
+                    df['client_ip_frequency'] = df['client_ip'].map(batch_ip_counts).fillna(0).astype(int)
 
                 # Rare IP flag
                 rare_threshold = self.filters.get('rare_threshold', 100)
@@ -392,9 +466,19 @@ class MSSQLFeatureEngineer:
                     r'\\', na=False, regex=True
                 ).astype(int)
 
-                # Username frequency
-                username_counts = df[username_col].value_counts()
-                df['username_frequency'] = df[username_col].map(username_counts).fillna(0).astype(int)
+                # Username frequency — baseline varsa kümülatif, yoksa batch-relative
+                batch_user_counts = df[username_col].value_counts().to_dict()
+                baseline_user = self._baseline.get('username_counts', {})
+                if baseline_user:
+                    # Kümülatif: baseline + batch
+                    merged_user = {u: baseline_user.get(u, 0) + batch_user_counts.get(u, 0)
+                                   for u in set(list(baseline_user.keys()) + list(batch_user_counts.keys()))}
+                    df['username_frequency'] = df[username_col].map(
+                        lambda u: merged_user.get(u, 0)
+                    ).fillna(0).astype(int)
+                    logger.debug(f"Username frequency: baseline-enhanced ({len(baseline_user)} historical users)")
+                else:
+                    df['username_frequency'] = df[username_col].map(batch_user_counts).fillna(0).astype(int)
 
                 # Rare username flag
                 rare_threshold = self.filters.get('rare_threshold', 100)
