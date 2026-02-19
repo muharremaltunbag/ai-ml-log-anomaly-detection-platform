@@ -2424,30 +2424,50 @@ class MongoDBAnomalyDetector:
             raise ValueError("Model must be trained before evaluation!")
         
         # Eğer y_true yoksa, validation dataset oluştur
+        evaluation_method = "ground_truth"
+        evaluation_meta = {}
+
         if y_true is None:
             if df is None:
                 raise ValueError("Either y_true or df must be provided for evaluation!")
-            
-            
+
+            evaluation_method = "pseudo_label"
             X, y_true, confidence = self.create_validation_dataset(X, df, method='combined')
-            
+
             # Sadece yüksek güvenilirlikli samples'ı kullan
             high_conf_mask = confidence > 0.7
+            total_before_filter = len(X)
             X = X[high_conf_mask]
             y_true = y_true[high_conf_mask]
             logger.debug(f"Using {len(X)} high-confidence samples for evaluation")
-        
+
+            evaluation_meta = {
+                "confidence_threshold": 0.7,
+                "total_samples_before_filter": int(total_before_filter),
+                "high_confidence_samples": int(len(X)),
+                "high_confidence_ratio": round(len(X) / total_before_filter, 4) if total_before_filter > 0 else 0,
+                "disclaimer": "Metrics calculated using pseudo-labels (rule-based + statistical). "
+                              "Not equivalent to human-verified ground truth. "
+                              "Precision/recall may be inflated due to overlap between "
+                              "pseudo-label rules and model's critical rules engine."
+            }
+
         # Model predictions
         predictions = self.model.predict(X)
         # Isolation Forest -1: anomaly, 1: normal -> 1: anomaly, 0: normal'e çevir
         y_pred = (predictions == -1).astype(int)
-        
+
         # Anomaly scores
         anomaly_scores = self.model.score_samples(X)
-        
+
         # Metrikleri hesapla
         metrics = self.calculate_metrics(y_true, y_pred, anomaly_scores)
-        
+
+        # Evaluation method metadata ekle
+        metrics["evaluation_method"] = evaluation_method
+        if evaluation_meta:
+            metrics["evaluation_meta"] = evaluation_meta
+
         return metrics
     
     def calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, 
