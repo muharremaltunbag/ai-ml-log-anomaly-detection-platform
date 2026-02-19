@@ -1028,7 +1028,33 @@ class MongoDBAnomalyDetector:
         
         return ensemble_predictions, ensemble_scores
         
-    def analyze_anomalies(self, df: pd.DataFrame, X: pd.DataFrame, 
+    def _extract_anomaly_message(self, df: pd.DataFrame, idx: int) -> str:
+        """
+        Anomali satırından insan-okunabilir mesaj çıkar.
+        Alt sınıflar override edebilir (ör. MSSQL raw_message kullanır).
+
+        Args:
+            df: Enriched DataFrame
+            idx: Satır index'i
+
+        Returns:
+            Mesaj string'i
+        """
+        log_entry_dict = df.iloc[idx].to_dict()
+        full_message = extract_mongodb_message(log_entry_dict)
+
+        # Fallback: extract_mongodb_message boş dönerse raw_log/msg kullan
+        if not full_message or full_message in ['No detailed message available', 'Message extraction failed']:
+            if 'raw_log' in df.columns and pd.notna(df.iloc[idx]['raw_log']):
+                full_message = str(df.iloc[idx]['raw_log'])
+            elif 'msg' in df.columns and pd.notna(df.iloc[idx]['msg']):
+                full_message = str(df.iloc[idx]['msg'])
+            else:
+                full_message = "No message available"
+
+        return full_message
+
+    def analyze_anomalies(self, df: pd.DataFrame, X: pd.DataFrame,
                          predictions: np.ndarray, anomaly_scores: np.ndarray) -> Dict[str, Any]:
         """
         Anomalileri detaylı analiz et
@@ -1116,18 +1142,8 @@ class MongoDBAnomalyDetector:
                 df_row
             )
             
-            # YENİ: Akıllı mesaj çıkarma ile formatted mesaj al
-            log_entry_dict = df.iloc[idx].to_dict()
-            full_message = extract_mongodb_message(log_entry_dict)
-            
-            # Fallback: Eğer extract_mongodb_message boş dönerse, raw_log kullan
-            if not full_message or full_message in ['No detailed message available', 'Message extraction failed']:
-                if 'raw_log' in df.columns and pd.notna(df.iloc[idx]['raw_log']):
-                    full_message = str(df.iloc[idx]['raw_log'])
-                elif 'msg' in df.columns and pd.notna(df.iloc[idx]['msg']):
-                    full_message = str(df.iloc[idx]['msg'])
-                else:
-                    full_message = "No message available"
+            # Mesaj çıkarma (override edilebilir — MSSQL raw_message kullanır)
+            full_message = self._extract_anomaly_message(df, idx)
             
             # message_summary KULLANMA, direkt full_message kullan
             anomaly_severities.append({

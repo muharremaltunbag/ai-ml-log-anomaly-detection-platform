@@ -263,6 +263,25 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
         }
 
     # =================================================================
+    # MESSAGE EXTRACTION OVERRIDE — MSSQL raw_message kullanır
+    # Parent (MongoDB): extract_mongodb_message (msg, attr, raw_log alanları)
+    # MSSQL: Doğrudan raw_message veya message alanı (düz metin)
+    # =================================================================
+
+    def _extract_anomaly_message(self, df: pd.DataFrame, idx: int) -> str:
+        """
+        MSSQL anomali satırından mesaj çıkar — raw_message kullanır.
+        Parent'ın MongoDB-specific extract_mongodb_message çağrısını atlar.
+        """
+        row = df.iloc[idx]
+        # MSSQL logları düz metin: raw_message > message > fallback
+        if 'raw_message' in df.columns and pd.notna(row.get('raw_message')):
+            return str(row['raw_message'])[:1000]
+        elif 'message' in df.columns and pd.notna(row.get('message')):
+            return str(row['message'])[:1000]
+        return "No message available"
+
+    # =================================================================
     # SEVERITY SCORE OVERRIDE — MSSQL'e özgü
     # Parent (MongoDB) versiyonu: docs_examined, is_collscan, REPL/ACCESS vb.
     # MSSQL versiyonu: login, AG, permission, burst feature'ları
