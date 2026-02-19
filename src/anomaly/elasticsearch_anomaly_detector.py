@@ -306,6 +306,7 @@ class ElasticsearchAnomalyDetector(MongoDBAnomalyDetector):
             log_level = df_row.log_level
 
         level_scores = {
+            'CRITICAL': 20,
             'ERROR': 20,
             'WARN': 12,
             'INFO': 5,

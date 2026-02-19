@@ -222,30 +222,32 @@ class ElasticsearchFeatureEngineer:
         - time_since_last_log (seconds)
         """
         try:
-            # Timestamp parse — event_timestamp (log satırından) tercih edilir
+            # Timestamp parse — event_timestamp (log satırından) HER ZAMAN tercih edilir
             # @timestamp Filebeat ingest time olabilir (aylarca sapma görüldü)
-            if 'timestamp' not in df.columns:
-                if 'event_timestamp' in df.columns:
-                    # Log satırından parse edilen gerçek olay zamanı
-                    df['timestamp'] = pd.to_datetime(
-                        df['event_timestamp'], format='mixed',
-                        errors='coerce', utc=True
-                    )
-                    valid_count = df['timestamp'].notna().sum()
-                    logger.info(f"[Timestamp] Using event_timestamp from log line "
-                                f"({valid_count}/{len(df)} valid)")
-                    # Parse edilemeyenler için @timestamp fallback
-                    if valid_count < len(df) and '@timestamp' in df.columns:
-                        fallback = pd.to_datetime(
-                            df['@timestamp'], errors='coerce', utc=True
-                        )
-                        df['timestamp'] = df['timestamp'].fillna(fallback)
-                        logger.info(f"[Timestamp] Fallback to @timestamp for "
-                                    f"{len(df) - valid_count} rows")
-                elif '@timestamp' in df.columns:
-                    df['timestamp'] = pd.to_datetime(
+            # NOT: reader.read_logs() 'timestamp'i @timestamp'den oluşturur,
+            # bu yüzden 'timestamp not in df' koşulu HER ZAMAN False olurdu.
+            # event_timestamp varsa mevcut timestamp'i override etmeliyiz.
+            if 'event_timestamp' in df.columns:
+                # Log satırından parse edilen gerçek olay zamanı
+                df['timestamp'] = pd.to_datetime(
+                    df['event_timestamp'], format='mixed',
+                    errors='coerce', utc=True
+                )
+                valid_count = df['timestamp'].notna().sum()
+                logger.info(f"[Timestamp] Using event_timestamp from log line "
+                            f"({valid_count}/{len(df)} valid)")
+                # Parse edilemeyenler için @timestamp fallback
+                if valid_count < len(df) and '@timestamp' in df.columns:
+                    fallback = pd.to_datetime(
                         df['@timestamp'], errors='coerce', utc=True
                     )
+                    df['timestamp'] = df['timestamp'].fillna(fallback)
+                    logger.info(f"[Timestamp] Fallback to @timestamp for "
+                                f"{len(df) - valid_count} rows")
+            elif 'timestamp' not in df.columns and '@timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(
+                    df['@timestamp'], errors='coerce', utc=True
+                )
 
             if 'timestamp' in df.columns:
                 # Timestamp'e göre sırala
