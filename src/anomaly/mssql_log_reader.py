@@ -913,6 +913,7 @@ class MSSQLOpenSearchReader:
 def get_available_mssql_hosts(last_hours: int = 24) -> List[str]:
     """
     Module-level function to get available MSSQL hosts
+    Singleton instance kullanır — gereksiz yeni bağlantı açmaz.
 
     Args:
         last_hours: Son kaç saat
@@ -920,15 +921,18 @@ def get_available_mssql_hosts(last_hours: int = 24) -> List[str]:
     Returns:
         List of host names
     """
-    reader = MSSQLOpenSearchReader()
-    if reader.connect():
+    try:
+        reader = MSSQLOpenSearchReader.get_instance()
         return reader.get_available_mssql_hosts(last_hours)
-    return []
+    except Exception as e:
+        logger.error(f"Error getting MSSQL hosts: {e}")
+        return []
 
 
 def get_mssql_host_stats(last_hours: int = 24) -> Dict[str, Any]:
     """
     Module-level function to get MSSQL host statistics
+    Singleton instance kullanır — gereksiz yeni bağlantı açmaz.
 
     Args:
         last_hours: Son kaç saat
@@ -936,7 +940,9 @@ def get_mssql_host_stats(last_hours: int = 24) -> Dict[str, Any]:
     Returns:
         Dict with host stats
     """
-    reader = MSSQLOpenSearchReader()
-    if reader.connect():
+    try:
+        reader = MSSQLOpenSearchReader.get_instance()
         return reader.get_host_log_stats(last_hours)
-    return {}
+    except Exception as e:
+        logger.error(f"Error getting MSSQL host stats: {e}")
+        return {}
