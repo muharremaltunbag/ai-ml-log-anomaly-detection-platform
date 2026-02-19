@@ -1634,6 +1634,12 @@ async function executeSystemReset(dryRun) {
 
         if (!dryRun && data.status === 'success') {
             showNotification('Sistem basariyla sifirlandi', 'success');
+            // ML Panel metriklerini sifirla
+            if (window.updateMLPanelWithDefaults) {
+                window.updateMLPanelWithDefaults();
+            }
+            // lastAnomalyResult'i temizle (eski analiz verileri)
+            window.lastAnomalyResult = null;
         }
     } catch (error) {
         console.error('[SYSTEM RESET] Error:', error);

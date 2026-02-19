@@ -83,6 +83,14 @@
     }
 
     /**
+     * Null-safe format helper: null/undefined ise '--' dondur
+     */
+    function safeMetric(value, formatter) {
+        if (value === null || value === undefined) return '--';
+        return formatter ? formatter(value) : String(value);
+    }
+
+    /**
      * ML Model metriklerini yükle ve sidebar'ı güncelle
      * İki endpoint çağrılır: /api/ml/metrics + /api/ml/model-info
      */
@@ -97,22 +105,24 @@
                 if (data.status === 'success' && data.metrics) {
                     var metrics = data.metrics;
 
-                    // Model Performansı — ID-based update
-                    updateElement('modelAccuracy', '%' + metrics.model_accuracy.toFixed(1));
-                    updateElement('modelF1', metrics.f1_score.toFixed(2));
-                    updateElement('modelPrecision', metrics.precision.toFixed(2));
-                    updateElement('modelRecall', metrics.recall.toFixed(2));
+                    // Model Performansi — null ise '--' goster
+                    updateElement('modelAccuracy', safeMetric(metrics.model_accuracy, function(v) { return '%' + v.toFixed(1); }));
+                    updateElement('modelF1', safeMetric(metrics.f1_score, function(v) { return v.toFixed(2); }));
+                    updateElement('modelPrecision', safeMetric(metrics.precision, function(v) { return v.toFixed(2); }));
+                    updateElement('modelRecall', safeMetric(metrics.recall, function(v) { return v.toFixed(2); }));
 
-                    // Anomali İstatistikleri — ID-based update
-                    updateElement('totalLogs', metrics.total_logs_analyzed.toLocaleString('tr-TR'));
-                    updateElement('detectedAnomalies', metrics.total_anomalies_detected.toLocaleString('tr-TR'));
-                    updateElement('anomalyRate', '%' + metrics.anomaly_rate.toFixed(2));
+                    // Anomali Istatistikleri
+                    updateElement('totalLogs', (metrics.total_logs_analyzed || 0).toLocaleString('tr-TR'));
+                    updateElement('detectedAnomalies', (metrics.total_anomalies_detected || 0).toLocaleString('tr-TR'));
+                    updateElement('anomalyRate', '%' + (metrics.anomaly_rate || 0).toFixed(2));
 
-                    // Model versiyonu ve eğitim tarihi
-                    updateElement('modelVersion', metrics.model_version);
-                    updateElement('lastTrainingDate', new Date(metrics.last_training_date).toLocaleDateString('tr-TR'));
+                    // Model versiyonu ve egitim tarihi — null ise '--'
+                    updateElement('modelVersion', safeMetric(metrics.model_version));
+                    updateElement('lastTrainingDate', safeMetric(metrics.last_training_date, function(v) {
+                        return new Date(v).toLocaleDateString('tr-TR');
+                    }));
 
-                    console.log('✅ ML metrics loaded from /api/ml/metrics');
+                    console.log('✅ ML metrics loaded from /api/ml/metrics (is_trained=' + metrics.is_trained + ')');
                 }
             }
         } catch (error) {
@@ -232,19 +242,20 @@
     }
 
     /**
-     * ML Panel'i default değerlerle güncelle
+     * ML Panel'i default degerlerle guncelle
+     * Model yoksa veya reset sonrasi: tum metrikler '--' (bilinmiyor)
      */
     function updateMLPanelWithDefaults() {
         var defaults = {
-            modelAccuracy: '%95.2',
-            modelF1: '0.89',
-            modelPrecision: '0.92',
-            modelRecall: '0.87',
+            modelAccuracy: '--',
+            modelF1: '--',
+            modelPrecision: '--',
+            modelRecall: '--',
             totalLogs: '0',
             detectedAnomalies: '0',
             anomalyRate: '%0.00',
-            modelVersion: 'v2.1.0',
-            lastTrainingDate: new Date().toLocaleDateString('tr-TR'),
+            modelVersion: '--',
+            lastTrainingDate: '--',
             mlServerName: '--',
             mlModelType: 'Isolation Forest',
             mlTrainingSamples: '--',
@@ -257,7 +268,7 @@
             updateElement(key, defaults[key]);
         });
 
-        console.log('✅ ML sidebar updated with default values');
+        console.log('ML sidebar reset to defaults (no hardcoded fake metrics)');
     }
 
     /**

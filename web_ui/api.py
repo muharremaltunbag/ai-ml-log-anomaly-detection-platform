@@ -4045,53 +4045,70 @@ async def verify_query_history_item(query_id: str, api_key: str):
 
 @app.get("/api/ml/metrics")
 async def get_ml_metrics(api_key: str = Query(...)):
-    """ML model metriklerini döndür"""
+    """ML model metriklerini döndür — sadece gercek veriler"""
     try:
         if not await verify_api_key(api_key):
             raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
-        
-        # Storage'dan son analizleri al
-        storage = await get_storage_manager()
+
+        # Baslangic: tum degerler None (bilinmiyor)
         metrics = {
-            "model_accuracy": 95.2,
-            "f1_score": 0.89,
-            "precision": 0.92,
-            "recall": 0.87,
+            "model_accuracy": None,
+            "f1_score": None,
+            "precision": None,
+            "recall": None,
             "total_logs_analyzed": 0,
             "total_anomalies_detected": 0,
             "anomaly_rate": 0.0,
-            "model_version": "v2.1.0",
-            "last_training_date": datetime.now().strftime("%Y-%m-%d")
+            "model_version": None,
+            "last_training_date": None,
+            "is_trained": False
         }
-        
+
+        # Model durumunu kontrol et
+        global anomaly_detector
+        if anomaly_detector and anomaly_detector.is_trained:
+            metrics["is_trained"] = True
+            model_info = anomaly_detector.get_model_info()
+            training_stats = model_info.get('training_stats', {})
+
+            # Gercek egitim bilgileri
+            metrics["model_version"] = f"v{training_stats.get('model_version', model_info.get('version', ''))}" if training_stats.get('model_version') or model_info.get('version') else None
+            if training_stats.get('timestamp'):
+                metrics["last_training_date"] = training_stats['timestamp']
+
+            # Gercek feature/sample sayilari
+            metrics["n_features"] = model_info.get('n_features', 0)
+            metrics["n_training_samples"] = training_stats.get('n_samples', 0)
+
+        # Storage'dan gercek analiz sonuclarini al
+        storage = await get_storage_manager()
         if storage:
-            # Son analizlerden metrikleri hesapla
             try:
                 recent = await storage.get_anomaly_history(limit=10)
                 if recent:
                     total_logs = sum(a.get('logs_analyzed', 0) for a in recent)
                     total_anomalies = sum(a.get('anomaly_count', 0) for a in recent)
-                    
+
                     metrics["total_logs_analyzed"] = total_logs
                     metrics["total_anomalies_detected"] = total_anomalies
                     if total_logs > 0:
                         metrics["anomaly_rate"] = (total_anomalies / total_logs) * 100
-                        metrics["model_accuracy"] = min(99.9, 100 - metrics["anomaly_rate"])
-                    
-                    # Model info from anomaly_detector
-                    if anomaly_detector.is_trained:
-                        model_info = anomaly_detector.get_model_info()
-                        metrics["model_version"] = f"v{model_info.get('version', '2.1.0')}"
-                        metrics["f1_score"] = model_info.get('f1_score', 0.89)
+                        # Accuracy: Isolation Forest icin anomaly_rate'den turetilen yaklasik deger
+                        # Gercek accuracy degil, ama en azindan veri bazli
+                        metrics["model_accuracy"] = round(100 - metrics["anomaly_rate"], 1)
             except Exception as e:
                 logger.warning(f"Could not fetch metrics from storage: {e}")
-        
+
+        # NOT: f1_score, precision, recall Isolation Forest (unsupervised) modelde
+        # gercek anlamda hesaplanamaz. Label verisi olmadan bu metrikler anlamsizdir.
+        # Bu yuzden None olarak birakiyoruz — UI'da "--" gosterilecek.
+
         return {
             "status": "success",
             "metrics": metrics,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"ML metrics error: {str(e)}")
         return {"status": "error", "message": str(e)}
