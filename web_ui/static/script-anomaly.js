@@ -1500,11 +1500,12 @@ function displayAnomalyResults(result) {
                         </div>
                     </div>
                     <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
-                        <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Bu gercek bir anomali">
-                            Dogru Tespit
+                        <span class="feedback-prompt">Bu tespit dogru mu?</span>
+                        <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Evet, bu gercek bir anomali">
+                            <span class="fb-icon">&#10003;</span> Dogru Tespit
                         </button>
-                        <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Bu yanlis alarm">
-                            Yanlis Alarm
+                        <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Hayir, bu normal bir log">
+                            <span class="fb-icon">&#10007;</span> Yanlis Alarm
                         </button>
                         <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                     </div>
@@ -1601,11 +1602,12 @@ function displayAnomalyResults(result) {
                             </div>
                         </div>
                         <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
-                            <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Bu gercek bir anomali">
-                                Dogru Tespit
+                            <span class="feedback-prompt">Bu tespit dogru mu?</span>
+                            <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Evet, bu gercek bir anomali">
+                                <span class="fb-icon">&#10003;</span> Dogru Tespit
                             </button>
-                            <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Bu yanlis alarm">
-                                Yanlis Alarm
+                            <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Hayir, bu normal bir log">
+                                <span class="fb-icon">&#10007;</span> Yanlis Alarm
                             </button>
                             <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                         </div>
@@ -1690,11 +1692,12 @@ function displayAnomalyResults(result) {
                         </div>
                     </div>
                     <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
-                        <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Bu gercek bir anomali">
-                            Dogru Tespit
+                        <span class="feedback-prompt">Bu tespit dogru mu?</span>
+                        <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Evet, bu gercek bir anomali">
+                            <span class="fb-icon">&#10003;</span> Dogru Tespit
                         </button>
-                        <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Bu yanlis alarm">
-                            Yanlis Alarm
+                        <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Hayir, bu normal bir log">
+                            <span class="fb-icon">&#10007;</span> Yanlis Alarm
                         </button>
                         <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                     </div>

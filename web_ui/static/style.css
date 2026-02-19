@@ -15535,69 +15535,103 @@ mark.text-highlight:hover {
 .anomaly-feedback-actions {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-    border-top: 1px solid rgba(255,255,255,0.06);
-    background: rgba(0,0,0,0.15);
+    gap: 10px;
+    padding: 10px 20px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(135deg, rgba(52,152,219,0.06) 0%, rgba(155,89,182,0.04) 100%);
+    border-radius: 0 0 12px 12px;
+}
+
+.feedback-prompt {
+    font-size: 12px;
+    color: var(--text-secondary, #95a5a6);
+    margin-right: 6px;
+    white-space: nowrap;
+    font-weight: 500;
+    letter-spacing: 0.2px;
 }
 
 .btn-feedback {
-    padding: 4px 12px;
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
-    background: rgba(255,255,255,0.05);
-    color: var(--text-secondary, #aaa);
+    transition: all 0.25s ease;
+    letter-spacing: 0.3px;
 }
 
-.btn-feedback:hover {
-    transform: translateY(-1px);
+.btn-feedback .fb-icon {
+    font-size: 15px;
+    line-height: 1;
 }
 
-.btn-feedback.btn-tp:hover {
-    background: rgba(39, 174, 96, 0.2);
-    border-color: #27ae60;
+/* Dogru Tespit — varsayilan belirgin yesil */
+.btn-feedback.btn-tp {
+    background: rgba(39, 174, 96, 0.12);
+    border: 1.5px solid rgba(39, 174, 96, 0.5);
     color: #2ecc71;
 }
 
+.btn-feedback.btn-tp:hover {
+    background: rgba(39, 174, 96, 0.25);
+    border-color: #2ecc71;
+    color: #27ae60;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(39, 174, 96, 0.2);
+}
+
+/* Yanlis Alarm — varsayilan belirgin kirmizi/turuncu */
+.btn-feedback.btn-fp {
+    background: rgba(231, 76, 60, 0.10);
+    border: 1.5px solid rgba(231, 76, 60, 0.45);
+    color: #e67e73;
+}
+
 .btn-feedback.btn-fp:hover {
-    background: rgba(231, 76, 60, 0.2);
+    background: rgba(231, 76, 60, 0.22);
     border-color: #e74c3c;
     color: #e74c3c;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(231, 76, 60, 0.2);
 }
 
 /* Secildikten sonra — aktif durumlar */
 .btn-feedback.btn-tp.selected {
-    background: rgba(39, 174, 96, 0.3);
+    background: rgba(39, 174, 96, 0.30);
     border-color: #27ae60;
     color: #2ecc71;
-    font-weight: 600;
+    box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.15), 0 2px 8px rgba(39, 174, 96, 0.2);
 }
 
 .btn-feedback.btn-fp.selected {
-    background: rgba(231, 76, 60, 0.3);
+    background: rgba(231, 76, 60, 0.30);
     border-color: #e74c3c;
     color: #e74c3c;
-    font-weight: 600;
+    box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.15), 0 2px 8px rgba(231, 76, 60, 0.2);
 }
 
 .btn-feedback.disabled-feedback {
-    opacity: 0.5;
+    opacity: 0.35;
     cursor: default;
     pointer-events: none;
+    transform: none !important;
+    box-shadow: none !important;
 }
 
 .feedback-status {
-    font-size: 11px;
+    font-size: 11.5px;
     color: var(--text-muted, #888);
-    margin-left: 4px;
+    margin-left: 6px;
+    font-weight: 500;
+    transition: color 0.3s ease;
 }
 
 .feedback-status.saved {
-    color: #27ae60;
+    color: #2ecc71;
 }
 
 /* ============================================================
