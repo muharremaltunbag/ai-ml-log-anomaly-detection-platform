@@ -15529,6 +15529,126 @@ mark.text-highlight:hover {
     border: 1px solid var(--border-color);
 }
 
+/* ============================================================
+   ANOMALY FEEDBACK BUTTONS
+   ============================================================ */
+.anomaly-feedback-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    background: rgba(0,0,0,0.15);
+}
+
+.btn-feedback {
+    padding: 4px 12px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: rgba(255,255,255,0.05);
+    color: var(--text-secondary, #aaa);
+}
+
+.btn-feedback:hover {
+    transform: translateY(-1px);
+}
+
+.btn-feedback.btn-tp:hover {
+    background: rgba(39, 174, 96, 0.2);
+    border-color: #27ae60;
+    color: #2ecc71;
+}
+
+.btn-feedback.btn-fp:hover {
+    background: rgba(231, 76, 60, 0.2);
+    border-color: #e74c3c;
+    color: #e74c3c;
+}
+
+/* Secildikten sonra — aktif durumlar */
+.btn-feedback.btn-tp.selected {
+    background: rgba(39, 174, 96, 0.3);
+    border-color: #27ae60;
+    color: #2ecc71;
+    font-weight: 600;
+}
+
+.btn-feedback.btn-fp.selected {
+    background: rgba(231, 76, 60, 0.3);
+    border-color: #e74c3c;
+    color: #e74c3c;
+    font-weight: 600;
+}
+
+.btn-feedback.disabled-feedback {
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+}
+
+.feedback-status {
+    font-size: 11px;
+    color: var(--text-muted, #888);
+    margin-left: 4px;
+}
+
+.feedback-status.saved {
+    color: #27ae60;
+}
+
+/* ============================================================
+   ML PANEL — FEEDBACK METRICS SECTION
+   ============================================================ */
+.feedback-metrics-section {
+    margin-top: 12px;
+    padding: 12px;
+    background: rgba(52, 152, 219, 0.08);
+    border-radius: 8px;
+    border: 1px solid rgba(52, 152, 219, 0.15);
+}
+
+.feedback-metrics-section h4 {
+    font-size: 13px;
+    margin: 0 0 8px 0;
+    color: var(--text-primary, #fff);
+}
+
+.feedback-metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 12px;
+}
+
+.feedback-metric-label {
+    color: var(--text-secondary, #aaa);
+}
+
+.feedback-metric-value {
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+}
+
+.confidence-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.confidence-badge.high { background: rgba(39, 174, 96, 0.2); color: #2ecc71; }
+.confidence-badge.medium { background: rgba(243, 156, 18, 0.2); color: #f39c12; }
+.confidence-badge.low { background: rgba(231, 76, 60, 0.2); color: #e74c3c; }
+.confidence-badge.very_low { background: rgba(149, 165, 166, 0.2); color: #95a5a6; }
+.confidence-badge.none { background: rgba(149, 165, 166, 0.1); color: #7f8c8d; }
+
 /* Log mesaj hücresi */
 .log-message-cell {
     font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;

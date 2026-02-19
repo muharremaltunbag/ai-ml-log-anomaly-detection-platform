@@ -212,6 +212,10 @@ MAX_CONCURRENT_ANALYSES = 3  # Logging ve monitoring için
 # Güvenli session yönetimi
 user_sessions: Dict[str, Dict[str, Any]] = {}
 
+# Anomali feedback store — in-memory (MongoDB varsa oraya da kaydedilir)
+# Yapi: { "analysis_id": { anomaly_index: { "label": "true_positive"|"false_positive", "note": "...", "timestamp": "..." } } }
+anomaly_feedback_store: Dict[str, Dict[int, Dict[str, Any]]] = {}
+
 # Request/Response modelleri
 class QueryRequest(BaseModel):
     query: str = Field(..., description="MongoDB sorgusu", max_length=MAX_QUERY_LENGTH)
@@ -280,6 +284,15 @@ class AnalyzeMSSQLLogsRequest(BaseModel):
     start_time: Optional[str] = Field(None, description="Başlangıç zamanı (ISO format: 2025-09-15T16:09:00Z)")
     end_time: Optional[str] = Field(None, description="Bitiş zamanı (ISO format: 2025-09-15T16:11:00Z)")
     request_id: Optional[str] = Field(None, description="Frontend takip ID'si")
+
+
+class AnomalyFeedbackRequest(BaseModel):
+    """Kullanici anomali feedback'i — her anomali icin ayri label"""
+    api_key: str = Field(..., description="API anahtari")
+    analysis_id: str = Field(..., description="Analiz ID'si")
+    anomaly_index: int = Field(..., description="Anomali indeksi (sonuc listesindeki sirasi)")
+    label: str = Field(..., description="Kullanici etiketi: true_positive veya false_positive")
+    note: Optional[str] = Field(None, description="Opsiyonel kullanici notu")
 
 
 # Session yönetimi fonksiyonları
@@ -4251,6 +4264,201 @@ async def get_ml_model_info(api_key: str = Query(...)):
     except Exception as e:
         logger.error(f"Model info error: {str(e)}")
         return {"status": "error", "message": str(e)}
+
+
+# =====================================================================
+# [FEEDBACK] Kullanici Anomali Feedback Sistemi
+# =====================================================================
+
+@app.post("/api/anomaly/feedback")
+async def submit_anomaly_feedback(request: AnomalyFeedbackRequest):
+    """
+    Kullanici bir anomaliyi 'Dogru Tespit' veya 'Yanlis Alarm' olarak isaretler.
+    In-memory store'a kaydeder. MongoDB varsa oraya da yazar.
+    """
+    try:
+        if not await verify_api_key(request.api_key):
+            raise HTTPException(status_code=401, detail="Gecersiz API anahtari")
+
+        # Label validasyonu
+        if request.label not in ("true_positive", "false_positive"):
+            return {"status": "error", "message": "label 'true_positive' veya 'false_positive' olmali"}
+
+        # In-memory store'a kaydet
+        global anomaly_feedback_store
+        if request.analysis_id not in anomaly_feedback_store:
+            anomaly_feedback_store[request.analysis_id] = {}
+
+        anomaly_feedback_store[request.analysis_id][request.anomaly_index] = {
+            "label": request.label,
+            "note": request.note,
+            "timestamp": datetime.now().isoformat()
+        }
+
+        # MongoDB'ye de kaydet (varsa)
+        try:
+            storage = await get_storage_manager()
+            if storage and hasattr(storage, 'save_user_feedback'):
+                await storage.save_user_feedback(
+                    analysis_id=request.analysis_id,
+                    feedback={
+                        "anomaly_index": request.anomaly_index,
+                        "label": request.label,
+                        "note": request.note,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+        except Exception as storage_err:
+            logger.warning(f"MongoDB feedback kaydi basarisiz (in-memory devam ediyor): {storage_err}")
+
+        # Analiz icin toplam feedback sayisi
+        analysis_feedbacks = anomaly_feedback_store.get(request.analysis_id, {})
+        tp_count = sum(1 for f in analysis_feedbacks.values() if f["label"] == "true_positive")
+        fp_count = sum(1 for f in analysis_feedbacks.values() if f["label"] == "false_positive")
+
+        logger.info(f"Feedback kaydedildi: analysis={request.analysis_id}, idx={request.anomaly_index}, label={request.label}")
+
+        return {
+            "status": "success",
+            "message": "Feedback kaydedildi",
+            "analysis_id": request.analysis_id,
+            "anomaly_index": request.anomaly_index,
+            "label": request.label,
+            "feedback_summary": {
+                "total_feedbacks": len(analysis_feedbacks),
+                "true_positives": tp_count,
+                "false_positives": fp_count
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Feedback kayit hatasi: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/anomaly/feedback/{analysis_id}")
+async def get_anomaly_feedbacks(analysis_id: str, api_key: str = Query(...)):
+    """Bir analiz icin tum kullanici feedback'lerini getir"""
+    try:
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Gecersiz API anahtari")
+
+        global anomaly_feedback_store
+        feedbacks = anomaly_feedback_store.get(analysis_id, {})
+
+        tp_count = sum(1 for f in feedbacks.values() if f["label"] == "true_positive")
+        fp_count = sum(1 for f in feedbacks.values() if f["label"] == "false_positive")
+
+        return {
+            "status": "success",
+            "analysis_id": analysis_id,
+            "feedbacks": {str(k): v for k, v in feedbacks.items()},
+            "summary": {
+                "total_feedbacks": len(feedbacks),
+                "true_positives": tp_count,
+                "false_positives": fp_count
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Feedback getirme hatasi: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/ml/feedback-metrics")
+async def get_feedback_metrics(api_key: str = Query(...)):
+    """
+    Toplanan kullanici feedback'lerinden gercek ML metrikleri hesapla.
+
+    Mantik:
+    - Model bir anomaliyi tespit etti (predicted=1)
+    - Kullanici "true_positive" dedi → TP (model dogru bulmus)
+    - Kullanici "false_positive" dedi → FP (model yanlis alarme vermis)
+    - Feedback verilmemis anomaliler → sayilmaz (belirsiz)
+    - Normal loglar (predicted=0) icin feedback olmadigi icin TN/FN hesaplanamaz
+      Ama anomaly_rate'den yaklasik TN turetilir
+    """
+    try:
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Gecersiz API anahtari")
+
+        global anomaly_feedback_store
+
+        # Tum analizlerdeki feedback'leri topla
+        total_tp = 0
+        total_fp = 0
+        total_feedbacks = 0
+        analyses_with_feedback = 0
+
+        for analysis_id, feedbacks in anomaly_feedback_store.items():
+            if feedbacks:
+                analyses_with_feedback += 1
+                for fb in feedbacks.values():
+                    total_feedbacks += 1
+                    if fb["label"] == "true_positive":
+                        total_tp += 1
+                    elif fb["label"] == "false_positive":
+                        total_fp += 1
+
+        # Metrik hesaplama
+        metrics = {
+            "total_feedbacks": total_feedbacks,
+            "analyses_with_feedback": analyses_with_feedback,
+            "true_positives": total_tp,
+            "false_positives": total_fp,
+            "precision": None,
+            "recall": None,
+            "f1_score": None,
+            "false_positive_rate": None,
+            "confidence_level": "none"
+        }
+
+        if total_feedbacks > 0:
+            # Precision = TP / (TP + FP) — modelin tespit ettikleri arasinda dogru orani
+            precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0.0
+            metrics["precision"] = round(precision, 4)
+
+            # False positive rate
+            metrics["false_positive_rate"] = round(total_fp / total_feedbacks, 4)
+
+            # lastAnomalyResult'tan total_logs ve n_anomalies cek (yaklasik TN/FN icin)
+            # Bu sadece yaklasim — gercek TN/FN icin etiketli normal log lazim
+            # Recall icin: TP / (TP + FN). FN bilinmiyor ama
+            # kullanici sadece anomali isaretlenenler hakkinda feedback veriyor
+            # Bu yuzden recall = None (hesaplanamaz — sadece precision gercek)
+
+            # F1 sadece precision varsa hesaplanir (recall olmadan tek tarafli)
+            # Recall bilinmedigi icin: lower-bound F1 = precision (recall=1 varsayimi)
+            # Ama daha dogru: F1 = None (eksik bilgi)
+            metrics["f1_score"] = None  # Recall olmadan hesaplanamaz
+
+            # Guven seviyesi
+            if total_feedbacks >= 50:
+                metrics["confidence_level"] = "high"
+            elif total_feedbacks >= 20:
+                metrics["confidence_level"] = "medium"
+            elif total_feedbacks >= 5:
+                metrics["confidence_level"] = "low"
+            else:
+                metrics["confidence_level"] = "very_low"
+
+        return {
+            "status": "success",
+            "metrics": metrics,
+            "disclaimer": "Precision gercek kullanici feedback'inden hesaplandi. Recall ve F1 icin etiketli normal log verisi gereklidir.",
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Feedback metrics hatasi: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 # [PAGINATION] On-Demand Data Loading Endpoint
 @app.get("/api/analysis/{analysis_id}/paged-anomalies")

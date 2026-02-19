@@ -1460,23 +1460,24 @@ function displayAnomalyResults(result) {
         const visibleAnomalies = criticalAnomalies.slice(0, itemsToShow);
         const remainingCount = criticalAnomalies.length - itemsToShow;
 
-        visibleAnomalies.forEach(anomaly => {
+        visibleAnomalies.forEach((anomaly, idx) => {
             const severityColor = anomaly.severity_color || '#e74c3c';
             const severityLevel = anomaly.severity_level || 'HIGH';
             const severityScore = anomaly.severity_score || 0;
+            const anomalyIdx = anomaly.index !== undefined ? anomaly.index : idx;
 
             const fullMessage = anomaly.message || 'No message available';
             const isLongMessage = fullMessage.length > 500;
 
             html += `
-                <div class="critical-anomaly-card" style="--severity-color: ${severityColor}">
+                <div class="critical-anomaly-card" style="--severity-color: ${severityColor}" data-anomaly-index="${anomalyIdx}">
                     <div class="anomaly-header-with-severity">
                         <div class="anomaly-info">
                             <span class="anomaly-time">${new Date(anomaly.timestamp).toLocaleString('tr-TR')}</span>
                             <span class="severity-badge ${severityLevel.toLowerCase()}">${severityLevel}</span>
                             <span class="severity-score-inline">${severityScore}/100</span>
                             ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
-                            ${anomaly.host ? `<span class="host-badge">📍 ${anomaly.host}</span>` : ''}
+                            ${anomaly.host ? `<span class="host-badge">${anomaly.host}</span>` : ''}
                         </div>
                     </div>
                     <div class="anomaly-content">
@@ -1490,13 +1491,22 @@ function displayAnomalyResults(result) {
                                         <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
                                     </div>
                                     <button class="btn-expand" onclick="toggleMessageExpand(this)">
-                                        Tam Mesajı Göster
+                                        Tam Mesaji Goster
                                     </button>
                                 </div>
                             ` : `
                                 <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
                             `}
                         </div>
+                    </div>
+                    <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
+                        <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Bu gercek bir anomali">
+                            Dogru Tespit
+                        </button>
+                        <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Bu yanlis alarm">
+                            Yanlis Alarm
+                        </button>
+                        <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                     </div>
                 </div>
             `;
@@ -1551,23 +1561,24 @@ function displayAnomalyResults(result) {
             const visibleOther = otherAnomalies.slice(0, otherItemsToShow);
             const otherRemaining = otherAnomalies.length - otherItemsToShow;
 
-            visibleOther.forEach(anomaly => {
+            visibleOther.forEach((anomaly, idx) => {
                 const severityColor = anomaly.severity_color || '#95a5a6';
                 const severityLevel = anomaly.severity_level || 'LOW';
                 const severityScore = anomaly.severity_score || 0;
+                const anomalyIdx = anomaly.index !== undefined ? anomaly.index : idx;
                 const fullMessage = anomaly.message || anomaly.raw_message || 'No message available';
                 const isLongMessage = fullMessage.length > 500;
 
                 html += `
-                    <div class="critical-anomaly-card" style="--severity-color: ${severityColor}; opacity: 0.9;">
+                    <div class="critical-anomaly-card" style="--severity-color: ${severityColor}; opacity: 0.9;" data-anomaly-index="${anomalyIdx}">
                         <div class="anomaly-header-with-severity">
                             <div class="anomaly-info">
                                 <span class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleString('tr-TR') : 'N/A'}</span>
                                 <span class="severity-badge ${severityLevel.toLowerCase()}">${severityLevel}</span>
                                 <span class="severity-score-inline">${severityScore}/100</span>
                                 ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
-                                ${anomaly.username && anomaly.username !== 'unknown' ? `<span class="host-badge">👤 ${anomaly.username}</span>` : ''}
-                                ${anomaly.client_ip && anomaly.client_ip !== 'unknown' ? `<span class="host-badge">🌐 ${anomaly.client_ip}</span>` : ''}
+                                ${anomaly.username && anomaly.username !== 'unknown' ? `<span class="host-badge">${anomaly.username}</span>` : ''}
+                                ${anomaly.client_ip && anomaly.client_ip !== 'unknown' ? `<span class="host-badge">${anomaly.client_ip}</span>` : ''}
                             </div>
                         </div>
                         <div class="anomaly-content">
@@ -1588,6 +1599,15 @@ function displayAnomalyResults(result) {
                                     <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
                                 `}
                             </div>
+                        </div>
+                        <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
+                            <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Bu gercek bir anomali">
+                                Dogru Tespit
+                            </button>
+                            <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Bu yanlis alarm">
+                                Yanlis Alarm
+                            </button>
+                            <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                         </div>
                     </div>
                 `;
@@ -1630,23 +1650,24 @@ function displayAnomalyResults(result) {
         const visibleAnomalies = allAnomalies.slice(0, itemsToShow);
         const remainingCount = allAnomalies.length - itemsToShow;
 
-        visibleAnomalies.forEach(anomaly => {
+        visibleAnomalies.forEach((anomaly, idx) => {
             const severityColor = anomaly.severity_color || '#f39c12';
             const severityLevel = anomaly.severity_level || 'LOW';
             const severityScore = anomaly.severity_score || 0;
+            const anomalyIdx = anomaly.index !== undefined ? anomaly.index : idx;
             const fullMessage = anomaly.message || anomaly.raw_message || 'No message available';
             const isLongMessage = fullMessage.length > 500;
 
             html += `
-                <div class="critical-anomaly-card" style="--severity-color: ${severityColor}">
+                <div class="critical-anomaly-card" style="--severity-color: ${severityColor}" data-anomaly-index="${anomalyIdx}">
                     <div class="anomaly-header-with-severity">
                         <div class="anomaly-info">
                             <span class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleString('tr-TR') : 'N/A'}</span>
                             <span class="severity-badge ${severityLevel.toLowerCase()}">${severityLevel}</span>
                             <span class="severity-score-inline">${severityScore}/100</span>
                             ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
-                            ${anomaly.username && anomaly.username !== 'unknown' ? `<span class="host-badge">👤 ${anomaly.username}</span>` : ''}
-                            ${anomaly.client_ip && anomaly.client_ip !== 'unknown' ? `<span class="host-badge">🌐 ${anomaly.client_ip}</span>` : ''}
+                            ${anomaly.username && anomaly.username !== 'unknown' ? `<span class="host-badge">${anomaly.username}</span>` : ''}
+                            ${anomaly.client_ip && anomaly.client_ip !== 'unknown' ? `<span class="host-badge">${anomaly.client_ip}</span>` : ''}
                         </div>
                     </div>
                     <div class="anomaly-content">
@@ -1667,6 +1688,15 @@ function displayAnomalyResults(result) {
                                 <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
                             `}
                         </div>
+                    </div>
+                    <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
+                        <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Bu gercek bir anomali">
+                            Dogru Tespit
+                        </button>
+                        <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Bu yanlis alarm">
+                            Yanlis Alarm
+                        </button>
+                        <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                     </div>
                 </div>
             `;
@@ -3501,5 +3531,107 @@ window.generateMLInsights = generateMLInsights;
 window.AnomalyProgress = AnomalyProgress; 
 window.findHostDeep = findHostDeep; // Debug ve harici kullanım için dışarı açıyoruz
 window.loadMoreDetailedAnomalies = loadMoreDetailedAnomalies;
-console.log('✅ Anomaly module loaded successfully');
+
+// =====================================================================
+// ANOMALY FEEDBACK SYSTEM
+// =====================================================================
+
+/**
+ * Kullanici bir anomaliyi "Dogru Tespit" veya "Yanlis Alarm" olarak isaretler.
+ * Backend'e POST /api/anomaly/feedback gonderir.
+ *
+ * @param {number} anomalyIndex - Anomali indeksi
+ * @param {string} label - "true_positive" veya "false_positive"
+ * @param {HTMLElement} btnElement - Tiklanan buton
+ */
+async function submitAnomalyFeedback(anomalyIndex, label, btnElement) {
+    // analysis_id'yi bul
+    var analysisId = null;
+    if (window.lastAnomalyResult) {
+        analysisId = window.lastAnomalyResult.storage_id ||
+                     (window.lastAnomalyResult.storage_info && window.lastAnomalyResult.storage_info.analysis_id) ||
+                     window.lastAnomalyResult.analysis_id ||
+                     null;
+    }
+
+    if (!analysisId) {
+        // analysis_id yoksa tarih bazli gecici ID olustur
+        analysisId = 'session_' + Date.now();
+    }
+
+    // Buton grubunu bul
+    var actionsDiv = btnElement.closest('.anomaly-feedback-actions');
+    if (!actionsDiv) return;
+
+    var allButtons = actionsDiv.querySelectorAll('.btn-feedback');
+    var statusSpan = actionsDiv.querySelector('.feedback-status');
+
+    // Onceki secimi kaldir
+    allButtons.forEach(function(b) {
+        b.classList.remove('selected', 'disabled-feedback');
+    });
+
+    // Tiklanan butonu secili yap
+    btnElement.classList.add('selected');
+
+    // Diger butonu disable et
+    allButtons.forEach(function(b) {
+        if (b !== btnElement) {
+            b.classList.add('disabled-feedback');
+        }
+    });
+
+    if (statusSpan) {
+        statusSpan.textContent = 'Kaydediliyor...';
+        statusSpan.className = 'feedback-status';
+    }
+
+    try {
+        var response = await fetch('/api/anomaly/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_key: window.apiKey,
+                analysis_id: analysisId,
+                anomaly_index: anomalyIndex,
+                label: label
+            })
+        });
+
+        var data = await response.json();
+
+        if (data.status === 'success') {
+            if (statusSpan) {
+                statusSpan.textContent = label === 'true_positive' ? 'Dogru tespit olarak kaydedildi' : 'Yanlis alarm olarak kaydedildi';
+                statusSpan.className = 'feedback-status saved';
+            }
+
+            // ML Panel'i guncelle (feedback metrikleri)
+            if (window.MLPanel && window.MLPanel.loadFeedbackMetrics) {
+                window.MLPanel.loadFeedbackMetrics();
+            }
+
+            console.log('Feedback kaydedildi:', data.feedback_summary);
+        } else {
+            if (statusSpan) {
+                statusSpan.textContent = 'Hata: ' + (data.message || 'Bilinmeyen hata');
+            }
+            // Butonlari geri ac
+            allButtons.forEach(function(b) {
+                b.classList.remove('selected', 'disabled-feedback');
+            });
+        }
+    } catch (error) {
+        console.error('Feedback gonderme hatasi:', error);
+        if (statusSpan) {
+            statusSpan.textContent = 'Baglanti hatasi';
+        }
+        allButtons.forEach(function(b) {
+            b.classList.remove('selected', 'disabled-feedback');
+        });
+    }
+}
+
+window.submitAnomalyFeedback = submitAnomalyFeedback;
+console.log('Anomaly module loaded successfully');
 

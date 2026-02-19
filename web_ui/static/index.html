@@ -698,16 +698,37 @@
                         <div class="ml-perf-value" id="modelAccuracy">--</div>
                     </div>
                     <div class="ml-perf-card">
-                        <div class="ml-perf-label">F1 Score</div>
-                        <div class="ml-perf-value" id="modelF1">--</div>
-                    </div>
-                    <div class="ml-perf-card">
                         <div class="ml-perf-label">Precision</div>
                         <div class="ml-perf-value" id="modelPrecision">--</div>
                     </div>
                     <div class="ml-perf-card">
+                        <div class="ml-perf-label">F1 Score</div>
+                        <div class="ml-perf-value" id="modelF1">--</div>
+                    </div>
+                    <div class="ml-perf-card">
                         <div class="ml-perf-label">Recall</div>
                         <div class="ml-perf-value" id="modelRecall">--</div>
+                    </div>
+                </div>
+
+                <!-- Kullanici Feedback Metrikleri -->
+                <div class="feedback-metrics-section" id="feedbackMetricsSection" style="display: none;">
+                    <h4>Kullanici Feedback Metrikleri</h4>
+                    <div class="feedback-metric-row">
+                        <span class="feedback-metric-label">Dogru Tespit (TP)</span>
+                        <span class="feedback-metric-value" id="fbTruePositives">0</span>
+                    </div>
+                    <div class="feedback-metric-row">
+                        <span class="feedback-metric-label">Yanlis Alarm (FP)</span>
+                        <span class="feedback-metric-value" id="fbFalsePositives">0</span>
+                    </div>
+                    <div class="feedback-metric-row">
+                        <span class="feedback-metric-label">Toplam Feedback</span>
+                        <span class="feedback-metric-value" id="fbTotalFeedbacks">0</span>
+                    </div>
+                    <div class="feedback-metric-row">
+                        <span class="feedback-metric-label">Guven Seviyesi</span>
+                        <span class="confidence-badge none" id="fbConfidenceLevel">--</span>
                     </div>
                 </div>
             </div>

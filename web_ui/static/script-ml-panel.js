@@ -254,6 +254,9 @@
                 trained_at: modelInfo.model_trained_at
             });
         }
+
+        // Feedback metriklerini de yukle (varsa precision guncellenir)
+        loadFeedbackMetrics();
     }
 
     /**
@@ -589,16 +592,80 @@
         });
     }
 
-    // Public API (tüm eski fonksiyonlar + yeniler)
+    // =====================================================================
+    // FEEDBACK METRICS — Kullanici feedback'inden gercek precision hesapla
+    // =====================================================================
+
+    /**
+     * Backend'den kullanici feedback metriklerini cek ve ML paneline yaz.
+     * GET /api/ml/feedback-metrics endpoint'ini kullanir.
+     * Precision gercek kullanici verisinden gelir (TP / (TP + FP)).
+     */
+    async function loadFeedbackMetrics() {
+        try {
+            var response = await fetch('/api/ml/feedback-metrics?api_key=' + encodeURIComponent(window.apiKey));
+            if (!response.ok) return;
+
+            var data = await response.json();
+            if (data.status !== 'success' || !data.metrics) return;
+
+            var m = data.metrics;
+            var section = document.getElementById('feedbackMetricsSection');
+
+            if (m.total_feedbacks > 0) {
+                // Section'i goster
+                if (section) section.style.display = '';
+
+                // TP / FP sayilari
+                updateElement('fbTruePositives', m.true_positives.toString());
+                updateElement('fbFalsePositives', m.false_positives.toString());
+                updateElement('fbTotalFeedbacks', m.total_feedbacks.toString());
+
+                // Guven seviyesi badge
+                var confEl = document.getElementById('fbConfidenceLevel');
+                if (confEl) {
+                    var confLabels = {
+                        'high': 'Yuksek',
+                        'medium': 'Orta',
+                        'low': 'Dusuk',
+                        'very_low': 'Cok Dusuk',
+                        'none': '--'
+                    };
+                    confEl.textContent = confLabels[m.confidence_level] || m.confidence_level;
+                    confEl.className = 'confidence-badge ' + m.confidence_level;
+                }
+
+                // Ana performans kartlarini guncelle (gercek feedback verisinden)
+                if (m.precision !== null && m.precision !== undefined) {
+                    updateElement('modelPrecision', '%' + (m.precision * 100).toFixed(1));
+                }
+
+                // F1 ve Recall — hesaplanabilir degil (unsupervised + sadece anomali feedback'i)
+                // Ama precision varsa panelde goster, diger ikisi '--' kalsin
+                // Bu sayede kullanici hangi metriklerin gercek, hangilerinin bilinmez oldugunu gorur
+
+            } else {
+                // Feedback yoksa section'i gizle
+                if (section) section.style.display = 'none';
+            }
+
+            console.log('Feedback metrics loaded:', m);
+        } catch (error) {
+            console.warn('Could not load feedback metrics:', error);
+        }
+    }
+
+    // Public API (tum eski fonksiyonlar + yeniler)
     window.MLPanel = {
         initialize: initializeMLPanel,
         show: showMLPanel,
         hide: hideMLPanel,
         toggle: toggleMLPanel,
         loadMetrics: loadMLMetrics,
+        loadFeedbackMetrics: loadFeedbackMetrics,
         updateWithDefaults: updateMLPanelWithDefaults,
         autoUpdate: autoUpdatePanelAfterAnalysis,
-        toggleMinimize: toggleMLPanel  // backward compat: eski toggleMinimize artik toggle yapar
+        toggleMinimize: toggleMLPanel
     };
 
     // Backward compatibility — eski global fonksiyonlar
@@ -608,6 +675,6 @@
     window.updateMLPanelWithDefaults = updateMLPanelWithDefaults;
     window.toggleMLPanel = toggleMLPanel;
 
-    console.log('✅ ML Panel module loaded successfully (sidebar mode)');
+    console.log('ML Panel module loaded successfully (sidebar mode)');
 
 })();
