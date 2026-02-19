@@ -4,7 +4,10 @@ MongoDB Anomaly Detection LangChain Tools
 Anomali tespiti için LangChain tool tanımları
 """
 from typing import Dict, Any, List, Optional
-from langchain.tools import Tool, StructuredTool
+try:
+    from langchain.tools import Tool, StructuredTool
+except ImportError:
+    from langchain_classic.tools import Tool, StructuredTool
 from pydantic import BaseModel, Field
 import json
 import logging
@@ -24,9 +27,17 @@ from .mssql_log_reader import MSSQLOpenSearchReader
 from .mssql_feature_engineer import MSSQLFeatureEngineer
 from .mssql_anomaly_detector import MSSQLAnomalyDetector
 
+# Elasticsearch Modülleri
+from .elasticsearch_log_reader import ElasticsearchOpenSearchReader
+from .elasticsearch_feature_engineer import ElasticsearchFeatureEngineer
+from .elasticsearch_anomaly_detector import ElasticsearchAnomalyDetector
+
 from ..connectors.openai_connector import OpenAIConnector
 from ..connectors.lcwgpt_connector import LCWGPTConnector
-from langchain.schema import HumanMessage, SystemMessage
+try:
+    from langchain.schema import HumanMessage, SystemMessage
+except ImportError:
+    from langchain_core.messages import HumanMessage, SystemMessage
 
 
 logger = logging.getLogger(__name__)
@@ -2291,6 +2302,397 @@ class AnomalyDetectionTools:
                 "mssql_anomaly_analysis"
             )
 
+    # =========================================================================
+    # ELASTICSEARCH LOG ANALİZİ
+    # =========================================================================
+
+    def analyze_elasticsearch_logs(self, args_input) -> str:
+        """
+        Elasticsearch loglarında anomali analizi yap.
+
+        MSSQL analyze_mssql_logs() ile aynı yapı, Elasticsearch modülleri kullanılır.
+        OpenSearch'ten db-elasticsearch-* index'inden logları çeker.
+
+        Args:
+            args_input: dict veya Pydantic model
+                'host_filter': str,  # Elasticsearch node adı (ör. ECAZTRDBESRW003)
+                'last_hours': int,   # Son kaç saat
+                'time_range': str,   # last_hour, last_day, last_week
+        """
+        logger.info("ELASTICSEARCH LOG ANALİZİ BAŞLADI")
+
+        try:
+            # Args parse
+            if isinstance(args_input, dict):
+                args_dict = args_input
+            elif isinstance(args_input, str):
+                try:
+                    args_dict = json.loads(args_input)
+                except json.JSONDecodeError:
+                    args_dict = {"time_range": "last_hour"}
+            else:
+                args_dict = vars(args_input) if hasattr(args_input, '__dict__') else {"time_range": "last_hour"}
+
+            host_filter = args_dict.get('host_filter')
+            time_range = args_dict.get('time_range', 'last_hour')
+
+            # Time range → hours
+            time_map = {
+                "last_hour": 1, "last_4hours": 4, "last_day": 24,
+                "last_week": 168, "last_month": 720
+            }
+            last_hours = args_dict.get('last_hours') or time_map.get(time_range, 24)
+
+            logger.info(f"ES analysis args: host={host_filter}, hours={last_hours}")
+
+            server_desc = f" — {host_filter}" if host_filter else " — Tüm ES node'lar"
+
+            # 1. ELASTICSEARCH LOG READER
+            logger.info("Initializing Elasticsearch OpenSearch Reader (singleton)...")
+            es_reader = ElasticsearchOpenSearchReader.get_instance(
+                config_path="config/elasticsearch_anomaly_config.json"
+            )
+
+            if not es_reader.is_connected():
+                logger.info("Elasticsearch reader not connected, connecting...")
+                if not es_reader.connect():
+                    logger.error("Elasticsearch OpenSearch connection failed")
+                    return self._format_result(
+                        {"error": "Elasticsearch OpenSearch bağlantısı kurulamadı"},
+                        "es_anomaly_analysis"
+                    )
+
+            logger.info(f"Reading ES logs from OpenSearch (host={host_filter}, hours={last_hours})")
+            df = es_reader.read_logs(
+                limit=50000,
+                last_hours=last_hours,
+                host_filter=host_filter
+            )
+
+            if df.empty:
+                logger.warning("No Elasticsearch logs found")
+                return self._format_result(
+                    {"error": f"Belirtilen kriterlerde Elasticsearch logu bulunamadı (host={host_filter}, last_hours={last_hours})"},
+                    "es_anomaly_analysis"
+                )
+
+            logger.info(f"Fetched {len(df)} Elasticsearch logs")
+
+            # 2. FEATURE ENGINEERING
+            logger.info("Starting Elasticsearch feature engineering...")
+            es_feature_engineer = ElasticsearchFeatureEngineer(
+                config_path="config/elasticsearch_anomaly_config.json"
+            )
+            X, df_enriched = es_feature_engineer.create_features(df)
+
+            # Filter
+            df_enriched, X = es_feature_engineer.apply_filters(df_enriched, X)
+            logger.info(f"After filtering: {len(df_enriched)} logs, {X.shape[1]} features")
+
+            # 3. ANOMALY DETECTOR
+            logger.info(f"Getting ES detector for: {host_filter or 'global'}")
+            es_detector = ElasticsearchAnomalyDetector.get_instance(
+                server_name=host_filter or "global",
+                config_path="config/elasticsearch_anomaly_config.json"
+            )
+
+            # Train or incremental update
+            if not es_detector.is_trained:
+                logger.info("Training new Elasticsearch anomaly model...")
+                train_result = es_detector.train(X, save_model=True, server_name=host_filter)
+                if isinstance(train_result, dict) and train_result.get('status') == 'skipped':
+                    logger.warning(f"Training skipped: {train_result.get('reason')}")
+                    return self._format_result(
+                        {"error": f"Yetersiz veri: {len(X)} log (minimum {es_detector.min_training_samples} gerekli). Daha geniş zaman aralığı deneyin."},
+                        "es_anomaly_analysis"
+                    )
+                logger.info("Elasticsearch model training completed")
+            else:
+                logger.info("Using existing ES model, performing incremental update...")
+                es_detector.train(X, save_model=True, incremental=True, server_name=host_filter)
+
+            # 4. PREDICTION
+            logger.info("Running Elasticsearch anomaly predictions...")
+            predictions, anomaly_scores = es_detector.predict(X, df=df_enriched)
+
+            anomaly_count = int((predictions == -1).sum())
+            anomaly_rate = (anomaly_count / len(predictions)) * 100 if len(predictions) > 0 else 0
+            logger.info(f"ES anomalies found: {anomaly_count}/{len(predictions)} ({anomaly_rate:.1f}%)")
+
+            # 5. ANALYSIS
+            logger.info("Analyzing Elasticsearch anomalies...")
+            analysis = es_detector.analyze_anomalies(df_enriched, X, predictions, anomaly_scores)
+
+            # ES-specific analysis
+            es_specific = self._analyze_es_specific(df_enriched, X, predictions)
+            analysis['es_specific'] = es_specific
+
+            # 6. AI EXPLANATION (optional)
+            ai_explanation = None
+            if self.llm_connector and analysis.get('critical_anomalies'):
+                try:
+                    logger.info("Generating AI explanation for ES anomalies...")
+                    limited_analysis = {
+                        "summary": analysis.get("summary", {}),
+                        "critical_anomalies": analysis.get("critical_anomalies", [])[:10],
+                        "es_specific": es_specific
+                    }
+                    ai_explanation = self._generate_es_ai_explanation(
+                        limited_analysis, server_name=host_filter
+                    )
+                except Exception as e:
+                    logger.warning(f"AI explanation failed: {e}")
+
+            # 7. RESULT FORMATTING
+            critical_anomalies = analysis.get("critical_anomalies", [])
+
+            description = f"Elasticsearch Log Anomali Analizi{server_desc}\n\n"
+            description += f"📊 Toplam Log: {len(df_enriched):,}\n"
+            description += f"🔍 Anomali: {anomaly_count:,} ({anomaly_rate:.1f}%)\n"
+            description += f"⚠️ Kritik: {len(critical_anomalies)}\n"
+
+            # ES specific findings
+            if es_specific.get('health_concerns'):
+                description += "\n🏥 Sağlık Sorunları:\n"
+                for concern in es_specific['health_concerns'][:5]:
+                    description += f"  • {concern}\n"
+
+            # Format critical anomalies for output
+            formatted_anomalies = []
+            for anomaly in critical_anomalies[:75]:
+                formatted = {
+                    "timestamp": anomaly.get("timestamp"),
+                    "severity_score": anomaly.get("severity_score"),
+                    "severity_level": anomaly.get("severity_level"),
+                    "component": anomaly.get("component"),
+                    "message": anomaly.get("message", "")[:500],
+                    "host_role": anomaly.get("host_role"),
+                }
+                formatted_anomalies.append(formatted)
+
+            suggestions = self._create_es_suggestions(analysis, es_specific)
+
+            result = {
+                "description": description,
+                "analysis": {
+                    "source": "Elasticsearch_OpenSearch",
+                    "index_pattern": "db-elasticsearch-*",
+                    "host_filter": host_filter,
+                    "time_range": f"last_{last_hours}h",
+                    "total_logs": len(df_enriched),
+                    "anomaly_count": anomaly_count,
+                    "anomaly_rate": round(anomaly_rate, 2),
+                    "summary": analysis.get("summary", {}),
+                    "critical_anomalies": formatted_anomalies,
+                    "all_anomalies": self._select_diverse_anomalies(
+                        analysis.get("all_anomalies", []), limit=100
+                    ),
+                    "es_specific": es_specific,
+                    "security_alerts": analysis.get("security_alerts", {}),
+                    "model_info": {
+                        "is_trained": es_detector.is_trained,
+                        "rules_count": len(es_detector.critical_rules),
+                        "min_training_samples": es_detector.min_training_samples,
+                    },
+                    "training_info": {
+                        "model_status": "existing" if es_detector.is_trained else "newly_trained",
+                        "model_path": f"models/es_isolation_forest_{host_filter.upper()}.pkl" if host_filter else "models/es_isolation_forest.pkl",
+                    }
+                },
+                "ai_explanation": ai_explanation,
+                "suggestions": suggestions,
+            }
+
+            logger.info("Elasticsearch analysis completed successfully")
+            return self._format_result(result, "es_anomaly_analysis")
+
+        except Exception as e:
+            logger.error(f"Elasticsearch analysis error: {e}", exc_info=True)
+            return self._format_result(
+                {"error": f"Elasticsearch analiz hatası: {str(e)}"},
+                "es_anomaly_analysis"
+            )
+
+    def _analyze_es_specific(self, df: pd.DataFrame, X: pd.DataFrame,
+                             predictions: np.ndarray) -> Dict[str, Any]:
+        """
+        Elasticsearch'e özgü analizler.
+
+        Args:
+            df: Enriched ES DataFrame
+            X: Feature matrix
+            predictions: Anomaly predictions
+
+        Returns:
+            ES specific analysis dict
+        """
+        try:
+            anomaly_mask = predictions == -1
+            es_analysis = {
+                'health_concerns': [],
+                'node_role_distribution': {},
+                'log_level_distribution': {},
+                'logger_distribution': {},
+                'critical_patterns': {},
+            }
+
+            # Node role distribution
+            if 'host_role' in df.columns:
+                es_analysis['node_role_distribution'] = (
+                    df['host_role'].value_counts().to_dict()
+                )
+
+            # Log level distribution
+            if 'log_level' in df.columns:
+                es_analysis['log_level_distribution'] = (
+                    df['log_level'].value_counts().to_dict()
+                )
+
+            # Logger distribution (top 10)
+            if 'logger_name' in df.columns:
+                es_analysis['logger_distribution'] = (
+                    df['logger_name'].value_counts().head(10).to_dict()
+                )
+
+            # Critical pattern counts
+            pattern_cols = [
+                'is_oom_error', 'is_circuit_breaker', 'is_high_disk_watermark',
+                'is_shard_failure', 'is_node_event', 'is_master_election',
+                'is_gc_overhead', 'is_connection_error', 'is_slow_log'
+            ]
+            for col in pattern_cols:
+                if col in X.columns:
+                    anomaly_count = int((X[col] == 1) & anomaly_mask).sum() if anomaly_mask.any() else 0
+                    total_count = int((X[col] == 1).sum())
+                    if total_count > 0:
+                        es_analysis['critical_patterns'][col] = {
+                            'total': total_count,
+                            'anomalous': anomaly_count
+                        }
+
+            # Health concerns (human-readable)
+            if 'is_oom_error' in X.columns and X['is_oom_error'].sum() > 0:
+                es_analysis['health_concerns'].append(
+                    f"OOM: {int(X['is_oom_error'].sum())} OutOfMemoryError tespit edildi"
+                )
+            if 'is_circuit_breaker' in X.columns and X['is_circuit_breaker'].sum() > 0:
+                es_analysis['health_concerns'].append(
+                    f"Circuit Breaker: {int(X['is_circuit_breaker'].sum())} kez tetiklendi"
+                )
+            if 'is_high_disk_watermark' in X.columns and X['is_high_disk_watermark'].sum() > 0:
+                es_analysis['health_concerns'].append(
+                    f"Disk: {int(X['is_high_disk_watermark'].sum())} disk watermark uyarısı"
+                )
+            if 'is_master_election' in X.columns and X['is_master_election'].sum() > 0:
+                es_analysis['health_concerns'].append(
+                    f"Cluster: {int(X['is_master_election'].sum())} master election olayı"
+                )
+            if 'is_node_event' in X.columns and X['is_node_event'].sum() > 0:
+                es_analysis['health_concerns'].append(
+                    f"Node: {int(X['is_node_event'].sum())} node join/leave olayı"
+                )
+            if 'is_shard_failure' in X.columns and X['is_shard_failure'].sum() > 0:
+                es_analysis['health_concerns'].append(
+                    f"Shard: {int(X['is_shard_failure'].sum())} shard hatası"
+                )
+            if 'is_gc_overhead' in X.columns and X['is_gc_overhead'].sum() > 0:
+                es_analysis['health_concerns'].append(
+                    f"GC: {int(X['is_gc_overhead'].sum())} garbage collection olayı"
+                )
+
+            return es_analysis
+
+        except Exception as e:
+            logger.error(f"ES specific analysis error: {e}")
+            return {'health_concerns': [], 'error': str(e)}
+
+    def _generate_es_ai_explanation(self, analysis: Dict[str, Any],
+                                    server_name: str = None) -> Dict[str, Any]:
+        """
+        Elasticsearch anomalileri için AI açıklaması üret.
+        """
+        try:
+            if not self.llm_connector:
+                return None
+
+            system_prompt = """Sen bir Elasticsearch cluster yönetimi ve performans uzmanısın.
+Sana verilen Elasticsearch log anomali analizini değerlendir.
+Özellikle şunlara odaklan:
+1. JVM heap basıncı (OOM, Circuit Breaker)
+2. Disk doluluk uyarıları (watermark, flood stage)
+3. Cluster stabilitesi (master election, node event)
+4. Shard sağlığı (unassigned, relocation)
+5. GC performansı
+
+Türkçe yanıt ver. Kısa ve öz tut."""
+
+            es_specific = analysis.get("es_specific", {})
+            user_prompt = f"""Elasticsearch Anomali Analiz Sonuçları:
+
+Özet: {json.dumps(analysis.get('summary', {}), indent=2, ensure_ascii=False)}
+
+Sağlık Sorunları:
+{json.dumps(es_specific.get('health_concerns', []), indent=2, ensure_ascii=False)}
+
+Kritik Pattern'lar:
+{json.dumps(es_specific.get('critical_patterns', {}), indent=2, ensure_ascii=False)}
+
+En Kritik 5 Anomali:
+"""
+            for a in analysis.get("critical_anomalies", [])[:5]:
+                user_prompt += f"\n- [{a.get('severity_level')}] Score:{a.get('severity_score')} | {a.get('message', '')[:200]}"
+
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt)
+            ]
+
+            response = self.llm_connector.llm.invoke(messages)
+            explanation_text = response.content if hasattr(response, 'content') else str(response)
+
+            return {
+                "özet": explanation_text[:2000],
+                "server": server_name,
+                "generated_at": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"ES AI explanation error: {e}")
+            return None
+
+    def _create_es_suggestions(self, analysis: Dict,
+                               es_specific: Dict) -> List[str]:
+        """Elasticsearch analizi için öneriler oluştur."""
+        suggestions = []
+
+        anomaly_rate = analysis.get('summary', {}).get('anomaly_rate', 0)
+        if isinstance(anomaly_rate, str):
+            try:
+                anomaly_rate = float(anomaly_rate.replace('%', ''))
+            except ValueError:
+                anomaly_rate = 0
+
+        if anomaly_rate > 20:
+            suggestions.append("Yüksek anomali oranı! Elasticsearch cluster sağlığını kontrol edin.")
+
+        health = es_specific.get('health_concerns', [])
+        for concern in health:
+            if 'OOM' in concern:
+                suggestions.append("JVM heap boyutunu artırın veya circuit breaker limitlerini ayarlayın.")
+            if 'Disk' in concern:
+                suggestions.append("Disk alanı temizliği yapın veya ILM politikalarını gözden geçirin.")
+            if 'master election' in concern.lower():
+                suggestions.append("Master node stabilitesini kontrol edin. Dedicated master node kullanın.")
+            if 'GC' in concern:
+                suggestions.append("GC ayarlarını optimize edin. G1GC kullanmayı düşünün.")
+            if 'Shard' in concern:
+                suggestions.append("Unassigned shard'ları reroute edin veya shard allocation ayarlarını kontrol edin.")
+
+        if not suggestions:
+            suggestions.append("Elasticsearch cluster normal görünüyor.")
+
+        return suggestions
+
     def _analyze_mssql_specific(self, df: pd.DataFrame, predictions: np.ndarray) -> Dict[str, Any]:
         """
         MSSQL'e özgü analizler
@@ -3611,6 +4013,15 @@ class AnalyzeMSSQLLogsArgs(BaseModel):
     host_filter: Optional[str] = Field(default=None, description="Belirli bir MSSQL sunucusundan logları filtrele")
 
 
+class AnalyzeESLogsArgs(BaseModel):
+    """Elasticsearch Log Anomali Analizi Argümanları"""
+    time_range: str = Field(default="last_hour", description="Zaman aralığı: last_hour, last_day, last_week, last_month")
+    threshold: float = Field(default=0.03, description="Anomali eşik değeri")
+    source_type: Optional[str] = Field(default="opensearch", description="Veri kaynağı: opensearch")
+    last_hours: Optional[int] = Field(default=None, description="Kaç saatlik log okunacak (OpenSearch için)")
+    host_filter: Optional[str] = Field(default=None, description="Belirli bir Elasticsearch node'undan logları filtrele (ör. ECAZTRDBESRW003)")
+
+
 class SummaryArgs(BaseModel):
     top_n: int = Field(default=10, description="Gösterilecek anomali sayısı")
 
@@ -3640,6 +4051,13 @@ def create_anomaly_tools(config_path: str = "config/anomaly_config.json",
                 description="MSSQL loglarında anomali analizi yap (OpenSearch üzerinden)",
                 func=lambda **kwargs: anomaly_tools.analyze_mssql_logs(kwargs),
                 args_schema=AnalyzeMSSQLLogsArgs
+            ),
+
+            StructuredTool(
+                name="analyze_elasticsearch_logs",
+                description="Elasticsearch loglarında anomali analizi yap (OpenSearch üzerinden, db-elasticsearch-* index)",
+                func=lambda **kwargs: anomaly_tools.analyze_elasticsearch_logs(kwargs),
+                args_schema=AnalyzeESLogsArgs
             ),
 
             StructuredTool(

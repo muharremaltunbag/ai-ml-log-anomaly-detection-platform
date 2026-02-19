@@ -286,6 +286,16 @@ class AnalyzeMSSQLLogsRequest(BaseModel):
     request_id: Optional[str] = Field(None, description="Frontend takip ID'si")
 
 
+class AnalyzeESLogsRequest(BaseModel):
+    """Elasticsearch Log Anomali Analizi Request Model"""
+    api_key: str = Field(..., description="API anahtarı")
+    time_range: Optional[str] = Field("last_24h", description="Zaman aralığı")
+    host_filter: Optional[str] = Field(None, description="Belirli bir Elasticsearch node (ör. ECAZTRDBESRW003)")
+    start_time: Optional[str] = Field(None, description="Başlangıç zamanı (ISO format)")
+    end_time: Optional[str] = Field(None, description="Bitiş zamanı (ISO format)")
+    request_id: Optional[str] = Field(None, description="Frontend takip ID'si")
+
+
 class AnomalyFeedbackRequest(BaseModel):
     """Kullanici anomali feedback'i — her anomali icin ayri label"""
     api_key: str = Field(..., description="API anahtari")
@@ -1491,6 +1501,170 @@ async def analyze_mssql_logs(request: AnalyzeMSSQLLogsRequest):
         logger.error(f"MSSQL Log analiz hatası: {e}")
         update_progress(req_id, "error", f"Hata: {str(e)[:100]}...", 0)
         return {"durum": "hata", "açıklama": f"MSSQL Analiz Hatası: {str(e)}"}
+
+    finally:
+        request_context.reset(token)
+
+
+# =============================================================================
+# ELASTICSEARCH LOG ANALİZİ ENDPOINTLERİ
+# =============================================================================
+
+@app.get("/api/elasticsearch/available-hosts")
+async def get_available_elasticsearch_hosts(api_key: str, last_hours: int = 24):
+    """
+    Mevcut Elasticsearch node'larını listele (OpenSearch'ten)
+
+    Args:
+        api_key: API anahtarı
+        last_hours: Son kaç saatteki logları tara
+    """
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    try:
+        from src.anomaly.elasticsearch_log_reader import get_available_es_hosts, get_es_host_stats
+        hosts = get_available_es_hosts(last_hours=last_hours)
+        stats = get_es_host_stats(last_hours=last_hours) if hosts else {}
+        return {
+            "status": "success",
+            "hosts": hosts,
+            "count": len(hosts),
+            "last_hours": last_hours,
+            "host_stats": stats
+        }
+    except Exception as e:
+        logger.error(f"Elasticsearch hosts listesi alınamadı: {e}")
+        return {"status": "error", "hosts": [], "count": 0, "error": str(e)}
+
+
+@app.post("/api/analyze-elasticsearch-logs")
+async def analyze_elasticsearch_logs(request: AnalyzeESLogsRequest):
+    """
+    Elasticsearch loglarında anomali analizi yap (OpenSearch üzerinden)
+
+    Progress Tracking Destekli — MSSQL analizi ile aynı yapı.
+    """
+    req_id = request.request_id
+    token = request_context.set(req_id)
+
+    try:
+        # 1. Başlangıç
+        update_progress(req_id, "init", "Elasticsearch analiz isteği alındı...", 5)
+        logger.info(f"Elasticsearch Log analizi başlatıldı - Host: {request.host_filter}, Time Range: {request.time_range}")
+
+        # API key kontrolü
+        if not await verify_api_key(request.api_key):
+            logger.warning("Geçersiz API anahtarı ile Elasticsearch log analizi denemesi")
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+        # Host filter kontrolü
+        if not request.host_filter:
+            try:
+                from src.anomaly.elasticsearch_log_reader import get_available_es_hosts
+                available_hosts = get_available_es_hosts(last_hours=24)
+                error_message = {
+                    "error": "Host filter zorunludur",
+                    "message": "Elasticsearch node seçmelisiniz.",
+                    "available_hosts": available_hosts[:30] if available_hosts else []
+                }
+                raise HTTPException(status_code=400, detail=error_message)
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=400, detail="Host filter gerekli")
+
+        # Memory Protection: Concurrent analysis limiti
+        update_progress(req_id, "queue", "Analiz kuyruğunda bekleniyor...", 8)
+
+        async with ANOMALY_ANALYSIS_SEMAPHORE:
+            logger.info(f"Elasticsearch Analysis slot acquired for request {req_id}")
+
+            # Tool parametreleri
+            update_progress(req_id, "connect", f"OpenSearch: {request.host_filter} bağlantısı...", 15)
+            tool_params = {
+                "source_type": "opensearch",
+                "host_filter": request.host_filter,
+                "time_range": request.time_range,
+                "last_hours": 24
+            }
+            if request.start_time:
+                tool_params["start_time"] = request.start_time
+            if request.end_time:
+                tool_params["end_time"] = request.end_time
+
+            update_progress(req_id, "fetch", "Elasticsearch Log okuma başlatılıyor...", 20)
+
+            # Elasticsearch Analiz çalıştır
+            def run_es_analysis():
+                from src.anomaly.anomaly_tools import AnomalyDetectionTools
+                tools = AnomalyDetectionTools(environment='production')
+                return tools.analyze_elasticsearch_logs(tool_params)
+
+            tool_result = await asyncio.to_thread(run_es_analysis)
+
+            # Result işleme
+            if isinstance(tool_result, str):
+                try:
+                    result = json.loads(tool_result)
+                except Exception:
+                    result = {"durum": "tamamlandı", "sonuç": {"raw_result": tool_result}}
+            else:
+                result = tool_result
+
+            # Source bilgisini ekle
+            if isinstance(result, dict):
+                result['source_type'] = 'elasticsearch_opensearch'
+                result['database_type'] = 'elasticsearch'
+
+            # Bitiş işlemleri
+            update_progress(req_id, "save", "Son kontroller yapılıyor...", 95)
+
+            # Status normalization
+            if result.get('durum') in (None, 'başarılı', 'success', 'ok'):
+                result['durum'] = 'tamamlandı'
+
+            # Auto-save to storage
+            if result.get('durum') == 'tamamlandı':
+                try:
+                    storage = await get_storage_manager()
+                    es_model_info = result.get('sonuç', {}).get('model_info')
+                    save_result = await storage.save_anomaly_analysis(
+                        analysis_result=result,
+                        source_type='elasticsearch_opensearch',
+                        host=request.host_filter,
+                        time_range=request.time_range,
+                        model_info=es_model_info
+                    )
+                    if save_result:
+                        result['storage_info'] = save_result
+                except Exception as e:
+                    logger.error(f"Elasticsearch Auto-save error: {e}")
+
+            # Frontend Crash Prevention
+            if 'sonuç' in result:
+                data = result['sonuç']
+                if 'unfiltered_anomalies' in data:
+                    total_count = len(data['unfiltered_anomalies'])
+                    if total_count > 2000:
+                        logger.info(f"Truncating ES response: {total_count} -> 2000 items")
+                        data['unfiltered_anomalies'] = data['unfiltered_anomalies'][:2000]
+                        data['is_truncated'] = True
+                        data['total_available_storage'] = total_count
+
+                if 'critical_anomalies' in data and len(data['critical_anomalies']) > 2000:
+                    data['critical_anomalies'] = data['critical_anomalies'][:2000]
+
+            update_progress(req_id, "complete", "Elasticsearch analizi tamamlandı!", 100)
+            return result
+
+    except HTTPException:
+        update_progress(req_id, "error", "İstek hatası oluştu.", 0)
+        raise
+    except Exception as e:
+        logger.error(f"Elasticsearch Log analiz hatası: {e}")
+        update_progress(req_id, "error", f"Hata: {str(e)[:100]}...", 0)
+        return {"durum": "hata", "açıklama": f"Elasticsearch Analiz Hatası: {str(e)}"}
 
     finally:
         request_context.reset(token)

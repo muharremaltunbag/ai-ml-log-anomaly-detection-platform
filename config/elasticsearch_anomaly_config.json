@@ -1,0 +1,282 @@
+{
+    "model_version": "1.0",
+    "config_metadata": {
+        "last_updated": "2026-02-19",
+        "updated_by": "DBA Team",
+        "description": "Elasticsearch Log Anomaly Detection Configuration",
+        "compatible_detector_versions": ["1.0"]
+    },
+    "server_management": {
+        "cluster_mapping_path": "config/elasticsearch_cluster_mapping.json",
+        "unmapped_host_behavior": "warn_and_process",
+        "model_strategy": "per_server",
+        "fallback_to_global_model": true,
+        "auto_discovery": {
+            "enabled": false,
+            "sync_interval_hours": 24,
+            "add_to_unmapped_cluster": true
+        }
+    },
+    "environments": {
+        "test": {
+            "description": "Test/Development Environment",
+            "data_sources": {
+                "opensearch": {
+                    "enabled": true,
+                    "host": "opslog.lcwaikiki.com",
+                    "port": 443,
+                    "protocol": "https",
+                    "index_pattern": "db-elasticsearch-*",
+                    "host_field": "cloud.instance.name.keyword",
+                    "verify_ssl": false,
+                    "auth": {
+                        "username": "",
+                        "password": ""
+                    },
+                    "query": {
+                        "size": 10000,
+                        "scroll": "5m"
+                    },
+                    "alternate_hosts": [
+                        "https://10.29.21.30:443",
+                        "https://hqopnsrcmstr01.lcwaikiki.local:9200",
+                        "https://hqopnsrcmstr02.lcwaikiki.local:9200",
+                        "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+                    ]
+                }
+            }
+        },
+        "production": {
+            "description": "Production Environment - LC Waikiki",
+            "data_sources": {
+                "opensearch": {
+                    "enabled": true,
+                    "host": "opslog.lcwaikiki.com",
+                    "port": 443,
+                    "protocol": "https",
+                    "index_pattern": "db-elasticsearch-*",
+                    "host_field": "cloud.instance.name.keyword",
+                    "verify_ssl": true,
+                    "auth": {
+                        "username": "",
+                        "password": ""
+                    },
+                    "query": {
+                        "size": 10000,
+                        "scroll": "5m",
+                        "time_range": {
+                            "field": "@timestamp",
+                            "gte": "now-1h"
+                        }
+                    },
+                    "alternate_hosts": [
+                        "https://10.29.21.30:443",
+                        "https://hqopnsrcmstr01.lcwaikiki.local:9200",
+                        "https://hqopnsrcmstr02.lcwaikiki.local:9200",
+                        "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+                    ]
+                }
+            }
+        }
+    },
+    "anomaly_detection": {
+        "model": {
+            "type": "IsolationForest",
+            "parameters": {
+                "contamination": 0.05,
+                "n_estimators": 300,
+                "max_samples": 512,
+                "max_features": 0.9,
+                "bootstrap": true,
+                "random_state": 42,
+                "n_jobs": -1
+            }
+        },
+        "min_training_samples": 50,
+        "features": {
+            "enabled_features": [
+                "hour_of_day",
+                "is_weekend",
+                "is_business_hours",
+                "time_since_last_log",
+                "is_warn",
+                "is_error",
+                "is_deprecation",
+                "is_cluster_logger",
+                "is_index_logger",
+                "is_transport_logger",
+                "is_rare_logger",
+                "is_exception",
+                "is_circuit_breaker",
+                "is_oom_error",
+                "is_connection_error",
+                "is_shard_failure",
+                "is_slow_log",
+                "is_gc_overhead",
+                "is_high_disk_watermark",
+                "is_high_cpu",
+                "is_node_event",
+                "is_master_election",
+                "is_shard_relocation",
+                "extreme_burst_flag",
+                "burst_density"
+            ],
+            "filters": {
+                "exclude_deprecation_info": true,
+                "rare_threshold": 50,
+                "burst_threshold_ms": 100
+            },
+            "thresholds": {
+                "business_hour_start": 8,
+                "business_hour_end": 18,
+                "burst_seconds": 1.0,
+                "extreme_burst_seconds": 0.1
+            }
+        },
+        "output": {
+            "save_model": true,
+            "model_path": "models/es_isolation_forest.pkl",
+            "export_anomalies": true,
+            "anomaly_path": "output/es_anomalies_{timestamp}.csv",
+            "notification": {
+                "enabled": false,
+                "webhook_url": "",
+                "email": ""
+            }
+        },
+        "ensemble": {
+            "enabled": true,
+            "rule_weight": 1.0,
+            "combine_method": "override",
+            "log_rule_hits": true,
+            "rules": {
+                "cluster_instability": {
+                    "enabled": true,
+                    "description": "Master election issues or node join/leave events indicating cluster instability",
+                    "severity": 0.95
+                },
+                "memory_crisis": {
+                    "enabled": true,
+                    "description": "OutOfMemoryError or CircuitBreakingException - JVM heap pressure",
+                    "severity": 0.95
+                },
+                "disk_crisis": {
+                    "enabled": true,
+                    "description": "High disk watermark or flood stage reached - disk space critical",
+                    "severity": 0.90
+                },
+                "shard_failure": {
+                    "enabled": true,
+                    "description": "Shard allocation failures or unassigned shards",
+                    "severity": 0.88
+                },
+                "gc_storm": {
+                    "enabled": true,
+                    "description": "Frequent garbage collection pauses affecting performance",
+                    "severity": 0.85
+                },
+                "connection_storm": {
+                    "enabled": true,
+                    "description": "Multiple connection errors between nodes",
+                    "severity": 0.82
+                },
+                "error_burst": {
+                    "enabled": true,
+                    "description": "High density of error-level logs in short timeframe",
+                    "severity": 0.85
+                }
+            }
+        },
+        "online_learning": {
+            "enabled": true,
+            "max_buffer_samples": 100000,
+            "history_retention": "full",
+            "max_history_size": null,
+            "update_frequency": 1000,
+            "weight_decay": 0.95,
+            "buffer_management": {
+                "warn_size_mb": 500,
+                "max_size_mb": 5000,
+                "compression_enabled": false
+            },
+            "logging": {
+                "log_buffer_stats": true,
+                "log_incremental_updates": true
+            }
+        },
+        "false_positive_filter": {
+            "severity_min_score_stage1": 40,
+            "max_critical_anomalies_stage1": 500,
+            "known_benign_signatures": [
+                {
+                    "pattern": "monitor",
+                    "logger": "o.e.x.m",
+                    "reason": "Routine monitoring/exporter activity"
+                },
+                {
+                    "pattern": "health check",
+                    "logger": "o.e.c.h",
+                    "reason": "Cluster health check polling"
+                }
+            ]
+        }
+    },
+    "message_parsing": {
+        "log_line_pattern": "^\\[([^\\]]+)\\]\\[([^\\]]+)\\]\\[([^\\]]+)\\]\\[([^\\]]+)\\]\\s*(.*)",
+        "field_mapping": {
+            "group_1": "timestamp",
+            "group_2": "log_level",
+            "group_3": "logger_name",
+            "group_4": "node_name",
+            "group_5": "message_text"
+        },
+        "message_source_field": "message",
+        "message_is_array": true,
+        "host_field": "cloud.instance.name.keyword",
+        "patterns": {
+            "gc_overhead": "\\[gc\\]|JvmGcMonitorService|GC overhead|garbage collector",
+            "circuit_breaker": "CircuitBreakingException|circuit breaker|Data too large",
+            "oom": "OutOfMemoryError|java\\.lang\\.OutOfMemoryError|out of memory",
+            "disk_watermark": "disk watermark|flood stage|low disk|DiskThresholdMonitor",
+            "shard_failure": "shard failed|unassigned shard|ShardNotFoundException|AllocationFailed",
+            "node_event": "node.*joined|node.*left|node.*disconnected|NodeDisconnectedException",
+            "master_election": "master not discovered|elected-as-master|no master|MasterNotDiscoveredException",
+            "slow_log": "slowlog|took\\[",
+            "connection_error": "ConnectException|ConnectionClosed|connect timed out|NodeNotConnectedException",
+            "exception": "Exception|Caused by|at org\\.elasticsearch"
+        },
+        "logger_categories": {
+            "cluster": ["o.e.c.", "o.e.cluster.", "o.e.d."],
+            "index": ["o.e.i.", "o.e.indices.", "o.e.index."],
+            "transport": ["o.e.t.", "o.e.transport."],
+            "gc": ["o.e.m.jvm", "JvmGcMonitorService"],
+            "discovery": ["o.e.d.", "o.e.discovery."]
+        }
+    },
+    "host_roles": {
+        "pattern_detection": {
+            "data_node": "DT",
+            "master_node": "MS",
+            "coordinating_node": "CR",
+            "warm_node": "RW"
+        },
+        "description": "Host name contains role identifier (e.g., ECAZTRDBESDT011 = data node, ECAZTRDBESMS006 = master node)"
+    },
+    "processing": {
+        "batch_size": 10000,
+        "max_workers": 4,
+        "memory_limit_gb": 8,
+        "cache_enabled": true,
+        "cache_path": "cache/es_anomaly_cache"
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "logs/es_anomaly_detection.log",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    },
+    "monitoring": {
+        "performance_tracking": true,
+        "metrics_export": false,
+        "metrics_path": "metrics/es_anomaly_metrics.json"
+    }
+}

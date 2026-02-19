@@ -8,10 +8,16 @@ import os
 import json
 import requests
 from typing import Optional, Dict, Any, List
-from langchain.schema import BaseMessage, HumanMessage, SystemMessage, AIMessage
-from langchain.chat_models.base import BaseChatModel
-from langchain.callbacks.manager import CallbackManagerForLLMRun
-from langchain.schema.output import ChatGeneration, ChatResult
+try:
+    from langchain.schema import BaseMessage, HumanMessage, SystemMessage, AIMessage
+    from langchain.chat_models.base import BaseChatModel
+    from langchain.callbacks.manager import CallbackManagerForLLMRun
+    from langchain.schema.output import ChatGeneration, ChatResult
+except ImportError:
+    from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.callbacks.manager import CallbackManagerForLLMRun
+    from langchain_core.outputs import ChatGeneration, ChatResult
 from dotenv import load_dotenv
 from .base_connector import BaseConnector
 import logging
