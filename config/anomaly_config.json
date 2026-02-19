@@ -296,7 +296,39 @@
         "high_doc_scan_severity_threshold": 40,
         "suspicious_component_anomaly_rate": 99.5,
         "suspicious_component_min_count": 100,
-        "max_filtered_anomalies": 2000
+        "max_filtered_anomalies": 2000,
+        "known_benign_signatures": [
+          {
+            "pattern": "privileges on resource",
+            "component": "ACCESS",
+            "reason": "Monitoring/exporter privilege check noise"
+          },
+          {
+            "pattern": "serverStatus",
+            "component": "COMMAND",
+            "reason": "Routine serverStatus polling by monitoring tools"
+          },
+          {
+            "pattern": "replSetGetStatus",
+            "component": "COMMAND",
+            "reason": "Routine replica set health check by monitoring tools"
+          },
+          {
+            "pattern": "isMaster",
+            "component": "COMMAND",
+            "reason": "Driver topology discovery handshake"
+          },
+          {
+            "pattern": "hello",
+            "component": "COMMAND",
+            "reason": "Driver hello handshake (MongoDB 5.0+)"
+          },
+          {
+            "pattern": "Refreshing the RSM with current topology",
+            "component": "CONNPOOL",
+            "reason": "Normal connection pool topology refresh"
+          }
+        ]
       }
     },
     "processing": {

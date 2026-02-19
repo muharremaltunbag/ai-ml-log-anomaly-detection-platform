@@ -1814,11 +1814,31 @@ class AnomalyDetectionTools:
         
         logger.info(f"Suspicious components identified: {suspicious_components}")
         
-        # 2. Critical anomalies filtreleme
+        # 2. Known benign signatures — anomaliyi silmez, sadece etiketler
+        benign_signatures = fpc.get('known_benign_signatures', [])
+        benign_tag_count = 0
+        if benign_signatures and 'critical_anomalies' in analysis:
+            for anomaly in analysis['critical_anomalies']:
+                msg = anomaly.get('message', '').lower()
+                comp = anomaly.get('component', '')
+                for sig in benign_signatures:
+                    sig_pattern = sig.get('pattern', '').lower()
+                    sig_comp = sig.get('component', '')
+                    # Pattern eşleşmesi (component opsiyonel — boşsa sadece pattern yeter)
+                    if sig_pattern and sig_pattern in msg:
+                        if not sig_comp or sig_comp == comp:
+                            anomaly['is_known_benign'] = True
+                            anomaly['benign_reason'] = sig.get('reason', 'Known benign pattern')
+                            benign_tag_count += 1
+                            break
+            if benign_tag_count > 0:
+                logger.info(f"Known benign signatures tagged: {benign_tag_count} anomalies")
+
+        # 3. Critical anomalies filtreleme
         if 'critical_anomalies' in analysis:
             filtered_anomalies = []
             filtered_out_count = 0
-            
+
             for i, anomaly in enumerate(analysis['critical_anomalies']):
                 # Skip suspicious components
                 if 'component_analysis' in analysis:
@@ -1902,7 +1922,8 @@ class AnomalyDetectionTools:
                 analysis['summary']['false_positive_filtered'] = {
                     'original_count': original_count,
                     'filtered_count': filtered_count,
-                    'false_positive_rate': false_positive_rate
+                    'false_positive_rate': false_positive_rate,
+                    'known_benign_tagged': benign_tag_count
                 }
         
         logger.info(f"Post-processing complete: {original_count} -> {len(analysis.get('critical_anomalies', []))} anomalies")
