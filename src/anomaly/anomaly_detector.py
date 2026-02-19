@@ -658,6 +658,7 @@ class MongoDBAnomalyDetector:
                 "training_time_seconds": training_time,
                 "model_type": self.model_config['type'],
                 "parameters": params,
+                "contamination_used": params.get('contamination', 0.05),
                 "timestamp": datetime.now().isoformat(),
                 "server_name": server_name,  # YENİ: Sunucu bilgisi
                 "model_version": self.model_version  # MODEL VERSION EKLENDİ
@@ -1070,6 +1071,14 @@ class MongoDBAnomalyDetector:
                     "min": float(anomaly_scores.min()),
                     "max": float(anomaly_scores.max()),
                     "mean": float(anomaly_scores.mean())
+                },
+                "alert_budget": {
+                    "contamination_used": self.training_stats.get('contamination_used',
+                                                                   self.model_config['parameters'].get('contamination', 0.05)),
+                    "raw_anomaly_count": int(anomaly_mask.sum()),
+                    "raw_anomaly_rate_pct": round(float(anomaly_mask.mean() * 100), 3),
+                    "description": "Raw ML output before false positive filtering. "
+                                   "Use anomaly_rate after filtering for operational SLO."
                 }
             },
             "temporal_analysis": {},
