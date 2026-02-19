@@ -130,7 +130,7 @@
             updateMLPanelWithDefaults();
         }
 
-        // 2) /api/ml/model-info — model detay bilgileri
+        // 2) /api/ml/model-info — model detay bilgileri (gercek veriler)
         try {
             var infoResponse = await fetch('/api/ml/model-info?api_key=' + encodeURIComponent(window.apiKey));
             if (infoResponse.ok) {
@@ -139,10 +139,26 @@
                     var info = infoData.model_info;
 
                     updateElement('mlModelType', info.model_type || 'Isolation Forest');
-                    updateElement('mlTrainingSamples', info.training_samples ? info.training_samples.toLocaleString('tr-TR') + ' Satir' : '--');
-                    updateElement('mlFeatureCount', info.features_count ? info.features_count.toString() : '--');
+                    updateElement('mlTrainingSamples', safeMetric(info.training_samples, function(v) {
+                        return v.toLocaleString('tr-TR') + ' Satir';
+                    }));
+                    updateElement('mlFeatureCount', safeMetric(info.features_count, function(v) {
+                        return v.toString();
+                    }));
 
-                    if (info.buffer_samples !== undefined) {
+                    // Model versiyonu ve egitim tarihi
+                    updateElement('modelVersion', safeMetric(info.model_version));
+                    updateElement('lastTrainingDate', safeMetric(info.model_trained_at, function(v) {
+                        return new Date(v).toLocaleDateString('tr-TR');
+                    }));
+
+                    // Sunucu adi
+                    if (info.server_name) {
+                        updateElement('mlServerName', info.server_name);
+                    }
+
+                    // Buffer bilgisi
+                    if (info.buffer_samples !== undefined && info.buffer_samples !== null) {
                         var bufferMB = info.buffer_size_mb ? info.buffer_size_mb.toFixed(1) + ' MB' : '';
                         updateElement('mlBufferInfo', info.buffer_samples.toLocaleString('tr-TR') + (bufferMB ? ' / ' + bufferMB : ''));
                     }
@@ -152,34 +168,34 @@
                         updateElement('mlModelFilePath', info.model_path);
                     }
 
-                    console.log('✅ Model info loaded from /api/ml/model-info');
+                    console.log('Model info loaded from /api/ml/model-info (is_trained=' + info.is_trained + ')');
                 }
             }
         } catch (error) {
             console.warn('Could not load model info:', error);
         }
 
-        // 3) lastAnomalyResult varsa, onunla üzerine yaz (en güncel veri)
+        // 3) lastAnomalyResult varsa, onunla uzerine yaz (en guncel analiz verisi)
         if (window.lastAnomalyResult && window.lastAnomalyResult.sonuç) {
             var result = window.lastAnomalyResult.sonuç;
             var summary = result.summary || (result.data ? result.data.summary : null) || {};
 
+            // Anomali istatistikleri — gercek veriler
+            if (summary.total_logs !== undefined) {
+                updateElement('totalLogs', summary.total_logs.toLocaleString('tr-TR'));
+            }
             if (summary.n_anomalies !== undefined) {
                 updateElement('detectedAnomalies', summary.n_anomalies.toLocaleString('tr-TR'));
             }
             if (summary.anomaly_rate !== undefined) {
                 updateElement('anomalyRate', '%' + summary.anomaly_rate.toFixed(2));
-            }
-            if (summary.total_logs !== undefined) {
-                updateElement('totalLogs', summary.total_logs.toLocaleString('tr-TR'));
+                // Accuracy: anomaly_rate'den turetilen yaklasik deger
+                updateElement('modelAccuracy', '%' + (100 - summary.anomaly_rate).toFixed(1));
             }
 
-            // Sunucu adı — sonuç.server_info.server_name'den (Bug #4 fix)
+            // Sunucu adi
             var serverInfo = result.server_info || {};
             var serverName = serverInfo.server_name || null;
-            if (!serverName && window.lastAnomalyResult.sonuç && window.lastAnomalyResult.sonuç.server_info) {
-                serverName = window.lastAnomalyResult.sonuç.server_info.server_name;
-            }
             if (!serverName && window.selectedChatServer) {
                 serverName = window.selectedChatServer;
             }
@@ -187,14 +203,24 @@
                 updateElement('mlServerName', serverName.split('.')[0]);
             }
 
-            // Model dosya yolu — server_info.model_path'ten
+            // Model dosya yolu
             if (serverInfo.model_path) {
                 updateElement('mlModelFilePath', serverInfo.model_path);
             }
 
-            // Model info from analysis result
+            // Buffer bilgisi
+            if (serverInfo.historical_buffer_size !== undefined) {
+                var bufVal = serverInfo.historical_buffer_size;
+                var bufMB = serverInfo.buffer_size_mb;
+                var bufText = bufVal.toLocaleString('tr-TR');
+                if (bufMB) bufText += ' / ' + bufMB.toFixed(1) + ' MB';
+                updateElement('mlBufferInfo', bufText);
+            }
+
+            // model_info — gercek model verileri
             var mlData = result.data || result;
             var modelInfo = result.model_info || mlData.model_info || {};
+
             if (modelInfo.model_version) {
                 updateElement('modelVersion', modelInfo.model_version);
             }
@@ -204,14 +230,29 @@
             if (modelInfo.training_samples) {
                 updateElement('mlTrainingSamples', modelInfo.training_samples.toLocaleString('tr-TR') + ' Satir');
             }
+            if (modelInfo.model_trained_at) {
+                try {
+                    updateElement('lastTrainingDate', new Date(modelInfo.model_trained_at).toLocaleDateString('tr-TR'));
+                } catch (e) {
+                    updateElement('lastTrainingDate', modelInfo.model_trained_at);
+                }
+            }
+            if (modelInfo.model_type) {
+                updateElement('mlModelType', modelInfo.model_type);
+            }
 
-            // Feature importance varsa, feature listesini dinamik guncelle
+            // Feature importance — dinamik guncelle
             var featureImportance = mlData.feature_importance || {};
             if (Object.keys(featureImportance).length > 0) {
                 renderDynamicFeatures(featureImportance);
             }
 
-            console.log('✅ ML sidebar updated from lastAnomalyResult');
+            console.log('ML sidebar updated from lastAnomalyResult:', {
+                total_logs: summary.total_logs,
+                version: modelInfo.model_version,
+                features: modelInfo.feature_count,
+                trained_at: modelInfo.model_trained_at
+            });
         }
     }
 
@@ -460,8 +501,9 @@
     }
 
     /**
-     * Panel'i anomali analizi sonrası otomatik güncelle
-     * Tam sonuç objesinden summary, server_info, feature_importance cikarilir
+     * Panel'i anomali analizi sonrasi otomatik guncelle
+     * Tam sonuc objesinden summary, server_info, model_info, feature_importance cikarilir
+     * Backend'den gelen TUM gercek verileri okur — hardcoded deger YOKTUR
      */
     function autoUpdatePanelAfterAnalysis(analysisResult) {
         if (!analysisResult || !analysisResult.sonuç) return;
@@ -469,12 +511,12 @@
         var sonuc = analysisResult.sonuç;
         var summary = sonuc.summary || (sonuc.data ? sonuc.data.summary : null) || {};
 
-        // 1) Anomali istatistikleri ve accuracy (updateMetricsFromAnalysis ile)
+        // 1) Anomali istatistikleri ve accuracy (gercek veriden)
         if (summary.total_logs !== undefined || summary.n_anomalies !== undefined) {
             updateMetricsFromAnalysis(summary);
         }
 
-        // 2) Sunucu adi — sonuç.server_info.server_name'den (Bug #4 fix)
+        // 2) Sunucu adi
         var serverInfo = sonuc.server_info || {};
         if (serverInfo.server_name) {
             updateElement('mlServerName', serverInfo.server_name);
@@ -482,30 +524,69 @@
             updateElement('mlServerName', window.selectedChatServer.split('.')[0]);
         }
 
-        // 3) Model dosya yolu — server_info.model_path'ten
+        // 3) Model dosya yolu
         if (serverInfo.model_path) {
             updateElement('mlModelFilePath', serverInfo.model_path);
         }
 
-        // 4) Feature importance — dinamik render (Bug #2 fix)
+        // 4) Feature importance — dinamik render
         var featureImportance = sonuc.feature_importance || {};
         if (Object.keys(featureImportance).length > 0) {
             renderDynamicFeatures(featureImportance);
         }
 
-        // 5) Ek model/buffer bilgisi — server_info'dan
+        // 5) Buffer bilgisi
         if (serverInfo.historical_buffer_size !== undefined) {
-            updateElement('mlBufferInfo', serverInfo.historical_buffer_size.toLocaleString('tr-TR'));
+            var bufferVal = serverInfo.historical_buffer_size;
+            var bufferMB = serverInfo.buffer_size_mb;
+            var bufferText = bufferVal.toLocaleString('tr-TR');
+            if (bufferMB) {
+                bufferText += ' / ' + bufferMB.toFixed(1) + ' MB';
+            }
+            updateElement('mlBufferInfo', bufferText);
         }
 
-        // 6) Eğitim Seti (training_samples) — model_info'dan
+        // 6) model_info'dan gercek model bilgilerini oku
         var mlData = sonuc.data || sonuc;
         var modelInfoObj = sonuc.model_info || mlData.model_info || {};
+
+        // 6a) Egitim seti (training_samples)
         if (modelInfoObj.training_samples) {
             updateElement('mlTrainingSamples', modelInfoObj.training_samples.toLocaleString('tr-TR') + ' Satir');
         }
 
-        console.log('✅ ML Sidebar auto-updated after analysis (full data)');
+        // 6b) Feature sayisi
+        if (modelInfoObj.feature_count) {
+            updateElement('mlFeatureCount', modelInfoObj.feature_count.toString());
+        }
+
+        // 6c) Model versiyonu
+        if (modelInfoObj.model_version) {
+            updateElement('modelVersion', modelInfoObj.model_version);
+        }
+
+        // 6d) Model egitim tarihi
+        if (modelInfoObj.model_trained_at) {
+            try {
+                updateElement('lastTrainingDate', new Date(modelInfoObj.model_trained_at).toLocaleDateString('tr-TR'));
+            } catch (e) {
+                updateElement('lastTrainingDate', modelInfoObj.model_trained_at);
+            }
+        }
+
+        // 6e) Model tipi
+        if (modelInfoObj.model_type) {
+            updateElement('mlModelType', modelInfoObj.model_type);
+        }
+
+        console.log('ML Sidebar auto-updated after analysis:', {
+            total_logs: summary.total_logs,
+            anomalies: summary.n_anomalies,
+            server: serverInfo.server_name,
+            training_samples: modelInfoObj.training_samples,
+            feature_count: modelInfoObj.feature_count,
+            version: modelInfoObj.model_version
+        });
     }
 
     // Public API (tüm eski fonksiyonlar + yeniler)

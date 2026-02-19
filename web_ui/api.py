@@ -4185,30 +4185,36 @@ async def validate_single_log(request: Dict[str, Any]):
 
 @app.get("/api/ml/model-info")
 async def get_ml_model_info(api_key: str = Query(...)):
-    """ML model bilgilerini döndür"""
+    """ML model bilgilerini dondur — sadece gercek veriler"""
     try:
         if not await verify_api_key(api_key):
             raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
-        
+
         global anomaly_detector
-        
+
+        # Baslangic: model yoksa tum degerler None
         model_info = {
             "model_type": "Isolation Forest",
-            "version": "v2.1.0",
-            "is_trained": anomaly_detector.is_trained,
-            "features_count": 0,
-            "training_samples": 0,
-            "last_update": datetime.now().isoformat()
+            "is_trained": anomaly_detector.is_trained if anomaly_detector else False,
+            "features_count": None,
+            "training_samples": None,
+            "model_trained_at": None,
+            "model_version": None
         }
-        
-        if anomaly_detector.is_trained:
+
+        if anomaly_detector and anomaly_detector.is_trained:
             info = anomaly_detector.get_model_info()
-            # training_stats iç içe dict — n_samples oradan okunmalı
             training_stats = info.get('training_stats', {})
+            if not isinstance(training_stats, dict):
+                training_stats = {}
+
             model_info.update({
                 "features_count": info.get('n_features', 0),
-                "training_samples": training_stats.get('n_samples', 0) if isinstance(training_stats, dict) else 0,
-                "contamination_factor": info.get('contamination', 0.05),
+                "training_samples": training_stats.get('n_samples', 0),
+                "model_trained_at": training_stats.get('timestamp'),
+                "model_version": training_stats.get('model_version'),
+                "server_name": training_stats.get('server_name'),
+                "contamination_factor": info.get('parameters', {}).get('contamination', 0.05),
                 "online_learning_enabled": info.get('online_learning', False)
             })
 
