@@ -2945,12 +2945,51 @@ class MongoDBAnomalyDetector:
             'model_performances': model_performances,
             'recommendation': None
         }
-        
-        if drift_detected:
+
+        # Feature distribution drift: scaler mean/var ile yeni verinin ortalamalarını karşılaştır
+        feature_drift = {}
+        if self.is_scaler_fitted and hasattr(self.scaler, 'mean_') and hasattr(self.scaler, 'var_'):
+            try:
+                new_means = X_new.mean().values
+                train_means = self.scaler.mean_
+                train_stds = np.sqrt(self.scaler.var_ + 1e-10)  # sıfıra bölme koruması
+
+                drifted_features = []
+                feature_names = list(X_new.columns)
+                for i, fname in enumerate(feature_names):
+                    if i < len(train_means):
+                        z_diff = abs(new_means[i] - train_means[i]) / train_stds[i]
+                        if z_diff > 2.0:
+                            drifted_features.append({
+                                'feature': fname,
+                                'z_score_diff': round(float(z_diff), 3),
+                                'new_mean': round(float(new_means[i]), 4),
+                                'train_mean': round(float(train_means[i]), 4)
+                            })
+
+                feature_drift = {
+                    'drifted_feature_count': len(drifted_features),
+                    'total_features': len(feature_names),
+                    'drifted_features': sorted(drifted_features, key=lambda x: x['z_score_diff'], reverse=True),
+                    'feature_drift_detected': len(drifted_features) > 0
+                }
+
+                # Feature drift de genel drift kararına katkıda bulunsun
+                if len(drifted_features) >= 3 and not drift_detected:
+                    drift_analysis['drift_detected'] = True
+                    logger.warning(f"Feature distribution drift detected: {len(drifted_features)} features shifted (z>2)")
+
+            except Exception as e:
+                logger.error(f"Feature drift analysis failed: {e}")
+                feature_drift = {'error': str(e)}
+
+        drift_analysis['feature_drift'] = feature_drift
+
+        if drift_analysis['drift_detected']:
             drift_analysis['recommendation'] = "High drift detected. Consider retraining or adjusting parameters."
         else:
             drift_analysis['recommendation'] = "No significant drift detected. Model is stable."
-        
+
         return drift_analysis
     
     def get_ensemble_info(self) -> Dict[str, Any]:
