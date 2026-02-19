@@ -310,8 +310,26 @@ class ElasticsearchFeatureEngineer:
                 df['is_error'] = (
                     (level_upper == 'ERROR') | (level_upper == 'CRITICAL')
                 ).astype(int)
-                df['is_deprecation'] = level_upper.str.contains(
+                # is_deprecation: 3 kaynağın OR birleşimi
+                # 1) Enrichment'ta raw_message pattern'dan set edilmiş olabilir
+                enrichment_deprecation = pd.Series(0, index=df.index)
+                if 'is_deprecation' in df.columns:
+                    enrichment_deprecation = df['is_deprecation'].fillna(0).astype(int)
+                # 2) log_level içinde DEPRECAT (bazı ES versiyonları)
+                level_deprecation = level_upper.str.contains(
                     'DEPRECAT', na=False
+                ).astype(int)
+                # 3) event_dataset içinde deprecation (en güvenilir sinyal)
+                dataset_deprecation = pd.Series(0, index=df.index)
+                if 'event_dataset' in df.columns:
+                    dataset_deprecation = df['event_dataset'].str.contains(
+                        'deprecation', case=False, na=False
+                    ).astype(int)
+                # OR birleşimi
+                df['is_deprecation'] = (
+                    (enrichment_deprecation == 1) |
+                    (level_deprecation == 1) |
+                    (dataset_deprecation == 1)
                 ).astype(int)
             else:
                 # Fallback: raw_message'dan parse
@@ -323,8 +341,17 @@ class ElasticsearchFeatureEngineer:
                     df['is_error'] = df['raw_message'].str.contains(
                         r'\[(ERROR|CRITICAL)\s*\]', na=False, regex=True
                     ).astype(int)
-                    df['is_deprecation'] = df['raw_message'].str.contains(
+                    # raw_message + event_dataset OR birleşimi
+                    msg_deprecation = df['raw_message'].str.contains(
                         r'deprecat', case=False, na=False
+                    ).astype(int)
+                    dataset_deprecation = pd.Series(0, index=df.index)
+                    if 'event_dataset' in df.columns:
+                        dataset_deprecation = df['event_dataset'].str.contains(
+                            'deprecation', case=False, na=False
+                        ).astype(int)
+                    df['is_deprecation'] = (
+                        (msg_deprecation == 1) | (dataset_deprecation == 1)
                     ).astype(int)
                 else:
                     df['is_warn'] = 0

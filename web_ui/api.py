@@ -2214,33 +2214,87 @@ async def chat_query_anomalies(request: Dict[str, Any]):
         # YENİ: Analysis ID yoksa sunucu adı zorunlu
         if not analysis_id:
             try:
-                from src.anomaly.log_reader import get_available_mongodb_hosts
-                available_hosts = get_available_mongodb_hosts(last_hours=24)
+                # Tüm veritabanı tiplerinden host listesi çek
+                available_hosts = []
+                host_source_map = {}  # host -> source_type eşlemesi
+
+                # 1. MongoDB hosts
+                try:
+                    from src.anomaly.log_reader import get_available_mongodb_hosts
+                    mongo_hosts = get_available_mongodb_hosts(last_hours=24)
+                    for h in mongo_hosts:
+                        if h not in host_source_map:
+                            available_hosts.append(h)
+                            host_source_map[h] = "mongodb"
+                except Exception as e:
+                    logger.warning(f"MongoDB host listesi alınamadı: {e}")
+                    mongo_hosts = []
+
+                # 2. MSSQL hosts
+                try:
+                    from src.anomaly.mssql_log_reader import get_available_mssql_hosts
+                    mssql_hosts = get_available_mssql_hosts(last_hours=24)
+                    for h in mssql_hosts:
+                        if h not in host_source_map:
+                            available_hosts.append(h)
+                            host_source_map[h] = "mssql"
+                except Exception as e:
+                    logger.warning(f"MSSQL host listesi alınamadı: {e}")
+                    mssql_hosts = []
+
+                # 3. Elasticsearch hosts
+                try:
+                    from src.anomaly.elasticsearch_log_reader import get_available_es_hosts
+                    es_hosts = get_available_es_hosts(last_hours=24)
+                    for h in es_hosts:
+                        if h not in host_source_map:
+                            available_hosts.append(h)
+                            host_source_map[h] = "elasticsearch"
+                except Exception as e:
+                    logger.warning(f"Elasticsearch host listesi alınamadı: {e}")
+                    es_hosts = []
+
+                logger.info(f"Chat host discovery: {len(available_hosts)} total hosts "
+                            f"(MongoDB: {len(mongo_hosts)}, MSSQL: {len(mssql_hosts)}, ES: {len(es_hosts)})")
 
                 # Query'de sunucu adı kontrolü
                 detected_server = None
+                detected_source_type = None
                 query_lower = query.lower()
                 for host in available_hosts:
                     host_short = host.split('.')[0] if '.' in host else host
                     if host.lower() in query_lower or host_short.lower() in query_lower:
                         detected_server = host
-                        logger.info(f"✅ Chat query'de sunucu tespit edildi: {detected_server}")
+                        detected_source_type = host_source_map.get(host, "unknown")
+                        logger.info(f"✅ Chat query'de sunucu tespit edildi: {detected_server} (source: {detected_source_type})")
                         break
 
                 if not detected_server:
                     logger.warning("❌ Chat anomali sorgusu yapıldı ama sunucu adı belirtilmedi")
-                    host_examples = available_hosts[:5] if available_hosts else []
+                    # Her tipten örnek sunucu göster
+                    host_examples = []
+                    for src_hosts, src_label in [
+                        (mongo_hosts, "MongoDB"),
+                        (mssql_hosts, "MSSQL"),
+                        (es_hosts, "Elasticsearch")
+                    ]:
+                        for h in src_hosts[:2]:  # Her tipten max 2 örnek
+                            host_examples.append(f"{h} ({src_label})")
+
+                    first_host = available_hosts[0] if available_hosts else 'lcwmongodb01n2'
+                    first_host_short = first_host.split('.')[0] if '.' in first_host else first_host
+
                     return {
                         "status": "error",
-                        "message": f"""⚠️ Lütfen sorgunuzda hangi MongoDB sunucusunu analiz etmek istediğinizi belirtin.
+                        "message": f"""⚠️ Lütfen sorgunuzda hangi sunucuyu analiz etmek istediğinizi belirtin.
 
 📌 **Mevcut sunucular:**
-{chr(10).join(['• ' + h for h in host_examples])}
+{chr(10).join(['• ' + h for h in host_examples[:10]])}
 
 💡 **Örnek sorgular:**
-- "{host_examples[0] if host_examples else 'lcwmongodb01n2'} sunucusundaki yavaş sorgular neler?"
-- "{host_examples[0].split('.')[0] if host_examples else 'lcwmongodb01n2'} için authentication hataları var mı?"
-- "{host_examples[0].split('.')[0] if host_examples else 'lcwmongodb01n2'}'deki kritik anomaliler nelerdir?" """,
+- "{first_host_short} sunucusundaki sorunlar neler?"
+- "{first_host_short} için kritik anomaliler var mı?"
+- "{first_host_short}'deki hataları analiz et" """,
                         "available_hosts": available_hosts,
                         "total_anomalies": 0
                     }
@@ -2396,6 +2450,7 @@ async def chat_query_anomalies(request: Dict[str, Any]):
         analysis = analyses[0]
         analysis_source = (analysis.get("source") or "").lower()
         is_mssql = "mssql" in analysis_source
+        is_elasticsearch = "elasticsearch" in analysis_source
 
         all_anomalies = analysis.get("unfiltered_anomalies", [])
         if not all_anomalies:
@@ -2552,6 +2607,84 @@ Türkçe yanıt ver, teknik terimleri açıkla, DBA'ların anlayacağı detay se
 MUTLAKA gerçek log mesajlarını kod bloğu içinde göster.
 MUTLAKA çözüm komutlarını ```sql``` kod bloğu içinde ver.
 Önce log örneklerini göster, sonra pattern açıklamasını, sonra ÇALIŞTIRILABİLİR T-SQL komut önerilerini göster."""
+        elif is_elasticsearch:
+            system_prompt = """Sen Elasticsearch cluster yönetimi, performans optimizasyonu ve log anomali analizi konusunda uzman bir Senior Elasticsearch Engineer'sin.
+
+Elasticsearch loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve ÇALIŞTIRILABİLİR çözüm komutları sunabilirsin.
+
+ELASTICSEARCH LOG PATTERN BİLGİSİ:
+- GC (Garbage Collection): JVM heap pressure, long GC pauses, stop-the-world events
+- SHARD: Shard allocation failure, unassigned shards, rebalancing sorunları
+- DISK: Disk watermark breach (low/high/flood), read-only index
+- MEMORY: Circuit breaker tripped, fielddata eviction, JVM OOM
+- NETWORK: Node disconnect, master election, split brain riski
+- INDEX: Slow indexing, bulk rejection, mapping explosion
+- SEARCH: Slow query, search thread pool rejection, deep pagination
+- CLUSTER: Red/yellow health, master instability, pending tasks
+- DEPRECATION: Deprecated API kullanımı, versiyon uyumsuzluk uyarıları
+- NODE: Node role sorunları (master/data/ingest), hot/warm/cold tier
+
+ML MODEL YORUM KURALLARI:
+- severity_score 0-100 arasıdır. 80+ KRİTİK, 60-80 YÜKSEK, 40-60 ORTA, 0-40 DÜŞÜK demektir.
+- Kullanıcıya ML modelinin neden bu skoru verdiğini açıkla (hangi pattern, hangi frekans, hangi bileşen).
+- Anomali grupları arasındaki korelasyonları belirt (ör: GC pause + MEMORY circuit breaker = heap pressure).
+
+ÇÖZÜM KOMUTLARI KURALI (KRİTİK):
+Her öneride MUTLAKA gerçek, kopyala-yapıştır ile çalıştırılabilir komut ver. Genel tavsiye VERME.
+
+Örnek KÖTÜ yanıt: "Shard sayısını azaltmanızı öneririm."
+Örnek İYİ yanıt:
+```json
+// Unassigned shard'ları yeniden ata
+PUT /_cluster/settings
+{
+  "transient": {
+    "cluster.routing.allocation.enable": "all"
+  }
+}
+
+// Retry failed shard allocation
+POST /_cluster/reroute?retry_failed=true
+```
+
+Komut türleri (duruma göre kullan):
+- Cluster health: GET /_cluster/health, GET /_cluster/allocation/explain
+- Shard yönetimi: POST /_cluster/reroute, PUT /_cluster/settings
+- Index yönetimi: PUT /index_name/_settings, POST /index_name/_forcemerge
+- Node bilgisi: GET /_nodes/stats, GET /_nodes/hot_threads
+- GC/JVM: GET /_nodes/stats/jvm, jvm.options düzenlemesi
+- Disk watermark: PUT /_cluster/settings (cluster.routing.allocation.disk.watermark.*)
+- Circuit breaker: PUT /_cluster/settings (indices.breaker.*)
+- Slow log: PUT /index_name/_settings (index.search.slowlog.*, index.indexing.slowlog.*)
+- Thread pool: GET /_cat/thread_pool?v, GET /_nodes/stats/thread_pool
+- Template/Mapping: GET /_index_template, PUT /_index_template
+
+YANIT FORMATI:
+📊 ÖZET: [Tek cümlede ana bulgu + ML modelinin genel değerlendirmesi]
+
+🔍 DETAYLI ANALİZ:
+Her kritik anomali için:
+- ML Severity Score ve ne anlama geldiğinin açıklaması
+- Pattern açıklaması ve root cause
+- **GERÇEK LOG ÖRNEKLERİ** (```code block``` içinde tam log mesajı)
+- Pattern grupları ve sayıları
+- Zaman dağılımı (peak saatler varsa)
+
+⚠️ RİSKLER:
+- Mevcut riskler (somut: "X node'da GC pause 10s üzeri, Y index'te shard allocation failed")
+- Potansiyel zincir etkiler (ör: "Disk watermark aşılırsa index read-only olur, yazma durur")
+
+✅ ÖNERİLER:
+Her öneri şu formatta olmalı:
+1. [ACİL/ORTA/DÜŞÜK] Başlık
+   - Neden: Sorunun açıklaması
+   - Çözüm komutu (```json``` kod bloğu içinde çalıştırılabilir Elasticsearch API komutu)
+   - Beklenen etki: "GC pause süresi ~Xs'den ~Ys'ye düşecek" gibi somut
+
+Türkçe yanıt ver, teknik terimleri açıkla, Elasticsearch mühendislerinin anlayacağı detay seviyesinde ol.
+MUTLAKA gerçek log mesajlarını kod bloğu içinde göster.
+MUTLAKA çözüm komutlarını ```json``` kod bloğu içinde ver (Elasticsearch REST API formatında).
+Önce log örneklerini göster, sonra pattern açıklamasını, sonra ÇALIŞTIRILABİLİR Elasticsearch API komut önerilerini göster."""
         else:
             system_prompt = """Sen MongoDB anomali analizi ve performans optimizasyonu konusunda uzman bir Senior DBA'sin.
 MongoDB loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve ÇALIŞTIRILAB İLİR çözüm komutları sunabilirsin.
@@ -2795,6 +2928,22 @@ YANIT FORMATI:
 Her öneri: [ACİL/ORTA/DÜŞÜK] Başlık + Neden + ```sql``` çalıştırılabilir T-SQL komutu + Beklenen etki
 
 Türkçe yanıt ver. MUTLAKA gerçek çalıştırılabilir T-SQL komutları ```sql``` kod bloğu içinde ver."""
+            elif is_elasticsearch:
+                merge_system = """Sen Elasticsearch anomali analiz uzmanı bir Senior Elasticsearch Engineer'sin. Birden fazla analizi birleştirip tek tutarlı rapor oluşturabilirsin.
+
+YANIT FORMATI:
+📊 ÖZET: [Birleştirilmiş ana bulgu + toplam anomali sayısı + en kritik pattern]
+
+🔍 DETAYLI ANALİZ:
+- Her kritik pattern grubu için root cause + gerçek log örnekleri (```code block``` içinde)
+
+⚠️ RİSKLER:
+- Somut riskler ve zincir etkileri
+
+✅ ÖNERİLER:
+Her öneri: [ACİL/ORTA/DÜŞÜK] Başlık + Neden + ```json``` çalıştırılabilir Elasticsearch REST API komutu + Beklenen etki
+
+Türkçe yanıt ver. MUTLAKA gerçek çalıştırılabilir Elasticsearch API komutları ```json``` kod bloğu içinde ver."""
             else:
                 merge_system = """Sen MongoDB anomali analiz uzmanı bir Senior DBA'sin. Birden fazla analizi birleştirip tek tutarlı rapor oluşturabilirsin.
 
@@ -3778,7 +3927,6 @@ async def get_dba_analysis_history(
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Geçmiş yüklenirken hata: {str(e)}")
 
-
 @app.get("/api/mssql/analysis-history")
 async def get_mssql_analysis_history(
     limit: int = Query(20, le=50, description="Maksimum sonuç sayısı"),
@@ -3840,6 +3988,67 @@ async def get_mssql_analysis_history(
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"MSSQL geçmiş yüklenirken hata: {str(e)}")
 
+
+@app.get("/api/elasticsearch/analysis-history")
+async def get_elasticsearch_analysis_history(
+    limit: int = Query(20, le=50, description="Maksimum sonuç sayısı"),
+    days_back: int = Query(30, le=90, description="Kaç gün geriye bakılacak"),
+    api_key: str = Query(..., description="API anahtarı")
+):
+    """
+    Elasticsearch analiz geçmişini MongoDB'den getir
+
+    DBA/MSSQL analysis-history ile aynı yapı, source_type='elasticsearch_opensearch' filtreli.
+
+    Returns:
+        Son yapılan Elasticsearch analizlerinin özeti
+    """
+    try:
+        # API key kontrolü
+        if not await verify_api_key(api_key):
+            raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+        # Storage Manager'ı al
+        storage = await get_storage_manager()
+        if not storage:
+            logger.warning("Storage Manager not available, returning empty Elasticsearch history")
+            return {
+                "status": "success",
+                "analyses": [],
+                "message": "Storage not available",
+                "count": 0
+            }
+
+        # MongoDB'den Elasticsearch analizlerini çek
+        logger.info(f"Fetching Elasticsearch analysis history: limit={limit}, days_back={days_back}")
+
+        analyses = await storage.get_dba_analysis_history(
+            source_type="elasticsearch_opensearch",
+            limit=limit,
+            days_back=days_back
+        )
+
+        # Başarılı response
+        logger.info(f"✅ Retrieved {len(analyses)} Elasticsearch analyses from history")
+
+        return {
+            "status": "success",
+            "analyses": analyses,
+            "count": len(analyses),
+            "database_type": "elasticsearch",
+            "query_params": {
+                "limit": limit,
+                "days_back": days_back
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to get Elasticsearch analysis history: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Elasticsearch geçmiş yüklenirken hata: {str(e)}")
 
 @app.get("/api/dba/analysis/{analysis_id}")
 async def get_dba_analysis_details(

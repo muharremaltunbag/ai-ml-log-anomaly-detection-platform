@@ -176,6 +176,49 @@ def parse_es_log_line(message: str) -> Dict[str, str]:
     }
 
 
+def parse_es_deprecation_json(message: str) -> Optional[Dict[str, str]]:
+    """
+    Elasticsearch deprecation JSON log satırını parse eder.
+
+    Deprecation logları message[0] içinde JSON string olarak gelir:
+    {"@timestamp":"...", "log.level":"WARN", "event.code":"...", "message":"...",
+     "log.logger":"...", "elasticsearch.node.name":"...", ...}
+
+    Server logları [ts][LEVEL][logger] formatında gelir — bu fonksiyon
+    sadece JSON formatını handle eder.
+
+    Args:
+        message: Raw message string (potansiyel JSON)
+
+    Returns:
+        Parsed fields dict if valid JSON, None otherwise
+    """
+    stripped = message.strip()
+    if not stripped.startswith('{'):
+        return None
+
+    try:
+        data = json.loads(stripped)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    # JSON olsa bile deprecation alanları yoksa None dön (false positive JSON'u önle)
+    if 'log.level' not in data and 'message' not in data:
+        return None
+
+    return {
+        'parsed_timestamp': data.get('@timestamp', ''),
+        'log_level': data.get('log.level', 'UNKNOWN').strip().upper(),
+        'logger_name': data.get('log.logger', ''),
+        'node_name': data.get('elasticsearch.node.name', ''),
+        'message_text': data.get('message', ''),
+        'event_code': data.get('event.code', ''),
+        'event_category': data.get('elasticsearch.event.category', ''),
+        'cluster_name': data.get('elasticsearch.cluster.name', ''),
+        'cluster_uuid': data.get('elasticsearch.cluster.uuid', ''),
+    }
+
+
 def classify_logger(logger_name: str) -> str:
     """
     Elasticsearch logger adını kategorize eder.
@@ -242,7 +285,7 @@ def detect_host_role(hostname: str) -> str:
     elif 'CR' in hn:
         return 'coordinating'
     elif 'RW' in hn:
-        return 'warm'
+        return 'worker'
     else:
         return 'unknown'
 
@@ -289,6 +332,10 @@ def enrich_es_log_entry(log_entry: dict) -> dict:
     """
     Elasticsearch log kaydını zenginleştirir.
 
+    İki farklı log formatını destekler:
+    1. Server logs: [timestamp][LEVEL][logger] [node] message (regex parse)
+    2. Deprecation logs: JSON string inside message (JSON decode)
+
     Args:
         log_entry: Raw log entry dict
 
@@ -299,27 +346,46 @@ def enrich_es_log_entry(log_entry: dict) -> dict:
 
     raw_message = enriched.get('raw_message', '')
 
-    # Parse log line
-    parsed = parse_es_log_line(raw_message)
-    enriched['log_level'] = enriched.get('log_level') or parsed['log_level']
-    enriched['logger_name'] = enriched.get('logger_name') or parsed['logger_name']
-    enriched['node_name'] = enriched.get('node_name') or parsed['node_name']
-    enriched['message_text'] = parsed['message_text']
+    # === Deprecation JSON check — JSON ise önce JSON parse dene ===
+    deprecation_parsed = parse_es_deprecation_json(raw_message)
 
-    # Event timestamp: log satırından parse edilen gerçek olay zamanı
-    # @timestamp Filebeat ingest time olabilir (aylarca sapma görüldü)
-    enriched['event_timestamp'] = parsed['parsed_timestamp']
+    if deprecation_parsed:
+        # Deprecation JSON başarıyla parse edildi
+        enriched['log_level'] = deprecation_parsed['log_level']
+        enriched['logger_name'] = deprecation_parsed['logger_name']
+        enriched['node_name'] = deprecation_parsed['node_name']
+        enriched['message_text'] = deprecation_parsed['message_text']
+        enriched['event_timestamp'] = deprecation_parsed['parsed_timestamp']
+        # Deprecation-specific zengin alanlar
+        enriched['event_code'] = deprecation_parsed.get('event_code', '')
+        enriched['event_category'] = deprecation_parsed.get('event_category', '')
+        enriched['cluster_name'] = deprecation_parsed.get('cluster_name', '')
+        enriched['is_deprecation_json'] = True
+    else:
+        # Server log — mevcut regex parse (değişmedi)
+        parsed = parse_es_log_line(raw_message)
+        enriched['log_level'] = enriched.get('log_level') or parsed['log_level']
+        enriched['logger_name'] = enriched.get('logger_name') or parsed['logger_name']
+        enriched['node_name'] = enriched.get('node_name') or parsed['node_name']
+        enriched['message_text'] = parsed['message_text']
+        enriched['event_timestamp'] = parsed['parsed_timestamp']
+        # Server loglarında bu alanlar boş (ama DataFrame tutarlılığı için mevcut)
+        enriched['event_code'] = ''
+        enriched['event_category'] = ''
+        enriched['cluster_name'] = ''
+        enriched['is_deprecation_json'] = False
 
-    # Logger category
+    # Logger category (her iki format için de çalışır)
     enriched['logger_category'] = classify_logger(enriched['logger_name'])
 
     # Host role
     enriched['host_role'] = detect_host_role(enriched.get('host', ''))
 
-    # Message fingerprint
+    # Message fingerprint (raw_message üzerinde — her iki format)
     enriched['message_fingerprint'] = normalize_es_message(raw_message)
 
-    # Pattern flags (boolean)
+    # Pattern flags (boolean) — raw_message üzerinde çalışır
+    # Deprecation JSON'da da "message" key'i raw_message içinde geçer, pattern'lar çalışır
     enriched['is_gc_overhead'] = bool(GC_PATTERN.search(raw_message))
     enriched['is_circuit_breaker'] = bool(CIRCUIT_BREAKER_PATTERN.search(raw_message))
     enriched['is_oom_error'] = bool(OOM_PATTERN.search(raw_message))

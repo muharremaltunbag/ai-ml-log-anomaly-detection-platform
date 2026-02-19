@@ -2429,7 +2429,7 @@ class AnomalyDetectionTools:
 
             # 6. AI EXPLANATION (optional)
             ai_explanation = None
-            if self.llm_connector and analysis.get('critical_anomalies'):
+            if self.llm_connector and self.llm_connector.is_connected() and analysis.get('critical_anomalies'):
                 try:
                     logger.info("Generating AI explanation for ES anomalies...")
                     limited_analysis = {
@@ -2457,17 +2457,13 @@ class AnomalyDetectionTools:
                 for concern in es_specific['health_concerns'][:5]:
                     description += f"  • {concern}\n"
 
-            # Format critical anomalies for output
+            # Format critical anomalies for output — preserve all fields from detector
             formatted_anomalies = []
             for anomaly in critical_anomalies[:75]:
-                formatted = {
-                    "timestamp": anomaly.get("timestamp"),
-                    "severity_score": anomaly.get("severity_score"),
-                    "severity_level": anomaly.get("severity_level"),
-                    "component": anomaly.get("component"),
-                    "message": anomaly.get("message", "")[:500],
-                    "host_role": anomaly.get("host_role"),
-                }
+                formatted = anomaly.copy()
+                # Truncate message for transport size
+                if 'message' in formatted and formatted['message']:
+                    formatted['message'] = str(formatted['message'])[:500]
                 formatted_anomalies.append(formatted)
 
             suggestions = self._create_es_suggestions(analysis, es_specific)

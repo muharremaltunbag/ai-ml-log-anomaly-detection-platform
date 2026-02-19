@@ -1,3 +1,4 @@
+
 {
     "model_version": "1.0",
     "config_metadata": {
@@ -84,6 +85,7 @@
             "type": "IsolationForest",
             "parameters": {
                 "contamination": 0.05,
+                "_contamination_note": "0.05 = %5 anomaly assumption. Without ground truth labels, this cannot be empirically validated. sklearn default is 'auto'. If false positive rate is too high, consider lowering to 0.02-0.03. Re-training required after change.",
                 "n_estimators": 300,
                 "max_samples": 512,
                 "max_features": 0.9,
@@ -246,7 +248,7 @@
             "exception": "Exception|Caused by|at org\\.elasticsearch"
         },
         "logger_categories": {
-            "cluster": ["o.e.c.", "o.e.cluster.", "o.e.d."],
+            "cluster": ["o.e.c.", "o.e.cluster."],
             "index": ["o.e.i.", "o.e.indices.", "o.e.index."],
             "transport": ["o.e.t.", "o.e.transport."],
             "gc": ["o.e.m.jvm", "JvmGcMonitorService"],
@@ -258,9 +260,9 @@
             "data_node": "DT",
             "master_node": "MS",
             "coordinating_node": "CR",
-            "warm_node": "RW"
+            "worker_node": "RW"
         },
-        "description": "Host name contains role identifier (e.g., ECAZTRDBESDT011 = data node, ECAZTRDBESMS006 = master node)"
+        "description": "Host name contains role identifier (e.g., ECAZTRDBESDT011 = data node, ECAZTRDBESMS006 = master node, ECAZTRDBESRW001 = worker/read-write node)"
     },
     "processing": {
         "batch_size": 10000,
