@@ -492,14 +492,31 @@ class MSSQLFeatureEngineer:
                 df['extreme_burst_flag'] = 0
                 df['burst_density'] = 0
 
-            # Failed login ratio (rolling 1 hour window - approximation)
-            if 'is_failed_login' in df.columns:
-                # Her 1000 log'luk pencerede failed login oranı
+            # Failed login ratio (actual 1-hour time-based rolling)
+            if 'is_failed_login' in df.columns and 'timestamp' in df.columns and df['timestamp'].notna().all():
+                try:
+                    # Time-based rolling: timestamp'i index olarak kullan
+                    # df zaten extract_timestamp_features'da timestamp'e göre sıralanmış
+                    failed_series = df.set_index('timestamp')['is_failed_login'].sort_index()
+                    ratio_result = failed_series.rolling('1h', min_periods=1).mean()
+                    count_result = failed_series.rolling('1h', min_periods=1).count()
+                    # Orijinal sırayı koru (df zaten timestamp'e göre sıralı)
+                    df['failed_login_ratio_1h'] = ratio_result.values
+                    df['login_count_1h'] = count_result.values
+                    logger.debug("Time-based 1h rolling applied for failed_login_ratio_1h")
+                except Exception as e:
+                    logger.warning(f"Time-based rolling failed, falling back to count-based: {e}")
+                    df['failed_login_ratio_1h'] = df['is_failed_login'].rolling(
+                        window=1000, min_periods=1
+                    ).mean()
+                    df['login_count_1h'] = df['is_failed_login'].rolling(
+                        window=1000, min_periods=1
+                    ).count()
+            elif 'is_failed_login' in df.columns:
+                # Timestamp yok — count-based fallback
                 df['failed_login_ratio_1h'] = df['is_failed_login'].rolling(
                     window=1000, min_periods=1
                 ).mean()
-
-                # Login count in window
                 df['login_count_1h'] = df['is_failed_login'].rolling(
                     window=1000, min_periods=1
                 ).count()
