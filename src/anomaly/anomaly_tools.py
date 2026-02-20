@@ -2623,9 +2623,10 @@ Sana verilen Elasticsearch log anomali analizini değerlendir.
 Türkçe yanıt ver. Kısa ve öz tut."""
 
             es_specific = analysis.get("es_specific", {})
+            server_info = f"Sunucu: {server_name}\n" if server_name else ""
             user_prompt = f"""Elasticsearch Anomali Analiz Sonuçları:
 
-Özet: {json.dumps(analysis.get('summary', {}), indent=2, ensure_ascii=False)}
+{server_info}Özet: {json.dumps(analysis.get('summary', {}), indent=2, ensure_ascii=False)}
 
 Sağlık Sorunları:
 {json.dumps(es_specific.get('health_concerns', []), indent=2, ensure_ascii=False)}
@@ -2633,9 +2634,9 @@ Sağlık Sorunları:
 Kritik Pattern'lar:
 {json.dumps(es_specific.get('critical_patterns', {}), indent=2, ensure_ascii=False)}
 
-En Kritik 5 Anomali:
+En Kritik 10 Anomali:
 """
-            for a in analysis.get("critical_anomalies", [])[:5]:
+            for a in analysis.get("critical_anomalies", [])[:10]:
                 user_prompt += f"\n- [{a.get('severity_level')}] Score:{a.get('severity_score')} | {a.get('message', '')[:200]}"
 
             messages = [
