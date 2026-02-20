@@ -532,8 +532,9 @@ class ElasticsearchAnomalyDetector(MongoDBAnomalyDetector):
                 "severity": row.get('log_level', None),
                 "component": row.get('logger_name', None),
                 "message": raw_msg[:1000],
-                "severity_factors": None
+                "severity_factors": severity_info.get("factors")
             })
+
             added_count += 1
             if added_count >= 100:
                 break
