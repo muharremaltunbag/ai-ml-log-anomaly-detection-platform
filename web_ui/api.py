@@ -1252,7 +1252,7 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
             # [SAFETY] Frontend Crash Prevention (Payload Protection)
             # Verinin aslı Storage'da güvende. Tarayıcıyı kilitlememek için
             # response içindeki listeleri güvenli limitlere çekiyoruz.
-            if 'sonuç' in result:
+            if result.get('sonuç') is not None:
                 data = result['sonuç']
                 
                 # Unfiltered listeyi kısalt
@@ -1478,7 +1478,7 @@ async def analyze_mssql_logs(request: AnalyzeMSSQLLogsRequest):
                     logger.error(f"MSSQL Auto-save error: {e}")
 
             # Frontend Crash Prevention (Payload Protection)
-            if 'sonuç' in result:
+            if result.get('sonuç') is not None:
                 data = result['sonuç']
                 if 'unfiltered_anomalies' in data:
                     total_count = len(data['unfiltered_anomalies'])
@@ -1642,7 +1642,7 @@ async def analyze_elasticsearch_logs(request: AnalyzeESLogsRequest):
                     logger.error(f"Elasticsearch Auto-save error: {e}")
 
             # Frontend Crash Prevention
-            if 'sonuç' in result:
+            if result.get('sonuç') is not None:
                 data = result['sonuç']
                 if 'unfiltered_anomalies' in data:
                     total_count = len(data['unfiltered_anomalies'])
