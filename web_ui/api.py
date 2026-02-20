@@ -2209,7 +2209,7 @@ def get_diverse_anomalies(anomalies: list, total_limit: int = 1000):
 # =====================================================
 
 # Per-analysis conversation memory (in-memory cache)
-_chat_conversation_cache: Dict[str, List[Dict[str, str]]] = {}
+_chat_conversation_cache: Dict[str, list[Dict[str, str]]] = {}
 _CONVERSATION_HISTORY_LIMIT = 5  # Son 5 Q&A turu
 
 
