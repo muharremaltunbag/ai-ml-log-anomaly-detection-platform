@@ -2115,11 +2115,24 @@ def _calculate_chunk_relevance(query: str, chunk_anomalies: list, chunk_index: i
         'replica', 'replik', 'shard', 'parça', 'primary', 'secondary', 'arbiter',
         'oplog', 'gridfs', 'index', 'indeks', 'collection', 'koleksiyon',
         'document', 'döküman', 'query', 'sorgu', 'aggregation', 'toplama',
-        
+
+        # Elasticsearch özel terimler
+        'gc', 'garbage', 'jvm', 'heap', 'circuit breaker', 'watermark', 'flood',
+        'master election', 'node left', 'node joined', 'unassigned',
+        'cluster health', 'yellow', 'red', 'deprecation', 'mapping',
+        'bulk reject', 'thread pool', 'slow log', 'force merge',
+        'ilm', 'rollover', 'hot', 'warm', 'cold',
+
+        # MSSQL özel terimler
+        'login failed', 'brute force', 'tempdb', 'availability group',
+        'failover', 'always on', 'agent job', 'backup', 'restore',
+        't-sql', 'execution plan', 'wait stats', 'page split',
+        'autogrow', 'buffer pool', 'plan cache',
+
         # Performance sorunları
         'performans', 'performance', 'yavaşlama', 'bottleneck', 'darboğaz',
         'lock', 'kilit', 'deadlock', 'blocking', 'queue', 'kuyruk',
-        
+
         # Güvenlik ve erişim
         'authentication', 'kimlik doğrulama', 'authorization', 'yetkilendirme',
         'login', 'giriş', 'password', 'şifre', 'access', 'erişim', 'denied',
@@ -2234,7 +2247,12 @@ def _build_anomaly_digest(all_anomalies: list, source_type: str = "mongodb") -> 
     # 3. Pattern/Fingerprint grupları
     pattern_groups = {}
     for a in all_anomalies:
-        fp = a.get('message_fingerprint', a.get('anomaly_type', 'other'))
+        fp = a.get('message_fingerprint') or a.get('anomaly_type')
+        # Fallback: fingerprint yoksa component + mesaj başı ile grupla
+        if not fp:
+            comp = a.get('component', 'unknown') or 'unknown'
+            msg = (a.get('message', '') or '')[:40].strip()
+            fp = f"{comp}:{msg}" if msg else comp
         if fp not in pattern_groups:
             pattern_groups[fp] = {
                 'count': 0,

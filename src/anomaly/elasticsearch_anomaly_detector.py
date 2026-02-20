@@ -474,6 +474,9 @@ class ElasticsearchAnomalyDetector(MongoDBAnomalyDetector):
                 anomaly['severity'] = row.get('log_level', None)
                 # Host role ek bilgisi
                 anomaly['host_role'] = row.get('host_role', None)
+                # Message fingerprint (pattern grouping için)
+                if 'message_fingerprint' in df.columns:
+                    anomaly['message_fingerprint'] = str(row.get('message_fingerprint', ''))
 
         # ── 1b. all_anomalies için de ──
         for anomaly in analysis.get('all_anomalies', []):
@@ -490,6 +493,8 @@ class ElasticsearchAnomalyDetector(MongoDBAnomalyDetector):
                     anomaly['message'] = raw_msg[:1000]
                 anomaly['component'] = row.get('logger_name', None)
                 anomaly['severity'] = row.get('log_level', None)
+                if 'message_fingerprint' in df.columns:
+                    anomaly['message_fingerprint'] = str(row.get('message_fingerprint', ''))
 
         # ── 2. ES critical pattern taraması ──
         existing_indices = {a['index'] for a in analysis.get('critical_anomalies', [])}

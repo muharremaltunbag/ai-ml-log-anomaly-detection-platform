@@ -1156,6 +1156,7 @@ class MongoDBAnomalyDetector:
                 "severity": df.iloc[idx]['s'] if 's' in df.columns else None,
                 "component": df.iloc[idx]['c'] if 'c' in df.columns else None,
                 "message": full_message,  # TAM MESAJ
+                "message_fingerprint": str(df.iloc[idx]['message_fingerprint']) if 'message_fingerprint' in df.columns else None,
                 "severity_factors": None  # Frontend'de gösterme
             })
 
