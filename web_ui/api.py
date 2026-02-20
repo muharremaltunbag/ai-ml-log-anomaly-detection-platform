@@ -2189,6 +2189,173 @@ def get_diverse_anomalies(anomalies: list, total_limit: int = 1000):
     
     return diverse_df.head(total_limit).to_dict('records')
 
+
+# =====================================================
+# ANOMALY DIGEST & CONVERSATION MEMORY
+# Token-efficient global context for chat-query-anomalies
+# =====================================================
+
+# Per-analysis conversation memory (in-memory cache)
+_chat_conversation_cache: Dict[str, List[Dict[str, str]]] = {}
+_CONVERSATION_HISTORY_LIMIT = 5  # Son 5 Q&A turu
+
+
+def _build_anomaly_digest(all_anomalies: list, source_type: str = "mongodb") -> str:
+    """
+    Tüm anomalilerin kompakt özeti (~500-800 token).
+    Her chat prompt'una 'GLOBAL CONTEXT' olarak eklenir.
+    LLM, chunk'taki detaylara bakarken büyük resmi de görsün.
+
+    Args:
+        all_anomalies: Tüm anomali listesi (300-450 kayıt)
+        source_type: Kaynak tipi (mongodb, mssql, elasticsearch)
+
+    Returns:
+        Kompakt digest metni
+    """
+    if not all_anomalies:
+        return "Anomali bulunamadı."
+
+    total = len(all_anomalies)
+
+    # 1. Severity dağılımı
+    severity_dist = {}
+    for a in all_anomalies:
+        sev = a.get('severity_level', 'UNKNOWN')
+        severity_dist[sev] = severity_dist.get(sev, 0) + 1
+
+    # 2. Component/Logger dağılımı (top 10)
+    component_dist = {}
+    for a in all_anomalies:
+        comp = a.get('component', a.get('logger_name', 'N/A'))
+        component_dist[comp] = component_dist.get(comp, 0) + 1
+    top_components = sorted(component_dist.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    # 3. Pattern/Fingerprint grupları
+    pattern_groups = {}
+    for a in all_anomalies:
+        fp = a.get('message_fingerprint', a.get('anomaly_type', 'other'))
+        if fp not in pattern_groups:
+            pattern_groups[fp] = {
+                'count': 0,
+                'max_score': 0,
+                'sample_msg': a.get('message', '')[:120],
+                'severity_levels': set()
+            }
+        pattern_groups[fp]['count'] += 1
+        score = a.get('severity_score', a.get('score', 0))
+        if score > pattern_groups[fp]['max_score']:
+            pattern_groups[fp]['max_score'] = score
+            pattern_groups[fp]['sample_msg'] = a.get('message', '')[:120]
+        pattern_groups[fp]['severity_levels'].add(a.get('severity_level', 'UNKNOWN'))
+
+    # En sık 10 pattern grubu
+    top_patterns = sorted(pattern_groups.items(), key=lambda x: x[1]['count'], reverse=True)[:10]
+
+    # 4. Zaman dağılımı
+    hour_dist = {}
+    for a in all_anomalies:
+        ts = a.get('timestamp', '')
+        if ts:
+            try:
+                if isinstance(ts, str):
+                    h = ts[11:13] if len(ts) > 13 else '??'
+                else:
+                    h = str(getattr(ts, 'hour', '??'))
+                hour_dist[h] = hour_dist.get(h, 0) + 1
+            except Exception:
+                pass
+    peak_hours = sorted(hour_dist.items(), key=lambda x: x[1], reverse=True)[:3]
+
+    # 5. Skor istatistikleri
+    scores = [a.get('severity_score', a.get('score', 0)) for a in all_anomalies if a.get('severity_score', a.get('score', 0)) > 0]
+    avg_score = sum(scores) / len(scores) if scores else 0
+    max_score = max(scores) if scores else 0
+
+    # Digest oluştur
+    digest = f"""GLOBAL ANOMALİ ÖZETİ (Tüm {total} anomali):
+
+SEVERITY DAĞILIMI:
+{', '.join([f'{k}: {v}' for k, v in sorted(severity_dist.items(), key=lambda x: x[1], reverse=True)])}
+
+SKOR İSTATİSTİKLERİ:
+Ortalama: {avg_score:.1f}, Maksimum: {max_score:.1f}
+
+EN AKTİF COMPONENT/LOGGER (Top 10):
+{chr(10).join([f'  {comp}: {cnt} anomali' for comp, cnt in top_components])}
+
+EN SIK PATTERN GRUPLARI (Top 10):
+"""
+    for fp, info in top_patterns:
+        fp_short = str(fp)[:50] if fp else 'unknown'
+        digest += f"  [{info['count']}x] MaxScore:{info['max_score']:.0f} | {fp_short} — \"{info['sample_msg'][:80]}\"\n"
+
+    if peak_hours:
+        digest += f"\nPEAK SAATLER: {', '.join([f'{h}:00 ({c} anomali)' for h, c in peak_hours])}\n"
+
+    digest += f"\nToplam {len(pattern_groups)} farklı pattern grubu tespit edildi."
+
+    return digest
+
+
+def _get_conversation_history(analysis_id: str) -> str:
+    """
+    Önceki Q&A turlarını kompakt metin olarak döndür.
+    Her tur: soru + cevap özeti (max 300 char)
+    """
+    if not analysis_id or analysis_id not in _chat_conversation_cache:
+        return ""
+
+    history = _chat_conversation_cache[analysis_id]
+    if not history:
+        return ""
+
+    text = "ÖNCEKİ SORU-CEVAPLAR:\n"
+    for turn in history[-_CONVERSATION_HISTORY_LIMIT:]:
+        q = turn.get('query', '')[:100]
+        a = turn.get('response_summary', '')[:300]
+        text += f"  S: {q}\n  C: {a}\n\n"
+
+    return text
+
+
+def _save_conversation_turn(analysis_id: str, query: str, response: str):
+    """
+    Q&A turunu cache'e kaydet.
+    Response'dan ilk 300 karakteri özet olarak sakla.
+    """
+    if not analysis_id:
+        return
+
+    if analysis_id not in _chat_conversation_cache:
+        _chat_conversation_cache[analysis_id] = []
+
+    # Response özetini oluştur (ilk paragraf veya ilk 300 char)
+    summary = response[:300].strip()
+    first_para_end = summary.find('\n\n')
+    if first_para_end > 50:
+        summary = summary[:first_para_end]
+
+    _chat_conversation_cache[analysis_id].append({
+        'query': query,
+        'response_summary': summary,
+        'timestamp': datetime.now().isoformat()
+    })
+
+    # Max limit — en eski turları sil
+    if len(_chat_conversation_cache[analysis_id]) > _CONVERSATION_HISTORY_LIMIT * 2:
+        _chat_conversation_cache[analysis_id] = _chat_conversation_cache[analysis_id][-_CONVERSATION_HISTORY_LIMIT:]
+
+    # Memory cleanup: 100'den fazla analysis_id varsa eskilerini sil
+    if len(_chat_conversation_cache) > 100:
+        oldest_keys = sorted(
+            _chat_conversation_cache.keys(),
+            key=lambda k: _chat_conversation_cache[k][-1]['timestamp'] if _chat_conversation_cache[k] else '',
+        )[:50]
+        for k in oldest_keys:
+            del _chat_conversation_cache[k]
+
+
 @app.post("/api/chat-query-anomalies")
 async def chat_query_anomalies(request: Dict[str, Any]):
     """Chat üzerinden anomali sorgulama - LCWGPT ile (Progress Tracking Destekli)"""
@@ -2502,6 +2669,17 @@ async def chat_query_anomalies(request: Dict[str, Any]):
                 "total_anomalies": len(all_anomalies)
             }
 
+        # Global anomaly digest — tüm anomalilerin kompakt özeti (~500 token)
+        source_label = "elasticsearch" if is_elasticsearch else ("mssql" if is_mssql else "mongodb")
+        anomaly_digest = _build_anomaly_digest(all_anomalies, source_type=source_label)
+        logger.info(f"Anomaly digest built: {len(anomaly_digest)} chars (~{estimate_token_count(anomaly_digest)} tokens)")
+
+        # Conversation memory — önceki Q&A turlarını al
+        effective_analysis_id = analysis_id or analysis.get("analysis_id", "")
+        conversation_history = _get_conversation_history(effective_analysis_id)
+        if conversation_history:
+            logger.info(f"Conversation history found for {effective_analysis_id}: {len(conversation_history)} chars")
+
         chunk_size = 20
         total_chunks = (len(all_anomalies) + chunk_size - 1) // chunk_size
         batch_size = 3
@@ -2782,7 +2960,9 @@ Bu geçmiş analizleri de göz önünde bulundurarak daha kapsamlı bir değerle
             if context_analyses:
                 chunk_prompt = f"""
 
-KULLANICI SORUSU: {query}
+{anomaly_digest}
+
+{conversation_history}KULLANICI SORUSU: {query}
 
 İLGİLİ GEÇMİŞ ANALİZLER:
 """
@@ -2821,7 +3001,9 @@ GÖREV:
             else:
                 chunk_prompt = f"""
 
-KULLANICI SORUSU: {query}
+{anomaly_digest}
+
+{conversation_history}KULLANICI SORUSU: {query}
 
 CHUNK BİLGİSİ: {chunk_idx + 1}/{total_chunks} (Anomali {start_idx+1}-{end_idx} arası)
 
@@ -2883,18 +3065,14 @@ GÖREV:
         if len(chunk_responses) > 1:
             aggregate_prompt = f"""
 
-KULLANICI SORUSU: {query}
+{anomaly_digest}
+
+{conversation_history}KULLANICI SORUSU: {query}
 
 ANALİZ ÖZETİ:
 - Toplam {len(all_anomalies)} anomali tespit edildi
 - {len(chunk_responses)} farklı chunk analiz edildi
 - Toplam {sum(cr['anomaly_count'] for cr in chunk_responses)} anomali detaylı incelendi
-
-COMPONENT DAĞILIMI:
-{_format_dict_for_prompt(component_dist, limit=10)}
-
-SEVERITY DAĞILIMI:
-{_format_dict_for_prompt(severity_dist)}
 
 CHUNK ANALİZ SONUÇLARI:
 """
@@ -2983,6 +3161,10 @@ Türkçe yanıt ver. MUTLAKA gerçek çalıştırılabilir MongoDB komutları ``
                 logger.info(f"Single chunk response used (chunk {selected_chunk_indices[0] + 1})")
             else:
                 logger.info("Single chunk response used (no chunk indices available)")
+
+        # Conversation memory — bu Q&A turunu kaydet
+        _save_conversation_turn(effective_analysis_id, query, ai_response)
+        logger.info(f"Conversation turn saved for analysis {effective_analysis_id}")
 
         response_data = {
             "status": "success",
