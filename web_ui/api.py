@@ -3806,7 +3806,7 @@ async def dba_analyze_specific_time(
                     res = json.loads(res_str) if isinstance(res_str, str) else res_str
                     host_name = hosts_list[i]
                     
-                    if res.get('durum') == 'başarılı' and 'sonuç' in res:
+                    if res.get('durum') == 'başarılı' and res.get('sonuç'):
                         data = res['sonuç']
                         # Her host'un anomalilerini topla
                         host_anomalies = data.get('critical_anomalies', [])
