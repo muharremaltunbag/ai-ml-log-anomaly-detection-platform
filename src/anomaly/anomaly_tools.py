@@ -2611,33 +2611,83 @@ class AnomalyDetectionTools:
             if not self.llm_connector:
                 return None
 
-            system_prompt = """Sen bir Elasticsearch cluster yönetimi ve performans uzmanısın.
-Sana verilen Elasticsearch log anomali analizini değerlendir.
-Özellikle şunlara odaklan:
-1. JVM heap basıncı (OOM, Circuit Breaker)
-2. Disk doluluk uyarıları (watermark, flood stage)
-3. Cluster stabilitesi (master election, node event)
-4. Shard sağlığı (unassigned, relocation)
-5. GC performansı
+            system_prompt = """Sen bir Elasticsearch cluster yönetimi, performans ve operasyon uzmanısın.
+Sana verilen Elasticsearch log anomali analizini değerlendir ve spesifik, aksiyona yönelik analiz yap.
 
-Türkçe yanıt ver. Kısa ve öz tut."""
+Özellikle şunlara odaklan:
+1. JVM heap basıncı (OOM, Circuit Breaker) — heap boyutu, GC tuning
+2. Disk doluluk uyarıları (watermark, flood stage) — ILM policy, disk genişletme
+3. Cluster stabilitesi (master election, node event) — dedicated master, minimum_master_nodes
+4. Shard sağlığı (unassigned, relocation) — shard allocation, rebalancing
+5. GC performansı — G1GC ayarları, heap pressure
+6. Slow log ve sorgu performansı — index mapping, query optimization
+
+FORMATIN (MAX 600 kelime):
+1. DURUM DEĞERLENDİRMESİ (3-4 cümle): Cluster sağlığı genel durumu, aciliyet seviyesi
+2. KRİTİK BULGULAR: Her bulgu için → ne oldu, neden oldu, etkisi ne
+3. KÖK NEDEN ANALİZİ: Pattern'lar arasındaki ilişkiyi yorumla (örn: OOM → GC storm → shard failure zinciri)
+4. ACİL AKSİYONLAR: Max 5 madde, Elasticsearch best practice'e dayalı spesifik komut/ayar öner
+5. ORTA VADELİ İYİLEŞTİRME: Cluster mimarisi, kapasite planlama önerileri
+
+Türkçe yaz. Genel geçer tavsiye verme, veriye dayalı spesifik önerilerde bulun. Node rollerini (data/master/coordinating) dikkate al."""
 
             es_specific = analysis.get("es_specific", {})
+            summary = analysis.get("summary", {})
             server_info = f"Sunucu: {server_name}\n" if server_name else ""
+
+            # Node role distribution
+            node_roles = es_specific.get('node_role_distribution', {})
+            node_role_text = ", ".join([f"{role}: {count}" for role, count in node_roles.items()]) if node_roles else "Bilgi yok"
+
+            # Log level distribution
+            log_levels = es_specific.get('log_level_distribution', {})
+            log_level_text = ", ".join([f"{level}: {count}" for level, count in log_levels.items()]) if log_levels else "Bilgi yok"
+
+            # Logger distribution (top 5)
+            loggers = es_specific.get('logger_distribution', {})
+            logger_text = "\n".join([f"  - {name}: {count}" for name, count in list(loggers.items())[:5]]) if loggers else "  Bilgi yok"
+
+            # Critical patterns - formatted
+            patterns = es_specific.get('critical_patterns', {})
+            pattern_text = ""
+            for pat, stats in patterns.items():
+                pat_name = pat.replace('is_', '').replace('_', ' ').title()
+                total = stats.get('total', 0) if isinstance(stats, dict) else 0
+                anomalous = stats.get('anomalous', 0) if isinstance(stats, dict) else 0
+                if total > 0:
+                    pattern_text += f"  - {pat_name}: {total} toplam, {anomalous} anomali\n"
+            if not pattern_text:
+                pattern_text = "  Kritik pattern tespit edilmedi\n"
+
             user_prompt = f"""Elasticsearch Anomali Analiz Sonuçları:
 
-{server_info}Özet: {json.dumps(analysis.get('summary', {}), indent=2, ensure_ascii=False)}
+{server_info}Toplam Log: {summary.get('total_logs', summary.get('n_samples', 'N/A'))}
+Anomali Sayısı: {summary.get('n_anomalies', 0)}
+Anomali Oranı: %{summary.get('anomaly_rate', 0):.1f}
+Skor Aralığı: {json.dumps(summary.get('score_range', {}), ensure_ascii=False)}
 
-Sağlık Sorunları:
+NODE ROL DAĞILIMI:
+{node_role_text}
+
+LOG SEVİYE DAĞILIMI:
+{log_level_text}
+
+EN AKTİF LOGGER'LAR:
+{logger_text}
+
+SAĞLIK SORUNLARI:
 {json.dumps(es_specific.get('health_concerns', []), indent=2, ensure_ascii=False)}
 
-Kritik Pattern'lar:
-{json.dumps(es_specific.get('critical_patterns', {}), indent=2, ensure_ascii=False)}
-
-En Kritik 10 Anomali:
+KRİTİK PATTERN ANALİZİ:
+{pattern_text}
+EN KRİTİK 10 ANOMALİ:
 """
-            for a in analysis.get("critical_anomalies", [])[:10]:
-                user_prompt += f"\n- [{a.get('severity_level')}] Score:{a.get('severity_score')} | {a.get('message', '')[:200]}"
+            for i, a in enumerate(analysis.get("critical_anomalies", [])[:10], 1):
+                sev = a.get('severity_level', 'UNKNOWN')
+                score = a.get('severity_score', a.get('score', 0))
+                msg = a.get('message', '')[:200]
+                logger_name = a.get('logger_name', a.get('component', ''))
+                user_prompt += f"\n{i}. [{sev}] Score:{score} | Logger:{logger_name} | {msg}"
 
             messages = [
                 SystemMessage(content=system_prompt),
@@ -2808,21 +2858,25 @@ En Kritik 10 Anomali:
 
         try:
             # MSSQL'e özgü prompt
-            system_prompt = """Sen bir MSSQL veritabanı güvenlik ve performans uzmanısın.
-Sana verilen MSSQL login logları anomali analizini değerlendir.
+            system_prompt = """Sen bir MSSQL veritabanı güvenlik, performans ve erişim yönetimi uzmanısın.
+Sana verilen MSSQL login logları anomali analizini değerlendir ve spesifik, aksiyona yönelik analiz yap.
+
 Özellikle şunlara dikkat et:
-- Brute force saldırı belirtileri
-- Olağandışı saatlerde login'ler
-- Başarısız login pattern'leri
-- Servis hesabı anormallikleri
-- Availability Group sorunları
+1. Brute force saldırı belirtileri — belirli kullanıcı/IP'den yoğun başarısız login
+2. Olağandışı saatlerde login'ler — gece saati non-service hesap erişimleri
+3. Başarısız login pattern'leri — oran, yoğunlaşma zamanı, hedef hesaplar
+4. Servis hesabı anormallikleri — beklenmedik servis hesabı davranışları
+5. Availability Group sorunları — AG erişim hataları, failover belirtileri
+6. Lateral movement göstergeleri — farklı IP'lerden aynı hesaba erişim
 
 Yanıtını Türkçe ver ve şu formatta JSON döndür:
 {
-  "ozet": "Kısa analiz özeti",
-  "kritik_bulgular": ["bulgu1", "bulgu2"],
-  "guvenlik_degerlendirmesi": "Düşük/Orta/Yüksek risk",
-  "onerilen_aksiyonlar": ["aksiyon1", "aksiyon2"]
+  "ozet": "3-4 cümlelik durum değerlendirmesi",
+  "kritik_bulgular": ["Her bulgu için: ne oldu + neden önemli + etkisi"],
+  "kok_neden_analizi": "Pattern'lar arası ilişki yorumu",
+  "guvenlik_degerlendirmesi": "Düşük/Orta/Yüksek/Kritik risk + gerekçe",
+  "onerilen_aksiyonlar": ["Spesifik aksiyon: hangi hesap/IP/ayar üzerinde ne yapılmalı"],
+  "izleme_onerisi": "Hangi metriklerin izlenmesi gerektiği"
 }"""
 
             # Analysis verilerini hazırla
@@ -2830,22 +2884,66 @@ Yanıtını Türkçe ver ve şu formatta JSON döndür:
             mssql_specific = analysis.get("mssql_specific", {})
             critical_anomalies = analysis.get("critical_anomalies", [])[:10]
 
+            # User analysis - top failed users
+            user_analysis = mssql_specific.get('user_analysis', {})
+            top_failed = user_analysis.get('top_failed_users', {})
+            user_text = ""
+            if top_failed:
+                for user, count in list(top_failed.items())[:5]:
+                    user_text += f"  - {user}: {count} başarısız login\n"
+            else:
+                user_text = "  Bilgi yok\n"
+
+            # Client IP analysis
+            client_analysis = mssql_specific.get('client_analysis', {})
+            top_ips = client_analysis.get('top_ips', {})
+            ip_text = ""
+            if top_ips:
+                for ip, count in list(top_ips.items())[:5]:
+                    ip_text += f"  - {ip}: {count} bağlantı\n"
+            else:
+                ip_text = "  Bilgi yok\n"
+
+            # Login stats - formatted
+            login = mssql_specific.get('login_analysis', {})
+            login_text = (
+                f"  Toplam: {login.get('total_logins', 'N/A')}, "
+                f"Başarısız: {login.get('failed_logins', 'N/A')}, "
+                f"Başarılı: {login.get('successful_logins', 'N/A')}, "
+                f"Başarısız Oran: %{login.get('failed_ratio', 0) * 100:.1f}"
+            ) if login else "  Bilgi yok"
+
+            # Critical anomalies - structured format
+            anomaly_text = ""
+            for i, a in enumerate(critical_anomalies[:10], 1):
+                sev = a.get('severity_level', a.get('severity', 'UNKNOWN'))
+                score = a.get('severity_score', a.get('score', 0))
+                msg = a.get('message', '')[:200]
+                anomaly_text += f"{i}. [{sev}] Score:{score} | {msg}\n"
+
             user_prompt = f"""MSSQL Anomali Analiz Sonuçları:
 
 Sunucu: {server_name or 'Tüm sunucular'}
 Toplam Log: {summary.get('total_logs', 'N/A')}
 Anomali Sayısı: {summary.get('n_anomalies', 'N/A')}
-Anomali Oranı: {summary.get('anomaly_rate', 0):.2f}%
+Anomali Oranı: %{summary.get('anomaly_rate', 0):.2f}
 
-Login İstatistikleri:
-{json.dumps(mssql_specific.get('login_analysis', {}), indent=2, ensure_ascii=False)}
+LOGIN İSTATİSTİKLERİ:
+{login_text}
 
-Güvenlik Endişeleri:
+EN ÇOK BAŞARISIZ LOGIN YAPAN KULLANICILAR:
+{user_text}
+EN AKTİF CLIENT IP'LER:
+{ip_text}
+Unique Kullanıcı: {user_analysis.get('unique_users', 'N/A')}
+Unique IP: {client_analysis.get('unique_ips', 'N/A')}
+Local Bağlantı: {client_analysis.get('local_connections', 'N/A')}
+
+GÜVENLİK ENDİŞELERİ:
 {json.dumps(mssql_specific.get('security_concerns', []), indent=2, ensure_ascii=False)}
 
-İlk 10 Kritik Anomali:
-{json.dumps(critical_anomalies, indent=2, ensure_ascii=False, default=str)[:3000]}
-
+EN KRİTİK 10 ANOMALİ:
+{anomaly_text}
 Bu verileri analiz et ve JSON formatında yanıt ver."""
 
             from langchain.schema import HumanMessage, SystemMessage
@@ -2993,15 +3091,25 @@ Bu verileri analiz et ve JSON formatında yanıt ver."""
                 logger.info(f"[DEBUG AI] Anomaly indices size: {len(summary.get('anomaly_indices', []))}")
             
             # Optimize edilmiş system prompt - token tasarrufu ve odaklı analiz
-            system_prompt = """MongoDB anomali uzmanısın. Kısa, net, anlamlı ve aksiyona yönelik analiz yap.
+            system_prompt = """Sen bir MongoDB veritabanı yönetimi, performans optimizasyonu ve güvenlik uzmanısın.
+Sana verilen MongoDB log anomali analizini değerlendir ve spesifik, aksiyona yönelik analiz yap.
 
-FORMATIN (MAX 500 kelime):
-1. ÖZET (4-5 cümle): Ne bulundu, kritik mi?
-2. TOP 10 KRİTİK SORUN: Component, sebep, risk, feature, log mesajı
-3. ACİL AKSİYONLAR: Max 3 madde, spesifik ol, rastgele verme, genel geçer bilgiler sunma işe yarar öneriler ver.
-4. İZLEME ÖNERİSİ: 1 cümle
+Özellikle şunlara dikkat et:
+1. Slow query pattern'leri — COLLSCAN, eksik index, sorgu optimizasyonu
+2. Authentication hataları — brute force, yetkisiz erişim denemeleri
+3. Replication sorunları — lag, oplog, secondary sync hataları
+4. Connection/resource sorunları — bağlantı havuzu, memory, storage engine
+5. DDL operasyonları — DROP, createIndex gibi şema değişiklikleri
+6. Component bazlı yoğunlaşma — hangi component'ta sorun var, neden
 
-Türkçe yaz. MongoDB best practice'lerini kullan. Rastgele öneri verme. Teknik ol ama anlaşılır ol. Gereksiz tekrar yapma"""
+FORMATIN (MAX 600 kelime):
+1. DURUM DEĞERLENDİRMESİ (3-4 cümle): Cluster sağlığı, aciliyet seviyesi, en kritik bulgu
+2. KRİTİK BULGULAR: Her bulgu için → ne oldu, neden oldu (kök neden), etkisi, ilgili component
+3. KÖK NEDEN ANALİZİ: Pattern'lar arası ilişkileri yorumla (örn: COLLSCAN → slow query → connection pool tükenmesi zinciri)
+4. ACİL AKSİYONLAR: Max 5 madde — spesifik MongoDB komutu/ayarı öner (örn: db.collection.createIndex(), profiling level)
+5. İZLEME ÖNERİSİ: Hangi metriklerin izlenmesi gerektiği
+
+Türkçe yaz. MongoDB best practice'lerini kullan. Genel geçer tavsiye verme, veriye dayalı spesifik önerilerde bulun. Teknik ol ama anlaşılır ol."""
             
             # Optimize edilmiş user prompt - daha fazla context ile
             server_info = f"Sunucu: {server_name}\n" if server_name else ""
