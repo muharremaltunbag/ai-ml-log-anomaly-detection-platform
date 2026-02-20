@@ -2643,7 +2643,7 @@ En Kritik 5 Anomali:
                 HumanMessage(content=user_prompt)
             ]
 
-            response = self.llm_connector.llm.invoke(messages)
+            response = self.llm_connector.invoke(messages)
             explanation_text = response.content if hasattr(response, 'content') else str(response)
 
             return {
@@ -2654,7 +2654,19 @@ En Kritik 5 Anomali:
 
         except Exception as e:
             logger.error(f"ES AI explanation error: {e}")
-            return None
+            # Fallback: LLM başarısız olsa bile temel özet döndür
+            summary = analysis.get('summary', {})
+            return {
+                "özet": (
+                    f"Elasticsearch anomali analizi tamamlandı. "
+                    f"Toplam {summary.get('n_anomalies', 0)} anomali tespit edildi "
+                    f"(oran: %{summary.get('anomaly_rate', 0):.1f}). "
+                    f"AI açıklama üretilemedi: {str(e)[:100]}"
+                ),
+                "server": server_name,
+                "generated_at": datetime.now().isoformat(),
+                "is_fallback": True
+            }
 
     def _create_es_suggestions(self, analysis: Dict,
                                es_specific: Dict) -> List[str]:
