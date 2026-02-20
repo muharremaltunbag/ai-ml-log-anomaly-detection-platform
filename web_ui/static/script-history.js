@@ -150,12 +150,13 @@ async function autoLoadHistoryOnStartup() {
             loadQueryHistoryFromMongoDB(),
             loadAnomalyHistoryFromMongoDB({ limit: 50 }), // Mevcut fonksiyonu kullan
             loadAndMergeDBAHistory(), // Mevcut fonksiyonu kullan
-            loadAndMergeMSSQLHistory() // MSSQL history'yi de yükle
+            loadAndMergeMSSQLHistory(), // MSSQL history'yi de yükle
+            loadAndMergeElasticsearchHistory() // Elasticsearch history'yi de yükle
         ]);
 
         // Sonuçları değerlendir
         let successCount = 0;
-        const types = ['Query History', 'Anomaly History', 'DBA History', 'MSSQL History'];
+        const types = ['Query History', 'Anomaly History', 'DBA History', 'MSSQL History', 'ES History'];
         
         results.forEach((result, index) => {
             if (result.status === 'fulfilled' && result.value) {
@@ -881,7 +882,9 @@ async function reloadAllHistory() {
         await Promise.all([
             loadHistory(),
             window.loadAnomalyHistoryFromMongoDB({limit: 100}),
-            loadAndMergeDBAHistory()
+            loadAndMergeDBAHistory(),
+            loadAndMergeMSSQLHistory(),
+            loadAndMergeElasticsearchHistory()
         ]);
 
         // Not: queryHistory, loadHistory() ile doldurulacak
@@ -1096,6 +1099,84 @@ async function loadAndMergeMSSQLHistory() {
 }
 
 
+// ========== ELASTICSEARCH HISTORY ENTEGRASYONU ==========
+
+/**
+ * MongoDB'den Elasticsearch analizlerini çek ve history'e ekle
+ * MSSQL history ile aynı yapı, source_type='elasticsearch_opensearch' filtreli
+ */
+async function loadAndMergeElasticsearchHistory() {
+    try {
+        // MongoDB'den Elasticsearch analizlerini çek
+        const response = await fetch(`/api/elasticsearch/analysis-history?limit=20&days_back=30&api_key=${window.apiKey}`);
+        const data = await response.json();
+
+        if (data.status === 'success' && data.analyses && data.analyses.length > 0) {
+            console.log(`Loaded ${data.analyses.length} Elasticsearch analyses from MongoDB`);
+
+            // Her Elasticsearch analizini history formatına çevir
+            data.analyses.forEach(analysis => {
+                // Zaten history'de var mı kontrol et (storage_id ile)
+                const exists = window.queryHistory.find(h => h.storage_id === analysis._id);
+                if (!exists) {
+                    // History item formatına çevir
+                    const historyItem = {
+                        id: Date.now() + Math.random(), // Unique ID
+                        timestamp: analysis.timestamp,
+                        query: `ES Analizi: ${analysis.host || 'Unknown'} - ${analysis.time_range || 'Custom time range'}`,
+                        type: 'anomaly',
+                        category: 'anomaly',
+                        subType: 'Elasticsearch',
+                        database_type: 'elasticsearch',
+                        storage_id: analysis._id,
+                        result: {
+                            durum: 'tamamlandı',
+                            işlem: 'es_anomaly_analysis'
+                        },
+                        // Elasticsearch spesifik veriler (DBA/MSSQL ile aynı yapı)
+                        dbaData: {
+                            host: analysis.host,
+                            anomaly_count: analysis.anomaly_count,
+                            total_logs: analysis.total_logs,
+                            anomaly_rate: analysis.anomaly_rate,
+                            time_range: analysis.time_range,
+                            has_ai_explanation: analysis.has_ai_explanation
+                        },
+                        hasVisualization: true,
+                        fromMongoDB: true // MongoDB'den geldiğini işaretle
+                    };
+
+                    // History'e ekle
+                    window.queryHistory.unshift(historyItem);
+                }
+            });
+
+            // Tarihe göre sırala
+            window.queryHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+            // Fazla kayıtları temizle
+            if (window.queryHistory.length > window.MAX_HISTORY_ITEMS) {
+                window.queryHistory = window.queryHistory.slice(0, window.MAX_HISTORY_ITEMS);
+            }
+
+            // LocalStorage'a kaydet
+            window.saveHistory();
+
+            // Display'i güncelle
+            window.updateHistoryDisplayWithDBA();
+
+            return data.analyses;
+        }
+
+        return [];
+
+    } catch (error) {
+        console.error('Failed to load Elasticsearch history from MongoDB:', error);
+        return [];
+    }
+}
+
+
 /**
  * History display'i DBA desteğiyle güncelle
  */
@@ -1132,13 +1213,15 @@ function updateHistoryDisplayWithDBA(filter = 'all') {
     filteredHistory.forEach(item => {
         const date = new Date(item.timestamp);
         
-        // DBA ve MSSQL için özel ikon ve renk
-        const typeIcon = item.subType === 'MSSQL' ? '🗄️' :
+        // DBA, MSSQL ve Elasticsearch için özel ikon ve renk
+        const typeIcon = item.subType === 'Elasticsearch' ? '🔎' :
+                        item.subType === 'MSSQL' ? '🗄️' :
                         item.subType === 'DBA' ? '🕐' :
                         item.type === 'anomaly' ? '🔍' :
                         item.type === 'chat-anomaly' ? '🤖' : '💬';
 
-        const borderColor = item.subType === 'MSSQL' ? '#CC2936' :
+        const borderColor = item.subType === 'Elasticsearch' ? '#F0BF1A' :
+                           item.subType === 'MSSQL' ? '#CC2936' :
                            item.subType === 'DBA' ? '#0047BA' : '#e67e22';
         
         const statusClass = item.durum === 'tamamlandı' ? 'completed' :
@@ -1154,6 +1237,7 @@ function updateHistoryDisplayWithDBA(filter = 'all') {
                  style="border-left: 4px solid ${borderColor};">
                 <div class="history-item-header">
                     <span class="history-type">${typeIcon}</span>
+                    ${item.subType === 'Elasticsearch' ? '<span class="es-badge" style="background: #F0BF1A; color: #333; padding: 2px 6px; border-radius: 3px; font-size: 11px;">ES</span>' : ''}
                     ${item.subType === 'MSSQL' ? '<span class="mssql-badge" style="background: #CC2936; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px;">MSSQL</span>' : ''}
                     ${item.subType === 'DBA' ? '<span class="dba-badge" style="background: #0047BA; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px;">DBA</span>' : ''}
                     <span class="history-time">${date.toLocaleString('tr-TR')}</span>
@@ -1169,7 +1253,7 @@ function updateHistoryDisplayWithDBA(filter = 'all') {
                     </div>
                 ` : ''}
                 <div class="history-actions">
-                    ${(item.subType === 'DBA' || item.subType === 'MSSQL') && item.storage_id ? `
+                    ${(item.subType === 'DBA' || item.subType === 'MSSQL' || item.subType === 'Elasticsearch') && item.storage_id ? `
                         <button class="btn-small" onclick="loadHistoricalDBAAnalysis('${item.storage_id}')">
                             📊 Sonuçları Göster
                         </button>
@@ -1970,11 +2054,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // updateHistoryDisplay'i override et
     window.updateHistoryDisplay = function(filter = 'all') {
-        // Önce DBA ve MSSQL history'leri yükle
+        // Önce DBA, MSSQL ve Elasticsearch history'leri yükle
         if (window.apiKey) {
             Promise.allSettled([
                 loadAndMergeDBAHistory(),
-                loadAndMergeMSSQLHistory()
+                loadAndMergeMSSQLHistory(),
+                loadAndMergeElasticsearchHistory()
             ]).then(() => {
                 updateHistoryDisplayWithDBA(filter);
             });
@@ -1988,6 +2073,7 @@ document.addEventListener('DOMContentLoaded', function() {
 window.addEventListener('apiConnected', function() {
     loadAndMergeDBAHistory();
     loadAndMergeMSSQLHistory();
+    loadAndMergeElasticsearchHistory();
 });
 
 /**
@@ -2455,6 +2541,7 @@ window.reloadAllHistory = reloadAllHistory;
 window.syncSingleItem = syncSingleItem;
 window.loadAndMergeDBAHistory = loadAndMergeDBAHistory;
 window.loadAndMergeMSSQLHistory = loadAndMergeMSSQLHistory;
+window.loadAndMergeElasticsearchHistory = loadAndMergeElasticsearchHistory;
 window.updateHistoryDisplayWithDBA = updateHistoryDisplayWithDBA;
 window.loadHistoricalDBAAnalysis = loadHistoricalDBAAnalysis;
 window.showHistoryDetail = showHistoryDetail;

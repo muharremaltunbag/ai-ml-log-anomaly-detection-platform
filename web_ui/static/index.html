@@ -84,6 +84,14 @@
                                     <span class="datasource-desc">Production MSSQL Logları</span>
                                 </div>
                             </label>
+                            <label class="datasource-card">
+                                <input type="radio" name="dataSource" value="elasticsearch_opensearch">
+                                <div class="datasource-card-inner">
+                                    <span class="datasource-icon">🔎</span>
+                                    <span class="datasource-title">Elasticsearch</span>
+                                    <span class="datasource-desc">Production ES Logları</span>
+                                </div>
+                            </label>
                         </div>
                     </div>
 
@@ -135,6 +143,19 @@
                             </div>
                             <button id="refreshMSSQLHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
                                 🔄 MSSQL Sunucu Listesini Yenile
+                            </button>
+                        </div>
+
+                        <!-- Elasticsearch OpenSearch için -->
+                        <div id="elasticsearchSourceInputs" style="display: none;">
+                            <div style="margin-bottom: 15px;">
+                                <label>Elasticsearch Node:</label>
+                                <select id="esHostSelect" class="form-select">
+                                    <option value="" disabled selected>ES node seçin...</option>
+                                </select>
+                            </div>
+                            <button id="refreshESHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
+                                🔄 ES Node Listesini Yenile
                             </button>
                         </div>
                     </div>

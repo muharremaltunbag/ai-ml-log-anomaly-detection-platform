@@ -61,6 +61,10 @@ window.API_ENDPOINTS = {
     // MSSQL ENDPOINTS
     mssqlHosts: '/api/mssql/available-hosts',
     analyzeMSSQLLog: '/api/analyze-mssql-logs',
+    // ELASTICSEARCH ENDPOINTS
+    esHosts: '/api/elasticsearch/available-hosts',
+    analyzeESLog: '/api/analyze-elasticsearch-logs',
+    esAnalysisHistory: '/api/elasticsearch/analysis-history',
     // LCWGPT ASSISTANT
     analyzedServers: '/api/analyzed-servers',
     // SYSTEM RESET

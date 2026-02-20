@@ -745,12 +745,14 @@ function updateSourceInputs(source) {
     const fileSelection = document.getElementById('fileSelectionSection');
     const opensearchInputs = document.getElementById('opensearchSourceInputs');
     const mssqlInputs = document.getElementById('mssqlSourceInputs');
+    const esInputs = document.getElementById('elasticsearchSourceInputs');
 
     // Tüm input alanlarını gizle
     if (uploadInputs) uploadInputs.style.display = 'none';
     if (fileSelection) fileSelection.style.display = 'none';
     if (opensearchInputs) opensearchInputs.style.display = 'none';
     if (mssqlInputs) mssqlInputs.style.display = 'none';
+    if (esInputs) esInputs.style.display = 'none';
     
     // Seçilen kaynağa göre göster
     switch(source) {
@@ -796,6 +798,16 @@ function updateSourceInputs(source) {
             // MSSQL sunucularını yükle
             if (window.loadMSSQLHosts) {
                 window.loadMSSQLHosts();
+            }
+            break;
+
+        case 'elasticsearch_opensearch':
+            console.log('Showing Elasticsearch source inputs');
+            if (esInputs) esInputs.style.display = 'block';
+
+            // Elasticsearch node'larını yükle
+            if (window.loadESHosts) {
+                window.loadESHosts();
             }
             break;
 

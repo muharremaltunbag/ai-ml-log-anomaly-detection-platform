@@ -379,6 +379,16 @@ function initializeEventListeners() {
         });
     }
 
+    // Elasticsearch Refresh hosts button
+    const refreshESBtn = document.getElementById('refreshESHostsBtn');
+    if (refreshESBtn) {
+        refreshESBtn.addEventListener('click', () => {
+            if (window.loadESHosts) window.loadESHosts();
+            else if (typeof loadESHosts === 'function') loadESHosts();
+            showNotification('ES node listesi yenileniyor...', 'info');
+        });
+    }
+
     // Örnek sorgu chip'leri
     document.querySelectorAll('.chip').forEach(chip => {
         chip.addEventListener('click', (e) => {
@@ -443,6 +453,13 @@ function initializeEventListeners() {
             if (e.target.value === 'mssql_opensearch' && isConnected) {
                 setTimeout(() => {
                     loadMSSQLHosts();  // MSSQL Host listesini yükle
+                }, 100);
+            }
+
+            // Elasticsearch OpenSearch seçildiğinde ES listesini yükle
+            if (e.target.value === 'elasticsearch_opensearch' && isConnected) {
+                setTimeout(() => {
+                    loadESHosts();  // ES Host listesini yükle
                 }, 100);
             }
         });
@@ -1834,6 +1851,46 @@ async function loadMSSQLHosts() {
     } catch (error) {
         console.error('Error loading MSSQL hosts:', error);
         showNotification('MSSQL sunucuları yüklenemedi', 'error');
+    }
+}
+
+/**
+ * Elasticsearch node'larını OpenSearch'ten yükle
+ */
+async function loadESHosts() {
+    console.log('Loading Elasticsearch hosts from OpenSearch...');
+
+    try {
+        const response = await fetch(`${API_ENDPOINTS.esHosts}?api_key=${apiKey}`);
+        const data = await response.json();
+
+        console.log('Elasticsearch hosts response:', data);
+
+        const hostSelect = document.getElementById('esHostSelect');
+        if (!hostSelect) return;
+
+        // Mevcut seçenekleri temizle
+        hostSelect.innerHTML = '<option value="" disabled selected>ES node seçin...</option>';
+
+        if (data.hosts && data.hosts.length > 0) {
+            data.hosts.forEach(host => {
+                const option = document.createElement('option');
+                option.value = host;
+                option.textContent = host;
+                hostSelect.appendChild(option);
+            });
+
+            console.log(`Loaded ${data.hosts.length} Elasticsearch hosts`);
+
+            if (window.selectedDataSource === 'elasticsearch_opensearch') {
+                validateAnalysisButton();
+            }
+        } else {
+            console.log('No Elasticsearch hosts found');
+        }
+    } catch (error) {
+        console.error('Error loading Elasticsearch hosts:', error);
+        showNotification('Elasticsearch node\'ları yüklenemedi', 'error');
     }
 }
 

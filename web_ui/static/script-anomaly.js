@@ -965,6 +965,20 @@ async function handleAnalyzeLog() {
             requestData.database_type = 'mssql';
             break;
         }
+
+        case 'elasticsearch_opensearch': {
+            // Elasticsearch OpenSearch analizi
+            const esHostFilter = document.getElementById('esHostSelect')?.value;
+            if (!esHostFilter) {
+                alert('Lütfen bir Elasticsearch node seçin!');
+                return;
+            }
+            requestData.host_filter = esHostFilter;
+            requestData.analysis_mode = 'single';
+            requestData.file_path = 'elasticsearch_opensearch';
+            requestData.database_type = 'elasticsearch';
+            break;
+        }
     }
 
     // Modal'ı kapat
@@ -998,6 +1012,9 @@ async function handleAnalyzeLog() {
         } else if (window.selectedDataSource === 'mssql_opensearch') {
              // MSSQL için ayrı endpoint kullan
              targetEndpoint = window.API_ENDPOINTS.analyzeMSSQLLog;
+        } else if (window.selectedDataSource === 'elasticsearch_opensearch') {
+             // Elasticsearch için ayrı endpoint kullan
+             targetEndpoint = window.API_ENDPOINTS.analyzeESLog;
         }
 
         const response = await fetch(targetEndpoint, {
@@ -1017,21 +1034,22 @@ async function handleAnalyzeLog() {
         displayAnomalyResults(result);
 
         // History'ye ekle (Mevcut kodlar — MongoDB + MSSQL destekli)
-        if (result.durum !== 'hata' && (result.işlem === 'anomaly_analysis' || result.işlem === 'mssql_anomaly_analysis')) {
+        if (result.durum !== 'hata' && (result.işlem === 'anomaly_analysis' || result.işlem === 'mssql_anomaly_analysis' || result.işlem === 'es_anomaly_analysis')) {
             let queryText = `Anomali analizi (${window.selectedDataSource})`;
             if (requestData.host_filter) queryText = `${requestData.host_filter} analizi`;
             else if (requestData.uploaded_filename) queryText = `Dosya analizi`;
             else if (window.selectedDataSource === 'upload') queryText = `Log Dosyası Analizi`;
-            
+
             const isMSSQL = result.işlem === 'mssql_anomaly_analysis' || window.selectedDataSource === 'mssql_opensearch';
+            const isES = result.işlem === 'es_anomaly_analysis' || window.selectedDataSource === 'elasticsearch_opensearch';
             const historyItem = {
                 id: Date.now(),
                 timestamp: new Date().toISOString(),
                 query: queryText,
                 type: 'anomaly',
                 category: 'anomaly',
-                subType: isMSSQL ? 'MSSQL' : undefined,
-                database_type: isMSSQL ? 'mssql' : 'mongodb',
+                subType: isMSSQL ? 'MSSQL' : (isES ? 'Elasticsearch' : undefined),
+                database_type: isMSSQL ? 'mssql' : (isES ? 'elasticsearch' : 'mongodb'),
                 result: result,
                 durum: 'tamamlandı',
                 işlem: result.işlem || 'anomaly_analysis',
