@@ -159,20 +159,24 @@ class AnomalyDetectionTools:
                 "öneriler": result.get("suggestions", [])
             }
             
+            # sonuç güvenli erişim (None veya non-dict olabilir)
+            _sonuc = response.get("sonuç")
+            if not isinstance(_sonuc, dict):
+                _sonuc = {}
+                response["sonuç"] = _sonuc
+
             # CRITICAL DEBUG: Output critical_anomalies count
-            if "critical_anomalies" in response["sonuç"]:
-                print(f"[DEBUG] FORMAT_RESULT OUTPUT: {len(response['sonuç']['critical_anomalies'])} critical anomalies")
-            
+            if "critical_anomalies" in _sonuc:
+                print(f"[DEBUG] FORMAT_RESULT OUTPUT: {len(_sonuc.get('critical_anomalies', []))} critical anomalies")
+
             # YENİ: AI explanation varsa ekle
             if "ai_explanation" in result and result["ai_explanation"]:
-                # data içindeyse oraya, değilse direkt sonuç'a ekle
-                if isinstance(response["sonuç"], dict):
-                    response["sonuç"]["ai_explanation"] = result["ai_explanation"]
+                _sonuc["ai_explanation"] = result["ai_explanation"]
                 logger.debug("AI explanation added to response")
-            
+
             # FINAL DEBUG: Before JSON serialization
-            if "critical_anomalies" in response["sonuç"]:
-                print(f"[DEBUG] JSON SERIALIZATION: About to serialize {len(response['sonuç']['critical_anomalies'])} critical anomalies")
+            if "critical_anomalies" in _sonuc:
+                print(f"[DEBUG] JSON SERIALIZATION: About to serialize {len(_sonuc.get('critical_anomalies', []))} critical anomalies")
             
             json_result = json.dumps(response, ensure_ascii=False, indent=2)
             
@@ -345,7 +349,24 @@ class AnomalyDetectionTools:
             }
         
         logger.info(f"Enhanced analysis completed for {source_name}")
+
+        # Defensive: Ensure critical keys always exist with safe defaults
+        if "summary" not in analysis or not isinstance(analysis.get("summary"), dict):
+            analysis["summary"] = {
+                "total_logs": len(df_filtered) if df_filtered is not None else 0,
+                "n_anomalies": int((predictions == -1).sum()) if predictions is not None else 0,
+                "anomaly_rate": 0.0,
+                "score_range": {"min": 0, "max": 0, "mean": 0}
+            }
+        else:
+            analysis["summary"].setdefault("score_range", {"min": 0, "max": 0, "mean": 0})
+        if "critical_anomalies" not in analysis or analysis["critical_anomalies"] is None:
+            analysis["critical_anomalies"] = []
+        if "all_anomalies" not in analysis or analysis["all_anomalies"] is None:
+            analysis["all_anomalies"] = []
+
         return analysis
+
     def _fix_mongodb_hostname_fqdn(self, hostname: str) -> str:
         """MongoDB hostname'ine gerekirse FQDN ekle"""
         import re
@@ -1828,7 +1849,7 @@ class AnomalyDetectionTools:
         # 2. Known benign signatures — anomaliyi silmez, sadece etiketler
         benign_signatures = fpc.get('known_benign_signatures', [])
         benign_tag_count = 0
-        if benign_signatures and 'critical_anomalies' in analysis:
+        if benign_signatures and analysis.get('critical_anomalies'):
             for anomaly in analysis['critical_anomalies']:
                 msg = anomaly.get('message', '').lower()
                 comp = anomaly.get('component', '')
@@ -1846,7 +1867,7 @@ class AnomalyDetectionTools:
                 logger.info(f"Known benign signatures tagged: {benign_tag_count} anomalies")
 
         # 3. Critical anomalies filtreleme
-        if 'critical_anomalies' in analysis:
+        if analysis.get('critical_anomalies'):
             filtered_anomalies = []
             filtered_out_count = 0
 
@@ -1944,14 +1965,14 @@ class AnomalyDetectionTools:
 
     def _create_analysis_description(self, analysis: Dict, time_range: str) -> str:
         """Analiz sonucu için kullanıcı dostu açıklama oluştur"""
-        summary = analysis["summary"]
-        
+        summary = analysis.get("summary", {})
+
         # Temel bilgiler
-        desc = f"📊 **ÖZET**: {time_range} zaman aralığında {summary['total_logs']:,} log analiz edildi.\n\n"
-        
+        desc = f"📊 **ÖZET**: {time_range} zaman aralığında {summary.get('total_logs', 0):,} log analiz edildi.\n\n"
+
         # Ne oldu?
         desc += f"🔍 **NE OLDU?**\n"
-        desc += f"• {summary['n_anomalies']} adet anomali tespit edildi (%{summary['anomaly_rate']:.1f})\n"
+        desc += f"• {summary.get('n_anomalies', 0)} adet anomali tespit edildi (%{summary.get('anomaly_rate', 0):.1f})\n"
         
         # Ne zaman oldu?
         if "temporal_analysis" in analysis and "peak_hours" in analysis["temporal_analysis"]:
@@ -1962,11 +1983,11 @@ class AnomalyDetectionTools:
         # Neden oldu? (En sık görülen anomali tipleri)
         desc += f"\n❓ **NEDEN OLDU?**\n"
         if "component_analysis" in analysis:
-            top_components = sorted(analysis["component_analysis"].items(), 
-                                   key=lambda x: x[1]["anomaly_count"], 
+            top_components = sorted(analysis["component_analysis"].items(),
+                                   key=lambda x: x[1].get("anomaly_count", 0),
                                    reverse=True)[:3]
             for comp, stats in top_components:
-                desc += f"• {comp}: {stats['anomaly_count']} anomali (%{stats['anomaly_rate']:.1f})\n"
+                desc += f"• {comp}: {stats.get('anomaly_count', 0)} anomali (%{stats.get('anomaly_rate', 0):.1f})\n"
         
         # Kritik bulgular
         desc += f"\n⚠️ **KRİTİK BULGULAR**\n"
@@ -1998,7 +2019,7 @@ class AnomalyDetectionTools:
         suggestions = []
         
         # Anomali oranına göre
-        anomaly_rate = analysis["summary"]["anomaly_rate"]
+        anomaly_rate = analysis.get("summary", {}).get("anomaly_rate", 0)
         if anomaly_rate > 5:
             suggestions.append("🔴 ACİL: Yüksek anomali oranı! Sistem yöneticilerine hemen bilgi verin.")
             suggestions.append("📋 YAPILACAK: Son 1 saatteki sistem değişikliklerini kontrol edin.")
@@ -2015,8 +2036,8 @@ class AnomalyDetectionTools:
         
         # Component bazlı öneriler
         if "component_analysis" in analysis:
-            high_anomaly_components = [(comp, stats) for comp, stats in analysis["component_analysis"].items() 
-                                      if stats["anomaly_rate"] > 20]
+            high_anomaly_components = [(comp, stats) for comp, stats in analysis["component_analysis"].items()
+                                      if stats.get("anomaly_rate", 0) > 20]
             if high_anomaly_components:
                 comp_names = [comp for comp, _ in high_anomaly_components[:3]]
                 suggestions.append(f"🔧 YAPILACAK: {', '.join(comp_names)} componentlerini inceleyin.")
