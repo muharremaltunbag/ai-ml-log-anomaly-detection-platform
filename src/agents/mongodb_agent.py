@@ -168,7 +168,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                     "durum": "hata",
                     "işlem": "sorgu_işleme",
                     "açıklama": "Lütfen bir sorgu girin",
-                    "sonuç": None
+                    "sonuç": {}
                 }
             
             # Bağlantı kontrolü
@@ -179,7 +179,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                     "durum": "hata",
                     "işlem": "bağlantı_kontrolü",
                     "açıklama": "Veritabanı bağlantısı kurulamadı",
-                    "sonuç": None
+                    "sonuç": {}
                 }
             self.logger.debug("Bağlantılar aktif")
             
@@ -205,7 +205,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 "durum": "hata",
                 "işlem": "sorgu_işleme",
                 "açıklama": f"İşlem sırasında hata oluştu: {str(e)}",
-                "sonuç": None,
+                "sonuç": {},
                 "öneriler": ["Sorgunuzu basitleştirmeyi deneyin", "Koleksiyon adını kontrol edin"]
             }
 
@@ -219,7 +219,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                     "durum": "hata",
                     "işlem": "sorgu_işleme",
                     "açıklama": "Lütfen bir sorgu girin",
-                    "sonuç": None
+                    "sonuç": {}
                 }
             
             # YENİ: Onay kontrolü
@@ -237,7 +237,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                         "durum": "iptal",
                         "işlem": "anomali_analizi",
                         "açıklama": "Anomali analizi iptal edildi. Yeni bir sorgu girebilirsiniz.",
-                        "sonuç": None
+                        "sonuç": {}
                     }
                 else:
                     # Yeni parametre girişi
@@ -253,7 +253,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                     "durum": "hata",
                     "işlem": "bağlantı_kontrolü",
                     "açıklama": "Veritabanı bağlantısı kurulamadı",
-                    "sonuç": None
+                    "sonuç": {}
                 }
             
             # Anomaly detection sorgularını tespit et
@@ -392,7 +392,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 "durum": "hata",
                 "işlem": "sorgu_işleme",
                 "açıklama": f"İşlem sırasında hata oluştu: {str(e)}",
-                "sonuç": None,
+                "sonuç": {},
                 "öneriler": ["Veri kaynağı parametrelerini kontrol edin"]
             }
 
@@ -502,7 +502,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                                         tool_response = json.loads(json_str)
                                         
                                         # Tool response'ta AI explanation var mı?
-                                        if isinstance(tool_response, dict) and tool_response.get('sonuç', {}).get('ai_explanation'):
+                                        if isinstance(tool_response, dict) and (tool_response.get('sonuç') or {}).get('ai_explanation'):
                                             self.logger.debug("AI explanation found in tool response!")
                                             # Tool response'u direkt döndür
                                             return tool_response
@@ -539,7 +539,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 "durum": "uyarı",
                 "işlem": "formatlama",
                 "açıklama": str(agent_result),
-                "sonuç": None
+                "sonuç": {}
             }
 
     def _format_anomaly_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
@@ -551,7 +551,7 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
             
             # Açıklama metnini parse et
             description = response.get('açıklama', '')
-            result_data = response.get('sonuç', {})
+            result_data = response.get('sonuç') or {}
             
             # Kullanıcı dostu özet oluştur
             if isinstance(result_data, dict) and 'summary' in result_data:

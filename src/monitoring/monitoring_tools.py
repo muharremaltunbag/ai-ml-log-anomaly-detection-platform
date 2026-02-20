@@ -49,7 +49,7 @@ class MonitoringTools:
                     "durum": "hata",
                     "işlem": operation,
                     "açıklama": result.get("error", "Bilinmeyen hata"),
-                    "sonuç": None
+                    "sonuç": {}
                 }, ensure_ascii=False, indent=2)
             
             return json.dumps({

@@ -872,7 +872,7 @@ async def analyze_cluster(request: Dict[str, Any]):
                     return (host, {
                         "durum": "hata",
                         "açıklama": f"Analysis failed: {str(e)}",
-                        "sonuç": None
+                        "sonuç": {}
                     })
             
             # Tüm host'ları paralel analiz et - Exception handling ile
@@ -888,7 +888,7 @@ async def analyze_cluster(request: Dict[str, Any]):
                     results[i] = (host, {
                         "durum": "hata",
                         "açıklama": f"Task failed: {str(result)}",
-                        "sonuç": None
+                        "sonuç": {}
                     })
             
             # Sonuçları birleştir
@@ -902,7 +902,7 @@ async def analyze_cluster(request: Dict[str, Any]):
                 try:
                     result = json.loads(result_str) if isinstance(result_str, str) else result_str
                     
-                    if result.get('durum') == 'başarılı' and 'sonuç' in result:
+                    if result.get('durum') == 'başarılı' and result.get('sonuç'):
                         data = result['sonuç']
                         host_anomalies = data.get('critical_anomalies', [])
                         
@@ -1215,7 +1215,7 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                 if request.source_type == "upload" and request.file_path:
                     result['uploaded_filename'] = Path(request.file_path).name
                     # UI'da göstermek için server_info'yu güncelle
-                    if 'sonuç' not in result:
+                    if not result.get('sonuç'):
                         result['sonuç'] = {}
                     if 'server_info' not in result['sonuç']:
                         result['sonuç']['server_info'] = {}
@@ -1234,7 +1234,7 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                     host_info = (
                         request.host_filter
                         if request.source_type == "opensearch"
-                        else result.get('sonuç', {}).get('server_info', {}).get('server_name', 'unknown')
+                        else (result.get('sonuç') or {}).get('server_info', {}).get('server_name', 'unknown')
                     )
                     save_result = await storage.save_anomaly_analysis(
                         analysis_result=result,
@@ -1464,7 +1464,7 @@ async def analyze_mssql_logs(request: AnalyzeMSSQLLogsRequest):
                     storage = await get_storage_manager()
                     # model_info: _format_result top-level key'i korumaz,
                     # ama sonuç.model_info içinde zengin metadata mevcut
-                    mssql_model_info = result.get('sonuç', {}).get('model_info')
+                    mssql_model_info = (result.get('sonuç') or {}).get('model_info')
                     save_result = await storage.save_anomaly_analysis(
                         analysis_result=result,
                         source_type='mssql_opensearch',
@@ -1628,7 +1628,7 @@ async def analyze_elasticsearch_logs(request: AnalyzeESLogsRequest):
             if result.get('durum') == 'tamamlandı':
                 try:
                     storage = await get_storage_manager()
-                    es_model_info = result.get('sonuç', {}).get('model_info')
+                    es_model_info = (result.get('sonuç') or {}).get('model_info')
                     save_result = await storage.save_anomaly_analysis(
                         analysis_result=result,
                         source_type='elasticsearch_opensearch',
@@ -3288,7 +3288,7 @@ async def get_anomaly_chunk(request: Request):
                 anomalies = analysis["detailed_data"].get("data", {}).get("critical_anomalies", [])
             else:
                 # Fallback to sonuç
-                anomalies = analysis.get("sonuç", {}).get("critical_anomalies", [])
+                anomalies = (analysis.get("sonuç") or {}).get("critical_anomalies", [])
             
             if not anomalies:
                 return JSONResponse(
@@ -3793,7 +3793,7 @@ async def dba_analyze_specific_time(
                     host_name = hosts_list[i]
                     logger.info(f"Host '{host_name}' result status: {res.get('durum', 'UNKNOWN')}")
                     if res.get('durum') == 'başarılı':
-                        data = res.get('sonuç', {})
+                        data = res.get('sonuç') or {}
                         logger.info(f"Host '{host_name}': {data.get('total_logs', 0)} logs, {len(data.get('critical_anomalies', []))} anomalies")
                     else:
                         logger.error(f"Host '{host_name}' analysis failed: {res.get('açıklama', 'No error message')}")
@@ -3858,7 +3858,7 @@ async def dba_analyze_specific_time(
                 result = tool_result
             
             # Kritik anomalileri al
-            critical_anomalies = result.get('sonuç', {}).get('critical_anomalies', [])
+            critical_anomalies = (result.get('sonuç') or {}).get('critical_anomalies', [])
             anomaly_count = len(critical_anomalies)
             
 
@@ -4026,9 +4026,9 @@ Yanıtların kısa, net ve aksiyona yönelik olmalı."""),
                                 'critical_anomalies': critical_anomalies[:500],  # UI için özet
                                 'unfiltered_anomalies': critical_anomalies,  
                                 'critical_anomalies_full': critical_anomalies,  
-                                'total_logs': total_logs if is_cluster else result.get('sonuç', {}).get('total_logs', 0),
+                                'total_logs': total_logs if is_cluster else (result.get('sonuç') or {}).get('total_logs', 0),
                                 'anomaly_count': anomaly_count,
-                                'anomaly_rate': result.get('sonuç', {}).get('anomaly_rate', 0),
+                                'anomaly_rate': (result.get('sonuç') or {}).get('anomaly_rate', 0),
                                 'host_breakdown': host_results if is_cluster else None
                             }
                         },
@@ -4052,9 +4052,9 @@ Yanıtların kısa, net ve aksiyona yönelik olmalı."""),
                     "duration_hours": time_diff
                 },
                 "results": {
-                    "total_logs_analyzed": total_logs if is_cluster else result.get('sonuç', {}).get('total_logs', 0),
+                    "total_logs_analyzed": total_logs if is_cluster else (result.get('sonuç') or {}).get('total_logs', 0),
                     "anomaly_count": anomaly_count,
-                    "anomaly_rate": result.get('sonuç', {}).get('anomaly_rate', 0),
+                    "anomaly_rate": (result.get('sonuç') or {}).get('anomaly_rate', 0),
                     "critical_anomalies": critical_anomalies,  # TÜM anomaliler UI pagination için
                     "ai_summary": ai_explanation
                 },
@@ -4319,6 +4319,8 @@ async def save_query_history(request: Dict[str, Any]):
             raise HTTPException(status_code=503, detail="Storage not available")
         
         # TÜM metadata'yı dahil et
+        _req_result = request.get("result") or {}
+        _req_sonuc = _req_result.get("sonuç") or {}
         query_item = {
             # Temel bilgiler
             "query": request.get("query", ""),
@@ -4326,20 +4328,20 @@ async def save_query_history(request: Dict[str, Any]):
             "category": request.get("category", "chatbot"),
             "durum": request.get("durum", "tamamlandı"),
             "işlem": request.get("işlem", ""),
-            
+
             # Metadata
             "user_id": request.get("user_id"),
             "session_id": request.get("session_id"),
             "timestamp": request.get("timestamp"),
             "executionTime": request.get("executionTime"),
-            
+
             # Sonuç verileri (sadece özet)
             "result_summary": {
-                "durum": request.get("result", {}).get("durum"),
-                "işlem": request.get("result", {}).get("işlem"),
-                "has_anomalies": bool(request.get("result", {}).get("sonuç", {}).get("critical_anomalies")),
-                "anomaly_count": len(request.get("result", {}).get("sonuç", {}).get("critical_anomalies", [])),
-                "total_logs": request.get("result", {}).get("sonuç", {}).get("total_logs", 0)
+                "durum": _req_result.get("durum"),
+                "işlem": _req_result.get("işlem"),
+                "has_anomalies": bool(_req_sonuc.get("critical_anomalies")),
+                "anomaly_count": len(_req_sonuc.get("critical_anomalies", [])),
+                "total_logs": _req_sonuc.get("total_logs", 0)
             },
             
             # Referanslar
@@ -4364,7 +4366,7 @@ async def save_query_history(request: Dict[str, Any]):
         }
         
         # Büyük verileri ayrı collection'a kaydet (opsiyonel)
-        if request.get("result", {}).get("sonuç", {}).get("critical_anomalies"):
+        if _req_sonuc.get("critical_anomalies"):
             # Anomali detayları için referans oluştur
             query_item["has_detailed_data"] = True
             query_item["anomaly_details_ref"] = request.get("storage_id")
@@ -5088,7 +5090,7 @@ async def get_paged_anomalies(
             raise HTTPException(status_code=404, detail="Analiz bulunamadı")
         # 5. İstenen listeyi güvenli şekilde al
         # Not: MongoDB projection sonucu nested yapıyı korur: doc['sonuç']['unfiltered_anomalies']
-        result_content = doc.get("sonuç", {})
+        result_content = doc.get("sonuç") or {}
         anomalies = result_content.get(list_type, [])
         # Eğer veri yoksa boş liste dön (Hata fırlatma)
         if not anomalies:

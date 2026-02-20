@@ -145,7 +145,7 @@ class AnomalyDetectionTools:
                     "durum": "hata",
                     "işlem": operation,
                     "açıklama": result.get("error", "Bilinmeyen hata"),
-                    "sonuç": None
+                    "sonuç": {}
                 }, ensure_ascii=False, indent=2)
             
             logger.debug("Formatting successful result")
@@ -179,8 +179,8 @@ class AnomalyDetectionTools:
             # Check if JSON result contains expected number
             if '"critical_anomalies"' in json_result:
                 # Doğrudan response dict'ten say (regex nested array'lerde hata yapıyor)
-                critical_count = len(response.get("sonuç", {}).get("critical_anomalies", []))
-                all_count = len(response.get("sonuç", {}).get("all_anomalies", []))
+                critical_count = len((response.get("sonuç") or {}).get("critical_anomalies", []))
+                all_count = len((response.get("sonuç") or {}).get("all_anomalies", []))
                 print(f"[DEBUG] JSON RESULT: Serialized JSON contains {critical_count} critical + {all_count} all anomaly objects")
             
             return json_result
@@ -190,7 +190,7 @@ class AnomalyDetectionTools:
                 "durum": "hata",
                 "işlem": operation,
                 "açıklama": f"Format hatası: {str(e)}",
-                "sonuç": str(result)
+                "sonuç": {"raw_result": str(result)[:500]}
             }, ensure_ascii=False, indent=2)
 
     def _perform_enhanced_analysis(self, df_filtered, X_filtered, predictions, anomaly_scores, 

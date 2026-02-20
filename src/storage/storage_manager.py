@@ -163,7 +163,7 @@ class StorageManager:
             if source_type == "upload" and uploaded_filename:
                 source_info["uploaded_filename"] = uploaded_filename
                 # analysis_result içinden server_info çıkar
-                sonuc = analysis_result.get("sonuç", {})
+                sonuc = analysis_result.get("sonuç") or {}
                 if isinstance(sonuc, dict):
                     server_info = sonuc.get("server_info", {})
                     if isinstance(server_info, dict) and server_info:
