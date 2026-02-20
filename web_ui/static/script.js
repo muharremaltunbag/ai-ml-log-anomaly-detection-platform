@@ -567,7 +567,15 @@ function initializeEventListeners() {
             validateAnalysisButton();
         }
     });
-    
+
+    // Elasticsearch host seçildiğinde validate tetikle
+    document.getElementById('esHostSelect')?.addEventListener('change', (e) => {
+        console.log('Elasticsearch host selected:', e.target.value);
+        if (selectedDataSource === 'elasticsearch_opensearch') {
+            validateAnalysisButton();
+        }
+    });
+
     // Dosya radio button'larına event listener ekle (Event delegation)
     document.addEventListener('change', function(e) {
         if (e.target.matches('input[name="logFile"]')) {

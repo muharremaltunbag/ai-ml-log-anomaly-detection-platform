@@ -916,6 +916,12 @@ function validateAnalysisButton() {
             isValid = mssqlHost && mssqlHost.length > 0;
             console.log('MSSQL OpenSearch - selected host:', mssqlHost, 'isValid:', isValid);
             break;
+        case 'elasticsearch_opensearch':
+            // Elasticsearch OpenSearch - node seçildi mi kontrol et
+            const esHost = document.getElementById('esHostSelect')?.value;
+            isValid = esHost && esHost.length > 0;
+            console.log('Elasticsearch OpenSearch - selected host:', esHost, 'isValid:', isValid);
+            break;
         default:
             console.log('Unknown data source for validation:', window.selectedDataSource); // DEBUG LOG
     }
