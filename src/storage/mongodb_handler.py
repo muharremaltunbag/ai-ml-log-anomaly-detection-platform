@@ -105,7 +105,14 @@ class MongoDBHandler:
                 ("timestamp", DESCENDING),
                 ("severity_score", DESCENDING)
             ])
-            
+            # Source type index for DBA/MSSQL/ES history filtering
+            await anomaly_collection.create_index([("source_info.source_type", ASCENDING)])
+            # TTL index - auto-expire documents at their ttl_date
+            await anomaly_collection.create_index(
+                [("ttl_date", ASCENDING)],
+                expireAfterSeconds=0
+            )
+
             # Model registry indexes
             model_collection = self.db[self.collections["model_registry"]]
             await model_collection.create_index([("version", DESCENDING)])
@@ -118,6 +125,11 @@ class MongoDBHandler:
             await query_collection.create_index([("user_id", ASCENDING)])
             await query_collection.create_index([("query_type", ASCENDING)])
             await query_collection.create_index([("session_id", ASCENDING)])
+            # TTL index - auto-expire query history at their ttl_date
+            await query_collection.create_index(
+                [("ttl_date", ASCENDING)],
+                expireAfterSeconds=0
+            )
 
             # User preferences indexes
             prefs_collection = self.db[self.collections.get("user_preferences", "user_preferences")]

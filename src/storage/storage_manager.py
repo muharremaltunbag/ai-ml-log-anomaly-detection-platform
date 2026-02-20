@@ -441,7 +441,7 @@ class StorageManager:
                     "total_logs": doc.get("logs_analyzed", 0),
                     "anomaly_rate": doc.get("anomaly_rate", 0),
                     "time_range": doc.get("time_range", source_info.get("time_range", "") if isinstance(source_info, dict) else ""),
-                    "source_type": source_info.get("type", source_type) if isinstance(source_info, dict) else source_type,
+                    "source_type": source_info.get("source_type", source_type) if isinstance(source_info, dict) else source_type,
                     "has_ai_explanation": bool(doc.get("ai_explanation")),
                     "storage_id": doc.get("analysis_id", str(doc.get("_id", "")))
                 }

@@ -31,7 +31,7 @@ class FileOnlyStorageManager:
     
     def _initialize_storage_paths(self) -> Dict[str, Path]:
         """Create storage directories"""
-        base_dir = Path(FILE_STORAGE_CONFIG["base_dir"])  # Ensure Path object
+        base_dir = Path(FILE_STORAGE_CONFIG["base_path"])  # Ensure Path object
         paths = {}
         
         for name, subdir in FILE_STORAGE_CONFIG["subdirs"].items():
