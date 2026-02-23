@@ -17,7 +17,7 @@ console.log('🔧 Loading script-core.js...');
 // ============================================
 window.apiKey = '';
 window.isConnected = false;
-window.selectedDataSource = 'upload';  // Varsayılan veri kaynağı
+window.selectedDataSource = 'opensearch';  // Varsayılan veri kaynağı
 window.currentSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 console.log('Session initialized:', window.currentSessionId);
 
