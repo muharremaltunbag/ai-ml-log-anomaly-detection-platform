@@ -247,12 +247,16 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
 
             # FDHost Crash Storm
             # Full-Text Filter Daemon crash/restart döngüsü
-            # (severity düşük çünkü FDHost auto-restart yapar, ama tekrarlayan crash pattern kritik)
+            # NOT: FDHost her crash'te 3-4 log üretir (error + crash msg + restart).
+            # Severity 0.65 = LOW level, böylece her tekil event alert flood yapmaz.
+            # _select_diverse_anomalies fdhost_crash kategorisini dedup eder.
+            # Burst koşulu varsa (çok hızlı ardışık crash) severity daha yüksek olur.
             'fdhost_crash_storm': {
                 'condition': lambda row: (
-                    row.get('is_fdhost_crash', 0) == 1
+                    row.get('is_fdhost_crash', 0) == 1 and
+                    row.get('is_system_error', 0) == 1
                 ),
-                'severity': 0.75,
+                'severity': 0.65,
                 'description': 'Full-Text Filter Daemon (FDHost) crash/restart cycle detected'
             }
         }

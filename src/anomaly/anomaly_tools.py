@@ -2250,6 +2250,10 @@ class AnomalyDetectionTools:
                     anomaly['client_ip'] = row.get('client_ip', 'unknown')
                     anomaly['logintype'] = row.get('logintype', 'unknown')
                     anomaly['raw_message'] = row.get('raw_message', '')[:500]
+                    # ERRORLOG yapısal bilgiler
+                    anomaly['error_number'] = row.get('error_number', 0)
+                    anomaly['error_severity'] = row.get('error_severity', 0)
+                    anomaly['logtype'] = row.get('logtype', 'Unknown')
 
             # Tüm anomalileri de zenginleştir (UI'da kritik yoksa bunları göstermek için)
             all_anomalies = analysis.get("all_anomalies", [])
@@ -2267,6 +2271,10 @@ class AnomalyDetectionTools:
                         anomaly['message'] = raw_msg[:1000]
                     anomaly['component'] = row.get('logtype', anomaly.get('component'))
                     anomaly['severity'] = row.get('log_level', row.get('logtype', anomaly.get('severity')))
+                    # ERRORLOG yapısal bilgiler
+                    anomaly['error_number'] = row.get('error_number', 0)
+                    anomaly['error_severity'] = row.get('error_severity', 0)
+                    anomaly['logtype'] = row.get('logtype', 'Unknown')
 
             # Öneriler
             suggestions = self._create_mssql_suggestions(analysis, mssql_specific_analysis)
@@ -2788,6 +2796,7 @@ EN KRİTİK 10 ANOMALİ:
             'login_analysis': {},
             'user_analysis': {},
             'client_analysis': {},
+            'errorlog_analysis': {},
             'security_concerns': []
         }
 
@@ -2858,6 +2867,60 @@ EN KRİTİK 10 ANOMALİ:
                         f"{ag_errors} Availability Group erişim hatası"
                     )
 
+            # =====================================================
+            # ERRORLOG ANALİZİ (grok-failure loglarından yapısal bilgi)
+            # =====================================================
+            errorlog = {}
+
+            # Grok failure istatistikleri
+            if 'is_grok_failure' in df.columns:
+                grok_failures = int(df['is_grok_failure'].sum())
+                total = len(df)
+                errorlog['grok_failure_count'] = grok_failures
+                errorlog['grok_failure_ratio'] = grok_failures / total if total > 0 else 0
+
+            # logtype dağılımı (yeni sınıflandırma ile)
+            if 'logtype' in df.columns:
+                logtype_dist = df['logtype'].value_counts().to_dict()
+                errorlog['logtype_distribution'] = {str(k): int(v) for k, v in logtype_dist.items()}
+
+            # High severity error istatistikleri
+            if 'is_high_severity_error' in df.columns:
+                high_sev_count = int(df['is_high_severity_error'].sum())
+                errorlog['high_severity_errors'] = high_sev_count
+                if high_sev_count > 0:
+                    result['security_concerns'].append(
+                        f"{high_sev_count} yüksek seviye hata (Severity >= 17)"
+                    )
+
+            # Error number dağılımı (en sık hatalar)
+            if 'error_number' in df.columns:
+                error_nums = df[df['error_number'] > 0]['error_number'].value_counts().head(10)
+                if len(error_nums) > 0:
+                    errorlog['top_error_numbers'] = {str(k): int(v) for k, v in error_nums.to_dict().items()}
+
+            # FDHost crash istatistikleri
+            if 'is_fdhost_crash' in df.columns:
+                fdhost_count = int(df['is_fdhost_crash'].sum())
+                errorlog['fdhost_crash_count'] = fdhost_count
+                if fdhost_count > 50:
+                    result['security_concerns'].append(
+                        f"FDHost crash döngüsü: {fdhost_count} crash/restart event"
+                    )
+
+            # Sistem hataları
+            if 'is_system_error' in df.columns:
+                sys_errors = int(df['is_system_error'].sum())
+                errorlog['system_error_count'] = sys_errors
+
+            # Host bazlı hata dağılımı
+            if 'host' in df.columns and 'is_high_severity_error' in df.columns:
+                host_errors = df[df['is_high_severity_error'] == 1].groupby('host').size()
+                if len(host_errors) > 0:
+                    errorlog['errors_by_host'] = {str(k): int(v) for k, v in host_errors.to_dict().items()}
+
+            result['errorlog_analysis'] = errorlog
+
         except Exception as e:
             logger.error(f"MSSQL specific analysis error: {e}")
 
@@ -2879,8 +2942,8 @@ EN KRİTİK 10 ANOMALİ:
 
         try:
             # MSSQL'e özgü prompt
-            system_prompt = """Sen bir MSSQL veritabanı güvenlik, performans ve erişim yönetimi uzmanısın.
-Sana verilen MSSQL login logları anomali analizini değerlendir ve spesifik, aksiyona yönelik analiz yap.
+            system_prompt = """Sen bir MSSQL veritabanı güvenlik, performans ve sistem sağlığı uzmanısın.
+Sana verilen MSSQL ERRORLOG ve login logları anomali analizini değerlendir ve spesifik, aksiyona yönelik analiz yap.
 
 Özellikle şunlara dikkat et:
 1. Brute force saldırı belirtileri — belirli kullanıcı/IP'den yoğun başarısız login
@@ -2889,6 +2952,8 @@ Sana verilen MSSQL login logları anomali analizini değerlendir ve spesifik, ak
 4. Servis hesabı anormallikleri — beklenmedik servis hesabı davranışları
 5. Availability Group sorunları — AG erişim hataları, failover belirtileri
 6. Lateral movement göstergeleri — farklı IP'lerden aynı hesaba erişim
+7. Sistem sağlığı hataları — Severity >= 17 hatalar, FDHost crash döngüleri, bellek sorunları
+8. ERRORLOG kalıpları — tekrarlayan hata kodları, hata-host korelasyonu, crash/restart döngüleri
 
 Yanıtını Türkçe ver ve şu formatta JSON döndür:
 {
@@ -2896,6 +2961,7 @@ Yanıtını Türkçe ver ve şu formatta JSON döndür:
   "kritik_bulgular": ["Her bulgu için: ne oldu + neden önemli + etkisi"],
   "kok_neden_analizi": "Pattern'lar arası ilişki yorumu",
   "guvenlik_degerlendirmesi": "Düşük/Orta/Yüksek/Kritik risk + gerekçe",
+  "sistem_sagligi": "Sistem sağlığı değerlendirmesi (ERRORLOG hataları, crash döngüleri)",
   "onerilen_aksiyonlar": ["Spesifik aksiyon: hangi hesap/IP/ayar üzerinde ne yapılmalı"],
   "izleme_onerisi": "Hangi metriklerin izlenmesi gerektiği"
 }"""
@@ -2942,6 +3008,27 @@ Yanıtını Türkçe ver ve şu formatta JSON döndür:
                 msg = a.get('message', '')[:200]
                 anomaly_text += f"{i}. [{sev}] Score:{score} | {msg}\n"
 
+            # ERRORLOG analysis - structured error info
+            errorlog = mssql_specific.get('errorlog_analysis', {})
+            errorlog_text = ""
+            if errorlog:
+                grok_ratio = errorlog.get('grok_failure_ratio', 0)
+                errorlog_text += f"  Grok Parse Failure: %{grok_ratio*100:.1f}\n"
+                errorlog_text += f"  Yüksek Severity Hata (>=17): {errorlog.get('high_severity_errors', 0)}\n"
+                errorlog_text += f"  Sistem Hataları: {errorlog.get('system_error_count', 0)}\n"
+                errorlog_text += f"  FDHost Crash: {errorlog.get('fdhost_crash_count', 0)}\n"
+                logtype_dist = errorlog.get('logtype_distribution', {})
+                if logtype_dist:
+                    errorlog_text += f"  Log Tipi Dağılımı: {json.dumps(logtype_dist, ensure_ascii=False)}\n"
+                top_errors = errorlog.get('top_error_numbers', {})
+                if top_errors:
+                    errorlog_text += f"  En Sık Hata Kodları: {json.dumps(top_errors, ensure_ascii=False)}\n"
+                errors_by_host = errorlog.get('errors_by_host', {})
+                if errors_by_host:
+                    errorlog_text += f"  Host Bazlı Hatalar: {json.dumps(errors_by_host, ensure_ascii=False)}\n"
+            else:
+                errorlog_text = "  Bilgi yok\n"
+
             user_prompt = f"""MSSQL Anomali Analiz Sonuçları:
 
 Sunucu: {server_name or 'Tüm sunucular'}
@@ -2960,6 +3047,8 @@ Unique Kullanıcı: {user_analysis.get('unique_users', 'N/A')}
 Unique IP: {client_analysis.get('unique_ips', 'N/A')}
 Local Bağlantı: {client_analysis.get('local_connections', 'N/A')}
 
+ERRORLOG SİSTEM SAĞLIĞI:
+{errorlog_text}
 GÜVENLİK ENDİŞELERİ:
 {json.dumps(mssql_specific.get('security_concerns', []), indent=2, ensure_ascii=False)}
 
@@ -3917,10 +4006,12 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         for a in anomalies:
             if is_mssql:
                 # MSSQL: logtype veya mesaj pattern'ına göre
-                cat = a.get('component') or 'general'
+                cat = a.get('component') or a.get('logtype') or 'general'
                 msg = (a.get('message') or '').lower()
                 if 'login failed' in msg or 'authentication failed' in msg:
                     cat = 'failed_login'
+                elif 'login succeeded' in msg:
+                    cat = 'successful_login'
                 elif 'availability group' in msg or 'not accessible' in msg:
                     cat = 'availability_group'
                 elif 'cannot open database' in msg or 'database' in msg:
@@ -3929,6 +4020,14 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                     cat = 'permission_error'
                 elif 'connection' in msg or 'socket' in msg:
                     cat = 'connection_error'
+                elif 'fulltext filter daemon' in msg or 'fdhost' in msg:
+                    cat = 'fdhost_crash'
+                elif 'deadlock' in msg:
+                    cat = 'deadlock'
+                elif 'memory' in msg or 'out of memory' in msg:
+                    cat = 'memory_error'
+                elif a.get('error_severity', 0) >= 17:
+                    cat = 'high_severity_error'
             else:
                 # MongoDB: component veya anomaly_type'a göre
                 cat = a.get('component') or a.get('anomaly_type') or 'general'
