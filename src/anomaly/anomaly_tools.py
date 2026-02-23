@@ -17,6 +17,7 @@ from pathlib import Path
 import os
 from pymongo import MongoClient
 import numpy as np
+import requests
 
 from .log_reader import MongoDBLogReader, OpenSearchProxyReader
 from .feature_engineer import MongoDBFeatureEngineer
@@ -2723,13 +2724,29 @@ EN KRİTİK 10 ANOMALİ:
                 HumanMessage(content=user_prompt)
             ]
 
-            response = self.llm_connector.invoke(messages)
-            explanation_text = response.content if hasattr(response, 'content') else str(response)
+            context = f"ES/{server_name or 'global'}"
+            explanation_text = self._safe_invoke_llm(messages, context=context)
 
+            if explanation_text:
+                return {
+                    "özet": explanation_text[:2000],
+                    "server": server_name,
+                    "generated_at": datetime.now().isoformat()
+                }
+
+            # LLM yanıt vermedi — data-driven fallback
+            logger.warning(f"[LCWGPT:{context}] No response, using data-driven fallback")
+            summary = analysis.get('summary', {})
             return {
-                "özet": explanation_text[:2000],
+                "özet": (
+                    f"Elasticsearch anomali analizi tamamlandı. "
+                    f"Toplam {summary.get('n_anomalies', 0)} anomali tespit edildi "
+                    f"(oran: %{summary.get('anomaly_rate', 0):.1f}). "
+                    f"AI açıklama alınamadı."
+                ),
                 "server": server_name,
-                "generated_at": datetime.now().isoformat()
+                "generated_at": datetime.now().isoformat(),
+                "is_fallback": True
             }
 
         except Exception as e:
@@ -3062,17 +3079,35 @@ Bu verileri analiz et ve JSON formatında yanıt ver."""
                 HumanMessage(content=user_prompt)
             ]
 
-            response = self.llm_connector.invoke(messages)
+            context = f"MSSQL/{server_name or 'global'}"
+            content = self._safe_invoke_llm(messages, context=context)
 
-            if response and hasattr(response, 'content'):
-                # JSON parse
-                content = response.content
-                # JSON bloğunu bul
-                import re
-                json_match = re.search(r'\{[\s\S]*\}', content)
-                if json_match:
-                    return json.loads(json_match.group())
+            if content:
+                # JSON parse — LLM JSON formatında yanıt vermesi isteniyor
+                parsed = self._safe_parse_json_response(content, context=context)
+                if parsed:
+                    # Beklenen key'lerin varlığını logla (eksik olsa bile sonucu döndür)
+                    expected_keys = ['ozet', 'kritik_bulgular', 'guvenlik_degerlendirmesi', 'onerilen_aksiyonlar']
+                    missing_keys = [k for k in expected_keys if k not in parsed]
+                    if missing_keys:
+                        logger.warning(f"[LCWGPT:{context}] Response missing expected keys: {missing_keys}")
+                    return parsed
 
+                # JSON parse başarısız — raw text'ten fallback oluştur
+                logger.warning(f"[LCWGPT:{context}] JSON parse failed, using raw text as summary")
+                return {
+                    "ozet": content[:2000],
+                    "kritik_bulgular": [],
+                    "kok_neden_analizi": "",
+                    "guvenlik_degerlendirmesi": "Belirlenemedi",
+                    "sistem_sagligi": "",
+                    "onerilen_aksiyonlar": [],
+                    "izleme_onerisi": "",
+                    "_parse_fallback": True
+                }
+
+            # LLM yanıt vermedi
+            logger.warning(f"[LCWGPT:{context}] No response from LLM")
             return {}
 
         except Exception as e:
@@ -3271,17 +3306,21 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                 HumanMessage(content=user_prompt)
             ]
             
-            response = self.llm_connector.invoke(messages)
-            ai_explanation = response.content
-            
+            context = f"MongoDB/{server_name or 'global'}"
+            ai_explanation = self._safe_invoke_llm(messages, context=context)
+
+            if not ai_explanation:
+                logger.warning(f"[LCWGPT:{context}] No response, using fallback explanation")
+                return self._create_fallback_explanation(anomaly_data)
+
             logger.info(f"AI response received, length: {len(ai_explanation)}")
-            
+
             # Yeni parse fonksiyonu - LCWGPT'nin yeni formatı için
             parsed_explanation = self._parse_ai_explanation_structured(ai_explanation)
-            
+
             logger.info(f"AI explanation parsed successfully: {list(parsed_explanation.keys())}")
             return parsed_explanation
-            
+
         except Exception as e:
             logger.error(f"Error generating AI explanation: {e}")
             return self._create_fallback_explanation(anomaly_data)
@@ -3564,6 +3603,121 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                 f"Kritik anomalileri öncelikle çözün"
             ]
         }
+
+    # =================================================================
+    # LCWGPT RESPONSE VALIDATION HELPERS
+    # =================================================================
+
+    def _safe_invoke_llm(self, messages, context: str = "") -> Optional[str]:
+        """
+        LCWGPT'yi güvenli şekilde çağır ve response content'i döndür.
+
+        Tüm source'lar (MongoDB, MSSQL, Elasticsearch) bu wrapper'ı kullanır.
+        None/boş/kısa response durumlarını, timeout ve exception'ları handle eder.
+
+        Args:
+            messages: LangChain message listesi [SystemMessage, HumanMessage]
+            context: Log mesajları için bağlam bilgisi (ör. "MSSQL/server01")
+
+        Returns:
+            Response content string veya None (hata durumunda)
+        """
+        log_prefix = f"[LCWGPT:{context}]" if context else "[LCWGPT]"
+
+        # 1. Connector check
+        if not self.llm_connector or not self.llm_connector.is_connected():
+            logger.warning(f"{log_prefix} LLM connector not available, skipping")
+            return None
+
+        try:
+            # 2. invoke() çağrısı
+            response = self.llm_connector.invoke(messages)
+
+            # 3. None response check
+            if response is None:
+                logger.warning(f"{log_prefix} LLM returned None response")
+                return None
+
+            # 4. content extraction
+            if not hasattr(response, 'content'):
+                logger.warning(f"{log_prefix} LLM response has no 'content' attribute, type={type(response).__name__}")
+                return None
+
+            content = response.content
+
+            # 5. Boş/kısa response check
+            if not content or not isinstance(content, str):
+                logger.warning(f"{log_prefix} LLM returned empty or non-string content: {type(content).__name__}")
+                return None
+
+            content = content.strip()
+            if len(content) < 20:
+                logger.warning(f"{log_prefix} LLM response too short ({len(content)} chars): '{content[:50]}'")
+                return None
+
+            logger.info(f"{log_prefix} LLM response received successfully ({len(content)} chars)")
+            return content
+
+        except requests.exceptions.Timeout:
+            logger.error(f"{log_prefix} LLM request timed out")
+            return None
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"{log_prefix} LLM connection error: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"{log_prefix} LLM invoke error: {e}")
+            return None
+
+    def _safe_parse_json_response(self, content: str, context: str = "") -> Optional[Dict[str, Any]]:
+        """
+        LLM response içinden JSON bloğunu güvenli şekilde parse et.
+
+        LLM bazen JSON'u markdown code block içinde, bazen düz metin ile karışık döner.
+        Bu method tüm varyasyonları handle eder.
+
+        Args:
+            content: LLM response text
+            context: Log mesajları için bağlam bilgisi
+
+        Returns:
+            Parsed JSON dict veya None
+        """
+        import re
+        log_prefix = f"[LCWGPT:{context}]" if context else "[LCWGPT]"
+
+        if not content:
+            return None
+
+        try:
+            # Strateji 1: Tüm content JSON mi?
+            try:
+                return json.loads(content)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+            # Strateji 2: ```json ... ``` code block içinde mi?
+            code_block_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content)
+            if code_block_match:
+                try:
+                    return json.loads(code_block_match.group(1))
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+            # Strateji 3: İlk { ... } bloğunu bul
+            json_match = re.search(r'\{[\s\S]*\}', content)
+            if json_match:
+                try:
+                    return json.loads(json_match.group())
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.warning(f"{log_prefix} JSON block found but parse failed: {e}")
+                    return None
+
+            logger.warning(f"{log_prefix} No JSON block found in response ({len(content)} chars)")
+            return None
+
+        except Exception as e:
+            logger.error(f"{log_prefix} Unexpected error during JSON parse: {e}")
+            return None
 
     def _format_critical_anomalies_detailed(self, anomalies: List[Dict]) -> str:
         """Prompt için kritik anomalileri detaylı formatlar"""
@@ -4213,17 +4367,17 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                 HumanMessage(content=user_prompt)
             ]
             
-            response = self.llm_connector.invoke(messages)
-            
+            ai_content = self._safe_invoke_llm(messages, context="StorageQuery")
+
             return {
                 "query": query,
                 "total_anomalies": len(all_anomalies),
                 "processed_chunk": f"1/{len(chunks)}",
-                "ai_response": response.content,
+                "ai_response": ai_content or "AI yanıtı alınamadı.",
                 "analysis_id": analysis.get("analysis_id"),
                 "timestamp": analysis.get("timestamp")
             }
-            
+
         except Exception as e:
             logger.error(f"Storage query error: {e}")
             return {"error": str(e)}
