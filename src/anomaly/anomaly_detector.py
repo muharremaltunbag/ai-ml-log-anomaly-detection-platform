@@ -831,18 +831,17 @@ class MongoDBAnomalyDetector:
 
         # Thread safety - Tahmin sırasında modelin eğitilmediğinden/değiştirilmediğinden emin ol
         with self._training_lock:
-            # ====== STABILIZER EKLENECEK ======
-            try:
-                if hasattr(self, "feature_engineer") and self.feature_engineer:
-                    X = self.feature_engineer.stabilize_features_for_model(
-                        X,
-                        self.training_stats.get("feature_schema")
+            # Feature schema doğrulama — predict'e gelen X ile model'in beklediği feature'ları karşılaştır
+            feature_schema = self.training_stats.get("feature_schema") if self.training_stats else None
+            if feature_schema and feature_schema.get("names"):
+                schema_count = feature_schema.get("count", len(feature_schema["names"]))
+                input_count = X.shape[1]
+                if input_count != schema_count:
+                    logger.info(
+                        f"[Feature Schema] Input has {input_count} features, "
+                        f"model expects {schema_count}. Alignment will be applied."
                     )
-                    logger.debug("FeatureEngineer stabilizer applied successfully before prediction.")
-            except Exception as e:
-                logger.error(f"Feature stabilizer failed before prediction: {e}")
-            # =======================================
-            
+
             # Feature isimleri ve sırasını güvenli şekilde hizala
             if self.feature_names is None or not len(self.feature_names):
                 # Modelde feature bilgisi yoksa, ilk gelen X'i referans al
@@ -862,20 +861,40 @@ class MongoDBAnomalyDetector:
                 extra_features = [f for f in input_features if f not in model_set]
 
                 if missing_features or extra_features:
-                    logger.warning(
-                        f"[Predict Alignment] Feature mismatch detected. "
-                        f"Missing in input: {missing_features or 'none'} | "
-                        f"Extra in input: {extra_features or 'none'}. "
-                        f"Aligning input to match model's feature set."
-                    )
+                    # Mismatch ciddiyet kontrolü
+                    total_expected = len(self.feature_names)
+                    mismatch_count = len(missing_features) + len(extra_features)
+                    mismatch_ratio = mismatch_count / max(total_expected, 1)
+
+                    if mismatch_ratio > 0.5:
+                        # %50'den fazla feature farklı — sonuçlar güvenilir değil
+                        logger.error(
+                            f"[Predict Alignment] CRITICAL feature mismatch! "
+                            f"{mismatch_count}/{total_expected} features differ ({mismatch_ratio:.0%}). "
+                            f"Missing: {missing_features} | Extra: {extra_features}. "
+                            f"Results may be unreliable — model may need retraining."
+                        )
+                    elif mismatch_ratio > 0.2:
+                        logger.warning(
+                            f"[Predict Alignment] Significant feature mismatch: "
+                            f"{mismatch_count}/{total_expected} features differ ({mismatch_ratio:.0%}). "
+                            f"Missing: {missing_features} | Extra: {extra_features}."
+                        )
+                    else:
+                        logger.warning(
+                            f"[Predict Alignment] Minor feature mismatch: "
+                            f"Missing: {missing_features or 'none'} | Extra: {extra_features or 'none'}. "
+                            f"Aligning input to match model's feature set."
+                        )
+
                     # Eksik feature'ları 0.0 ile ekle
                     for feat in missing_features:
                         X[feat] = 0.0
                     # Fazla feature'ları kaldır
                     if extra_features:
                         X = X.drop(columns=extra_features)
-                    # feature_names'i güncelle
-                    self.feature_names = list(X.columns)
+                    # NOT: self.feature_names'i DEĞİŞTİRME — model state predict sırasında
+                    # mutate edilmemeli. Train sırasında kaydedilen feature_names korunmalı.
 
                 # Sadece sıra farklıysa reorder et
                 # 1) Column presence check (en kritik guard)
