@@ -6,6 +6,11 @@
         "description": "MSSQL Log Anomaly Detection Configuration",
         "compatible_detector_versions": ["1.0"]
     },
+    "timezone": {
+        "utc_offset_hours": 3,
+        "timezone_name": "Europe/Istanbul",
+        "description": "OpenSearch @timestamp is UTC. MSSQL servers are in Turkey (UTC+3). Temporal features (night/business hours) must use local time."
+    },
     "server_management": {
         "cluster_mapping_path": "config/mssql_cluster_mapping.json",
         "unmapped_host_behavior": "warn_and_process",
@@ -119,7 +124,11 @@
                 "username_frequency",
                 "is_rare_username",
                 "failed_login_ratio_1h",
-                "login_count_1h"
+                "login_count_1h",
+                "error_severity_level",
+                "is_high_severity_error",
+                "is_system_error",
+                "is_fdhost_crash"
             ],
             "filters": {
                 "exclude_service_account_success": false,
@@ -186,6 +195,16 @@
                     "enabled": true,
                     "description": "Multiple different users failing from same IP",
                     "severity": 0.92
+                },
+                "high_severity_error": {
+                    "enabled": true,
+                    "description": "MSSQL Error with Severity >= 17 (system-level error)",
+                    "severity": 0.88
+                },
+                "fdhost_crash_storm": {
+                    "enabled": true,
+                    "description": "Full-Text Filter Daemon (FDHost) crash/restart cycle",
+                    "severity": 0.75
                 }
             }
         },
@@ -215,7 +234,12 @@
             "failure_reason": "Reason:\\s*(.+?)(?:\\s*\\[CLIENT:|$)",
             "auth_type": "Connection made using (SQL Server|Windows) authentication",
             "database_name": "database '([^']+)'",
-            "availability_group": "availability group|not accessible for queries"
+            "availability_group": "availability group|not accessible for queries",
+            "errorlog_error": "Error:\\s*(\\d+),\\s*Severity:\\s*(\\d+),\\s*State:\\s*(\\d+)",
+            "errorlog_spid": "spid(\\d+)s?",
+            "errorlog_timestamp": "^(\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\.\\d+)",
+            "fdhost_crash": "fulltext filter daemon host.*stopped abnormally|FDHost.*stopped",
+            "fdhost_restart": "full-text filter daemon host process has been successfully started"
         },
         "service_account_patterns": [
             "^APP_",

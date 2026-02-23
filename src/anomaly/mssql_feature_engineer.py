@@ -8,7 +8,7 @@ Yapı: MongoDBFeatureEngineer ile aynı, MSSQL'e uyarlanmış
 
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 import re
@@ -36,6 +36,10 @@ class MSSQLFeatureEngineer:
 
         # Model feature schema holder (stabilization için)
         self.model_feature_schema = None
+
+        # Timezone config — OpenSearch @timestamp UTC, MSSQL servers local time
+        timezone_config = self.config.get('timezone', {})
+        self.utc_offset_hours = timezone_config.get('utc_offset_hours', 3)  # Default: Turkey UTC+3
 
         # Service account patterns (config'den veya default)
         self.service_account_patterns = self.config.get('message_parsing', {}).get(
@@ -208,6 +212,7 @@ class MSSQLFeatureEngineer:
         df = self.extract_client_features(df)
         df = self.extract_user_features(df)
         df = self.extract_error_features(df)
+        df = self.extract_errorlog_features(df)
         df = self.extract_burst_features(df)
 
         # Frequency baseline güncelle (kümülatif IP/username frekansları)
@@ -266,10 +271,14 @@ class MSSQLFeatureEngineer:
         Temporal features extraction
 
         MSSQL için:
-        - hour_of_day
-        - is_weekend
-        - is_business_hours
-        - is_night_login
+        - hour_of_day (local time — UTC + offset)
+        - is_weekend (local time)
+        - is_business_hours (local time)
+        - is_night_login (local time)
+
+        OpenSearch @timestamp is UTC. MSSQL servers in Turkey use UTC+3.
+        All temporal features are calculated in LOCAL time to ensure correct
+        night/business hour detection.
         """
         try:
             # Timestamp parse
@@ -283,11 +292,18 @@ class MSSQLFeatureEngineer:
             if 'timestamp' in df.columns:
                 df = df.sort_values('timestamp').reset_index(drop=True)
 
-                # Hour of day
-                df['hour_of_day'] = df['timestamp'].dt.hour
+                # UTC → Local time conversion for temporal feature calculation
+                # @timestamp is UTC; temporal features (night, business hours, weekend)
+                # must reflect local time where the MSSQL servers operate
+                offset = pd.Timedelta(hours=self.utc_offset_hours)
+                local_timestamp = df['timestamp'] + offset
+                logger.info(f"[Timezone] UTC → Local conversion applied: UTC+{self.utc_offset_hours}h")
 
-                # Weekend flag
-                df['is_weekend'] = (df['timestamp'].dt.dayofweek >= 5).astype(int)
+                # Hour of day (LOCAL time)
+                df['hour_of_day'] = local_timestamp.dt.hour
+
+                # Weekend flag (LOCAL time — UTC+offset can shift day boundary)
+                df['is_weekend'] = (local_timestamp.dt.dayofweek >= 5).astype(int)
 
                 # Business hours flag (config'den veya default 08:00-18:00)
                 business_start = self.thresholds.get('business_hour_start', 8)
@@ -558,6 +574,59 @@ class MSSQLFeatureEngineer:
 
         except Exception as e:
             logger.error(f"Error in error features: {e}")
+
+        return df
+
+    def extract_errorlog_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        ERRORLOG structured features extraction
+
+        Grok-failed ERRORLOG mesajlarından çıkarılan yapısal bilgiler:
+        - error_severity_level: MSSQL error severity (0-25)
+        - is_high_severity_error: severity >= 17 (system-level)
+        - is_system_error: non-login error event
+        - is_fdhost_crash: Full-Text Filter Daemon crash pattern
+        """
+        try:
+            # Error severity level (from parsed error_severity field)
+            if 'error_severity' in df.columns:
+                df['error_severity_level'] = pd.to_numeric(
+                    df['error_severity'], errors='coerce'
+                ).fillna(0).astype(int)
+            else:
+                df['error_severity_level'] = 0
+
+            # High severity error (severity >= 17 = system-level in MSSQL)
+            df['is_high_severity_error'] = (df['error_severity_level'] >= 17).astype(int)
+
+            # System error: non-login error event (logtype is Error, Deadlock, Memory, FDHost)
+            error_logtypes = {'Error', 'Deadlock', 'Memory', 'FDHost'}
+            if 'logtype' in df.columns:
+                df['is_system_error'] = df['logtype'].isin(error_logtypes).astype(int)
+            else:
+                df['is_system_error'] = 0
+
+            # FDHost crash detection
+            if 'is_fdhost_event' in df.columns:
+                df['is_fdhost_crash'] = df['is_fdhost_event'].astype(int)
+            else:
+                # Fallback: parse from message
+                message_col = 'raw_message' if 'raw_message' in df.columns else 'message'
+                if message_col in df.columns:
+                    df['is_fdhost_crash'] = df[message_col].str.contains(
+                        r'fulltext filter daemon host.*stopped abnormally|FDHost.*stopped',
+                        case=False, na=False, regex=True
+                    ).astype(int)
+                else:
+                    df['is_fdhost_crash'] = 0
+
+            logger.info(f"[OK] ERRORLOG features extracted")
+            logger.info(f"   High severity errors (>=17): {df['is_high_severity_error'].sum()}")
+            logger.info(f"   System errors: {df['is_system_error'].sum()}")
+            logger.info(f"   FDHost crashes: {df['is_fdhost_crash'].sum()}")
+
+        except Exception as e:
+            logger.error(f"Error in ERRORLOG features: {e}")
 
         return df
 

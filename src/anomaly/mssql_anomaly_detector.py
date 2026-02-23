@@ -228,6 +228,32 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
                 ),
                 'severity': 0.75,
                 'description': 'User logged in from rare/new IP address'
+            },
+
+            # =================================================================
+            # ERRORLOG KURALLARI (grok-failure logları için)
+            # =================================================================
+
+            # High Severity Error
+            # MSSQL Error Severity >= 17 (system-level: resource, software, hardware errors)
+            'high_severity_error': {
+                'condition': lambda row: (
+                    row.get('is_high_severity_error', 0) == 1 and
+                    row.get('is_login_event', 0) == 0  # Login event değil
+                ),
+                'severity': 0.88,
+                'description': 'MSSQL Error with Severity >= 17 (system-level error)'
+            },
+
+            # FDHost Crash Storm
+            # Full-Text Filter Daemon crash/restart döngüsü
+            # (severity düşük çünkü FDHost auto-restart yapar, ama tekrarlayan crash pattern kritik)
+            'fdhost_crash_storm': {
+                'condition': lambda row: (
+                    row.get('is_fdhost_crash', 0) == 1
+                ),
+                'severity': 0.75,
+                'description': 'Full-Text Filter Daemon (FDHost) crash/restart cycle detected'
             }
         }
 
@@ -312,11 +338,15 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
         # ── 2. Log Type Criticality (0-20) ───────────────────────
         logtype_scores = {
             'Error': 18,
+            'Deadlock': 18,    # Deadlock = Error seviyesinde kritik
+            'Memory': 18,      # Memory pressure = Error seviyesinde kritik
             'Logon': 15,       # Login olayları güvenlik açısından önemli
+            'FDHost': 12,      # FDHost crash — otomatik restart ama tekrar eden sorun
             'Backup': 8,
             'Unknown': 10,
             'Startup': 12,
             'Recovery': 10,
+            'Info': 5,
         }
         logtype = df_row.get('logtype', 'Unknown') if hasattr(df_row, 'get') else 'Unknown'
         logtype_score = logtype_scores.get(logtype, 8)
@@ -372,7 +402,17 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
             feature_score += 15
             factors.append("Rare IP (non-service): +15")
 
-        # 3i. Grok parse failure (bilinmeyen log formatı)
+        # 3i. High severity MSSQL error (Severity >= 17)
+        if row_features.get('is_high_severity_error', 0) == 1:
+            feature_score += 20
+            factors.append("High Severity Error (≥17): +20")
+
+        # 3j. FDHost crash (recurring = system health issue)
+        if row_features.get('is_fdhost_crash', 0) == 1:
+            feature_score += 10
+            factors.append("FDHost Crash: +10")
+
+        # 3k. Grok parse failure (bilinmeyen log formatı)
         if row_features.get('is_grok_failure', 0) == 1:
             feature_score += 8
             factors.append("Grok Parse Failure: +8")

@@ -59,6 +59,54 @@ DATABASE_ACCESS_ERROR_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# =============================================================================
+# ERRORLOG STRUCTURED PARSING PATTERNS
+# For grok-failed MSSQL ERRORLOG entries (format: "YYYY-MM-DD HH:MM:SS.ms spidNNNs  message")
+# =============================================================================
+
+# Error/Severity/State: "Error: 30089, Severity: 17, State: 1."
+ERRORLOG_ERROR_PATTERN = re.compile(
+    r'Error:\s*(\d+),\s*Severity:\s*(\d+),\s*State:\s*(\d+)'
+)
+
+# SPID: "spid25s" or "spid294s"
+ERRORLOG_SPID_PATTERN = re.compile(r'spid(\d+)s?')
+
+# Timestamp in message: "2026-02-23 09:41:56.19"
+ERRORLOG_TIMESTAMP_PATTERN = re.compile(
+    r'^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d+)'
+)
+
+# Full-Text Filter Daemon (FDHost) patterns
+FDHOST_CRASH_PATTERN = re.compile(
+    r'fulltext filter daemon host.*stopped abnormally|FDHost.*stopped',
+    re.IGNORECASE
+)
+FDHOST_RESTART_PATTERN = re.compile(
+    r'full-text filter daemon host process has been successfully started',
+    re.IGNORECASE
+)
+
+# Additional ERRORLOG event type patterns (for logtype classification)
+BACKUP_PATTERN = re.compile(
+    r'BACKUP\s+(DATABASE|LOG)|backed up|restore completed|RESTORE\s+(DATABASE|LOG)',
+    re.IGNORECASE
+)
+STARTUP_PATTERN = re.compile(
+    r'Starting up database|Server is listening on|SQL Server is starting|'
+    r'Recovery is complete|Service Broker manager has started',
+    re.IGNORECASE
+)
+DEADLOCK_PATTERN = re.compile(
+    r'deadlock victim|Error:\s*1205,|deadlock detected',
+    re.IGNORECASE
+)
+MEMORY_PATTERN = re.compile(
+    r'memory pressure|Error:\s*701,|Error:\s*802,|out of memory|'
+    r'insufficient memory|memory grant',
+    re.IGNORECASE
+)
+
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -176,6 +224,122 @@ def extract_database_name(message: str) -> str:
     if match:
         return match.group(1)
     return ''
+
+
+def extract_errorlog_error_info(message: str) -> dict:
+    """
+    MSSQL ERRORLOG mesajından Error/Severity/State bilgilerini çıkarır
+
+    Args:
+        message: Raw log message (e.g. "... Error: 30089, Severity: 17, State: 1.")
+
+    Returns:
+        Dict with error_number, error_severity, error_state (int or 0)
+    """
+    result = {'error_number': 0, 'error_severity': 0, 'error_state': 0}
+    if not message:
+        return result
+
+    match = ERRORLOG_ERROR_PATTERN.search(message)
+    if match:
+        result['error_number'] = int(match.group(1))
+        result['error_severity'] = int(match.group(2))
+        result['error_state'] = int(match.group(3))
+    return result
+
+
+def extract_errorlog_spid(message: str) -> int:
+    """
+    MSSQL ERRORLOG mesajından SPID (Server Process ID) numarasını çıkarır
+
+    Args:
+        message: Raw log message
+
+    Returns:
+        SPID number or 0
+    """
+    if not message:
+        return 0
+
+    match = ERRORLOG_SPID_PATTERN.search(message)
+    if match:
+        return int(match.group(1))
+    return 0
+
+
+def extract_errorlog_timestamp(message: str) -> str:
+    """
+    MSSQL ERRORLOG mesajından yerel zaman damgasını çıkarır
+
+    Args:
+        message: Raw log message
+
+    Returns:
+        Local timestamp string or empty string
+    """
+    if not message:
+        return ''
+
+    match = ERRORLOG_TIMESTAMP_PATTERN.search(message)
+    if match:
+        return match.group(1)
+    return ''
+
+
+def classify_errorlog_message(message: str) -> str:
+    """
+    MSSQL ERRORLOG mesajını içeriğine göre logtype olarak sınıflandırır
+
+    Grok parse failure olan mesajlar için detaylı sınıflandırma sağlar.
+
+    Args:
+        message: Raw log message
+
+    Returns:
+        Logtype string: 'Logon', 'Error', 'FDHost', 'Backup', 'Startup',
+                        'Deadlock', 'Memory', 'Info', 'Unknown'
+    """
+    if not message:
+        return 'Unknown'
+
+    # Login events (en yüksek öncelik — mevcut grok pattern'ın hedefi)
+    if LOGIN_STATUS_PATTERN.search(message):
+        return 'Logon'
+
+    # FDHost crash/restart — ayrı kategori (çok yüksek hacim)
+    if FDHOST_CRASH_PATTERN.search(message) or FDHOST_RESTART_PATTERN.search(message):
+        return 'FDHost'
+
+    # Deadlock — kritik performans
+    if DEADLOCK_PATTERN.search(message):
+        return 'Deadlock'
+
+    # Memory pressure — kritik sistem sağlığı
+    if MEMORY_PATTERN.search(message):
+        return 'Memory'
+
+    # Availability Group — kritik HA
+    if AVAILABILITY_GROUP_PATTERN.search(message):
+        return 'Error'
+
+    # Database access error
+    if DATABASE_ACCESS_ERROR_PATTERN.search(message):
+        return 'Error'
+
+    # Backup/Restore events
+    if BACKUP_PATTERN.search(message):
+        return 'Backup'
+
+    # Startup/Recovery events
+    if STARTUP_PATTERN.search(message):
+        return 'Startup'
+
+    # Generic error (has Error/Severity/State pattern)
+    if ERRORLOG_ERROR_PATTERN.search(message):
+        return 'Error'
+
+    # No known pattern matched
+    return 'Unknown'
 
 
 def normalize_mssql_message(message: str) -> str:
@@ -736,21 +900,34 @@ class MSSQLOpenSearchReader:
         log_entry['is_grok_failure'] = is_grok_failure
 
         if is_grok_failure:
-            # Grok failure: message'dan parse et
+            # Grok failure: message'dan detaylı parse et
             message = log_entry['raw_message']
-            # logtype'ı message içeriğinden çıkar (hardcode 'Logon' YANLIŞ)
+
+            # 1. Detaylı logtype sınıflandırma (eski 3-branch yerine)
+            log_entry['logtype'] = classify_errorlog_message(message)
+
+            # 2. Login bilgileri (login event ise)
             login_status = extract_login_status(message)
-            if login_status != 'unknown':
-                log_entry['logtype'] = 'Logon'
-            elif AVAILABILITY_GROUP_PATTERN.search(message):
-                log_entry['logtype'] = 'Error'
-            elif DATABASE_ACCESS_ERROR_PATTERN.search(message):
-                log_entry['logtype'] = 'Error'
-            else:
-                log_entry['logtype'] = 'Unknown'
             log_entry['logintype'] = login_status
             log_entry['username'] = extract_username_from_message(message)
-            log_entry['logtime'] = ''  # Parse edilememiş
+
+            # 3. ERRORLOG yapısal bilgiler (Error/Severity/State)
+            error_info = extract_errorlog_error_info(message)
+            log_entry['error_number'] = error_info['error_number']
+            log_entry['error_severity'] = error_info['error_severity']
+            log_entry['error_state'] = error_info['error_state']
+
+            # 4. SPID (SQL Server process ID)
+            log_entry['spid'] = extract_errorlog_spid(message)
+
+            # 5. Local timestamp from message (fallback for logtime)
+            log_entry['logtime'] = extract_errorlog_timestamp(message)
+
+            # 6. FDHost crash flag
+            log_entry['is_fdhost_event'] = bool(
+                FDHOST_CRASH_PATTERN.search(message) or
+                FDHOST_RESTART_PATTERN.search(message)
+            )
         else:
             # Normal parse edilmiş alanları kullan
             log_entry['logtype'] = source.get('logtype', 'Unknown')
@@ -759,8 +936,33 @@ class MSSQLOpenSearchReader:
             log_entry['logtime'] = source.get('logtime', '')
             log_entry['hostuser'] = source.get('hostuser', '')
 
-        # log_level: MSSQL severity bilgisi (Error, Warning, Info vb.)
-        log_entry['log_level'] = source.get('log_level', source.get('loglevel', 'unknown'))
+            # Yapısal bilgiler (normal parse'da da message'dan çıkar)
+            message = log_entry['raw_message']
+            error_info = extract_errorlog_error_info(message)
+            log_entry['error_number'] = error_info['error_number']
+            log_entry['error_severity'] = error_info['error_severity']
+            log_entry['error_state'] = error_info['error_state']
+            log_entry['spid'] = extract_errorlog_spid(message)
+            log_entry['is_fdhost_event'] = bool(
+                FDHOST_CRASH_PATTERN.search(message) or
+                FDHOST_RESTART_PATTERN.search(message)
+            )
+
+        # log_level: MSSQL severity bilgisi
+        # OpenSearch mapping'de log_level/loglevel alanı yok —
+        # error_severity'den türet (varsa), yoksa 'unknown'
+        if log_entry.get('error_severity', 0) > 0:
+            sev = log_entry['error_severity']
+            if sev >= 20:
+                log_entry['log_level'] = 'fatal'
+            elif sev >= 17:
+                log_entry['log_level'] = 'error'
+            elif sev >= 11:
+                log_entry['log_level'] = 'warning'
+            else:
+                log_entry['log_level'] = 'info'
+        else:
+            log_entry['log_level'] = source.get('log_level', source.get('loglevel', 'unknown'))
 
         # Zenginleştirme (client IP, auth type, failure reason, etc.)
         log_entry = enrich_mssql_log_entry(log_entry)
