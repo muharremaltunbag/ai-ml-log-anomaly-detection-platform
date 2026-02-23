@@ -2300,6 +2300,8 @@ class AnomalyDetectionTools:
                     "total_critical_count": len(critical_anomalies),
                     "critical_anomalies": self._select_diverse_anomalies(critical_anomalies, limit=75, is_mssql=True),
                     "all_anomalies": self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100, is_mssql=True),
+                    "unfiltered_anomalies": critical_anomalies,  # Chat endpoint için TÜM kritik anomaliler
+                    "unfiltered_count": len(critical_anomalies),
                     "mssql_specific": mssql_specific_analysis,
                     "temporal_analysis": analysis.get("temporal_analysis", {}),
                     "feature_importance": analysis.get("feature_importance", {}),
@@ -2513,6 +2515,8 @@ class AnomalyDetectionTools:
                     "all_anomalies": self._select_diverse_anomalies(
                         analysis.get("all_anomalies", []), limit=100
                     ),
+                    "unfiltered_anomalies": analysis.get("critical_anomalies", []),  # Chat endpoint için TÜM kritik anomaliler
+                    "unfiltered_count": len(analysis.get("critical_anomalies", [])),
                     "es_specific": es_specific,
                     "security_alerts": analysis.get("security_alerts", {}),
                     "model_info": {

@@ -2637,9 +2637,12 @@ async def chat_query_anomalies(request: Dict[str, Any]):
         is_mssql = "mssql" in analysis_source
         is_elasticsearch = "elasticsearch" in analysis_source
 
-        all_anomalies = analysis.get("unfiltered_anomalies", [])
-        if not all_anomalies:
-            all_anomalies = analysis.get("critical_anomalies", [])
+        all_anomalies = (
+            analysis.get("unfiltered_anomalies", [])
+            or analysis.get("critical_anomalies_full", [])
+            or analysis.get("critical_anomalies_display", [])
+            or analysis.get("critical_anomalies", [])
+        )
 
         # YENİ: Çeşitlilik filtresini total limit ile uygula
         # 500 kayıt = 25 AI Batch (Chunk_size 20 ise)
