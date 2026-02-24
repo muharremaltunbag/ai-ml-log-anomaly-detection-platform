@@ -349,10 +349,10 @@
       "metrics_path": "metrics/anomaly_metrics.json"
     },
     "prediction": {
-      "enabled": false,
+      "enabled": true,
       "description": "Prediction & Early Warning System - izole katman, mevcut anomaly detection'ı etkilemez",
       "trend_detection": {
-        "enabled": false,
+        "enabled": true,
         "min_history_count": 3,
         "lookback_analyses": 10,
         "anomaly_rate_increase_threshold": 50.0,
@@ -361,11 +361,11 @@
         "severity_escalation_threshold": 30.0
       },
       "rate_alerting": {
-        "enabled": false,
+        "enabled": true,
         "windows": [
-          {"name": "short", "minutes": 15, "auth_failure_threshold": 50, "error_burst_threshold": 100, "slow_query_threshold": 30},
-          {"name": "medium", "minutes": 60, "auth_failure_threshold": 150, "error_burst_threshold": 300, "slow_query_threshold": 80},
-          {"name": "long", "minutes": 360, "auth_failure_threshold": 500, "error_burst_threshold": 1000, "slow_query_threshold": 200}
+          {"name": "short", "minutes": 15, "auth_failure_threshold": 50, "error_burst_threshold": 100, "slow_query_threshold": 30, "collscan_threshold": 20, "drop_operation_threshold": 3, "oom_threshold": 1},
+          {"name": "medium", "minutes": 60, "auth_failure_threshold": 150, "error_burst_threshold": 300, "slow_query_threshold": 80, "collscan_threshold": 60, "drop_operation_threshold": 5, "oom_threshold": 3},
+          {"name": "long", "minutes": 360, "auth_failure_threshold": 500, "error_burst_threshold": 1000, "slow_query_threshold": 200, "collscan_threshold": 150, "drop_operation_threshold": 10, "oom_threshold": 5}
         ],
         "alert_cooldown_minutes": 30
       },
@@ -376,10 +376,12 @@
         "max_concurrent_analyses": 3
       },
       "forecasting": {
-        "enabled": false,
-        "min_data_points": 168,
+        "enabled": true,
+        "min_data_points": 5,
         "forecast_horizon_hours": 6,
-        "model_type": "simple_moving_average"
+        "model_type": "linear_regression",
+        "confidence_interval": 0.95,
+        "metrics": ["anomaly_rate", "anomaly_count", "critical_ratio", "error_count"]
       },
       "storage": {
         "collection_name": "prediction_alerts",

@@ -26,6 +26,7 @@ from .feature_engineer import MongoDBFeatureEngineer
 from .anomaly_detector import MongoDBAnomalyDetector
 from .trend_analyzer import TrendAnalyzer
 from .rate_alert import RateAlertEngine
+from .forecaster import AnomalyForecaster
 
 # MSSQL Modülleri
 from .mssql_log_reader import MSSQLOpenSearchReader
@@ -130,6 +131,7 @@ class AnomalyDetectionTools:
         """Prediction & Early Warning modüllerini config-driven olarak başlat"""
         self.trend_analyzer = None
         self.rate_alert_engine = None
+        self.forecaster = None
         self.prediction_enabled = False
 
         try:
@@ -155,12 +157,19 @@ class AnomalyDetectionTools:
                 self.rate_alert_engine = RateAlertEngine(rate_cfg)
                 logger.info("RateAlertEngine initialized")
 
+            # Forecasting (Katman 3)
+            forecast_cfg = pred_config.get('forecasting', {})
+            if forecast_cfg.get('enabled', False):
+                self.forecaster = AnomalyForecaster(forecast_cfg)
+                logger.info("AnomalyForecaster initialized")
+
             # Storage config for retention
             self._prediction_storage_config = pred_config.get('storage', {})
 
             logger.info(f"Prediction layer initialized: "
                         f"trend={'ON' if self.trend_analyzer else 'OFF'}, "
-                        f"rate={'ON' if self.rate_alert_engine else 'OFF'}")
+                        f"rate={'ON' if self.rate_alert_engine else 'OFF'}, "
+                        f"forecast={'ON' if self.forecaster else 'OFF'}")
 
         except Exception as e:
             logger.warning(f"Prediction layer init failed (non-critical): {e}")
@@ -277,6 +286,34 @@ class AnomalyDetectionTools:
             except Exception as e:
                 logger.error(f"Rate check failed (non-critical): {e}")
                 prediction_results["rate"] = {"error": str(e)}
+
+        # 3. Forecasting (Katman 3)
+        if self.forecaster:
+            try:
+                # Trend analysis'te zaten çektiğimiz history'yi reuse et
+                if "trend" in prediction_results and "error" not in prediction_results.get("trend", {}):
+                    # Trend zaten history çekti, aynı veriyi kullanalım
+                    history_records = await self._fetch_trend_history(server_name)
+                else:
+                    history_records = await self._fetch_trend_history(server_name)
+
+                forecast_report = self.forecaster.forecast(
+                    history_records, analysis, server_name
+                )
+                prediction_results["forecast"] = forecast_report.to_dict()
+
+                if forecast_report.has_alerts():
+                    logger.warning(f"Forecast alerts: {len(forecast_report.alerts)} "
+                                   f"({forecast_report.max_severity()})")
+
+                # Storage'a kaydet
+                await self._save_prediction_result(
+                    forecast_report.to_dict(), "forecast", server_name
+                )
+
+            except Exception as e:
+                logger.error(f"Forecasting failed (non-critical): {e}")
+                prediction_results["forecast"] = {"error": str(e)}
 
         return prediction_results
 

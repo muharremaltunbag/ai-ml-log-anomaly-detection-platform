@@ -23,6 +23,7 @@ from .elasticsearch_log_reader import ElasticsearchOpenSearchReader
 # Prediction & Early Warning
 from .trend_analyzer import TrendAnalyzer, TrendReport, TrendAlert
 from .rate_alert import RateAlertEngine, RateAlertReport, RateAlert
+from .forecaster import AnomalyForecaster, ForecastReport, ForecastAlert
 
 # Tools
 from .anomaly_tools import (
@@ -50,6 +51,9 @@ __all__ = [
     'RateAlertEngine',
     'RateAlertReport',
     'RateAlert',
+    'AnomalyForecaster',
+    'ForecastReport',
+    'ForecastAlert',
     # Tools
     'AnomalyDetectionTools',
     'create_anomaly_tools',
