@@ -20,6 +20,10 @@ from .elasticsearch_anomaly_detector import ElasticsearchAnomalyDetector
 from .elasticsearch_feature_engineer import ElasticsearchFeatureEngineer
 from .elasticsearch_log_reader import ElasticsearchOpenSearchReader
 
+# Prediction & Early Warning
+from .trend_analyzer import TrendAnalyzer, TrendReport, TrendAlert
+from .rate_alert import RateAlertEngine, RateAlertReport, RateAlert
+
 # Tools
 from .anomaly_tools import (
     AnomalyDetectionTools,
@@ -39,6 +43,13 @@ __all__ = [
     'ElasticsearchAnomalyDetector',
     'ElasticsearchFeatureEngineer',
     'ElasticsearchOpenSearchReader',
+    # Prediction & Early Warning
+    'TrendAnalyzer',
+    'TrendReport',
+    'TrendAlert',
+    'RateAlertEngine',
+    'RateAlertReport',
+    'RateAlert',
     # Tools
     'AnomalyDetectionTools',
     'create_anomaly_tools',

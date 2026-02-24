@@ -1,0 +1,226 @@
+# src/anomaly/scheduler.py
+
+"""
+Anomaly Detection Scheduler - Periyodik otomatik analiz
+
+Mevcut pipeline'ı periyodik olarak tetikler. İzole katman.
+Kapatılabilir: config.prediction.scheduler.enabled = false
+
+Dependency: Yok (Python stdlib threading.Timer kullanır)
+
+Kullanım:
+    scheduler = AnomalyScheduler(config, analysis_callback)
+    scheduler.start()
+    ...
+    scheduler.stop()
+"""
+
+import logging
+import threading
+from datetime import datetime
+from typing import Dict, Any, Callable, Optional, List
+
+logger = logging.getLogger(__name__)
+
+
+class AnomalyScheduler:
+    """
+    Periyodik anomaly analizi scheduler'ı.
+
+    Hafif, threading.Timer bazlı. APScheduler gibi dış dependency gerektirmez.
+    Config-driven, runtime'da start/stop edilebilir.
+    """
+
+    def __init__(self, config: Dict[str, Any],
+                 analysis_callback: Optional[Callable] = None):
+        """
+        Args:
+            config: prediction.scheduler bloğu
+            analysis_callback: Her periyotta çağrılacak fonksiyon
+                               Signature: callback(server_name: str) -> Dict
+        """
+        self.enabled = config.get('enabled', False)
+        self.interval_minutes = config.get('interval_minutes', 30)
+        self.auto_analyze_hosts = config.get('auto_analyze_hosts', True)
+        self.max_concurrent = config.get('max_concurrent_analyses', 3)
+        self.analysis_callback = analysis_callback
+
+        self._timer: Optional[threading.Timer] = None
+        self._running = False
+        self._lock = threading.Lock()
+        self._run_count = 0
+        self._last_run: Optional[datetime] = None
+        self._last_results: Dict[str, Any] = {}
+
+        # Analiz edilecek sunucu listesi (runtime'da set edilir)
+        self._target_hosts: List[str] = []
+
+        logger.info(f"AnomalyScheduler initialized (enabled={self.enabled}, "
+                     f"interval={self.interval_minutes}min, "
+                     f"max_concurrent={self.max_concurrent})")
+
+    def set_target_hosts(self, hosts: List[str]) -> None:
+        """Periyodik analiz yapılacak sunucu listesini ayarla"""
+        with self._lock:
+            self._target_hosts = list(hosts)
+            logger.info(f"Scheduler target hosts updated: {len(hosts)} hosts")
+
+    def start(self) -> bool:
+        """Scheduler'ı başlat"""
+        if not self.enabled:
+            logger.info("Scheduler is disabled in config, not starting")
+            return False
+
+        if self._running:
+            logger.warning("Scheduler is already running")
+            return True
+
+        if not self.analysis_callback:
+            logger.error("No analysis callback set, cannot start scheduler")
+            return False
+
+        with self._lock:
+            self._running = True
+
+        logger.info(f"Scheduler started: will run every {self.interval_minutes} minutes")
+        self._schedule_next()
+        return True
+
+    def stop(self) -> None:
+        """Scheduler'ı durdur"""
+        with self._lock:
+            self._running = False
+            if self._timer:
+                self._timer.cancel()
+                self._timer = None
+
+        logger.info(f"Scheduler stopped after {self._run_count} runs")
+
+    def is_running(self) -> bool:
+        return self._running
+
+    def get_status(self) -> Dict[str, Any]:
+        """Scheduler durumunu döndür"""
+        return {
+            "enabled": self.enabled,
+            "running": self._running,
+            "interval_minutes": self.interval_minutes,
+            "run_count": self._run_count,
+            "last_run": self._last_run.isoformat() if self._last_run else None,
+            "target_hosts": self._target_hosts,
+            "last_results_summary": {
+                host: {
+                    "status": r.get("status", "unknown"),
+                    "anomaly_count": r.get("anomaly_count", 0)
+                }
+                for host, r in self._last_results.items()
+            }
+        }
+
+    def trigger_now(self, server_name: Optional[str] = None) -> Dict[str, Any]:
+        """Manuel tetikleme (scheduler çalışmıyorken de kullanılabilir)"""
+        if server_name:
+            return self._run_analysis(server_name)
+        else:
+            return self._run_cycle()
+
+    def _schedule_next(self) -> None:
+        """Sonraki çalışmayı zamanlayıcıya ekle"""
+        if not self._running:
+            return
+
+        interval_seconds = self.interval_minutes * 60
+        self._timer = threading.Timer(interval_seconds, self._on_timer)
+        self._timer.daemon = True  # Ana uygulama kapanırsa thread de kapansın
+        self._timer.start()
+
+    def _on_timer(self) -> None:
+        """Timer tetiklendiğinde çağrılır"""
+        if not self._running:
+            return
+
+        try:
+            logger.info(f"Scheduler cycle #{self._run_count + 1} starting...")
+            self._run_cycle()
+        except Exception as e:
+            logger.error(f"Scheduler cycle error: {e}")
+        finally:
+            # Sonraki çalışmayı zamanlayıcıya ekle
+            self._schedule_next()
+
+    def _run_cycle(self) -> Dict[str, Any]:
+        """Tek bir scheduler döngüsü — tüm hedef sunucuları analiz et"""
+        self._run_count += 1
+        self._last_run = datetime.utcnow()
+        cycle_results = {}
+
+        if not self._target_hosts:
+            logger.info("No target hosts configured, skipping cycle")
+            return {"status": "skipped", "reason": "no_target_hosts"}
+
+        # Sıralı çalıştır (max_concurrent için thread pool eklenebilir ama şimdilik basit)
+        for host in self._target_hosts[:self.max_concurrent]:
+            try:
+                result = self._run_analysis(host)
+                cycle_results[host] = result
+            except Exception as e:
+                logger.error(f"Analysis failed for {host}: {e}")
+                cycle_results[host] = {"status": "error", "error": str(e)}
+
+        self._last_results = cycle_results
+
+        total_anomalies = sum(
+            r.get("anomaly_count", 0) for r in cycle_results.values()
+        )
+        logger.info(f"Scheduler cycle #{self._run_count} completed: "
+                     f"{len(cycle_results)} hosts analyzed, "
+                     f"{total_anomalies} total anomalies")
+
+        return {
+            "status": "completed",
+            "cycle": self._run_count,
+            "hosts_analyzed": len(cycle_results),
+            "total_anomalies": total_anomalies,
+            "results": cycle_results
+        }
+
+    def _run_analysis(self, server_name: str) -> Dict[str, Any]:
+        """Tek bir sunucu için analiz çalıştır"""
+        if not self.analysis_callback:
+            return {"status": "error", "error": "no_callback"}
+
+        try:
+            logger.info(f"Running scheduled analysis for: {server_name}")
+            result = self.analysis_callback(server_name)
+
+            # Callback sonucundan anomaly count çıkar
+            anomaly_count = 0
+            if isinstance(result, dict):
+                data = result.get("data", {})
+                summary = data.get("summary", {})
+                anomaly_count = summary.get("n_anomalies", 0)
+            elif isinstance(result, str):
+                # JSON string olabilir
+                import json
+                try:
+                    parsed = json.loads(result)
+                    data = parsed.get("sonuç", {}).get("data", {})
+                    anomaly_count = data.get("summary", {}).get("n_anomalies", 0)
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+            return {
+                "status": "completed",
+                "server_name": server_name,
+                "anomaly_count": anomaly_count,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Scheduled analysis failed for {server_name}: {e}")
+            return {
+                "status": "error",
+                "server_name": server_name,
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }

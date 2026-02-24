@@ -5218,6 +5218,13 @@ async def startup_event():
 
         if connected:
             logger.info("✅ Storage Manager initialized successfully")
+            # Prediction layer connection reuse: share storage manager with anomaly tools
+            try:
+                from src.anomaly.anomaly_tools import AnomalyDetectionTools
+                AnomalyDetectionTools.set_shared_storage_manager(storage_manager)
+                logger.info("✅ Prediction layer: StorageManager shared with AnomalyDetectionTools")
+            except Exception as sm_err:
+                logger.warning(f"Could not share StorageManager with AnomalyDetectionTools: {sm_err}")
         else:
             logger.warning("⚠️ Storage Manager initialization failed - auto-save disabled")
             storage_manager = None
@@ -5342,6 +5349,105 @@ async def startup_event():
 
 
 # ============= SYSTEM RESET ENDPOINT =============
+# ──────────────────────────────────────────────
+# Prediction & Early Warning Endpoints
+# ──────────────────────────────────────────────
+
+@app.get("/api/prediction/alerts")
+async def get_prediction_alerts(
+    api_key: str,
+    server_name: Optional[str] = None,
+    alert_source: Optional[str] = None,
+    only_with_alerts: bool = False,
+    days: int = Query(default=7, le=90),
+    limit: int = Query(default=50, le=500)
+):
+    """Prediction & trend alert geçmişini sorgula"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    try:
+        storage = await get_storage_manager()
+        if not hasattr(storage, 'get_prediction_alerts'):
+            return {"status": "error", "message": "Prediction storage not available"}
+
+        alerts = await storage.get_prediction_alerts(
+            server_name=server_name,
+            alert_source=alert_source,
+            only_with_alerts=only_with_alerts,
+            limit=limit,
+            days=days
+        )
+        return {
+            "status": "success",
+            "count": len(alerts),
+            "alerts": alerts
+        }
+    except Exception as e:
+        logger.error(f"Error getting prediction alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/prediction/summary")
+async def get_prediction_summary(
+    api_key: str,
+    server_name: Optional[str] = None,
+    days: int = Query(default=7, le=90)
+):
+    """Prediction alert istatistik özeti"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    try:
+        storage = await get_storage_manager()
+        if not hasattr(storage, 'get_prediction_summary'):
+            return {"status": "error", "message": "Prediction storage not available"}
+
+        summary = await storage.get_prediction_summary(
+            server_name=server_name, days=days
+        )
+        return {"status": "success", "summary": summary}
+    except Exception as e:
+        logger.error(f"Error getting prediction summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/prediction/config")
+async def get_prediction_config(api_key: str):
+    """Prediction layer config durumunu göster"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    try:
+        config_path = Path(__file__).parent.parent / "config" / "anomaly_config.json"
+        with open(config_path, 'r', encoding='utf-8') as f:
+            full_config = json.load(f)
+
+        pred_config = full_config.get('prediction', {})
+        return {
+            "status": "success",
+            "prediction_config": {
+                "enabled": pred_config.get('enabled', False),
+                "trend_detection": {
+                    "enabled": pred_config.get('trend_detection', {}).get('enabled', False)
+                },
+                "rate_alerting": {
+                    "enabled": pred_config.get('rate_alerting', {}).get('enabled', False)
+                },
+                "scheduler": {
+                    "enabled": pred_config.get('scheduler', {}).get('enabled', False),
+                    "interval_minutes": pred_config.get('scheduler', {}).get('interval_minutes', 30)
+                },
+                "forecasting": {
+                    "enabled": pred_config.get('forecasting', {}).get('enabled', False)
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error reading prediction config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/system-reset")
 async def system_reset(request: Dict[str, Any]):
     """
@@ -5398,6 +5504,7 @@ async def system_reset(request: Dict[str, Any]):
     MONGODB_COLLECTIONS_LIST = [
         "anomaly_history", "model_registry", "user_feedback",
         "analysis_cache", "query_history", "user_preferences",
+        "prediction_alerts",
     ]
 
     def find_items(cat_key):

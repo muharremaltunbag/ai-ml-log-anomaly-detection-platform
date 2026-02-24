@@ -1681,8 +1681,12 @@ class MongoDBAnomalyDetector:
                     'incremental_models': list(self.incremental_models) if is_ensemble_mode else [],
                     'model_weights': self.model_weights.copy() if is_ensemble_mode else [],
                     'model_metadata': self.model_metadata.copy() if is_ensemble_mode else [],
-                    'incremental_config': self.incremental_config
-
+                    'incremental_config': self.incremental_config,
+                    # Ensemble rule stats (persistent across restarts)
+                    'rule_stats': {
+                        'total_overrides': self.rule_stats['total_overrides'],
+                        'rule_hits': dict(self.rule_stats['rule_hits'])
+                    }
                 }
 
                 # Historical buffer save kontrolü
@@ -1712,10 +1716,12 @@ class MongoDBAnomalyDetector:
 
                 # Dosya boyutu bilgisi
                 file_size_mb = Path(path).stat().st_size / 1024 / 1024
-                
-                
+
+                # Historical buffer backup (ayrı dosya, pkl bozulursa kurtarma)
+                self._backup_historical_buffer(path)
+
                 logger.info(f"Model saved to: {path}")
-                
+
                 return path
                 
             except Exception as e:
@@ -1850,18 +1856,24 @@ class MongoDBAnomalyDetector:
                     reason = "not present" if loaded_hist is None else (
                         "features is None" if isinstance(loaded_hist, dict) else "not a dict"
                     )
-                    logger.warning(f"   ⚠️ Historical buffer not loaded ({reason}) — initializing empty buffer")
-                    self.historical_data = {
-                        'features': None,
-                        'predictions': None,
-                        'scores': None,
-                        'metadata': {
-                            'total_samples': 0,
-                            'anomaly_samples': 0,
-                            'last_update': None,
-                            'buffer_version': 1.0
+                    logger.warning(f"   ⚠️ Historical buffer not loaded ({reason}) — trying backup restore...")
+
+                    # Backup'tan kurtarmayı dene
+                    if self.restore_historical_buffer_from_backup(path):
+                        logger.info("   ✅ Historical buffer recovered from backup file")
+                    else:
+                        logger.warning("   ⚠️ No backup available — initializing empty buffer")
+                        self.historical_data = {
+                            'features': None,
+                            'predictions': None,
+                            'scores': None,
+                            'metadata': {
+                                'total_samples': 0,
+                                'anomaly_samples': 0,
+                                'last_update': None,
+                                'buffer_version': 1.0
+                            }
                         }
-                    }
 
                 is_ensemble_mode = model_data.get('is_ensemble_mode', False)
                 
@@ -1903,6 +1915,17 @@ class MongoDBAnomalyDetector:
                 # Online learning config'i güncelle
                 if 'online_learning_config' in model_data:
                     self.online_learning_config.update(model_data['online_learning_config'])
+
+                # Rule stats'ı geri yükle (persistent across restarts)
+                saved_rule_stats = model_data.get('rule_stats')
+                if isinstance(saved_rule_stats, dict):
+                    self.rule_stats['total_overrides'] = saved_rule_stats.get('total_overrides', 0)
+                    saved_hits = saved_rule_stats.get('rule_hits', {})
+                    if isinstance(saved_hits, dict):
+                        self.rule_stats['rule_hits'] = dict(saved_hits)
+                    logger.info(f"Rule stats restored: {self.rule_stats['total_overrides']} total overrides, "
+                                f"{len(self.rule_stats['rule_hits'])} rule types")
+
                 self.is_trained = True
 
                 logger.info(f"Model loaded from: {path}")
@@ -2012,6 +2035,77 @@ class MongoDBAnomalyDetector:
         except Exception as e:
             logger.debug(f"Error clearing historical buffer: {e}")
             logger.error(f"Error clearing historical buffer: {e}")
+            return False
+
+    def _backup_historical_buffer(self, model_path: str) -> None:
+        """
+        Historical buffer'ı ayrı dosyaya yedekle.
+        Model pkl bozulursa bu backup'tan kurtarılabilir.
+        """
+        try:
+            if self.historical_data['features'] is None:
+                return
+
+            backup_path = Path(model_path).with_suffix('.buffer_backup.pkl')
+            buffer_data = {
+                'historical_data': self.historical_data,
+                'rule_stats': {
+                    'total_overrides': self.rule_stats['total_overrides'],
+                    'rule_hits': dict(self.rule_stats['rule_hits'])
+                },
+                'backup_timestamp': datetime.now().isoformat(),
+                'server_name': self.current_server,
+                'buffer_samples': self.historical_data['metadata'].get('total_samples', 0)
+            }
+            joblib.dump(buffer_data, backup_path, compress=3)
+            backup_size_mb = backup_path.stat().st_size / 1024 / 1024
+            logger.info(f"Historical buffer backup saved: {backup_path} ({backup_size_mb:.2f} MB)")
+        except Exception as e:
+            logger.warning(f"Historical buffer backup failed (non-critical): {e}")
+
+    def restore_historical_buffer_from_backup(self, model_path: str) -> bool:
+        """
+        Backup dosyasından historical buffer'ı geri yükle.
+        Model pkl bozulduğunda kullanılır.
+
+        Args:
+            model_path: Orijinal model dosyasının yolu
+
+        Returns:
+            Başarılı mı
+        """
+        try:
+            backup_path = Path(model_path).with_suffix('.buffer_backup.pkl')
+            if not backup_path.exists():
+                logger.warning(f"No buffer backup found at {backup_path}")
+                return False
+
+            buffer_data = joblib.load(backup_path)
+            loaded_hist = buffer_data.get('historical_data')
+
+            if not isinstance(loaded_hist, dict) or loaded_hist.get('features') is None:
+                logger.warning("Buffer backup exists but contains no valid data")
+                return False
+
+            self.historical_data = loaded_hist
+            self.historical_data['metadata'].setdefault('buffer_version', 1.0)
+
+            # Rule stats da backup'tan geri yükle
+            saved_rule_stats = buffer_data.get('rule_stats')
+            if isinstance(saved_rule_stats, dict):
+                self.rule_stats['total_overrides'] = saved_rule_stats.get('total_overrides', 0)
+                saved_hits = saved_rule_stats.get('rule_hits', {})
+                if isinstance(saved_hits, dict):
+                    self.rule_stats['rule_hits'] = dict(saved_hits)
+
+            samples = self.historical_data['metadata'].get('total_samples', 0)
+            backup_ts = buffer_data.get('backup_timestamp', 'unknown')
+            logger.info(f"Historical buffer restored from backup: {samples} samples "
+                        f"(backup from {backup_ts})")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to restore buffer from backup: {e}")
             return False
 
     def validate_online_learning(self) -> Dict[str, Any]:

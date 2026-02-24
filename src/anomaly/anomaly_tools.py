@@ -18,10 +18,14 @@ import os
 from pymongo import MongoClient
 import numpy as np
 import requests
+import threading
+import asyncio
 
 from .log_reader import MongoDBLogReader, OpenSearchProxyReader
 from .feature_engineer import MongoDBFeatureEngineer
 from .anomaly_detector import MongoDBAnomalyDetector
+from .trend_analyzer import TrendAnalyzer
+from .rate_alert import RateAlertEngine
 
 # MSSQL Modülleri
 from .mssql_log_reader import MSSQLOpenSearchReader
@@ -45,7 +49,19 @@ logger = logging.getLogger(__name__)
 
 class AnomalyDetectionTools:
     """MongoDB log anomali tespiti için LangChain tool'ları"""
-    
+
+    # Class-level storage manager reference (set once, shared across instances)
+    _shared_storage_manager = None
+
+    @classmethod
+    def set_shared_storage_manager(cls, storage_manager) -> None:
+        """
+        Class-level StorageManager set et. Tüm instance'lar bu referansı kullanır.
+        api.py startup'ında bir kez çağrılır.
+        """
+        cls._shared_storage_manager = storage_manager
+        logger.info("AnomalyDetectionTools: shared StorageManager reference set")
+
     def __init__(self, config_path: str = "config/anomaly_config.json", environment: str = "test"):
         """
         Anomaly Detection Tools başlat
@@ -85,7 +101,13 @@ class AnomalyDetectionTools:
         
         # Son analiz sonuçlarını sakla
         self.last_analysis = None
-        
+
+        # Storage manager reference (auto-inherit from class-level, or set externally)
+        self._storage_manager = self.__class__._shared_storage_manager
+
+        # Prediction & Early Warning Layer (izole, config-driven)
+        self._init_prediction_layer()
+
         logger.info(f"AnomalyDetectionTools initialized for {environment} environment")
     
     def _load_config(self):
@@ -104,6 +126,237 @@ class AnomalyDetectionTools:
             self.fp_filter_config = {}
             logger.debug("Using empty config as fallback")
     
+    def _init_prediction_layer(self):
+        """Prediction & Early Warning modüllerini config-driven olarak başlat"""
+        self.trend_analyzer = None
+        self.rate_alert_engine = None
+        self.prediction_enabled = False
+
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                full_config = json.load(f)
+
+            pred_config = full_config.get('prediction', {})
+            self.prediction_enabled = pred_config.get('enabled', False)
+
+            if not self.prediction_enabled:
+                logger.info("Prediction layer disabled in config")
+                return
+
+            # Trend Detection
+            trend_cfg = pred_config.get('trend_detection', {})
+            if trend_cfg.get('enabled', False):
+                self.trend_analyzer = TrendAnalyzer(trend_cfg)
+                logger.info("TrendAnalyzer initialized")
+
+            # Rate-Based Alerting
+            rate_cfg = pred_config.get('rate_alerting', {})
+            if rate_cfg.get('enabled', False):
+                self.rate_alert_engine = RateAlertEngine(rate_cfg)
+                logger.info("RateAlertEngine initialized")
+
+            # Storage config for retention
+            self._prediction_storage_config = pred_config.get('storage', {})
+
+            logger.info(f"Prediction layer initialized: "
+                        f"trend={'ON' if self.trend_analyzer else 'OFF'}, "
+                        f"rate={'ON' if self.rate_alert_engine else 'OFF'}")
+
+        except Exception as e:
+            logger.warning(f"Prediction layer init failed (non-critical): {e}")
+            self.prediction_enabled = False
+
+    def _run_prediction_sync(self, analysis: Dict[str, Any],
+                             df_filtered: 'pd.DataFrame',
+                             server_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Sync context'ten (analyze_mongodb_logs) prediction checks'i güvenli çağır.
+        FastAPI (running loop) ve standalone (no loop) durumlarını handle eder.
+
+        Returns:
+            Prediction sonuçları dict'i (boş olabilir)
+        """
+        if not self.prediction_enabled:
+            return {}
+
+        coro = self._run_prediction_checks(analysis, df_filtered, server_name)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # FastAPI context: running loop var, yeni thread'de çalıştır
+            result = {}
+            exc_holder = []
+
+            def _run_in_thread():
+                try:
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        result.update(new_loop.run_until_complete(coro))
+                    finally:
+                        new_loop.close()
+                except Exception as e:
+                    exc_holder.append(e)
+
+            t = threading.Thread(target=_run_in_thread, daemon=True)
+            t.start()
+            t.join(timeout=30)  # max 30 saniye bekle
+
+            if exc_holder:
+                logger.warning(f"Prediction checks failed in thread: {exc_holder[0]}")
+            return result
+        else:
+            # Standalone context: doğrudan asyncio.run
+            try:
+                return asyncio.run(coro)
+            except Exception as e:
+                logger.warning(f"Prediction checks failed: {e}")
+                return {}
+
+    async def _run_prediction_checks(self, analysis: Dict[str, Any],
+                                     df_filtered: 'pd.DataFrame',
+                                     server_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Anomali analizi sonrası prediction check'lerini çalıştır.
+        Mevcut analysis sonucunu DEĞİŞTİRMEZ, prediction sonuçlarını ayrı dict olarak döner.
+
+        Args:
+            analysis: Mevcut analiz sonucu (enhanced analysis)
+            df_filtered: Enriched DataFrame
+            server_name: Sunucu adı
+
+        Returns:
+            Prediction sonuçları dict'i (boş olabilir)
+        """
+        prediction_results = {}
+
+        if not self.prediction_enabled:
+            return prediction_results
+
+        # 1. Trend Detection
+        if self.trend_analyzer:
+            try:
+                history_records = await self._fetch_trend_history(server_name)
+                trend_report = self.trend_analyzer.analyze(
+                    history_records, analysis, server_name
+                )
+                prediction_results["trend"] = trend_report.to_dict()
+
+                if trend_report.has_alerts():
+                    logger.warning(f"Trend alerts: {len(trend_report.alerts)} "
+                                   f"({trend_report.max_severity()})")
+
+                # Storage'a kaydet
+                await self._save_prediction_result(
+                    trend_report.to_dict(), "trend", server_name
+                )
+
+            except Exception as e:
+                logger.error(f"Trend analysis failed (non-critical): {e}")
+                prediction_results["trend"] = {"error": str(e)}
+
+        # 2. Rate-Based Alerting
+        if self.rate_alert_engine:
+            try:
+                rate_report = self.rate_alert_engine.check(df_filtered, server_name)
+                prediction_results["rate"] = rate_report.to_dict()
+
+                if rate_report.has_alerts():
+                    logger.warning(f"Rate alerts: {len(rate_report.alerts)} "
+                                   f"({rate_report.max_severity()})")
+
+                # Storage'a kaydet
+                await self._save_prediction_result(
+                    rate_report.to_dict(), "rate", server_name
+                )
+
+            except Exception as e:
+                logger.error(f"Rate check failed (non-critical): {e}")
+                prediction_results["rate"] = {"error": str(e)}
+
+        return prediction_results
+
+    def set_storage_manager(self, storage_manager) -> None:
+        """
+        Dışarıdan StorageManager referansı set et (connection reuse).
+        api.py startup'ında çağrılır.
+        """
+        self._storage_manager = storage_manager
+        logger.info("Prediction layer: StorageManager reference set (connection reuse enabled)")
+
+    async def _fetch_trend_history(self, server_name: Optional[str],
+                                   limit: int = 10) -> List[Dict[str, Any]]:
+        """anomaly_history'den son N kaydı çek (trend analizi için)"""
+        try:
+            # Reuse existing storage manager connection if available
+            if self._storage_manager and self._storage_manager.mongodb.is_connected:
+                filters = {}
+                if server_name:
+                    filters["host"] = server_name
+                return await self._storage_manager.mongodb.get_anomaly_history(
+                    filters=filters, limit=limit
+                )
+
+            # Fallback: yeni bağlantı aç (standalone kullanım için)
+            from ..storage.mongodb_handler import MongoDBHandler
+            from ..storage.config import MONGODB_CONFIG
+
+            if not MONGODB_CONFIG:
+                return []
+
+            handler = MongoDBHandler()
+            await handler.connect()
+            try:
+                filters = {}
+                if server_name:
+                    filters["host"] = server_name
+                return await handler.get_anomaly_history(
+                    filters=filters, limit=limit
+                )
+            finally:
+                await handler.disconnect()
+
+        except Exception as e:
+            logger.warning(f"Could not fetch trend history: {e}")
+            return []
+
+    async def _save_prediction_result(self, result_data: Dict[str, Any],
+                                      alert_source: str,
+                                      server_name: Optional[str]) -> None:
+        """Prediction sonucunu storage'a kaydet"""
+        try:
+            retention = self._prediction_storage_config.get('retention_days', 90)
+
+            # Reuse existing storage manager connection if available
+            if self._storage_manager and self._storage_manager.mongodb.is_connected:
+                await self._storage_manager.mongodb.save_prediction_alert(
+                    result_data, alert_source, server_name, retention
+                )
+                return
+
+            # Fallback: yeni bağlantı aç
+            from ..storage.mongodb_handler import MongoDBHandler
+            from ..storage.config import MONGODB_CONFIG
+
+            if not MONGODB_CONFIG:
+                return
+
+            handler = MongoDBHandler()
+            await handler.connect()
+            try:
+                await handler.save_prediction_alert(
+                    result_data, alert_source, server_name, retention
+                )
+            finally:
+                await handler.disconnect()
+
+        except Exception as e:
+            logger.warning(f"Could not save prediction result: {e}")
+
     def _format_result(self, result: Dict[str, Any], operation: str) -> str:
         """Sonuçları MongoDB Agent formatına uygun şekilde formatla"""
         logger.debug(f"Formatting result for operation: {operation}")
@@ -791,8 +1044,19 @@ class AnomalyDetectionTools:
                     "model_info": self._get_model_info_for_storage()
                 }
 
+                # Prediction & Early Warning Layer (upload path)
+                if self.prediction_enabled:
+                    try:
+                        prediction_results = self._run_prediction_sync(
+                            analysis, df_filtered, server_for_model
+                        )
+                        if prediction_results:
+                            result["data"]["prediction_alerts"] = prediction_results
+                    except Exception as pred_e:
+                        logger.warning(f"Prediction layer error on upload (non-critical): {pred_e}")
+
                 return self._format_result(result, "anomaly_analysis")
-                
+
             elif source_type == "mongodb_direct":
                 # MongoDB'den doğrudan okuma için özel işlem
                 conn_string = args_dict.get("connection_string", 
@@ -1128,11 +1392,22 @@ class AnomalyDetectionTools:
                         },
                         "suggestions": suggestions,
                         "ai_explanation": ai_explanation,
-                        "model_info": self._get_model_info_for_storage()  
+                        "model_info": self._get_model_info_for_storage()
                     }
-                    
+
+                    # Prediction & Early Warning Layer (izole, config-driven)
+                    if self.prediction_enabled:
+                        try:
+                            prediction_results = self._run_prediction_sync(
+                                analysis, df_filtered, server_for_model
+                            )
+                            if prediction_results:
+                                result["data"]["prediction_alerts"] = prediction_results
+                        except Exception as pred_e:
+                            logger.warning(f"Prediction layer error (non-critical): {pred_e}")
+
                     return self._format_result(result, "anomaly_analysis")
-                    
+
                 except Exception as e:
                     logger.error(f"OpenSearch analysis error: {e}", exc_info=True)
                     return self._format_result(

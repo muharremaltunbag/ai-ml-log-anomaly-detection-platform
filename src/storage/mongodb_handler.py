@@ -43,6 +43,8 @@ class MongoDBHandler:
             self.collections["query_history"] = "query_history"
         if "user_preferences" not in self.collections:
             self.collections["user_preferences"] = "user_preferences"
+        if "prediction_alerts" not in self.collections:
+            self.collections["prediction_alerts"] = "prediction_alerts"
         
         self.client = None
         self.db = None
@@ -134,7 +136,18 @@ class MongoDBHandler:
             # User preferences indexes
             prefs_collection = self.db[self.collections.get("user_preferences", "user_preferences")]
             await prefs_collection.create_index([("user_id", ASCENDING)])
-            
+
+            # Prediction alerts indexes
+            prediction_collection = self.db[self.collections.get("prediction_alerts", "prediction_alerts")]
+            await prediction_collection.create_index([("timestamp", DESCENDING)])
+            await prediction_collection.create_index([("server_name", ASCENDING)])
+            await prediction_collection.create_index([("alert_source", ASCENDING)])
+            await prediction_collection.create_index([("max_severity", ASCENDING)])
+            await prediction_collection.create_index(
+                [("ttl_date", ASCENDING)],
+                expireAfterSeconds=0
+            )
+
             logger.debug("MongoDB indexes created successfully")
             
         except Exception as e:
@@ -868,3 +881,147 @@ class MongoDBHandler:
         except Exception as e:
             logger.error(f"Error clearing query history: {e}")
             return 0
+
+    # ──────────────────────────────────────────────
+    # Prediction & Early Warning Storage
+    # ──────────────────────────────────────────────
+
+    async def save_prediction_alert(self, alert_data: Dict[str, Any],
+                                    alert_source: str = "trend",
+                                    server_name: str = None,
+                                    retention_days: int = 90) -> Optional[str]:
+        """
+        Prediction/trend/rate alert sonucunu kaydet.
+
+        Args:
+            alert_data: TrendReport.to_dict() veya RateAlertReport.to_dict()
+            alert_source: "trend" veya "rate"
+            server_name: Sunucu adı
+            retention_days: Saklama süresi
+
+        Returns:
+            Inserted document ID veya None
+        """
+        try:
+            collection = self.db[self.collections.get("prediction_alerts", "prediction_alerts")]
+
+            document = {
+                "timestamp": datetime.utcnow(),
+                "alert_source": alert_source,
+                "server_name": server_name,
+                "has_alerts": alert_data.get("has_alerts", False),
+                "max_severity": alert_data.get("max_severity", "OK"),
+                "alert_count": len(alert_data.get("alerts", [])),
+                "data": alert_data,
+                "ttl_date": datetime.utcnow() + timedelta(days=retention_days)
+            }
+
+            result = await collection.insert_one(document)
+            doc_id = str(result.inserted_id)
+            logger.info(f"Prediction alert saved: source={alert_source}, "
+                        f"server={server_name}, alerts={document['alert_count']}, id={doc_id}")
+            return doc_id
+
+        except Exception as e:
+            logger.error(f"Error saving prediction alert: {e}")
+            return None
+
+    async def get_prediction_alerts(self, server_name: str = None,
+                                    alert_source: str = None,
+                                    only_with_alerts: bool = False,
+                                    limit: int = 50,
+                                    days: int = 7) -> List[Dict[str, Any]]:
+        """
+        Prediction alert geçmişini sorgula.
+
+        Args:
+            server_name: Filtre (None = tümü)
+            alert_source: "trend" veya "rate" (None = tümü)
+            only_with_alerts: Sadece alert içerenleri getir
+            limit: Max kayıt
+            days: Son kaç gün
+
+        Returns:
+            Alert kayıtları listesi
+        """
+        try:
+            collection = self.db[self.collections.get("prediction_alerts", "prediction_alerts")]
+
+            query = {
+                "timestamp": {"$gte": datetime.utcnow() - timedelta(days=days)}
+            }
+            if server_name:
+                query["server_name"] = server_name
+            if alert_source:
+                query["alert_source"] = alert_source
+            if only_with_alerts:
+                query["has_alerts"] = True
+
+            cursor = collection.find(query).sort("timestamp", DESCENDING).limit(limit)
+
+            results = []
+            async for doc in cursor:
+                doc["_id"] = str(doc["_id"])
+                results.append(doc)
+
+            logger.debug(f"Retrieved {len(results)} prediction alerts "
+                         f"(server={server_name}, source={alert_source})")
+            return results
+
+        except Exception as e:
+            logger.error(f"Error retrieving prediction alerts: {e}")
+            return []
+
+    async def get_prediction_summary(self, server_name: str = None,
+                                     days: int = 7) -> Dict[str, Any]:
+        """
+        Prediction alert istatistik özeti.
+
+        Args:
+            server_name: Filtre
+            days: Son kaç gün
+
+        Returns:
+            Özet istatistikler
+        """
+        try:
+            collection = self.db[self.collections.get("prediction_alerts", "prediction_alerts")]
+
+            cutoff = datetime.utcnow() - timedelta(days=days)
+            match_stage = {"timestamp": {"$gte": cutoff}}
+            if server_name:
+                match_stage["server_name"] = server_name
+
+            pipeline = [
+                {"$match": match_stage},
+                {"$group": {
+                    "_id": {
+                        "source": "$alert_source",
+                        "severity": "$max_severity"
+                    },
+                    "count": {"$sum": 1},
+                    "with_alerts": {"$sum": {"$cond": ["$has_alerts", 1, 0]}},
+                    "latest": {"$max": "$timestamp"}
+                }}
+            ]
+
+            results = {}
+            async for doc in collection.aggregate(pipeline):
+                key = f"{doc['_id']['source']}_{doc['_id']['severity']}"
+                results[key] = {
+                    "count": doc["count"],
+                    "with_alerts": doc["with_alerts"],
+                    "latest": doc["latest"].isoformat() if doc["latest"] else None
+                }
+
+            return {
+                "period_days": days,
+                "server_name": server_name,
+                "breakdown": results,
+                "total_checks": sum(r["count"] for r in results.values()),
+                "total_alerts": sum(r["with_alerts"] for r in results.values())
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting prediction summary: {e}")
+            return {"error": str(e)}

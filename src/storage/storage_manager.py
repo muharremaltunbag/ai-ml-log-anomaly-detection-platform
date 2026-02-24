@@ -1198,3 +1198,31 @@ class StorageManager:
                 
         except Exception as e:
             logger.error(f"Error enforcing upload limits: {e}")
+
+    # ──────────────────────────────────────────────
+    # Prediction & Early Warning Storage Delegation
+    # ──────────────────────────────────────────────
+
+    async def save_prediction_alert(self, alert_data: Dict[str, Any],
+                                    alert_source: str = "trend",
+                                    server_name: str = None,
+                                    retention_days: int = 90) -> Optional[str]:
+        """Delegate to MongoDBHandler"""
+        return await self.mongodb.save_prediction_alert(
+            alert_data, alert_source, server_name, retention_days
+        )
+
+    async def get_prediction_alerts(self, server_name: str = None,
+                                    alert_source: str = None,
+                                    only_with_alerts: bool = False,
+                                    limit: int = 50,
+                                    days: int = 7) -> List[Dict[str, Any]]:
+        """Delegate to MongoDBHandler"""
+        return await self.mongodb.get_prediction_alerts(
+            server_name, alert_source, only_with_alerts, limit, days
+        )
+
+    async def get_prediction_summary(self, server_name: str = None,
+                                     days: int = 7) -> Dict[str, Any]:
+        """Delegate to MongoDBHandler"""
+        return await self.mongodb.get_prediction_summary(server_name, days)
