@@ -255,10 +255,21 @@ class AnomalyDetectionTools:
         if not self.prediction_enabled:
             return prediction_results
 
+        # Source type → storage source_type mapping
+        # forecaster source_type ("mongodb") ≠ storage source_type ("opensearch")
+        _storage_source_map = {
+            "mongodb": "opensearch",
+            "mssql": "mssql_opensearch",
+            "elasticsearch": "elasticsearch_opensearch",
+        }
+        storage_source = _storage_source_map.get(source_type)
+
         # 1. Trend Detection
         if self.trend_analyzer:
             try:
-                history_records = await self._fetch_trend_history(server_name)
+                history_records = await self._fetch_trend_history(
+                    server_name, source_type=storage_source
+                )
                 trend_report = self.trend_analyzer.analyze(
                     history_records, analysis, server_name
                 )
@@ -299,12 +310,9 @@ class AnomalyDetectionTools:
         # 3. Forecasting (Katman 3)
         if self.forecaster:
             try:
-                # Trend analysis'te zaten çektiğimiz history'yi reuse et
-                if "trend" in prediction_results and "error" not in prediction_results.get("trend", {}):
-                    # Trend zaten history çekti, aynı veriyi kullanalım
-                    history_records = await self._fetch_trend_history(server_name)
-                else:
-                    history_records = await self._fetch_trend_history(server_name)
+                history_records = await self._fetch_trend_history(
+                    server_name, source_type=storage_source
+                )
 
                 forecast_report = self.forecaster.forecast(
                     history_records, analysis, server_name, source_type
@@ -335,14 +343,26 @@ class AnomalyDetectionTools:
         logger.info("Prediction layer: StorageManager reference set (connection reuse enabled)")
 
     async def _fetch_trend_history(self, server_name: Optional[str],
-                                   limit: int = 10) -> List[Dict[str, Any]]:
-        """anomaly_history'den son N kaydı çek (trend analizi için)"""
+                                   limit: int = 10,
+                                   source_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        anomaly_history'den son N kaydı çek (trend analizi için).
+
+        Args:
+            server_name: Sunucu adı (host filter)
+            limit: Maksimum kayıt sayısı
+            source_type: Kaynak filtresi — "opensearch", "mssql_opensearch",
+                         "elasticsearch_opensearch", "upload" vb.
+                         None ise filtre uygulanmaz (backward compat).
+        """
         try:
             # Reuse existing storage manager connection if available
             if self._storage_manager and self._storage_manager.mongodb.is_connected:
                 filters = {}
                 if server_name:
                     filters["host"] = server_name
+                if source_type:
+                    filters["source_type"] = source_type
                 return await self._storage_manager.mongodb.get_anomaly_history(
                     filters=filters, limit=limit
                 )
@@ -360,6 +380,8 @@ class AnomalyDetectionTools:
                 filters = {}
                 if server_name:
                     filters["host"] = server_name
+                if source_type:
+                    filters["source_type"] = source_type
                 return await handler.get_anomaly_history(
                     filters=filters, limit=limit
                 )
@@ -2660,6 +2682,22 @@ class AnomalyDetectionTools:
                 "model_info": mssql_model_info
             }
 
+            # =====================================================
+            # 8. PREDICTION & EARLY WARNING LAYER (MSSQL)
+            # =====================================================
+            if self.prediction_enabled:
+                try:
+                    server_for_model = host_filter or "global"
+                    prediction_results = self._run_prediction_sync(
+                        analysis, df_enriched, server_for_model, source_type="mssql"
+                    )
+                    if prediction_results:
+                        result["data"]["prediction_alerts"] = prediction_results
+                        logger.info(f"MSSQL prediction layer: "
+                                    f"{len(prediction_results)} sub-modules ran")
+                except Exception as pred_e:
+                    logger.warning(f"Prediction layer error on MSSQL (non-critical): {pred_e}")
+
             logger.info("MSSQL analysis completed successfully")
             return self._format_result(result, "mssql_anomaly_analysis")
 
@@ -2868,6 +2906,23 @@ class AnomalyDetectionTools:
                 "ai_explanation": ai_explanation,
                 "suggestions": suggestions,
             }
+
+            # =====================================================
+            # 8. PREDICTION & EARLY WARNING LAYER (Elasticsearch)
+            # =====================================================
+            if self.prediction_enabled:
+                try:
+                    server_for_model = host_filter or "global"
+                    prediction_results = self._run_prediction_sync(
+                        analysis, df_enriched, server_for_model,
+                        source_type="elasticsearch"
+                    )
+                    if prediction_results:
+                        result["data"]["prediction_alerts"] = prediction_results
+                        logger.info(f"ES prediction layer: "
+                                    f"{len(prediction_results)} sub-modules ran")
+                except Exception as pred_e:
+                    logger.warning(f"Prediction layer error on ES (non-critical): {pred_e}")
 
             logger.info("Elasticsearch analysis completed successfully")
             return self._format_result(result, "es_anomaly_analysis")
