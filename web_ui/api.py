@@ -4776,13 +4776,13 @@ async def validate_single_log(request: Dict[str, Any]):
         }])
         
         anomaly_score = 0.5  # Default
-        
-        if anomaly_detector.is_trained and len(features) > 0:
+
+        if anomaly_detector is not None and anomaly_detector.is_trained and len(features) > 0:
             # Model ile tahmin yap
             try:
-                scores = anomaly_detector.model.decision_function(features)
+                scores = anomaly_detector.score_samples(features)
                 anomaly_score = abs(scores[0])
-            except:
+            except Exception:
                 pass
         
         # Basit keyword analizi de ekle

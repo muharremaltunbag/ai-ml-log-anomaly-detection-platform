@@ -812,7 +812,7 @@ class MongoDBAnomalyDetector:
                 logger.warning(f"Historical buffer size is large: {buffer_size_mb:.2f} MB")
 
         except Exception as e:
-            logger.error(f"Error updating historical buffer: {e}")
+            logger.error(f"Error updating historical buffer: {e}", exc_info=True)
 
     def predict(self, X: pd.DataFrame, df: Optional[pd.DataFrame] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -1255,7 +1255,7 @@ class MongoDBAnomalyDetector:
         if 'is_collscan' in X.columns:
             collscan_mask = (df['is_collscan'] == 1) & anomaly_mask
             if collscan_mask.sum() > 0:
-                print(f"[DEBUG] PERFORMANCE ALERT: {collscan_mask.sum()} COLLSCAN queries in anomalies!")
+                logger.debug(f"PERFORMANCE ALERT: {collscan_mask.sum()} COLLSCAN queries in anomalies!")
                 
                 # Get average documents examined for COLLSCAN queries
                 if 'docs_examined_count' in df.columns:
@@ -1276,7 +1276,7 @@ class MongoDBAnomalyDetector:
         if 'is_slow_query' in X.columns:
             slow_mask = (df['is_slow_query'] == 1) & anomaly_mask
             if slow_mask.sum() > 0:
-                print(f"[DEBUG] PERFORMANCE ALERT: {slow_mask.sum()} slow queries in anomalies!")
+                logger.debug(f"PERFORMANCE ALERT: {slow_mask.sum()} slow queries in anomalies!")
                 
                 # Get query durations
                 if 'query_duration_ms' in df.columns:
@@ -1297,7 +1297,7 @@ class MongoDBAnomalyDetector:
         if 'is_index_build' in X.columns:
             index_mask = (df['is_index_build'] == 1) & anomaly_mask
             if index_mask.sum() > 0:
-                print(f"[DEBUG] INDEX ALERT: {index_mask.sum()} index builds in anomalies!")
+                logger.debug(f"INDEX ALERT: {index_mask.sum()} index builds in anomalies!")
                 performance_alerts["index_builds"] = {
                     "count": int(index_mask.sum()),
                     "indices": list(np.where(index_mask)[0][:10])
@@ -1307,7 +1307,7 @@ class MongoDBAnomalyDetector:
         if 'is_high_doc_scan' in X.columns:
             high_scan_mask = (df['is_high_doc_scan'] == 1) & anomaly_mask
             if high_scan_mask.sum() > 0:
-                print(f"[DEBUG] SCAN ALERT: {high_scan_mask.sum()} high document scans in anomalies!")
+                logger.debug(f"SCAN ALERT: {high_scan_mask.sum()} high document scans in anomalies!")
                 performance_alerts["high_doc_scans"] = {
                     "count": int(high_scan_mask.sum()),
                     "indices": list(np.where(high_scan_mask)[0][:10])
@@ -1323,7 +1323,7 @@ class MongoDBAnomalyDetector:
         if 'is_shutdown' in X.columns:
             shutdown_mask = (df['is_shutdown'] == 1) & anomaly_mask
             if shutdown_mask.sum() > 0:
-                print(f"[DEBUG] CRITICAL: {shutdown_mask.sum()} shutdown events in anomalies!")
+                logger.debug(f"CRITICAL: {shutdown_mask.sum()} shutdown events in anomalies!")
                 security_alerts["shutdowns"] = {
                     "count": int(shutdown_mask.sum()),
                     "indices": list(np.where(shutdown_mask)[0][:10])
@@ -1333,7 +1333,7 @@ class MongoDBAnomalyDetector:
         if 'is_assertion' in X.columns:
             assertion_mask = (df['is_assertion'] == 1) & anomaly_mask
             if assertion_mask.sum() > 0:
-                print(f"[DEBUG] ERROR ALERT: {assertion_mask.sum()} assertion errors in anomalies!")
+                logger.debug(f"ERROR ALERT: {assertion_mask.sum()} assertion errors in anomalies!")
                 security_alerts["assertions"] = {
                     "count": int(assertion_mask.sum()),
                     "indices": list(np.where(assertion_mask)[0][:10])
@@ -1343,7 +1343,7 @@ class MongoDBAnomalyDetector:
         if 'is_fatal' in X.columns:
             fatal_mask = (df['is_fatal'] == 1) & anomaly_mask
             if fatal_mask.sum() > 0:
-                print(f"[DEBUG] FATAL ALERT: {fatal_mask.sum()} fatal errors in anomalies!")
+                logger.debug(f"FATAL ALERT: {fatal_mask.sum()} fatal errors in anomalies!")
                 security_alerts["fatal_errors"] = {
                     "count": int(fatal_mask.sum()),
                     "indices": list(np.where(fatal_mask)[0][:10])
@@ -1353,7 +1353,7 @@ class MongoDBAnomalyDetector:
         if 'is_out_of_memory' in X.columns:
             oom_mask = (df['is_out_of_memory'] == 1) & anomaly_mask
             if oom_mask.sum() > 0:
-                print(f"[DEBUG] MEMORY ALERT: {oom_mask.sum()} Out of Memory errors in anomalies!")
+                logger.debug(f"MEMORY ALERT: {oom_mask.sum()} Out of Memory errors in anomalies!")
                 security_alerts["out_of_memory"] = {
                     "count": int(oom_mask.sum()),
                     "indices": list(np.where(oom_mask)[0][:10])
@@ -1363,7 +1363,7 @@ class MongoDBAnomalyDetector:
         if 'is_restart' in X.columns:
             restart_mask = (df['is_restart'] == 1) & anomaly_mask
             if restart_mask.sum() > 0:
-                print(f"[DEBUG] RESTART ALERT: {restart_mask.sum()} restart events in anomalies!")
+                logger.debug(f"RESTART ALERT: {restart_mask.sum()} restart events in anomalies!")
                 security_alerts["restarts"] = {
                     "count": int(restart_mask.sum()),
                     "indices": list(np.where(restart_mask)[0][:10])
@@ -1373,7 +1373,7 @@ class MongoDBAnomalyDetector:
         if 'is_memory_limit' in X.columns:
             mem_limit_mask = (df['is_memory_limit'] == 1) & anomaly_mask
             if mem_limit_mask.sum() > 0:
-                print(f"[DEBUG] MEMORY LIMIT ALERT: {mem_limit_mask.sum()} memory limit exceeded errors in anomalies!")
+                logger.debug(f"MEMORY LIMIT ALERT: {mem_limit_mask.sum()} memory limit exceeded errors in anomalies!")
                 security_alerts["memory_limits"] = {
                     "count": int(mem_limit_mask.sum()),
                     "indices": list(np.where(mem_limit_mask)[0][:10])
@@ -1725,8 +1725,7 @@ class MongoDBAnomalyDetector:
                 return path
                 
             except Exception as e:
-                print(f"[DEBUG] Error saving model: {e}")
-                logger.error(f"Error saving model: {e}")
+                logger.error(f"Error saving model: {e}", exc_info=True)
                 raise
             
     def load_model(self, path: str = None, server_name: str = None) -> bool:
@@ -1932,8 +1931,9 @@ class MongoDBAnomalyDetector:
 
                 return True
             except Exception as e:
-                print(f"[DEBUG] Error loading model: {e}")
-                logger.error(f"Error loading model: {e}")
+                logger.error(f"Error loading model: {e}", exc_info=True)
+                # Reset to safe state on load failure
+                self.is_trained = False
                 return False
 
     def get_model_info(self) -> Dict[str, Any]:
@@ -2400,7 +2400,7 @@ class MongoDBAnomalyDetector:
         X_optimized = X[recommended_features]
         
         # Baseline vs Optimized karşılaştırma için skorlar
-        baseline_scores = self.model.score_samples(X)
+        baseline_scores = self.score_samples(X)
         
         # Yeni model eğit (test amaçlı)
         from sklearn.ensemble import IsolationForest
@@ -2594,13 +2594,16 @@ class MongoDBAnomalyDetector:
                               "pseudo-label rules and model's critical rules engine."
             }
 
-        # Model predictions
-        predictions = self.model.predict(X)
+        # Model predictions (ensemble or single model)
+        if self.model is not None:
+            predictions = self.model.predict(X)
+            anomaly_scores = self.model.score_samples(X)
+        elif self.incremental_models:
+            predictions, anomaly_scores = self.predict_ensemble(X)
+        else:
+            raise ValueError("No model available for evaluation")
         # Isolation Forest -1: anomaly, 1: normal -> 1: anomaly, 0: normal'e çevir
         y_pred = (predictions == -1).astype(int)
-
-        # Anomaly scores
-        anomaly_scores = self.model.score_samples(X)
 
         # Metrikleri hesapla
         metrics = self.calculate_metrics(y_true, y_pred, anomaly_scores)
@@ -2860,6 +2863,8 @@ class MongoDBAnomalyDetector:
                 X_scaled = self.scaler.fit_transform(X)
                 self.is_scaler_fitted = True
             else:
+                # Incremental scaler update: adapt mean/std with new batch
+                self.scaler.partial_fit(X)
                 X_scaled = self.scaler.transform(X)
             
             X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
@@ -2958,7 +2963,7 @@ class MongoDBAnomalyDetector:
                     logger.info(f"📥 Historical buffer updated: {len(combined_features)} total samples (incremental)")
                 
                 # Metadata güncelle
-                anomaly_count = int(np.sum(predictions == -1))
+                anomaly_count = int(np.sum(self.historical_data['predictions'] == -1))
                 self.historical_data['metadata']['total_samples'] = len(self.historical_data['features'])
                 self.historical_data['metadata']['anomaly_samples'] = anomaly_count
                 self.historical_data['metadata']['last_update'] = datetime.now().isoformat()
@@ -2997,16 +3002,18 @@ class MongoDBAnomalyDetector:
         all_predictions = []
         all_scores = []
         
+        total_weight = 0.0
         for i, (model, weight) in enumerate(zip(self.incremental_models, self.model_weights)):
             try:
                 pred = model.predict(X_scaled_df)
                 scores = model.score_samples(X_scaled_df)
-                
+
                 all_predictions.append(pred * weight)  # Weighted prediction
                 all_scores.append(scores * weight)  # Weighted scores
-                
+                total_weight += weight
+
             except Exception as e:
-                
+
                 continue
         
         if not all_predictions:
@@ -3019,8 +3026,8 @@ class MongoDBAnomalyDetector:
         # Final predictions (threshold at 0)
         final_predictions = np.where(weighted_predictions < 0, -1, 1)
         
-        # Normalize scores
-        final_scores = weighted_scores / len(self.incremental_models)
+        # Normalize scores by total weight of contributing models
+        final_scores = weighted_scores / total_weight if total_weight > 0 else weighted_scores
         
         n_anomalies = (final_predictions == -1).sum()
         
@@ -3211,6 +3218,9 @@ class MongoDBAnomalyDetector:
                 
         # Single model mode
         elif hasattr(self, 'model') and self.model is not None:
+            if self.is_scaler_fitted:
+                X_scaled = self.scaler.transform(X)
+                X = pd.DataFrame(X_scaled, columns=X.columns)
             return self.model.score_samples(X)
         else:
             raise ValueError("No model available for scoring!")

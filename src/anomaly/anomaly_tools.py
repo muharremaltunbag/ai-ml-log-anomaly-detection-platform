@@ -363,7 +363,7 @@ class AnomalyDetectionTools:
         
         # CRITICAL DEBUG: Input critical_anomalies count
         if "data" in result and "critical_anomalies" in result["data"]:
-            print(f"[DEBUG] FORMAT_RESULT INPUT: {len(result['data']['critical_anomalies'])} critical anomalies")
+            logger.debug(f"FORMAT_RESULT INPUT: {len(result['data']['critical_anomalies'])} critical anomalies")
         
         try:
             def convert_numpy_types(obj):
@@ -421,7 +421,7 @@ class AnomalyDetectionTools:
 
             # CRITICAL DEBUG: Output critical_anomalies count
             if "critical_anomalies" in _sonuc:
-                print(f"[DEBUG] FORMAT_RESULT OUTPUT: {len(_sonuc.get('critical_anomalies', []))} critical anomalies")
+                logger.debug(f"FORMAT_RESULT OUTPUT: {len(_sonuc.get('critical_anomalies', []))} critical anomalies")
 
             # YENİ: AI explanation varsa ekle
             if "ai_explanation" in result and result["ai_explanation"]:
@@ -430,7 +430,7 @@ class AnomalyDetectionTools:
 
             # FINAL DEBUG: Before JSON serialization
             if "critical_anomalies" in _sonuc:
-                print(f"[DEBUG] JSON SERIALIZATION: About to serialize {len(_sonuc.get('critical_anomalies', []))} critical anomalies")
+                logger.debug(f"JSON SERIALIZATION: About to serialize {len(_sonuc.get('critical_anomalies', []))} critical anomalies")
             
             json_result = json.dumps(response, ensure_ascii=False, indent=2)
             
@@ -439,7 +439,7 @@ class AnomalyDetectionTools:
                 # Doğrudan response dict'ten say (regex nested array'lerde hata yapıyor)
                 critical_count = len((response.get("sonuç") or {}).get("critical_anomalies", []))
                 all_count = len((response.get("sonuç") or {}).get("all_anomalies", []))
-                print(f"[DEBUG] JSON RESULT: Serialized JSON contains {critical_count} critical + {all_count} all anomaly objects")
+                logger.debug(f"JSON RESULT: Serialized JSON contains {critical_count} critical + {all_count} all anomaly objects")
             
             return json_result
         except Exception as e:
@@ -1340,7 +1340,7 @@ class AnomalyDetectionTools:
                         logger.warning("Fell back to basic description and suggestions for OpenSearch.")
                     
                     # DEBUG: OpenSearch analysis'den önce critical_anomalies sayısını logla
-                    print(f"[DEBUG] OPENSEARCH: Before enhancement - analysis['critical_anomalies'] count: {len(analysis['critical_anomalies'])}")
+                    logger.debug(f"OPENSEARCH: Before enhancement - analysis['critical_anomalies'] count: {len(analysis['critical_anomalies'])}")
                     logger.debug(f"OpenSearch analysis before enhancement: {len(analysis['critical_anomalies'])} critical anomalies")
 
                     
@@ -1520,6 +1520,9 @@ class AnomalyDetectionTools:
                 source_name="file", use_incremental=True, server_name=file_server_name
             )
             
+            # Filtreleme öncesi orijinal anomali sayısını sakla
+            unfiltered_anomaly_count = len(analysis.get('critical_anomalies', []))
+            unfiltered_analysis = analysis.copy()
             # YENİ: False positive filtering
             analysis = self._filter_false_positives(analysis, source_name="file")
             # Sonuçları sakla
@@ -1577,13 +1580,16 @@ class AnomalyDetectionTools:
                 "anomaly_score_stats": analysis.get("anomaly_score_stats", {})
             }
             if "critical_anomalies" in analysis:
-                print(f"[DEBUG] MAIN FUNCTION: Original analysis has {len(analysis['critical_anomalies'])} critical anomalies")
+                logger.debug(f"MAIN FUNCTION: Original analysis has {len(analysis['critical_anomalies'])} critical anomalies")
                 enhanced_analysis["critical_anomalies"] = self._enhance_critical_anomalies_with_messages(
                     analysis["critical_anomalies"]
                 )
-                print(f"[DEBUG] MAIN FUNCTION: After enhancement, we have {len(enhanced_analysis['critical_anomalies'])} critical anomalies")
+                logger.debug(f"MAIN FUNCTION: After enhancement, we have {len(enhanced_analysis['critical_anomalies'])} critical anomalies")
             if "all_anomalies" in analysis:
                 enhanced_analysis["all_anomalies"] = self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100)
+            # Unfiltered anomalies (FP filter öncesi orijinal veriler)
+            enhanced_analysis["unfiltered_anomalies"] = unfiltered_analysis.get('critical_anomalies', [])
+            enhanced_analysis["unfiltered_count"] = unfiltered_anomaly_count
 
             # Server bilgisini enhanced_analysis'e ekle
             enhanced_analysis["server_info"] = {
@@ -1602,7 +1608,7 @@ class AnomalyDetectionTools:
                 "model_info": self._get_model_info_for_storage()
             }
             
-            print(f"[DEBUG] MAIN FUNCTION: Final result data critical_anomalies count: {len(result['data'].get('critical_anomalies', []))}")
+            logger.debug(f"MAIN FUNCTION: Final result data critical_anomalies count: {len(result['data'].get('critical_anomalies', []))}")
             
             self.last_analysis = result
             return self._format_result(result, "anomaly_analysis")
@@ -1679,6 +1685,7 @@ class AnomalyDetectionTools:
                     mongodb_server_name = host_match.group(1).split('.')[0]  # FQDN'den sadece hostname
                     logger.info(f"Extracted server name from connection: {mongodb_server_name}")
             
+            model_loaded = True  # Default: detector already trained
             if not self.detector.is_trained:
                 logger.info(f"Attempting to load existing model from storage{f' for server: {mongodb_server_name}' if mongodb_server_name else ''}...")
                 # Önce diskten model yüklemeyi dene
@@ -1708,7 +1715,13 @@ class AnomalyDetectionTools:
                 df_filtered, X_filtered, predictions, anomaly_scores,
                 source_name="mongodb_direct", use_incremental=True, server_name=mongodb_server_name
             )
-            
+
+            # Filtreleme öncesi orijinal anomali sayısını sakla
+            unfiltered_anomaly_count = len(analysis.get('critical_anomalies', []))
+            unfiltered_analysis = analysis.copy()
+            # False positive filtering
+            analysis = self._filter_false_positives(analysis, source_name="mongodb_direct")
+
             # Sonuçları sakla
             self.last_analysis = {
                 "df": df_filtered,
@@ -1736,12 +1749,14 @@ class AnomalyDetectionTools:
                     "summary": analysis["summary"],
                     "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),  # Tüm kritik anomaliler - Enhanced
                     "all_anomalies": self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100),
+                    "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),
+                    "unfiltered_count": unfiltered_anomaly_count,
                     "security_alerts": analysis.get("security_alerts", {}),
                     "temporal_analysis": analysis.get("temporal_analysis", {})
                 },
                 "suggestions": suggestions
             }
-            
+
             logger.debug("MongoDB direct analysis completed successfully")
             return self._format_result(result, "anomaly_analysis")
             
@@ -4362,7 +4377,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         if not critical_anomalies:
             return critical_anomalies
         
-        print(f"[DEBUG] Enhancement function received {len(critical_anomalies)} anomalies")
+        logger.debug(f"Enhancement function received {len(critical_anomalies)} anomalies")
         logger.debug(f"Enhancement input - anomalies count: {len(critical_anomalies)}")
         
         enhanced_anomalies = []
@@ -4415,7 +4430,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                 enhanced_anomalies.append(anomaly)
         
         logger.debug(f"Enhanced {len(enhanced_anomalies)} critical anomalies with formatted messages")
-        print(f"[DEBUG] Enhancement function returning {len(enhanced_anomalies)} enhanced anomalies")
+        logger.debug(f"Enhancement function returning {len(enhanced_anomalies)} enhanced anomalies")
         logger.debug(f"Enhancement output - enhanced anomalies count: {len(enhanced_anomalies)}")
         return enhanced_anomalies
 

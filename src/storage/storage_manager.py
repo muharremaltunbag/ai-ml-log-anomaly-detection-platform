@@ -79,7 +79,7 @@ class StorageManager:
             connected = await self.mongodb.connect()
             if not connected:
                 logger.error("❌ MongoDB bağlantısı BAŞARISIZ!")
-                logger.error(f"   URI: {self.mongodb.uri[:50]}...")
+                logger.error(f"   URI: {self.mongodb.connection_string[:50]}...")
                 return False
             else:
                 logger.info("✅ MongoDB bağlantısı BAŞARILI!")
