@@ -400,7 +400,6 @@ async def get_storage_manager() -> Union[StorageManager, FileOnlyStorageManager]
                 logger.info("✅ FileOnlyStorageManager HAZIR!")
                 logger.info("=" * 50)
             
-            await storage_manager.initialize()
             logger.info(f"StorageManager ready: {type(storage_manager).__name__}")
         
         return storage_manager
@@ -841,8 +840,7 @@ async def analyze_cluster(request: Dict[str, Any]):
             
             # Her host için paralel analiz
             from src.anomaly.anomaly_tools import AnomalyDetectionTools
-            anomaly_tools = AnomalyDetectionTools(environment='production')
-            
+
             # Paralel analiz için task'ları hazırla
             async def analyze_single_host(host):
                 """Tek bir host için anomali analizi - Error handling ile"""
@@ -854,14 +852,16 @@ async def analyze_cluster(request: Dict[str, Any]):
                         "start_time": start_time,
                         "end_time": end_time
                     }
-                    
+
                     logger.info(f"Analyzing host: {host}")
-                    
+
+                    # Thread-safe: Her thread kendi AnomalyDetectionTools instance'ını oluşturur
+                    def _run_host_analysis():
+                        tools = AnomalyDetectionTools(environment='production')
+                        return tools.analyze_mongodb_logs(params)
+
                     # Sync fonksiyonu async ortamda çalıştır
-                    result = await asyncio.to_thread(
-                        anomaly_tools.analyze_mongodb_logs,
-                        params
-                    )
+                    result = await asyncio.to_thread(_run_host_analysis)
                     
                     logger.info(f"Host {host} analysis completed successfully")
                     return (host, result)
@@ -1811,6 +1811,47 @@ async def cleanup_progress_cache():
         except Exception as e:
             logger.error(f"Progress cleanup error: {e}")
             await asyncio.sleep(700)
+
+
+async def _preload_feedbacks_from_mongodb():
+    """
+    Startup task: MongoDB'deki mevcut feedback kayıtlarını in-memory cache'e yükle.
+    Process restart sonrası feedback'lerin kaybolmasını önler.
+    """
+    global anomaly_feedback_store
+    try:
+        # Storage hazır olana kadar kısa bir süre bekle
+        await asyncio.sleep(5)
+        storage = await get_storage_manager()
+        if not storage or not hasattr(storage, 'mongodb') or not storage.mongodb or not storage.mongodb.db:
+            logger.info("Feedback preload: MongoDB not available, skipping")
+            return
+
+        collection = storage.mongodb.db[storage.mongodb.collections.get("user_feedback", "user_feedback")]
+        loaded_count = 0
+        async for doc in collection.find({}):
+            analysis_id = doc.get("analysis_id")
+            fb = doc.get("feedback", {})
+            idx = fb.get("anomaly_index")
+            if analysis_id and idx is not None:
+                if analysis_id not in anomaly_feedback_store:
+                    anomaly_feedback_store[analysis_id] = {}
+                anomaly_feedback_store[analysis_id][idx] = {
+                    "label": fb.get("label", "unknown"),
+                    "note": fb.get("note"),
+                    "timestamp": fb.get("timestamp", "")
+                }
+                loaded_count += 1
+
+        if loaded_count > 0:
+            logger.info(f"✅ Feedback preload: {loaded_count} feedbacks loaded from MongoDB "
+                        f"({len(anomaly_feedback_store)} analyses)")
+        else:
+            logger.info("Feedback preload: No existing feedbacks in MongoDB")
+
+    except Exception as e:
+        logger.warning(f"Feedback preload failed (non-critical): {e}")
+
 
 # ============= YENİ STORAGE ENDPOINTS =============
 
@@ -3751,42 +3792,31 @@ async def dba_analyze_specific_time(
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Geçersiz tarih formatı: {e}")
             
-            # Anomaly tools'u çağır
+            # Anomaly tools import
             from src.anomaly.anomaly_tools import AnomalyDetectionTools
-            anomaly_tools = AnomalyDetectionTools(environment='production')
 
             if is_cluster:
                 # Cluster analizi - paralel işleme
                 import asyncio
-                
-                async def analyze_single_host(single_host):
-                    """Tek bir host için analiz yap"""
-                    result = anomaly_tools.analyze_mongodb_logs({
-                        "source_type": "opensearch",
-                        "host_filter": single_host,
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "time_range": "custom"
-                    })
-                    return result
-                
+
                 # Paralel analiz başla
                 logger.info(f"Starting parallel analysis for {len(hosts_list)} hosts...")
-                
-                # Asyncio.to_thread kullanarak sync fonksiyonu async çalıştır
-                tasks = []
-                for h in hosts_list:
-                    tasks.append(asyncio.to_thread(
-                        anomaly_tools.analyze_mongodb_logs,
-                        {
+
+                # Thread-safe: Her thread kendi AnomalyDetectionTools instance'ını oluşturur
+                def _make_host_analyzer(single_host):
+                    def _analyze():
+                        tools = AnomalyDetectionTools(environment='production')
+                        return tools.analyze_mongodb_logs({
                             "source_type": "opensearch",
-                            "host_filter": h,
+                            "host_filter": single_host,
                             "start_time": start_time,
                             "end_time": end_time,
                             "time_range": "custom"
-                        }
-                    ))
-                
+                        })
+                    return _analyze
+
+                tasks = [asyncio.to_thread(_make_host_analyzer(h)) for h in hosts_list]
+
                 # Tüm analizleri bekle
                 results = await asyncio.gather(*tasks)
                 
@@ -3844,14 +3874,17 @@ async def dba_analyze_specific_time(
                 }
                 
             else:
-                # Tek host analizi (mevcut kod)
-                tool_result = anomaly_tools.analyze_mongodb_logs({
-                    "source_type": "opensearch",
-                    "host_filter": host,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "time_range": "custom"
-                })
+                # Tek host analizi — thread-safe instance
+                def _run_single_host():
+                    tools = AnomalyDetectionTools(environment='production')
+                    return tools.analyze_mongodb_logs({
+                        "source_type": "opensearch",
+                        "host_filter": host,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "time_range": "custom"
+                    })
+                tool_result = await asyncio.to_thread(_run_single_host)
             
             # Sonucu parse et
 
@@ -4936,6 +4969,29 @@ async def get_anomaly_feedbacks(analysis_id: str, api_key: str = Query(...)):
         global anomaly_feedback_store
         feedbacks = anomaly_feedback_store.get(analysis_id, {})
 
+        # In-memory boşsa MongoDB'den yüklemeyi dene (process restart sonrası)
+        if not feedbacks:
+            try:
+                storage = await get_storage_manager()
+                if storage and hasattr(storage, 'mongodb') and storage.mongodb and storage.mongodb.db:
+                    collection = storage.mongodb.db[storage.mongodb.collections.get("user_feedback", "user_feedback")]
+                    cursor = collection.find({"analysis_id": analysis_id})
+                    async for doc in cursor:
+                        fb = doc.get("feedback", {})
+                        idx = fb.get("anomaly_index")
+                        if idx is not None:
+                            feedbacks[idx] = {
+                                "label": fb.get("label", "unknown"),
+                                "note": fb.get("note"),
+                                "timestamp": fb.get("timestamp", "")
+                            }
+                    # In-memory cache'e de yükle (tekrar sorgulamayı önle)
+                    if feedbacks:
+                        anomaly_feedback_store[analysis_id] = feedbacks
+                        logger.info(f"Loaded {len(feedbacks)} feedbacks from MongoDB for analysis {analysis_id}")
+            except Exception as storage_err:
+                logger.warning(f"MongoDB feedback read failed (using in-memory only): {storage_err}")
+
         tp_count = sum(1 for f in feedbacks.values() if f["label"] == "true_positive")
         fp_count = sum(1 for f in feedbacks.values() if f["label"] == "false_positive")
 
@@ -5146,7 +5202,10 @@ async def startup_event():
     # Progress cleanup task'ı başlat
     asyncio.create_task(cleanup_progress_cache())
     logger.info("Progress cache cleanup task başlatıldı")
-    
+
+    # Feedback preload: MongoDB'deki mevcut feedback'leri in-memory cache'e yükle
+    asyncio.create_task(_preload_feedbacks_from_mongodb())
+
     """API başlatıldığında çalışacak işlemler"""
     global storage_manager, anomaly_detector
 
