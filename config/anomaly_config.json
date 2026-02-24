@@ -381,7 +381,7 @@
         "forecast_horizon_hours": 6,
         "model_type": "linear_regression",
         "confidence_interval": 0.95,
-        "metrics": ["anomaly_rate", "anomaly_count", "critical_ratio", "error_count"]
+        "metrics": ["anomaly_rate", "anomaly_count", "critical_ratio", "critical_count", "error_count"]
       },
       "storage": {
         "collection_name": "prediction_alerts",

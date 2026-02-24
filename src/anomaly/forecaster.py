@@ -1,17 +1,23 @@
 # src/anomaly/forecaster.py
 
 """
-Forecaster - MongoDB Anomaly Detection Prediction Layer (Katman 3)
+Production-Grade Anomaly Forecaster — Prediction Layer (Katman 3)
 
-Anomaly history'den geçmiş metrikleri alarak ileriye dönük tahmin üretir.
-Linear regression bazlı basit time series forecasting.
+Tiered multi-method forecasting:
+  Tier 0  (N < min_points)  : Direction indicator only, no numeric forecast
+  Tier 1  (min ≤ N < 10)    : Weighted Moving Average (WMA) + recent bias
+  Tier 2  (10 ≤ N < 20)     : Linear Regression + prediction interval
+  Tier 3  (N ≥ 20)          : EWMA trend decomposition + volatility-adjusted confidence
 
-Mevcut pipeline'dan tamamen izole çalışır. Çağrılmazsa bile hiçbir şey bozulmaz.
+Cross-source (MongoDB / MSSQL / Elasticsearch) metric registry.
+Pure Python — no numpy/scipy/pandas dependency.
+
+Mevcut pipeline'dan tamamen izole. Çağrılmazsa hiçbir şey bozulmaz.
 Feature flag: config.prediction.forecasting.enabled
 
 Kullanım:
     forecaster = AnomalyForecaster(config)
-    report = forecaster.forecast(history_records, current_analysis, server_name)
+    report = forecaster.forecast(history_records, current_analysis, server_name, source_type)
 """
 
 import logging
@@ -23,23 +29,32 @@ from dataclasses import dataclass, asdict, field
 logger = logging.getLogger(__name__)
 
 
+# ═══════════════════════════════════════════════════════════
+# Data Classes (public API — backward compatible)
+# ═══════════════════════════════════════════════════════════
+
 @dataclass
 class ForecastAlert:
     """Tek bir forecast alert"""
-    alert_type: str          # "forecast_anomaly_rate_rising", "forecast_critical_ratio_rising"
+    alert_type: str          # "forecast_anomaly_rate_rising", ...
     severity: str            # "INFO", "WARNING", "CRITICAL"
     title: str
     description: str
-    metric_name: str         # Tahmin edilen metrik
-    current_value: float     # Şu anki değer
-    forecast_value: float    # Tahmini değer (horizon sonunda)
+    metric_name: str
+    current_value: float
+    forecast_value: float
     forecast_horizon_hours: int
-    trend_slope: float       # Eğim (birim zaman başına artış)
-    confidence: float        # Tahmin güveni (R² veya basit korelasyon)
-    data_points_used: int    # Kaç veri noktası kullanıldı
+    trend_slope: float
+    confidence: float        # 0-1 arası güven skoru
+    data_points_used: int
     server_name: Optional[str] = None
     timestamp: str = ""
     explainability: str = ""
+    forecast_method: str = ""
+    volatility: float = 0.0
+    upper_bound: float = 0.0
+    lower_bound: float = 0.0
+    change_point_detected: bool = False
 
     def __post_init__(self):
         if not self.timestamp:
@@ -53,10 +68,12 @@ class ForecastAlert:
 class ForecastReport:
     """Forecasting raporu"""
     server_name: Optional[str]
-    data_points: int             # Kaç geçmiş analiz kullanıldı
+    data_points: int
     forecast_horizon_hours: int
-    forecasts: Dict[str, Any] = field(default_factory=dict)  # Metrik bazlı tahminler
+    forecasts: Dict[str, Any] = field(default_factory=dict)
     alerts: List[ForecastAlert] = field(default_factory=list)
+    model_tier: str = ""
+    change_points: List[Dict] = field(default_factory=list)
     timestamp: str = ""
 
     def __post_init__(self):
@@ -79,339 +96,761 @@ class ForecastReport:
             "forecast_horizon_hours": self.forecast_horizon_hours,
             "forecasts": self.forecasts,
             "alerts": [a.to_dict() for a in self.alerts],
+            "model_tier": self.model_tier,
+            "change_points": self.change_points,
             "timestamp": self.timestamp,
             "max_severity": self.max_severity(),
             "has_alerts": self.has_alerts()
         }
 
 
-# ──────────────────────────────────────────────
-# Pure math: Simple linear regression
-# ──────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════
+# Pure Math — zero external dependency
+# ═══════════════════════════════════════════════════════════
 
 def _linear_regression(x: List[float], y: List[float]) -> Tuple[float, float, float]:
-    """
-    Simple linear regression: y = slope * x + intercept.
-    Dış kütüphane (numpy/scipy) kullanmadan saf hesaplama.
-
-    Args:
-        x: Bağımsız değişken (ör: analiz sırası 0,1,2,...)
-        y: Bağımlı değişken (ör: anomaly_rate)
-
-    Returns:
-        (slope, intercept, r_squared)
-    """
+    """y = slope * x + intercept.  Returns (slope, intercept, r_squared)."""
     n = len(x)
     if n < 2:
         return 0.0, y[0] if y else 0.0, 0.0
 
-    sum_x = sum(x)
-    sum_y = sum(y)
-    sum_xy = sum(xi * yi for xi, yi in zip(x, y))
-    sum_x2 = sum(xi * xi for xi in x)
+    sx = sum(x)
+    sy = sum(y)
+    sxy = sum(a * b for a, b in zip(x, y))
+    sx2 = sum(a * a for a in x)
 
-    denom = n * sum_x2 - sum_x * sum_x
+    denom = n * sx2 - sx * sx
     if denom == 0:
-        return 0.0, sum_y / n, 0.0
+        return 0.0, sy / n, 0.0
 
-    slope = (n * sum_xy - sum_x * sum_y) / denom
-    intercept = (sum_y - slope * sum_x) / n
+    slope = (n * sxy - sx * sy) / denom
+    intercept = (sy - slope * sx) / n
 
-    # R² hesapla
-    y_mean = sum_y / n
+    y_mean = sy / n
     ss_tot = sum((yi - y_mean) ** 2 for yi in y)
     ss_res = sum((yi - (slope * xi + intercept)) ** 2 for xi, yi in zip(x, y))
-
-    r_squared = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
-    # Clamp to [0, 1]
-    r_squared = max(0.0, min(1.0, r_squared))
-
-    return slope, intercept, r_squared
+    r2 = max(0.0, min(1.0, 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0))
+    return slope, intercept, r2
 
 
-# ──────────────────────────────────────────────
-# Metric extractors: history record → float value
-# ──────────────────────────────────────────────
+def _weighted_moving_average(values: List[float], weights: Optional[List[float]] = None) -> float:
+    """Ağırlıklı hareketli ortalama.  weights=None ise linearly-increasing."""
+    n = len(values)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return values[0]
+    if weights is None:
+        weights = [float(i + 1) for i in range(n)]
+    tw = sum(weights)
+    if tw == 0:
+        return sum(values) / n
+    return sum(v * w for v, w in zip(values, weights)) / tw
+
+
+def _ewma(values: List[float], alpha: float = 0.3) -> List[float]:
+    """Exponentially Weighted Moving Average series."""
+    if not values:
+        return []
+    result = [values[0]]
+    for i in range(1, len(values)):
+        result.append(alpha * values[i] + (1 - alpha) * result[-1])
+    return result
+
+
+def _std_dev(values: List[float]) -> float:
+    """Sample standard deviation."""
+    n = len(values)
+    if n < 2:
+        return 0.0
+    mean = sum(values) / n
+    return math.sqrt(sum((v - mean) ** 2 for v in values) / (n - 1))
+
+
+def _coefficient_of_variation(values: List[float]) -> float:
+    """CV = std / |mean|.  Volatility measure: 0 = stable, high = volatile."""
+    if not values:
+        return 0.0
+    mean = sum(values) / len(values)
+    if mean == 0:
+        return 0.0
+    return _std_dev(values) / abs(mean)
+
+
+def _cusum_change_points(values: List[float], threshold: float = 3.0) -> List[int]:
+    """
+    CUSUM (Cumulative Sum) change-point detection.
+    Returns list of indices where a regime shift is detected.
+    """
+    if len(values) < 4:
+        return []
+    mean = sum(values) / len(values)
+    std = _std_dev(values)
+    if std == 0:
+        return []
+
+    drift = std * 0.5
+    pos, neg = 0.0, 0.0
+    cps: List[int] = []
+    for i in range(1, len(values)):
+        dev = values[i] - mean
+        pos = max(0, pos + dev - drift)
+        neg = max(0, neg - dev - drift)
+        if pos > threshold * std or neg > threshold * std:
+            cps.append(i)
+            pos, neg = 0.0, 0.0
+    return cps
+
+
+def _prediction_interval(values: List[float], slope: float, intercept: float,
+                          forecast_x: float, confidence: float = 0.95) -> Tuple[float, float]:
+    """Linear regression prediction interval.  Returns (lower, upper)."""
+    n = len(values)
+    if n < 3:
+        mean_v = sum(values) / n if n else 0
+        spread = max(abs(v - mean_v) for v in values) if values else 0
+        return max(0.0, mean_v - spread * 2), mean_v + spread * 2
+
+    x = list(range(n))
+    x_mean = sum(x) / n
+    residuals = [values[i] - (slope * x[i] + intercept) for i in range(n)]
+    se = math.sqrt(sum(r ** 2 for r in residuals) / (n - 2))
+    t_val = 2.0 if confidence >= 0.95 else 1.65
+
+    sx2 = sum((xi - x_mean) ** 2 for xi in x)
+    if sx2 == 0:
+        margin = t_val * se * 2
+    else:
+        margin = t_val * se * math.sqrt(1 + 1 / n + (forecast_x - x_mean) ** 2 / sx2)
+
+    point = slope * forecast_x + intercept
+    return max(0.0, point - margin), point + margin
+
+
+# ═══════════════════════════════════════════════════════════
+# Cross-Source Metric Extractors
+# anomaly_history document → Optional[float]
+# ═══════════════════════════════════════════════════════════
 
 def _extract_anomaly_rate(record: Dict[str, Any]) -> Optional[float]:
-    """anomaly_rate çıkar"""
+    """anomaly_rate — tüm kaynaklar"""
     rate = record.get('anomaly_rate')
     if rate is None:
-        rate = record.get('summary', {}).get('anomaly_rate')
-    if rate is not None:
-        return float(rate)
-    return None
+        rate = (record.get('summary') or {}).get('anomaly_rate')
+    return float(rate) if rate is not None else None
 
 
 def _extract_anomaly_count(record: Dict[str, Any]) -> Optional[float]:
-    """n_anomalies çıkar"""
-    count = record.get('n_anomalies')
+    """n_anomalies — tüm kaynaklar"""
+    count = record.get('anomaly_count')
     if count is None:
-        count = record.get('summary', {}).get('n_anomalies')
-    if count is not None:
-        return float(count)
-    return None
+        count = (record.get('summary') or {}).get('n_anomalies')
+    return float(count) if count is not None else None
 
 
 def _extract_critical_ratio(record: Dict[str, Any]) -> Optional[float]:
-    """CRITICAL+HIGH anomali oranını çıkar"""
-    dist = record.get('severity_distribution', {})
+    """CRITICAL+HIGH / total anomali oranı (%) — tüm kaynaklar"""
+    dist = record.get('severity_distribution') or {}
     if not dist:
         return None
-    total = sum(dist.values())
+    total = sum(v for v in dist.values() if isinstance(v, (int, float)))
     if total == 0:
         return None
-    critical = dist.get('CRITICAL', 0) + dist.get('HIGH', 0)
+    critical = (dist.get('CRITICAL') or 0) + (dist.get('HIGH') or 0)
     return (critical / total) * 100
 
 
-def _extract_error_count(record: Dict[str, Any]) -> Optional[float]:
-    """Error sayısını çıkar (component_analysis'ten)"""
-    comp = record.get('component_analysis', {})
-    # Tüm component'lerdeki anomaly count toplamını döndür
+def _extract_critical_count(record: Dict[str, Any]) -> Optional[float]:
+    """Kritik anomali sayısı (CRITICAL+HIGH) — tüm kaynaklar"""
+    dist = record.get('severity_distribution') or {}
+    if not dist:
+        cc = record.get('critical_count')
+        return float(cc) if cc is not None else None
+    return float((dist.get('CRITICAL') or 0) + (dist.get('HIGH') or 0))
+
+
+def _extract_error_rate(record: Dict[str, Any]) -> Optional[float]:
+    """component_analysis'ten toplam anomaly count — tüm kaynaklar"""
+    comp = record.get('component_analysis') or {}
     if not comp:
         return None
-    total = sum(c.get('anomaly_count', 0) for c in comp.values())
+    total = sum((c.get('anomaly_count') or 0) for c in comp.values() if isinstance(c, dict))
     return float(total)
 
 
-METRIC_EXTRACTORS = {
+def _extract_slow_query_count(record: Dict[str, Any]) -> Optional[float]:
+    """Slow query sayısı — MongoDB specific"""
+    perf = record.get('performance_alerts') or {}
+    sq = perf.get('slow_queries') or {}
+    if isinstance(sq, dict) and sq.get('count') is not None:
+        return float(sq['count'])
+    return None
+
+
+def _extract_collscan_count(record: Dict[str, Any]) -> Optional[float]:
+    """COLLSCAN sayısı — MongoDB specific"""
+    perf = record.get('performance_alerts') or {}
+    cs = perf.get('collscans') or perf.get('COLLSCAN') or {}
+    if isinstance(cs, dict) and cs.get('count') is not None:
+        return float(cs['count'])
+    return None
+
+
+def _extract_auth_failure_count(record: Dict[str, Any]) -> Optional[float]:
+    """Authentication failure count — MongoDB / MSSQL"""
+    sec = record.get('security_alerts') or {}
+    if isinstance(sec, dict):
+        for key in ('auth_failures', 'authentication_failures'):
+            sub = sec.get(key)
+            if isinstance(sub, dict) and sub.get('count') is not None:
+                return float(sub['count'])
+    mssql = record.get('mssql_specific') or {}
+    if isinstance(mssql, dict):
+        for key in ('failed_logins', 'failed_login_count'):
+            val = mssql.get(key)
+            if isinstance(val, (int, float)):
+                return float(val)
+    return None
+
+
+# ═══════════════════════════════════════════════════════════
+# Metric Registry — source-aware
+# ═══════════════════════════════════════════════════════════
+
+COMMON_METRICS: Dict[str, Dict[str, Any]] = {
     "anomaly_rate": {
         "func": _extract_anomaly_rate,
-        "label": "Anomali Oranı (%)",
+        "label": "Anomali Oranı",
         "unit": "%",
-        "warning_threshold_slope": 0.5,    # Her analizde %0.5+ artış → WARNING
-        "critical_threshold_slope": 2.0,    # Her analizde %2+ artış → CRITICAL
+        "warning_pct_above_baseline": 50.0,
+        "critical_pct_above_baseline": 100.0,
+        "min_absolute_for_alert": 0.5,
     },
     "anomaly_count": {
         "func": _extract_anomaly_count,
         "label": "Anomali Sayısı",
-        "unit": "adet",
-        "warning_threshold_slope": 5.0,     # Her analizde 5+ artış
-        "critical_threshold_slope": 20.0,
+        "unit": " adet",
+        "warning_pct_above_baseline": 80.0,
+        "critical_pct_above_baseline": 150.0,
+        "min_absolute_for_alert": 3,
     },
     "critical_ratio": {
         "func": _extract_critical_ratio,
-        "label": "Kritik Anomali Oranı (%)",
+        "label": "Kritik Anomali Oranı",
         "unit": "%",
-        "warning_threshold_slope": 1.0,
-        "critical_threshold_slope": 5.0,
+        "warning_pct_above_baseline": 30.0,
+        "critical_pct_above_baseline": 80.0,
+        "min_absolute_for_alert": 5.0,
+    },
+    "critical_count": {
+        "func": _extract_critical_count,
+        "label": "Kritik Anomali Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 50.0,
+        "critical_pct_above_baseline": 100.0,
+        "min_absolute_for_alert": 2,
     },
     "error_count": {
-        "func": _extract_error_count,
+        "func": _extract_error_rate,
         "label": "Error Sayısı",
-        "unit": "adet",
-        "warning_threshold_slope": 3.0,
-        "critical_threshold_slope": 10.0,
+        "unit": " adet",
+        "warning_pct_above_baseline": 60.0,
+        "critical_pct_above_baseline": 120.0,
+        "min_absolute_for_alert": 3,
     },
 }
 
+MONGODB_METRICS: Dict[str, Dict[str, Any]] = {
+    "slow_query_count": {
+        "func": _extract_slow_query_count,
+        "label": "Yavaş Sorgu Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 60.0,
+        "critical_pct_above_baseline": 120.0,
+        "min_absolute_for_alert": 5,
+    },
+    "collscan_count": {
+        "func": _extract_collscan_count,
+        "label": "COLLSCAN Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 50.0,
+        "critical_pct_above_baseline": 100.0,
+        "min_absolute_for_alert": 3,
+    },
+    "auth_failure_count": {
+        "func": _extract_auth_failure_count,
+        "label": "Auth Failure Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 40.0,
+        "critical_pct_above_baseline": 80.0,
+        "min_absolute_for_alert": 5,
+    },
+}
+
+MSSQL_METRICS: Dict[str, Dict[str, Any]] = {
+    "auth_failure_count": {
+        "func": _extract_auth_failure_count,
+        "label": "Failed Login Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 40.0,
+        "critical_pct_above_baseline": 80.0,
+        "min_absolute_for_alert": 5,
+    },
+}
+
+ES_METRICS: Dict[str, Dict[str, Any]] = {}
+
+SOURCE_METRIC_SETS: Dict[str, Dict[str, Dict[str, Any]]] = {
+    "mongodb": {**COMMON_METRICS, **MONGODB_METRICS},
+    "mssql": {**COMMON_METRICS, **MSSQL_METRICS},
+    "elasticsearch": {**COMMON_METRICS, **ES_METRICS},
+    "default": COMMON_METRICS,
+}
+
+
+# ═══════════════════════════════════════════════════════════
+# Tier Implementations
+# ═══════════════════════════════════════════════════════════
+
+def _forecast_tier0(values: List[float]) -> Dict[str, Any]:
+    """Tier 0: yön göstergesi — N < min_data_points.  Sayısal tahmin yok."""
+    if not values:
+        return {"method": "tier0_no_data", "direction": "unknown", "confidence": 0.0}
+    if len(values) == 1:
+        return {"method": "tier0_single_point", "direction": "unknown",
+                "current_value": values[-1], "confidence": 0.0}
+    recent, prev = values[-1], values[-2]
+    if recent > prev * 1.05:
+        direction = "rising"
+    elif recent < prev * 0.95:
+        direction = "falling"
+    else:
+        direction = "stable"
+    return {"method": "tier0_direction_only", "direction": direction,
+            "current_value": recent, "previous_value": prev, "confidence": 0.1}
+
+
+def _forecast_tier1(values: List[float], steps_ahead: float) -> Dict[str, Any]:
+    """Tier 1: WMA + recent trend projection.  5 ≤ N < 10."""
+    n = len(values)
+    wma = _weighted_moving_average(values)
+    current = values[-1]
+    recent_3 = values[-3:] if n >= 3 else values
+    trend_per_step = (recent_3[-1] - recent_3[0]) / max(len(recent_3) - 1, 1)
+    forecast_value = max(0.0, current + trend_per_step * steps_ahead)
+    volatility = _coefficient_of_variation(values)
+    confidence = min(0.4, 0.2 + n * 0.03)
+    spread = _std_dev(values) * 2
+    return {
+        "method": "tier1_wma", "forecast_value": forecast_value,
+        "wma_value": wma, "trend_per_step": trend_per_step,
+        "slope": trend_per_step,
+        "volatility": volatility, "confidence": confidence,
+        "upper_bound": forecast_value + spread,
+        "lower_bound": max(0.0, forecast_value - spread),
+        "direction": "rising" if trend_per_step > 0.001 else (
+            "falling" if trend_per_step < -0.001 else "stable"),
+    }
+
+
+def _forecast_tier2(values: List[float], steps_ahead: float,
+                     confidence_level: float = 0.95) -> Dict[str, Any]:
+    """Tier 2: Linear Regression + prediction interval.  10 ≤ N < 20."""
+    x = list(range(len(values)))
+    slope, intercept, r2 = _linear_regression(x, values)
+    forecast_x = len(values) - 1 + steps_ahead
+    forecast_value = max(0.0, slope * forecast_x + intercept)
+    lower, upper = _prediction_interval(values, slope, intercept, forecast_x, confidence_level)
+    volatility = _coefficient_of_variation(values)
+    confidence = min(0.7, r2 * 0.6 + len(values) * 0.01)
+    return {
+        "method": "tier2_linear_regression", "forecast_value": forecast_value,
+        "slope": slope, "intercept": intercept, "r_squared": r2,
+        "volatility": volatility, "confidence": confidence,
+        "upper_bound": upper, "lower_bound": lower,
+        "direction": "rising" if slope > 0.001 else (
+            "falling" if slope < -0.001 else "stable"),
+    }
+
+
+def _forecast_tier3(values: List[float], steps_ahead: float,
+                     confidence_level: float = 0.95) -> Dict[str, Any]:
+    """
+    Tier 3: EWMA trend decomposition + volatility-adjusted confidence.  N ≥ 20.
+    İki EWMA (fast/slow), momentum = fast − slow.
+    """
+    n = len(values)
+    ewma_fast = _ewma(values, alpha=0.3)
+    ewma_slow = _ewma(values, alpha=0.1)
+    momentum = ewma_fast[-1] - ewma_slow[-1]
+
+    half = max(10, n // 2)
+    recent = values[-half:]
+    x_r = list(range(len(recent)))
+    slope, intercept, r2 = _linear_regression(x_r, recent)
+
+    ewma_current = ewma_fast[-1]
+    structural_delta = slope * steps_ahead
+    momentum_delta = momentum * steps_ahead * 0.5
+    forecast_value = max(0.0, ewma_current + structural_delta + momentum_delta)
+
+    volatility = _coefficient_of_variation(values)
+    std = _std_dev(values)
+    vol_spread = std * (1 + volatility) * math.sqrt(max(steps_ahead, 1))
+    upper = forecast_value + vol_spread * 2
+    lower = max(0.0, forecast_value - vol_spread * 2)
+
+    confidence = min(0.9, r2 * 0.5 + min(n, 50) * 0.005 + (1 - min(volatility, 1.0)) * 0.2)
+    change_points = _cusum_change_points(values)
+
+    if slope > 0.001 and momentum > 0:
+        direction = "rising"
+    elif slope < -0.001 and momentum < 0:
+        direction = "falling"
+    elif momentum > std * 0.5:
+        direction = "accelerating"
+    elif momentum < -std * 0.5:
+        direction = "decelerating"
+    else:
+        direction = "stable"
+
+    return {
+        "method": "tier3_ewma_decomposition", "forecast_value": forecast_value,
+        "ewma_fast": ewma_fast[-1], "ewma_slow": ewma_slow[-1],
+        "momentum": momentum, "slope": slope, "r_squared": r2,
+        "volatility": volatility, "confidence": confidence,
+        "upper_bound": upper, "lower_bound": lower,
+        "change_points": change_points, "direction": direction,
+    }
+
+
+def _select_and_run_tier(values: List[float], min_points: int,
+                          steps_ahead: float,
+                          confidence_level: float = 0.95) -> Dict[str, Any]:
+    """Veri miktarına göre tier seç ve çalıştır."""
+    n = len(values)
+    if n < min_points:
+        return _forecast_tier0(values)
+    elif n < 10:
+        return _forecast_tier1(values, steps_ahead)
+    elif n < 20:
+        return _forecast_tier2(values, steps_ahead, confidence_level)
+    else:
+        return _forecast_tier3(values, steps_ahead, confidence_level)
+
+
+# ═══════════════════════════════════════════════════════════
+# Explainability Engine
+# ═══════════════════════════════════════════════════════════
+
+def _build_explanation(metric_cfg: Dict, tier_result: Dict,
+                        values: List[float], horizon_hours: int,
+                        server_name: Optional[str]) -> str:
+    """İnsan-okunabilir forecast açıklaması."""
+    method = tier_result.get("method", "unknown")
+    direction = tier_result.get("direction", "unknown")
+    confidence = tier_result.get("confidence", 0)
+    current = values[-1] if values else 0
+    fv = tier_result.get("forecast_value")
+    label = metric_cfg.get("label", "Metrik")
+    unit = metric_cfg.get("unit", "")
+    srv = f" ({server_name})" if server_name else ""
+    parts: List[str] = []
+
+    if "tier0" in method:
+        parts.append(
+            f"{label}{srv}: Henüz yeterli geçmiş veri yok ({len(values)} nokta). "
+            f"Mevcut değer: {current:.2f}{unit}. Yön: {direction}."
+        )
+    else:
+        parts.append(
+            f"{label}{srv}: {len(values)} geçmiş analiz kullanıldı. "
+            f"Mevcut: {current:.2f}{unit}."
+        )
+        if fv is not None:
+            lb = tier_result.get('lower_bound', 0)
+            ub = tier_result.get('upper_bound', 0)
+            parts.append(
+                f"Tahmini ({horizon_hours}h sonra): {fv:.2f}{unit} "
+                f"[{lb:.2f} – {ub:.2f}]."
+            )
+        method_labels = {
+            "tier1_wma": "Ağırlıklı Hareketli Ortalama (son veriler ağırlıklı)",
+            "tier2_linear_regression": f"Lineer Regresyon (R²={tier_result.get('r_squared', 0):.2f})",
+            "tier3_ewma_decomposition": (
+                f"EWMA Trend Decomposition "
+                f"(momentum={tier_result.get('momentum', 0):.3f}, "
+                f"R²={tier_result.get('r_squared', 0):.2f})"
+            ),
+        }
+        parts.append(f"Yöntem: {method_labels.get(method, method)}.")
+
+        vol = tier_result.get("volatility", 0)
+        if vol > 0.5:
+            parts.append(f"Yüksek dalgalanma (CV={vol:.2f}), tahmin güvenilirliği düşük.")
+        elif vol > 0.2:
+            parts.append(f"Orta seviye dalgalanma (CV={vol:.2f}).")
+
+        dir_labels = {
+            "rising": "Yükseliş trendi devam ediyor.",
+            "falling": "Düşüş trendi devam ediyor.",
+            "stable": "Stabil seyir.",
+            "accelerating": "Artış hızlanıyor — dikkat.",
+            "decelerating": "Artış yavaşlıyor.",
+        }
+        parts.append(dir_labels.get(direction, ""))
+
+        cps = tier_result.get("change_points", [])
+        if cps:
+            idx_str = ", #".join(str(c) for c in cps[-3:])
+            parts.append(
+                f"Uyarı: {len(cps)} rejim değişikliği tespit edildi "
+                f"(analiz #{idx_str}). Pattern'in değiştiğini gösterebilir."
+            )
+        parts.append(f"Güven skoru: {confidence:.0%}.")
+
+    return " ".join(p for p in parts if p)
+
+
+# ═══════════════════════════════════════════════════════════
+# Alert Decision — baseline-relative
+# ═══════════════════════════════════════════════════════════
+
+def _evaluate_alert(metric_name: str, metric_cfg: Dict, tier_result: Dict,
+                     values: List[float], horizon_hours: int,
+                     server_name: Optional[str]) -> Optional[ForecastAlert]:
+    """Baseline'a göre yüzdesel karşılaştırma ile alert kararı."""
+    fv = tier_result.get("forecast_value")
+    confidence = tier_result.get("confidence", 0)
+    direction = tier_result.get("direction", "stable")
+
+    if fv is None or confidence < 0.15:
+        return None
+
+    current = values[-1] if values else 0
+    baseline_window = values[:-1] if len(values) > 3 else values
+    baseline = sum(baseline_window) / len(baseline_window) if baseline_window else current
+
+    min_abs = metric_cfg.get("min_absolute_for_alert", 0)
+    warning_pct = metric_cfg.get("warning_pct_above_baseline", 50.0)
+    critical_pct = metric_cfg.get("critical_pct_above_baseline", 100.0)
+
+    if baseline <= 0:
+        pct_above = 100.0 if fv > min_abs else 0.0
+    else:
+        pct_above = ((fv - baseline) / baseline) * 100
+
+    if pct_above < warning_pct or fv < min_abs:
+        return None
+    if direction in ("falling", "decelerating", "stable"):
+        return None
+
+    severity = "CRITICAL" if pct_above >= critical_pct else "WARNING"
+    vol = tier_result.get("volatility", 0)
+    if vol > 0.6 and severity == "CRITICAL":
+        severity = "WARNING"
+
+    label = metric_cfg.get("label", metric_name)
+    unit = metric_cfg.get("unit", "")
+    method = tier_result.get("method", "unknown")
+    explanation = _build_explanation(metric_cfg, tier_result, values, horizon_hours, server_name)
+
+    return ForecastAlert(
+        alert_type=f"forecast_{metric_name}_rising",
+        severity=severity,
+        title=f"{label} artış tahmini — {horizon_hours}h içinde {fv:.1f}{unit}",
+        description=(
+            f"{label} baseline'ın %{pct_above:.0f} üstüne çıkması bekleniyor. "
+            f"Baseline: {baseline:.2f}{unit}, Mevcut: {current:.2f}{unit}, "
+            f"Tahmini: {fv:.2f}{unit}. Güven: {confidence:.0%}. Yön: {direction}."
+        ),
+        metric_name=metric_name,
+        current_value=round(current, 4),
+        forecast_value=round(fv, 4),
+        forecast_horizon_hours=horizon_hours,
+        trend_slope=round(tier_result.get("slope", tier_result.get("trend_per_step", 0)), 6),
+        confidence=round(confidence, 4),
+        data_points_used=len(values),
+        server_name=server_name,
+        explainability=explanation,
+        forecast_method=method,
+        volatility=round(vol, 4),
+        upper_bound=round(tier_result.get("upper_bound", 0), 4),
+        lower_bound=round(tier_result.get("lower_bound", 0), 4),
+        change_point_detected=bool(tier_result.get("change_points")),
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+# Main Forecaster Class
+# ═══════════════════════════════════════════════════════════
 
 class AnomalyForecaster:
     """
-    Anomaly history'den basit linear regression ile metrik tahmini yapar.
+    Production-grade anomaly forecaster.
+
+    Tiered multi-method: otomatik model seçimi (veri miktarına göre).
+    Cross-source: MongoDB / MSSQL / Elasticsearch metric registry.
+    Explainable: her tahmin neden/nasıl yapıldığını açıklar.
 
     Kullanım:
         forecaster = AnomalyForecaster(config)
-        report = forecaster.forecast(history_records, current_analysis, server_name)
+        report = forecaster.forecast(history, current, server_name, source_type)
 
-    Senkron çalışır. IO yapmaz. anomaly_tools.py tarafından history verilir.
+    Backward compatible: eski 3-arg çağrılar (source_type default "mongodb") çalışır.
     """
 
     def __init__(self, config: Dict[str, Any]):
-        """
-        Args:
-            config: prediction.forecasting bloğu
-        """
         self.enabled = config.get('enabled', False)
         self.min_data_points = config.get('min_data_points', 5)
         self.forecast_horizon_hours = config.get('forecast_horizon_hours', 6)
-        self.model_type = config.get('model_type', 'linear_regression')
-        self.confidence_interval = config.get('confidence_interval', 0.95)
-        self.metrics = config.get('metrics', ['anomaly_rate', 'anomaly_count'])
+        self.confidence_level = config.get('confidence_interval', 0.95)
+        self.configured_metrics = config.get('metrics', list(COMMON_METRICS.keys()))
 
-        logger.info(f"AnomalyForecaster initialized (enabled={self.enabled}, "
-                     f"model={self.model_type}, horizon={self.forecast_horizon_hours}h, "
-                     f"min_points={self.min_data_points}, metrics={self.metrics})")
+        logger.info(
+            f"AnomalyForecaster initialized (enabled={self.enabled}, "
+            f"horizon={self.forecast_horizon_hours}h, "
+            f"min_points={self.min_data_points}, "
+            f"metrics={self.configured_metrics})"
+        )
 
     def forecast(self, history_records: List[Dict[str, Any]],
                  current_analysis: Dict[str, Any],
-                 server_name: Optional[str] = None) -> ForecastReport:
+                 server_name: Optional[str] = None,
+                 source_type: str = "mongodb") -> ForecastReport:
         """
-        Geçmiş analizler + mevcut analiz ile ileriye dönük tahmin üret.
+        Ana forecast fonksiyonu.
 
         Args:
-            history_records: anomaly_history'den son N kayıt (timestamp DESC sıralı)
+            history_records: anomaly_history'den son N kayıt (timestamp DESC)
             current_analysis: Şu anki analiz sonucu
             server_name: Sunucu adı
-
-        Returns:
-            ForecastReport
+            source_type: "mongodb", "mssql", "elasticsearch"
         """
         if not self.enabled:
             return ForecastReport(
-                server_name=server_name,
-                data_points=0,
+                server_name=server_name, data_points=0,
                 forecast_horizon_hours=self.forecast_horizon_hours,
-                forecasts={"message": "Forecasting disabled in config"}
-            )
+                forecasts={"message": "Forecasting disabled in config"})
 
-        # Current + history = full dataset (en yeniden en eskiye)
         all_records = [current_analysis] + list(history_records)
+        n = len(all_records)
 
-        if len(all_records) < self.min_data_points:
+        if n < 2:
             return ForecastReport(
-                server_name=server_name,
-                data_points=len(all_records),
+                server_name=server_name, data_points=n,
                 forecast_horizon_hours=self.forecast_horizon_hours,
-                forecasts={
-                    "message": f"Yetersiz veri ({len(all_records)}/{self.min_data_points}). "
-                               f"Daha fazla analiz biriktikçe tahmin aktif olacak."
-                }
-            )
+                forecasts={"message": "Tek veri noktası. En az 2 analiz gerekli."})
 
-        # Sırayı çevir: en eskiden en yeniye (x=0 en eski, x=N-1 en yeni)
         records_asc = list(reversed(all_records))
+        avg_interval = self._estimate_avg_interval(records_asc)
+        steps_ahead = self.forecast_horizon_hours / avg_interval if avg_interval > 0 else 12.0
+
+        # Source-aware metric set
+        src_key = source_type.lower().replace("_opensearch", "").replace("opensearch", "mongodb")
+        metric_set = SOURCE_METRIC_SETS.get(src_key, COMMON_METRICS)
+
+        active_metrics: Dict[str, Dict] = {}
+        for m_name in self.configured_metrics:
+            if m_name in metric_set:
+                active_metrics[m_name] = metric_set[m_name]
+            elif m_name in COMMON_METRICS:
+                active_metrics[m_name] = COMMON_METRICS[m_name]
 
         forecasts: Dict[str, Any] = {}
         alerts: List[ForecastAlert] = []
+        all_cps: List[Dict] = []
+        tier_used = ""
 
-        for metric_name in self.metrics:
-            extractor_cfg = METRIC_EXTRACTORS.get(metric_name)
-            if not extractor_cfg:
-                logger.warning(f"Unknown metric: {metric_name}, skipping")
+        for metric_name, metric_cfg in active_metrics.items():
+            extract_fn = metric_cfg["func"]
+            values = [v for rec in records_asc
+                      for v in [extract_fn(rec)] if v is not None]
+
+            if len(values) < 2:
+                forecasts[metric_name] = {
+                    "metric": metric_name, "label": metric_cfg["label"],
+                    "status": "insufficient_data", "data_points": len(values),
+                    "current_value": values[-1] if values else None}
                 continue
 
-            metric_result = self._forecast_metric(
-                records_asc, metric_name, extractor_cfg, server_name
-            )
+            tier_result = _select_and_run_tier(
+                values, self.min_data_points, steps_ahead, self.confidence_level)
 
-            if metric_result:
-                forecasts[metric_name] = metric_result["forecast"]
-                if metric_result.get("alert"):
-                    alerts.append(metric_result["alert"])
+            method = tier_result.get("method", "unknown")
+            if not tier_used or "tier3" in method:
+                tier_used = method
 
-        return ForecastReport(
-            server_name=server_name,
-            data_points=len(all_records),
+            forecast_data: Dict[str, Any] = {
+                "metric": metric_name, "label": metric_cfg["label"],
+                "unit": metric_cfg["unit"], "current_value": round(values[-1], 4),
+                "data_points": len(values), "method": method,
+                "direction": tier_result.get("direction", "unknown"),
+                "confidence": round(tier_result.get("confidence", 0), 4),
+                "volatility": round(tier_result.get("volatility", 0), 4),
+                "history_values": [round(v, 4) for v in values[-15:]],
+            }
+
+            fv = tier_result.get("forecast_value")
+            if fv is not None:
+                forecast_data.update({
+                    "forecast_value": round(fv, 4),
+                    "upper_bound": round(tier_result.get("upper_bound", 0), 4),
+                    "lower_bound": round(tier_result.get("lower_bound", 0), 4),
+                    "forecast_horizon_hours": self.forecast_horizon_hours,
+                })
+            if "slope" in tier_result:
+                forecast_data["slope"] = round(tier_result["slope"], 6)
+            if "r_squared" in tier_result:
+                forecast_data["r_squared"] = round(tier_result["r_squared"], 4)
+            if "momentum" in tier_result:
+                forecast_data["momentum"] = round(tier_result["momentum"], 4)
+
+            forecast_data["explanation"] = _build_explanation(
+                metric_cfg, tier_result, values, self.forecast_horizon_hours, server_name)
+
+            forecasts[metric_name] = forecast_data
+
+            cps = tier_result.get("change_points", [])
+            if cps:
+                all_cps.append({
+                    "metric": metric_name, "indices": cps,
+                    "message": f"{metric_cfg['label']}'de {len(cps)} rejim değişikliği"})
+
+            alert = _evaluate_alert(
+                metric_name, metric_cfg, tier_result, values,
+                self.forecast_horizon_hours, server_name)
+            if alert:
+                alerts.append(alert)
+
+        report = ForecastReport(
+            server_name=server_name, data_points=n,
             forecast_horizon_hours=self.forecast_horizon_hours,
-            forecasts=forecasts,
-            alerts=alerts
-        )
+            forecasts=forecasts, alerts=alerts,
+            model_tier=tier_used, change_points=all_cps)
 
-    def _forecast_metric(self, records_asc: List[Dict],
-                         metric_name: str,
-                         extractor_cfg: Dict[str, Any],
-                         server_name: Optional[str]) -> Optional[Dict[str, Any]]:
-        """Tek bir metrik için forecast hesapla"""
-        extract_fn = extractor_cfg["func"]
+        if report.has_alerts():
+            logger.warning(
+                f"Forecast alerts for {server_name or 'global'}: "
+                f"{len(alerts)} alerts, tier={tier_used}, "
+                f"max_severity={report.max_severity()}")
+        else:
+            logger.info(
+                f"Forecast for {server_name or 'global'}: "
+                f"no alerts, tier={tier_used}, {n} data points")
 
-        # Değerleri çıkar
-        values = []
-        for record in records_asc:
-            val = extract_fn(record)
-            if val is not None:
-                values.append(val)
-
-        if len(values) < self.min_data_points:
-            return None
-
-        # x = sıra numarası (0, 1, 2, ..., N-1)
-        x = list(range(len(values)))
-        y = values
-
-        # Linear regression
-        slope, intercept, r_squared = _linear_regression(x, y)
-
-        current_value = values[-1]
-
-        # Forecast: slope pozitifse artış trendi var demek
-        # Horizon hesabı: Eğer her analiz ~30dk aralıkla geliyorsa,
-        # forecast_horizon_hours / 0.5 saat = kaç adım ileri tahmin
-        # Ama analizler arası süre değişken. Basit yaklaşım: son N veri noktasının
-        # trendini horizon kadar ileriye projekte et.
-        # steps_ahead = horizon_hours / avg_interval_hours
-        avg_interval_hours = self._estimate_avg_interval(records_asc)
-        if avg_interval_hours <= 0:
-            avg_interval_hours = 0.5  # default 30dk
-
-        steps_ahead = self.forecast_horizon_hours / avg_interval_hours
-        forecast_x = len(values) - 1 + steps_ahead
-        forecast_value = slope * forecast_x + intercept
-
-        # Negatif değer anlamsız (oran/sayı negatif olamaz)
-        forecast_value = max(0.0, forecast_value)
-
-        forecast_data = {
-            "metric": metric_name,
-            "label": extractor_cfg["label"],
-            "current_value": round(current_value, 4),
-            "forecast_value": round(forecast_value, 4),
-            "trend_slope": round(slope, 6),
-            "trend_direction": "rising" if slope > 0.001 else ("falling" if slope < -0.001 else "stable"),
-            "r_squared": round(r_squared, 4),
-            "data_points": len(values),
-            "forecast_horizon_hours": self.forecast_horizon_hours,
-            "avg_interval_hours": round(avg_interval_hours, 2),
-            "steps_ahead": round(steps_ahead, 1),
-            "history_values": [round(v, 4) for v in values[-10:]],  # Son 10 değer
-        }
-
-        # Alert üretme kararı
-        alert = None
-        warning_slope = extractor_cfg.get("warning_threshold_slope", 0)
-        critical_slope = extractor_cfg.get("critical_threshold_slope", 0)
-
-        if slope > 0 and r_squared >= 0.3:
-            # Anlamlı artış trendi var
-            if slope >= critical_slope:
-                severity = "CRITICAL"
-            elif slope >= warning_slope:
-                severity = "WARNING"
-            else:
-                severity = None
-
-            if severity:
-                alert = ForecastAlert(
-                    alert_type=f"forecast_{metric_name}_rising",
-                    severity=severity,
-                    title=f"{extractor_cfg['label']} artış tahmini",
-                    description=(
-                        f"{extractor_cfg['label']} son {len(values)} analizde yükseliş trendinde. "
-                        f"Mevcut: {current_value:.2f}{extractor_cfg['unit']} → "
-                        f"Tahmini ({self.forecast_horizon_hours}h sonra): "
-                        f"{forecast_value:.2f}{extractor_cfg['unit']}. "
-                        f"Eğim: +{slope:.4f}/analiz, R²={r_squared:.2f}."
-                    ),
-                    metric_name=metric_name,
-                    current_value=round(current_value, 4),
-                    forecast_value=round(forecast_value, 4),
-                    forecast_horizon_hours=self.forecast_horizon_hours,
-                    trend_slope=round(slope, 6),
-                    confidence=round(r_squared, 4),
-                    data_points_used=len(values),
-                    server_name=server_name,
-                    explainability=(
-                        f"Linear regression analizi: {len(values)} veri noktası kullanıldı. "
-                        f"slope={slope:.4f} (her analiz başına +{slope:.4f} {extractor_cfg['unit']}), "
-                        f"R²={r_squared:.2f} (model fit kalitesi). "
-                        f"{self.forecast_horizon_hours} saat sonrası tahmini: {forecast_value:.2f}. "
-                        f"{'CRITICAL: Hızlı artış, acil müdahale gerekebilir.' if severity == 'CRITICAL' else 'WARNING: Artış trendi izlenmeli.'}"
-                    )
-                )
-
-        return {"forecast": forecast_data, "alert": alert}
+        return report
 
     def _estimate_avg_interval(self, records_asc: List[Dict]) -> float:
-        """Analizler arası ortalama süreyi saat cinsinden tahmin et"""
-        timestamps = []
+        """Analizler arası ortalama süre (saat cinsinden)."""
+        timestamps: List[datetime] = []
         for record in records_asc:
             ts = record.get('timestamp') or record.get('analysis_timestamp')
             if ts:
                 try:
                     if isinstance(ts, str):
-                        # ISO format parse
-                        ts_dt = datetime.fromisoformat(ts.replace('Z', '+00:00').replace('+00:00', ''))
+                        ts_dt = datetime.fromisoformat(
+                            ts.replace('Z', '').split('+')[0])
                     elif isinstance(ts, datetime):
                         ts_dt = ts
                     else:
@@ -421,16 +860,11 @@ class AnomalyForecaster:
                     continue
 
         if len(timestamps) < 2:
-            return 0.5  # default 30dk
-
-        # Sıralı timestamp'lar arası farkların ortalaması
-        intervals = []
-        for i in range(1, len(timestamps)):
-            diff = (timestamps[i] - timestamps[i - 1]).total_seconds() / 3600
-            if 0 < diff < 168:  # 0-7 gün arası makul aralıkları say
-                intervals.append(diff)
-
-        if not intervals:
             return 0.5
 
-        return sum(intervals) / len(intervals)
+        intervals = []
+        for i in range(1, len(timestamps)):
+            diff_h = (timestamps[i] - timestamps[i - 1]).total_seconds() / 3600
+            if 0 < diff_h < 168:
+                intervals.append(diff_h)
+        return sum(intervals) / len(intervals) if intervals else 0.5

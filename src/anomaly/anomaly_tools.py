@@ -177,10 +177,17 @@ class AnomalyDetectionTools:
 
     def _run_prediction_sync(self, analysis: Dict[str, Any],
                              df_filtered: 'pd.DataFrame',
-                             server_name: Optional[str] = None) -> Dict[str, Any]:
+                             server_name: Optional[str] = None,
+                             source_type: str = "mongodb") -> Dict[str, Any]:
         """
         Sync context'ten (analyze_mongodb_logs) prediction checks'i güvenli çağır.
         FastAPI (running loop) ve standalone (no loop) durumlarını handle eder.
+
+        Args:
+            analysis: Enhanced analysis dict
+            df_filtered: Enriched DataFrame
+            server_name: Sunucu adı
+            source_type: "mongodb", "mssql", "elasticsearch"
 
         Returns:
             Prediction sonuçları dict'i (boş olabilir)
@@ -188,7 +195,7 @@ class AnomalyDetectionTools:
         if not self.prediction_enabled:
             return {}
 
-        coro = self._run_prediction_checks(analysis, df_filtered, server_name)
+        coro = self._run_prediction_checks(analysis, df_filtered, server_name, source_type)
 
         try:
             loop = asyncio.get_running_loop()
@@ -228,7 +235,8 @@ class AnomalyDetectionTools:
 
     async def _run_prediction_checks(self, analysis: Dict[str, Any],
                                      df_filtered: 'pd.DataFrame',
-                                     server_name: Optional[str] = None) -> Dict[str, Any]:
+                                     server_name: Optional[str] = None,
+                                     source_type: str = "mongodb") -> Dict[str, Any]:
         """
         Anomali analizi sonrası prediction check'lerini çalıştır.
         Mevcut analysis sonucunu DEĞİŞTİRMEZ, prediction sonuçlarını ayrı dict olarak döner.
@@ -237,6 +245,7 @@ class AnomalyDetectionTools:
             analysis: Mevcut analiz sonucu (enhanced analysis)
             df_filtered: Enriched DataFrame
             server_name: Sunucu adı
+            source_type: "mongodb", "mssql", "elasticsearch"
 
         Returns:
             Prediction sonuçları dict'i (boş olabilir)
@@ -298,7 +307,7 @@ class AnomalyDetectionTools:
                     history_records = await self._fetch_trend_history(server_name)
 
                 forecast_report = self.forecaster.forecast(
-                    history_records, analysis, server_name
+                    history_records, analysis, server_name, source_type
                 )
                 prediction_results["forecast"] = forecast_report.to_dict()
 
