@@ -177,6 +177,64 @@ def _coefficient_of_variation(values: List[float]) -> float:
     return _std_dev(values) / abs(mean)
 
 
+def _hourly_seasonality_adjustment(records_asc: List[Dict[str, Any]],
+                                    values: List[float],
+                                    forecast_hour: Optional[int] = None) -> float:
+    """
+    Saatlik mevsimsellik düzeltme katsayısı.
+
+    Her kaydın timestamp'inden saat bilgisini çıkarır, saatlere göre ortalama değer
+    hesaplar, sonra forecast hedef saatinin genel ortalamaya oranını döndürür.
+
+    Returns:
+        Düzeltme katsayısı (1.0 = düzeltme yok). Örn: 1.3 → %30 artış beklenir.
+        Yeterli veri yoksa veya saat bilgisi yoksa 1.0 döner.
+    """
+    if len(values) < 8 or forecast_hour is None:
+        return 1.0
+
+    hourly_buckets: Dict[int, List[float]] = {}
+    for rec, val in zip(records_asc, values):
+        ts = rec.get('timestamp') or rec.get('analysis_timestamp')
+        if not ts:
+            continue
+        try:
+            if isinstance(ts, str):
+                dt = datetime.fromisoformat(ts.replace('Z', '').split('+')[0])
+            elif isinstance(ts, datetime):
+                dt = ts
+            else:
+                continue
+            hour = dt.hour
+            hourly_buckets.setdefault(hour, []).append(val)
+        except (ValueError, TypeError):
+            continue
+
+    if len(hourly_buckets) < 3:
+        return 1.0
+
+    hourly_means: Dict[int, float] = {}
+    for h, vals in hourly_buckets.items():
+        hourly_means[h] = sum(vals) / len(vals)
+
+    global_mean = sum(values) / len(values)
+    if global_mean <= 0:
+        return 1.0
+
+    target_mean = hourly_means.get(forecast_hour)
+    if target_mean is None:
+        # Forecast hedef saati için veri yoksa, en yakın saat aralığının ortalamasını al
+        nearby = [hourly_means[h] for h in hourly_means
+                  if abs(h - forecast_hour) <= 2 or abs(h - forecast_hour) >= 22]
+        if not nearby:
+            return 1.0
+        target_mean = sum(nearby) / len(nearby)
+
+    ratio = target_mean / global_mean
+    # Aşırı sapmaları sınırla: [0.5, 2.0]
+    return max(0.5, min(2.0, ratio))
+
+
 def _cusum_change_points(values: List[float], threshold: float = 3.0) -> List[int]:
     """
     CUSUM (Cumulative Sum) change-point detection.
@@ -628,14 +686,16 @@ def _forecast_tier2(values: List[float], steps_ahead: float,
 
 
 def _forecast_tier3(values: List[float], steps_ahead: float,
-                     confidence_level: float = 0.95) -> Dict[str, Any]:
+                     confidence_level: float = 0.95,
+                     ewma_fast_alpha: float = 0.3,
+                     ewma_slow_alpha: float = 0.1) -> Dict[str, Any]:
     """
     Tier 3: EWMA trend decomposition + volatility-adjusted confidence.  N ≥ 20.
     İki EWMA (fast/slow), momentum = fast − slow.
     """
     n = len(values)
-    ewma_fast = _ewma(values, alpha=0.3)
-    ewma_slow = _ewma(values, alpha=0.1)
+    ewma_fast = _ewma(values, alpha=ewma_fast_alpha)
+    ewma_slow = _ewma(values, alpha=ewma_slow_alpha)
     momentum = ewma_fast[-1] - ewma_slow[-1]
 
     half = max(10, n // 2)
@@ -680,17 +740,31 @@ def _forecast_tier3(values: List[float], steps_ahead: float,
 
 def _select_and_run_tier(values: List[float], min_points: int,
                           steps_ahead: float,
-                          confidence_level: float = 0.95) -> Dict[str, Any]:
-    """Veri miktarına göre tier seç ve çalıştır."""
+                          confidence_level: float = 0.95,
+                          seasonality_factor: float = 1.0,
+                          ewma_fast_alpha: float = 0.3,
+                          ewma_slow_alpha: float = 0.1) -> Dict[str, Any]:
+    """Veri miktarına göre tier seç ve çalıştır. Seasonality katsayısı uygulanır."""
     n = len(values)
     if n < min_points:
         return _forecast_tier0(values)
     elif n < 10:
-        return _forecast_tier1(values, steps_ahead)
+        result = _forecast_tier1(values, steps_ahead)
     elif n < 20:
-        return _forecast_tier2(values, steps_ahead, confidence_level)
+        result = _forecast_tier2(values, steps_ahead, confidence_level)
     else:
-        return _forecast_tier3(values, steps_ahead, confidence_level)
+        result = _forecast_tier3(values, steps_ahead, confidence_level,
+                                  ewma_fast_alpha, ewma_slow_alpha)
+
+    # Seasonality adjustment (Tier 1+ için)
+    if seasonality_factor != 1.0 and "forecast_value" in result:
+        fv = result["forecast_value"]
+        result["forecast_value"] = max(0.0, fv * seasonality_factor)
+        result["upper_bound"] = result.get("upper_bound", 0) * seasonality_factor
+        result["lower_bound"] = max(0.0, result.get("lower_bound", 0) * seasonality_factor)
+        result["seasonality_factor"] = round(seasonality_factor, 4)
+
+    return result
 
 
 # ═══════════════════════════════════════════════════════════
@@ -761,6 +835,16 @@ def _build_explanation(metric_cfg: Dict, tier_result: Dict,
                 f"Uyarı: {len(cps)} rejim değişikliği tespit edildi "
                 f"(analiz #{idx_str}). Pattern'in değiştiğini gösterebilir."
             )
+
+        sf = tier_result.get("seasonality_factor")
+        if sf is not None and sf != 1.0:
+            if sf > 1.05:
+                parts.append(f"Saatlik mevsimsellik: hedef saatte anomali oranı "
+                             f"ortalamanın %{(sf - 1) * 100:.0f} üstünde (x{sf:.2f}).")
+            elif sf < 0.95:
+                parts.append(f"Saatlik mevsimsellik: hedef saatte anomali oranı "
+                             f"ortalamanın %{(1 - sf) * 100:.0f} altında (x{sf:.2f}).")
+
         parts.append(f"Güven skoru: {confidence:.0%}.")
 
     return " ".join(p for p in parts if p)
@@ -861,10 +945,25 @@ class AnomalyForecaster:
         self.confidence_level = config.get('confidence_interval', 0.95)
         self.configured_metrics = config.get('metrics', list(COMMON_METRICS.keys()))
 
+        # Tier strategy: config'deki model_type → tier_strategy olarak kullanılır
+        # "auto" (default) = veri miktarına göre otomatik tier seçimi
+        # "linear_regression" = geriye uyumluluk, "auto" olarak işlenir
+        raw_strategy = config.get('tier_strategy', config.get('model_type', 'auto'))
+        self.tier_strategy = 'auto' if raw_strategy in ('auto', 'linear_regression') else raw_strategy
+
+        # Seasonality desteği (default: açık)
+        self.seasonality_enabled = config.get('seasonality_enabled', True)
+
+        # EWMA parametreleri (Tier 3 fine-tuning)
+        self.ewma_fast_alpha = config.get('ewma_fast_alpha', 0.3)
+        self.ewma_slow_alpha = config.get('ewma_slow_alpha', 0.1)
+
         logger.info(
             f"AnomalyForecaster initialized (enabled={self.enabled}, "
             f"horizon={self.forecast_horizon_hours}h, "
             f"min_points={self.min_data_points}, "
+            f"tier_strategy={self.tier_strategy}, "
+            f"seasonality={self.seasonality_enabled}, "
             f"metrics={self.configured_metrics})"
         )
 
@@ -900,6 +999,15 @@ class AnomalyForecaster:
         avg_interval = self._estimate_avg_interval(records_asc)
         steps_ahead = self.forecast_horizon_hours / avg_interval if avg_interval > 0 else 12.0
 
+        # Forecast hedef saatini hesapla (seasonality için)
+        forecast_target_hour = None
+        if self.seasonality_enabled:
+            try:
+                now = datetime.utcnow()
+                forecast_target_hour = (now.hour + self.forecast_horizon_hours) % 24
+            except Exception:
+                forecast_target_hour = None
+
         # Source-aware metric set
         src_key = source_type.lower().replace("_opensearch", "").replace("opensearch", "mongodb")
         metric_set = SOURCE_METRIC_SETS.get(src_key, COMMON_METRICS)
@@ -928,8 +1036,17 @@ class AnomalyForecaster:
                     "current_value": values[-1] if values else None}
                 continue
 
+            # Seasonality katsayısı hesapla
+            s_factor = 1.0
+            if self.seasonality_enabled and forecast_target_hour is not None and len(values) >= 8:
+                s_factor = _hourly_seasonality_adjustment(
+                    records_asc, values, forecast_target_hour)
+
             tier_result = _select_and_run_tier(
-                values, self.min_data_points, steps_ahead, self.confidence_level)
+                values, self.min_data_points, steps_ahead, self.confidence_level,
+                seasonality_factor=s_factor,
+                ewma_fast_alpha=self.ewma_fast_alpha,
+                ewma_slow_alpha=self.ewma_slow_alpha)
 
             method = tier_result.get("method", "unknown")
             if not tier_used or "tier3" in method:
@@ -959,6 +1076,8 @@ class AnomalyForecaster:
                 forecast_data["r_squared"] = round(tier_result["r_squared"], 4)
             if "momentum" in tier_result:
                 forecast_data["momentum"] = round(tier_result["momentum"], 4)
+            if "seasonality_factor" in tier_result:
+                forecast_data["seasonality_factor"] = tier_result["seasonality_factor"]
 
             forecast_data["explanation"] = _build_explanation(
                 metric_cfg, tier_result, values, self.forecast_horizon_hours, server_name)

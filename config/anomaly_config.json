@@ -394,8 +394,11 @@
         "enabled": true,
         "min_data_points": 5,
         "forecast_horizon_hours": 6,
-        "model_type": "linear_regression",
+        "tier_strategy": "auto",
         "confidence_interval": 0.95,
+        "seasonality_enabled": true,
+        "ewma_fast_alpha": 0.3,
+        "ewma_slow_alpha": 0.1,
         "metrics": ["anomaly_rate", "anomaly_count", "critical_ratio", "critical_count", "error_count", "auth_failure_count", "high_severity_count", "connection_error_count", "oom_count", "circuit_breaker_count", "shard_failure_count", "gc_overhead_count", "disk_watermark_count", "master_election_count"]
       },
       "storage": {

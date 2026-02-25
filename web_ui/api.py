@@ -32,6 +32,7 @@ import logging
 import shutil
 import tempfile
 import contextvars
+import threading
 import re           # ✅ Log parsing için (Chat entegrasyonunda lazım olacak)
 # İş parçacıkları (Threads) arasında Request ID taşımak için
 request_context: contextvars.ContextVar[str] = contextvars.ContextVar('request_context', default=None)
@@ -59,6 +60,7 @@ class EndpointFilter(logging.Filter):
         return True
 
 ANALYSIS_PROGRESS: Dict[str, Dict[str, Any]] = {}
+_progress_lock = threading.Lock()
 
 # Progress Response Model
 class ProgressResponse(BaseModel):
@@ -70,14 +72,15 @@ class ProgressResponse(BaseModel):
 
 # Helper: Update Progress (SYNC OLARAK GÜNCELLENDİ)
 def update_progress(request_id: Optional[str], step: str, message: str, percentage: int):
-    """Global progress durumunu günceller (Senkron - Log Handler için)"""
+    """Global progress durumunu günceller (thread-safe)"""
     if request_id:
-        ANALYSIS_PROGRESS[request_id] = {
-            "step": step,
-            "message": message,
-            "percentage": percentage,
-            "timestamp": datetime.now().isoformat()
-        }
+        with _progress_lock:
+            ANALYSIS_PROGRESS[request_id] = {
+                "step": step,
+                "message": message,
+                "percentage": percentage,
+                "timestamp": datetime.now().isoformat()
+            }
         # Log recursion'ı önlemek için sadece belirli stepleri logla
         if step in ['connect', 'complete', 'error']:
             # Bu loglar tekrar handler'a düşmesin diye basit print veya farklı logger kullanılabilir
@@ -211,10 +214,12 @@ MAX_CONCURRENT_ANALYSES = 3  # Logging ve monitoring için
 
 # Güvenli session yönetimi
 user_sessions: Dict[str, Dict[str, Any]] = {}
+_sessions_lock = threading.Lock()
 
 # Anomali feedback store — in-memory (MongoDB varsa oraya da kaydedilir)
 # Yapi: { "analysis_id": { anomaly_index: { "label": "true_positive"|"false_positive", "note": "...", "timestamp": "..." } } }
 anomaly_feedback_store: Dict[str, Dict[int, Dict[str, Any]]] = {}
+_feedback_lock = threading.Lock()
 
 # Request/Response modelleri
 class QueryRequest(BaseModel):
@@ -307,24 +312,26 @@ class AnomalyFeedbackRequest(BaseModel):
 
 # Session yönetimi fonksiyonları
 def create_session(api_key: str) -> str:
-    """Güvenli session oluştur"""
+    """Güvenli session oluştur (thread-safe)"""
     session_id = str(uuid4())
-    user_sessions[session_id] = {
-        'api_key': api_key,
-        'created_at': datetime.now(),
-        'expires_at': datetime.now() + timedelta(minutes=30)
-    }
+    with _sessions_lock:
+        user_sessions[session_id] = {
+            'api_key': api_key,
+            'created_at': datetime.now(),
+            'expires_at': datetime.now() + timedelta(minutes=30)
+        }
     return session_id
 
 def get_session(session_id: str) -> Optional[Dict[str, Any]]:
-    """Session bilgisini getir"""
-    if session_id in user_sessions:
-        session = user_sessions[session_id]
-        if datetime.now() < session['expires_at']:
-            return session
-        else:
-            # Süresi dolmuş session'ı sil
-            del user_sessions[session_id]
+    """Session bilgisini getir (thread-safe)"""
+    with _sessions_lock:
+        if session_id in user_sessions:
+            session = user_sessions[session_id]
+            if datetime.now() < session['expires_at']:
+                return session
+            else:
+                # Süresi dolmuş session'ı sil
+                del user_sessions[session_id]
     return None
 
 # Basit API key kontrolü
@@ -617,10 +624,11 @@ async def get_analysis_progress(request_id: str):
     Belirli bir analiz işleminin ilerleme durumunu sorgula.
     Frontend polling (periyodik sorgu) ile burayı çağırır.
     """
-    # Get the status from the global dictionary
-    if request_id in ANALYSIS_PROGRESS:
-        data = ANALYSIS_PROGRESS[request_id]
-        return data
+    # Get the status from the global dictionary (thread-safe)
+    with _progress_lock:
+        if request_id in ANALYSIS_PROGRESS:
+            data = ANALYSIS_PROGRESS[request_id]
+            return data
 
     return {
         "step": "unknown", 
@@ -1787,22 +1795,22 @@ async def cleanup_progress_cache():
             current_time = datetime.now()
             expired_ids = []
             
-            # Dictionary değişirken hata almamak için kopyası üzerinde dön
-            for req_id, data in list(ANALYSIS_PROGRESS.items()):
-                try:
-                    timestamp_str = data.get('timestamp')
-                    if timestamp_str:
-                        last_update = datetime.fromisoformat(timestamp_str)
-                        # 10 dakikadan eskiyse sil (Frontend polling'i çoktan bitmiştir)
-                        if (current_time - last_update).total_seconds() > 600:
-                            expired_ids.append(req_id)
-                except Exception:
-                    expired_ids.append(req_id)  # Hatalı veri varsa sil
-            
-            # Toplu silme
-            for req_id in expired_ids:
-                if req_id in ANALYSIS_PROGRESS:
-                    del ANALYSIS_PROGRESS[req_id]
+            # Thread-safe snapshot + toplu silme
+            with _progress_lock:
+                for req_id, data in list(ANALYSIS_PROGRESS.items()):
+                    try:
+                        timestamp_str = data.get('timestamp')
+                        if timestamp_str:
+                            last_update = datetime.fromisoformat(timestamp_str)
+                            # 10 dakikadan eskiyse sil (Frontend polling'i çoktan bitmiştir)
+                            if (current_time - last_update).total_seconds() > 600:
+                                expired_ids.append(req_id)
+                    except Exception:
+                        expired_ids.append(req_id)  # Hatalı veri varsa sil
+
+                # Toplu silme
+                for req_id in expired_ids:
+                    ANALYSIS_PROGRESS.pop(req_id, None)
             
             if expired_ids:
                 logger.debug(f"🧹 Cleaned up {len(expired_ids)} expired progress records")
@@ -1834,13 +1842,14 @@ async def _preload_feedbacks_from_mongodb():
             fb = doc.get("feedback", {})
             idx = fb.get("anomaly_index")
             if analysis_id and idx is not None:
-                if analysis_id not in anomaly_feedback_store:
-                    anomaly_feedback_store[analysis_id] = {}
-                anomaly_feedback_store[analysis_id][idx] = {
-                    "label": fb.get("label", "unknown"),
-                    "note": fb.get("note"),
-                    "timestamp": fb.get("timestamp", "")
-                }
+                with _feedback_lock:
+                    if analysis_id not in anomaly_feedback_store:
+                        anomaly_feedback_store[analysis_id] = {}
+                    anomaly_feedback_store[analysis_id][idx] = {
+                        "label": fb.get("label", "unknown"),
+                        "note": fb.get("note"),
+                        "timestamp": fb.get("timestamp", "")
+                    }
                 loaded_count += 1
 
         if loaded_count > 0:
@@ -4905,16 +4914,16 @@ async def submit_anomaly_feedback(request: AnomalyFeedbackRequest):
         if request.label not in ("true_positive", "false_positive"):
             return {"status": "error", "message": "label 'true_positive' veya 'false_positive' olmali"}
 
-        # In-memory store'a kaydet
+        # In-memory store'a kaydet (thread-safe)
         global anomaly_feedback_store
-        if request.analysis_id not in anomaly_feedback_store:
-            anomaly_feedback_store[request.analysis_id] = {}
-
-        anomaly_feedback_store[request.analysis_id][request.anomaly_index] = {
-            "label": request.label,
-            "note": request.note,
-            "timestamp": datetime.now().isoformat()
-        }
+        with _feedback_lock:
+            if request.analysis_id not in anomaly_feedback_store:
+                anomaly_feedback_store[request.analysis_id] = {}
+            anomaly_feedback_store[request.analysis_id][request.anomaly_index] = {
+                "label": request.label,
+                "note": request.note,
+                "timestamp": datetime.now().isoformat()
+            }
 
         # MongoDB'ye de kaydet (varsa)
         try:
@@ -4985,9 +4994,10 @@ async def get_anomaly_feedbacks(analysis_id: str, api_key: str = Query(...)):
                                 "note": fb.get("note"),
                                 "timestamp": fb.get("timestamp", "")
                             }
-                    # In-memory cache'e de yükle (tekrar sorgulamayı önle)
+                    # In-memory cache'e de yükle (thread-safe)
                     if feedbacks:
-                        anomaly_feedback_store[analysis_id] = feedbacks
+                        with _feedback_lock:
+                            anomaly_feedback_store[analysis_id] = feedbacks
                         logger.info(f"Loaded {len(feedbacks)} feedbacks from MongoDB for analysis {analysis_id}")
             except Exception as storage_err:
                 logger.warning(f"MongoDB feedback read failed (using in-memory only): {storage_err}")
@@ -5446,6 +5456,79 @@ async def get_prediction_config(api_key: str):
     except Exception as e:
         logger.error(f"Error reading prediction config: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─────────────────────────────────────────────────
+# Scheduler API Endpoints
+# ─────────────────────────────────────────────────
+
+# Global scheduler reference (lazy-init on first scheduler API call)
+_scheduler_tools_instance = None
+
+def _get_scheduler_tools():
+    """Scheduler için singleton AnomalyDetectionTools instance'ı döndür."""
+    global _scheduler_tools_instance
+    if _scheduler_tools_instance is None:
+        from src.anomaly.anomaly_tools import AnomalyDetectionTools
+        _scheduler_tools_instance = AnomalyDetectionTools(environment='production')
+        if storage_manager and hasattr(storage_manager, 'mongodb'):
+            _scheduler_tools_instance.set_storage_manager(storage_manager)
+    return _scheduler_tools_instance
+
+
+@app.get("/api/scheduler/status")
+async def get_scheduler_status(api_key: str = Query(...)):
+    """Scheduler durumunu döndür."""
+    validate_api_key(api_key)
+    tools = _get_scheduler_tools()
+    if tools.scheduler:
+        return {"status": "success", "scheduler": tools.scheduler.get_status()}
+    return {"status": "success", "scheduler": {"enabled": False, "running": False}}
+
+
+@app.post("/api/scheduler/start")
+async def start_scheduler(request: Dict[str, Any]):
+    """Scheduler'ı başlat. Body: {api_key, target_hosts: [...]}"""
+    api_key = request.get("api_key", "")
+    validate_api_key(api_key)
+    tools = _get_scheduler_tools()
+    if not tools.scheduler:
+        raise HTTPException(status_code=400, detail="Scheduler not initialized")
+
+    target_hosts = request.get("target_hosts", [])
+    if target_hosts:
+        tools.scheduler.set_target_hosts(target_hosts)
+
+    started = tools.scheduler.start()
+    return {
+        "status": "success" if started else "already_running_or_disabled",
+        "scheduler": tools.scheduler.get_status()
+    }
+
+
+@app.post("/api/scheduler/stop")
+async def stop_scheduler(request: Dict[str, Any]):
+    """Scheduler'ı durdur."""
+    api_key = request.get("api_key", "")
+    validate_api_key(api_key)
+    tools = _get_scheduler_tools()
+    if tools.scheduler:
+        tools.scheduler.stop()
+    return {"status": "success", "scheduler": tools.scheduler.get_status() if tools.scheduler else {}}
+
+
+@app.post("/api/scheduler/trigger")
+async def trigger_scheduler(request: Dict[str, Any]):
+    """Manuel tek çalıştırma tetikle. Body: {api_key, server_name?: str}"""
+    api_key = request.get("api_key", "")
+    validate_api_key(api_key)
+    tools = _get_scheduler_tools()
+    if not tools.scheduler:
+        raise HTTPException(status_code=400, detail="Scheduler not initialized")
+
+    server_name = request.get("server_name")
+    result = tools.scheduler.trigger_now(server_name)
+    return {"status": "success", "result": result}
 
 
 @app.post("/api/system-reset")

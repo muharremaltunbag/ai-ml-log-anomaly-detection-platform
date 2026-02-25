@@ -112,7 +112,8 @@ class TrendAnalyzer:
 
     def analyze(self, history_records: List[Dict[str, Any]],
                 current_analysis: Dict[str, Any],
-                server_name: Optional[str] = None) -> TrendReport:
+                server_name: Optional[str] = None,
+                source_type: str = "mongodb") -> TrendReport:
         """
         Geçmiş analizler ile mevcut analizi karşılaştırarak trend raporu üret.
 
@@ -120,6 +121,7 @@ class TrendAnalyzer:
             history_records: anomaly_history'den çekilen son N kayıt (timestamp DESC sıralı)
             current_analysis: Şu anki analiz sonucu (analysis dict)
             server_name: Sunucu adı
+            source_type: "mongodb", "mssql", "elasticsearch" — source-specific check'ler için
 
         Returns:
             TrendReport
@@ -160,6 +162,11 @@ class TrendAnalyzer:
         # 4. Temporal pattern shift
         temp_alerts = self._check_temporal_shift(history_records, current_analysis, server_name)
         alerts.extend(temp_alerts)
+
+        # 5. Source-specific metric trends
+        src_alerts = self._check_source_specific_trends(
+            history_records, current_analysis, server_name, source_type)
+        alerts.extend(src_alerts)
 
         # Trend direction
         direction = self._determine_trend_direction(alerts, history_records, current_analysis)
@@ -453,6 +460,117 @@ class TrendAnalyzer:
                                f"Şimdi {sorted(current_peak_set)} saatlerinde yoğunlaşıyor. "
                                f"Bu, yeni bir workload pattern'i veya farklı bir sorun kaynağı olabilir."
             ))
+
+        return alerts
+
+    # ──────────────────────────────────────────────
+    # Check: Source-Specific Metric Trends
+    # ──────────────────────────────────────────────
+
+    # Metric extractors per source — (current_key, history_key, label, threshold_pct)
+    _SOURCE_METRICS = {
+        "mongodb": [
+            ("performance_alerts.slow_queries.count", "performance_alerts.slow_queries.count",
+             "Yavaş Sorgu Sayısı", 60.0),
+            ("performance_alerts.collscans.count", "performance_alerts.collscans.count",
+             "COLLSCAN Sayısı", 50.0),
+            ("security_alerts.auth_failures.count", "security_alerts.auth_failures.count",
+             "Auth Failure Sayısı", 40.0),
+        ],
+        "mssql": [
+            ("mssql_specific.login_analysis.failed_logins", "mssql_specific.login_analysis.failed_logins",
+             "Failed Login Sayısı", 40.0),
+            ("mssql_specific.errorlog_analysis.high_severity_errors", "mssql_specific.errorlog_analysis.high_severity_errors",
+             "High Severity Error Sayısı", 50.0),
+        ],
+        "elasticsearch": [
+            ("es_specific.critical_patterns.is_oom_error.total", "es_specific.critical_patterns.is_oom_error.total",
+             "OOM Event Sayısı", 30.0),
+            ("es_specific.critical_patterns.is_circuit_breaker.total", "es_specific.critical_patterns.is_circuit_breaker.total",
+             "Circuit Breaker Sayısı", 40.0),
+            ("es_specific.critical_patterns.is_shard_failure.total", "es_specific.critical_patterns.is_shard_failure.total",
+             "Shard Failure Sayısı", 50.0),
+        ],
+    }
+
+    @staticmethod
+    def _deep_get(d: Dict, dotted_key: str, default=None):
+        """Nested dict'ten noktalı key ile değer al. Ör: 'a.b.c' → d['a']['b']['c']"""
+        keys = dotted_key.split('.')
+        val = d
+        for k in keys:
+            if isinstance(val, dict):
+                val = val.get(k)
+            else:
+                return default
+            if val is None:
+                return default
+        return val
+
+    def _check_source_specific_trends(self, history: List[Dict], current: Dict,
+                                       server_name: Optional[str],
+                                       source_type: str) -> List[TrendAlert]:
+        """Source-specific metric'lerin trend kontrolü."""
+        alerts = []
+        src_key = source_type.lower().replace("_opensearch", "").replace("opensearch", "mongodb")
+        metrics = self._SOURCE_METRICS.get(src_key, [])
+
+        for current_key, history_key, label, threshold_pct in metrics:
+            try:
+                current_val = self._deep_get(current, current_key)
+                if current_val is None or not isinstance(current_val, (int, float)):
+                    continue
+                current_val = float(current_val)
+
+                # Geçmiş değerleri topla
+                past_vals = []
+                for record in history:
+                    v = self._deep_get(record, history_key)
+                    if v is not None and isinstance(v, (int, float)):
+                        past_vals.append(float(v))
+
+                if not past_vals:
+                    continue
+
+                baseline = sum(past_vals) / len(past_vals)
+                if baseline <= 0:
+                    if current_val > 0:
+                        alerts.append(TrendAlert(
+                            alert_type=f"source_metric_new_{src_key}",
+                            severity="INFO",
+                            title=f"Yeni {label} trendi",
+                            description=f"Geçmiş {len(past_vals)} analizde {label} sıfırdı, şimdi {current_val:.0f}.",
+                            metric_name=current_key,
+                            baseline_value=0,
+                            current_value=current_val,
+                            change_pct=100.0,
+                            window_size=len(past_vals),
+                            server_name=server_name,
+                            explainability=f"{label} ilk kez sıfırdan farklı değer gösteriyor."
+                        ))
+                    continue
+
+                change_pct = ((current_val - baseline) / baseline) * 100
+                if change_pct > threshold_pct:
+                    severity = "CRITICAL" if change_pct > threshold_pct * 2 else "WARNING"
+                    alerts.append(TrendAlert(
+                        alert_type=f"source_metric_increase_{src_key}",
+                        severity=severity,
+                        title=f"{label} artıyor",
+                        description=f"{label}: baseline {baseline:.1f} → güncel {current_val:.0f} "
+                                    f"(%{change_pct:.0f} artış).",
+                        metric_name=current_key,
+                        baseline_value=round(baseline, 2),
+                        current_value=round(current_val, 2),
+                        change_pct=round(change_pct, 2),
+                        window_size=len(past_vals),
+                        server_name=server_name,
+                        explainability=f"Son {len(past_vals)} analizde {label} ortalaması {baseline:.1f} idi. "
+                                       f"Şimdi {current_val:.0f} → %{change_pct:.0f} artış."
+                    ))
+            except Exception as e:
+                logger.debug(f"Source metric check error for {current_key}: {e}")
+                continue
 
         return alerts
 

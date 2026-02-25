@@ -5,6 +5,7 @@ Manages both MongoDB metadata and file system storage
 """
 import asyncio
 import logging
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
@@ -53,9 +54,10 @@ class StorageManager:
         self.auto_save_threshold = AUTO_SAVE_CONFIG["anomaly_threshold"]
         self.auto_save_format = AUTO_SAVE_CONFIG["format"]
         
-        # Cache for recent analyses
+        # Cache for recent analyses (thread-safe)
         self._analysis_cache = {}
         self._cache_size = 0
+        self._cache_lock = threading.Lock()
         
         # Statistics
         self.stats = {
@@ -339,9 +341,11 @@ class StorageManager:
 
                     analysis_id = analysis.get("analysis_id")
                     
-                    # Check cache first
-                    if analysis_id in self._analysis_cache:
-                        analysis["detailed_data"] = self._analysis_cache[analysis_id]
+                    # Check cache first (thread-safe)
+                    with self._cache_lock:
+                        cached = self._analysis_cache.get(analysis_id)
+                    if cached is not None:
+                        analysis["detailed_data"] = cached
                         self.stats["cache_hits"] += 1
                     else:
                         # Load from file
@@ -833,49 +837,52 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Error backing up model: {e}")
     async def _add_to_cache(self, analysis_id: str, analysis_result: Dict[str, Any]):
-        """Add analysis to cache with size management"""
+        """Add analysis to cache with size management (thread-safe)"""
         try:
             # Estimate size (rough approximation)
             estimated_size = len(json.dumps(analysis_result, default=str))
-            
+
             # Check cache size limit (10 MB)
             max_cache_size = 10 * 1024 * 1024
-            
-            # If adding would exceed limit, clear oldest entries
-            if self._cache_size + estimated_size > max_cache_size:
-                # Clear half of cache
-                to_remove = len(self._analysis_cache) // 2
-                for key in list(self._analysis_cache.keys())[:to_remove]:
-                    del self._analysis_cache[key]
-                
-                # Recalculate cache size
-                self._cache_size = sum(
-                    len(json.dumps(v, default=str)) 
-                    for v in self._analysis_cache.values()
-                )
-            
-            # Add to cache
-            self._analysis_cache[analysis_id] = analysis_result
-            self._cache_size += estimated_size
-            
+
+            with self._cache_lock:
+                # If adding would exceed limit, clear oldest entries
+                if self._cache_size + estimated_size > max_cache_size:
+                    # Clear half of cache
+                    to_remove = len(self._analysis_cache) // 2
+                    for key in list(self._analysis_cache.keys())[:to_remove]:
+                        del self._analysis_cache[key]
+
+                    # Recalculate cache size
+                    self._cache_size = sum(
+                        len(json.dumps(v, default=str))
+                        for v in self._analysis_cache.values()
+                    )
+
+                # Add to cache
+                self._analysis_cache[analysis_id] = analysis_result
+                self._cache_size += estimated_size
+
         except Exception as e:
             logger.error(f"Error adding to cache: {e}")
     
     async def _flush_cache(self):
-        """Flush cache to disk if needed"""
+        """Flush cache to disk if needed (thread-safe snapshot)"""
         try:
-            if self._analysis_cache:
+            with self._cache_lock:
+                cache_snapshot = dict(self._analysis_cache)
+            if cache_snapshot:
                 cache_file = self.storage_paths["temp"] / "analysis_cache.json"
-                
+
                 async with aiofiles.open(cache_file, 'w') as f:
                     await f.write(json.dumps(
-                        self._analysis_cache,
+                        cache_snapshot,
                         indent=2,
                         default=str
                     ))
-                
+
                 logger.info(f"Cache flushed to: {cache_file}")
-                
+
         except Exception as e:
             logger.error(f"Error flushing cache: {e}")
     

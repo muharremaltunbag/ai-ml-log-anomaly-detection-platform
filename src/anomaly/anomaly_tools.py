@@ -27,6 +27,7 @@ from .anomaly_detector import MongoDBAnomalyDetector
 from .trend_analyzer import TrendAnalyzer
 from .rate_alert import RateAlertEngine
 from .forecaster import AnomalyForecaster
+from .scheduler import AnomalyScheduler
 
 # MSSQL Modülleri
 from .mssql_log_reader import MSSQLOpenSearchReader
@@ -132,6 +133,7 @@ class AnomalyDetectionTools:
         self.trend_analyzer = None
         self.rate_alert_engine = None
         self.forecaster = None
+        self.scheduler = None
         self.prediction_enabled = False
 
         try:
@@ -163,17 +165,48 @@ class AnomalyDetectionTools:
                 self.forecaster = AnomalyForecaster(forecast_cfg)
                 logger.info("AnomalyForecaster initialized")
 
+            # Scheduler (default disabled — config-driven)
+            scheduler_cfg = pred_config.get('scheduler', {})
+            self.scheduler = AnomalyScheduler(
+                scheduler_cfg,
+                analysis_callback=self._scheduler_analysis_callback
+            )
+            logger.info(f"AnomalyScheduler initialized (enabled={scheduler_cfg.get('enabled', False)})")
+
             # Storage config for retention
             self._prediction_storage_config = pred_config.get('storage', {})
 
             logger.info(f"Prediction layer initialized: "
                         f"trend={'ON' if self.trend_analyzer else 'OFF'}, "
                         f"rate={'ON' if self.rate_alert_engine else 'OFF'}, "
-                        f"forecast={'ON' if self.forecaster else 'OFF'}")
+                        f"forecast={'ON' if self.forecaster else 'OFF'}, "
+                        f"scheduler={'ON' if self.scheduler and self.scheduler.enabled else 'OFF'}")
 
         except Exception as e:
             logger.warning(f"Prediction layer init failed (non-critical): {e}")
             self.prediction_enabled = False
+
+    def _scheduler_analysis_callback(self, server_name: str) -> Dict[str, Any]:
+        """
+        Scheduler tarafından çağrılan analiz callback'i.
+
+        Mevcut analyze_mongodb_logs fonksiyonunu wrap eder.
+        JSON string döndüren fonksiyonu dict'e parse eder.
+        """
+        try:
+            result_str = self.analyze_mongodb_logs({
+                "source_type": "opensearch",
+                "server_name": server_name,
+                "time_range": "last_hour"
+            })
+            # analyze_mongodb_logs JSON string döndürür, parse et
+            if isinstance(result_str, str):
+                parsed = json.loads(result_str)
+                return parsed
+            return result_str if isinstance(result_str, dict) else {"status": "unknown"}
+        except Exception as e:
+            logger.error(f"Scheduler callback error for {server_name}: {e}")
+            return {"status": "error", "error": str(e)}
 
     def _run_prediction_sync(self, analysis: Dict[str, Any],
                              df_filtered: 'pd.DataFrame',
@@ -279,7 +312,8 @@ class AnomalyDetectionTools:
         if self.trend_analyzer and history_records is not None:
             try:
                 trend_report = self.trend_analyzer.analyze(
-                    history_records, analysis, server_name
+                    history_records, analysis, server_name,
+                    source_type=source_type
                 )
                 prediction_results["trend"] = trend_report.to_dict()
 
@@ -1041,6 +1075,19 @@ class AnomalyDetectionTools:
                     "analysis": analysis
                 }
 
+                # Prediction'ı AI'dan önce çalıştır (insight'ı prompt'a aktarmak için)
+                _pre_prediction_results = {}
+                _prediction_prompt_ctx = ""
+                if self.prediction_enabled:
+                    try:
+                        _pre_prediction_results = self._run_prediction_sync(
+                            analysis, df_filtered, server_for_model
+                        )
+                        _prediction_prompt_ctx = self._build_prediction_context_for_prompt(
+                            _pre_prediction_results)
+                    except Exception as pred_e:
+                        logger.warning(f"Pre-AI prediction failed (non-critical): {pred_e}")
+
                 # ✅ YENİ: AI explanation - OpenSearch ile aynı
                 ai_explanation = {}
                 if self.llm_connector and self.llm_connector.is_connected():
@@ -1060,7 +1107,9 @@ class AnomalyDetectionTools:
                         },
                         "feature_importance": dict(list(analysis.get("feature_importance", {}).items())[:10])
                     }
-                    ai_explanation = self._generate_ai_explanation(limited_analysis, server_name=server_for_model)
+                    ai_explanation = self._generate_ai_explanation(
+                        limited_analysis, server_name=server_for_model,
+                        prediction_context=_prediction_prompt_ctx)
 
                 # Açıklama ve öneriler
                 if ai_explanation:
@@ -1118,17 +1167,10 @@ class AnomalyDetectionTools:
                     "model_info": self._get_model_info_for_storage()
                 }
 
-                # Prediction & Early Warning Layer (upload path)
-                if self.prediction_enabled:
-                    try:
-                        prediction_results = self._run_prediction_sync(
-                            analysis, df_filtered, server_for_model
-                        )
-                        if prediction_results:
-                            result["data"]["prediction_alerts"] = prediction_results
-                            self._enrich_result_with_prediction(result, prediction_results)
-                    except Exception as pred_e:
-                        logger.warning(f"Prediction layer error on upload (non-critical): {pred_e}")
+                # Prediction sonuçlarını result'a ekle (zaten AI'dan önce hesaplandı)
+                if _pre_prediction_results:
+                    result["data"]["prediction_alerts"] = _pre_prediction_results
+                    self._enrich_result_with_prediction(result, _pre_prediction_results)
 
                 return self._format_result(result, "anomaly_analysis")
 
@@ -1363,6 +1405,19 @@ class AnomalyDetectionTools:
                         "analysis": analysis
                     }
 
+                    # Prediction'ı AI'dan önce çalıştır (insight'ı prompt'a aktarmak için)
+                    _pre_prediction_results = {}
+                    _prediction_prompt_ctx = ""
+                    if self.prediction_enabled:
+                        try:
+                            _pre_prediction_results = self._run_prediction_sync(
+                                analysis, df_filtered, server_for_model
+                            )
+                            _prediction_prompt_ctx = self._build_prediction_context_for_prompt(
+                                _pre_prediction_results)
+                        except Exception as pred_e:
+                            logger.warning(f"Pre-AI prediction failed (non-critical): {pred_e}")
+
                     ai_explanation = {}
                     # OpenAI bağlantısı varsa AI destekli açıklama üret
                     if self.llm_connector and self.llm_connector.is_connected():
@@ -1384,8 +1439,10 @@ class AnomalyDetectionTools:
                             "feature_importance": dict(list(analysis.get("feature_importance", {}).items())[:10])  # İlk 10 feature
                         }
                         logger.info(f"[DEBUG] Limiting AI analysis to first 20 anomalies (was {len(analysis['critical_anomalies'])})")
-                        
-                        ai_explanation = self._generate_ai_explanation(limited_analysis, server_name=server_for_model)
+
+                        ai_explanation = self._generate_ai_explanation(
+                            limited_analysis, server_name=server_for_model,
+                            prediction_context=_prediction_prompt_ctx)
 
                     
                     # Açıklama ve öneriler
@@ -1470,17 +1527,10 @@ class AnomalyDetectionTools:
                         "model_info": self._get_model_info_for_storage()
                     }
 
-                    # Prediction & Early Warning Layer (izole, config-driven)
-                    if self.prediction_enabled:
-                        try:
-                            prediction_results = self._run_prediction_sync(
-                                analysis, df_filtered, server_for_model
-                            )
-                            if prediction_results:
-                                result["data"]["prediction_alerts"] = prediction_results
-                                self._enrich_result_with_prediction(result, prediction_results)
-                        except Exception as pred_e:
-                            logger.warning(f"Prediction layer error (non-critical): {pred_e}")
+                    # Prediction sonuçlarını result'a ekle (zaten AI'dan önce hesaplandı)
+                    if _pre_prediction_results:
+                        result["data"]["prediction_alerts"] = _pre_prediction_results
+                        self._enrich_result_with_prediction(result, _pre_prediction_results)
 
                     return self._format_result(result, "anomaly_analysis")
 
@@ -2562,6 +2612,22 @@ class AnomalyDetectionTools:
             analysis['mssql_specific'] = mssql_specific_analysis
 
             # =====================================================
+            # 5.5 PREDICTION (AI'dan önce — insight prompt'a girmeli)
+            # =====================================================
+            _pre_prediction_results = {}
+            _prediction_prompt_ctx = ""
+            if self.prediction_enabled:
+                try:
+                    server_for_pred = host_filter or "global"
+                    _pre_prediction_results = self._run_prediction_sync(
+                        analysis, df_enriched, server_for_pred, source_type="mssql"
+                    )
+                    _prediction_prompt_ctx = self._build_prediction_context_for_prompt(
+                        _pre_prediction_results)
+                except Exception as pred_e:
+                    logger.warning(f"Pre-AI prediction failed for MSSQL (non-critical): {pred_e}")
+
+            # =====================================================
             # 6. AI EXPLANATION (Opsiyonel)
             # =====================================================
             ai_explanation = {}
@@ -2572,7 +2638,9 @@ class AnomalyDetectionTools:
                     "critical_anomalies": analysis.get("critical_anomalies", [])[:15],
                     "mssql_specific": mssql_specific_analysis
                 }
-                ai_explanation = self._generate_mssql_ai_explanation(limited_analysis, server_name=host_filter)
+                ai_explanation = self._generate_mssql_ai_explanation(
+                    limited_analysis, server_name=host_filter,
+                    prediction_context=_prediction_prompt_ctx)
 
             # =====================================================
             # 7. SONUÇ OLUŞTURMA
@@ -2691,21 +2759,13 @@ class AnomalyDetectionTools:
             }
 
             # =====================================================
-            # 8. PREDICTION & EARLY WARNING LAYER (MSSQL)
+            # 8. PREDICTION sonuçlarını result'a ekle (zaten AI'dan önce hesaplandı)
             # =====================================================
-            if self.prediction_enabled:
-                try:
-                    server_for_model = host_filter or "global"
-                    prediction_results = self._run_prediction_sync(
-                        analysis, df_enriched, server_for_model, source_type="mssql"
-                    )
-                    if prediction_results:
-                        result["data"]["prediction_alerts"] = prediction_results
-                        self._enrich_result_with_prediction(result, prediction_results)
-                        logger.info(f"MSSQL prediction layer: "
-                                    f"{len(prediction_results)} sub-modules ran")
-                except Exception as pred_e:
-                    logger.warning(f"Prediction layer error on MSSQL (non-critical): {pred_e}")
+            if _pre_prediction_results:
+                result["data"]["prediction_alerts"] = _pre_prediction_results
+                self._enrich_result_with_prediction(result, _pre_prediction_results)
+                logger.info(f"MSSQL prediction layer: "
+                            f"{len(_pre_prediction_results)} sub-modules ran")
 
             logger.info("MSSQL analysis completed successfully")
             return self._format_result(result, "mssql_anomaly_analysis")
@@ -2842,6 +2902,21 @@ class AnomalyDetectionTools:
             es_specific = self._analyze_es_specific(df_enriched, X, predictions)
             analysis['es_specific'] = es_specific
 
+            # 5.5 PREDICTION (AI'dan önce — insight prompt'a girmeli)
+            _pre_prediction_results = {}
+            _prediction_prompt_ctx = ""
+            if self.prediction_enabled:
+                try:
+                    server_for_pred = host_filter or "global"
+                    _pre_prediction_results = self._run_prediction_sync(
+                        analysis, df_enriched, server_for_pred,
+                        source_type="elasticsearch"
+                    )
+                    _prediction_prompt_ctx = self._build_prediction_context_for_prompt(
+                        _pre_prediction_results)
+                except Exception as pred_e:
+                    logger.warning(f"Pre-AI prediction failed for ES (non-critical): {pred_e}")
+
             # 6. AI EXPLANATION (optional)
             ai_explanation = None
             if self.llm_connector and self.llm_connector.is_connected() and analysis.get('critical_anomalies'):
@@ -2853,7 +2928,8 @@ class AnomalyDetectionTools:
                         "es_specific": es_specific
                     }
                     ai_explanation = self._generate_es_ai_explanation(
-                        limited_analysis, server_name=host_filter
+                        limited_analysis, server_name=host_filter,
+                        prediction_context=_prediction_prompt_ctx
                     )
                 except Exception as e:
                     logger.warning(f"AI explanation failed: {e}")
@@ -2917,22 +2993,13 @@ class AnomalyDetectionTools:
             }
 
             # =====================================================
-            # 8. PREDICTION & EARLY WARNING LAYER (Elasticsearch)
+            # 8. PREDICTION sonuçlarını result'a ekle (zaten AI'dan önce hesaplandı)
             # =====================================================
-            if self.prediction_enabled:
-                try:
-                    server_for_model = host_filter or "global"
-                    prediction_results = self._run_prediction_sync(
-                        analysis, df_enriched, server_for_model,
-                        source_type="elasticsearch"
-                    )
-                    if prediction_results:
-                        result["data"]["prediction_alerts"] = prediction_results
-                        self._enrich_result_with_prediction(result, prediction_results)
-                        logger.info(f"ES prediction layer: "
-                                    f"{len(prediction_results)} sub-modules ran")
-                except Exception as pred_e:
-                    logger.warning(f"Prediction layer error on ES (non-critical): {pred_e}")
+            if _pre_prediction_results:
+                result["data"]["prediction_alerts"] = _pre_prediction_results
+                self._enrich_result_with_prediction(result, _pre_prediction_results)
+                logger.info(f"ES prediction layer: "
+                            f"{len(_pre_prediction_results)} sub-modules ran")
 
             logger.info("Elasticsearch analysis completed successfully")
             return self._format_result(result, "es_anomaly_analysis")
@@ -3038,7 +3105,8 @@ class AnomalyDetectionTools:
             return {'health_concerns': [], 'error': str(e)}
 
     def _generate_es_ai_explanation(self, analysis: Dict[str, Any],
-                                    server_name: str = None) -> Dict[str, Any]:
+                                    server_name: str = None,
+                                    prediction_context: str = "") -> Dict[str, Any]:
         """
         Elasticsearch anomalileri için AI açıklaması üret.
         """
@@ -3123,6 +3191,8 @@ EN KRİTİK 10 ANOMALİ:
                 msg = a.get('message', '')[:200]
                 logger_name = a.get('logger_name', a.get('component', ''))
                 user_prompt += f"\n{i}. [{sev}] Score:{score} | Logger:{logger_name} | {msg}"
+
+            user_prompt += prediction_context
 
             messages = [
                 SystemMessage(content=system_prompt),
@@ -3352,13 +3422,15 @@ EN KRİTİK 10 ANOMALİ:
 
         return result
 
-    def _generate_mssql_ai_explanation(self, analysis: Dict[str, Any], server_name: str = None) -> Dict[str, Any]:
+    def _generate_mssql_ai_explanation(self, analysis: Dict[str, Any], server_name: str = None,
+                                        prediction_context: str = "") -> Dict[str, Any]:
         """
         MSSQL anomalileri için AI açıklaması üret
 
         Args:
             analysis: Analysis data
             server_name: MSSQL server name
+            prediction_context: Prediction insight metni (LLM prompt'a eklenir)
 
         Returns:
             AI explanation dict
@@ -3479,7 +3551,7 @@ GÜVENLİK ENDİŞELERİ:
 {json.dumps(mssql_specific.get('security_concerns', []), indent=2, ensure_ascii=False)}
 
 EN KRİTİK 10 ANOMALİ:
-{anomaly_text}
+{anomaly_text}{prediction_context}
 Bu verileri analiz et ve JSON formatında yanıt ver."""
 
             from langchain.schema import HumanMessage, SystemMessage
@@ -3567,7 +3639,8 @@ Bu verileri analiz et ve JSON formatında yanıt ver."""
 
         return suggestions
 
-    def _generate_ai_explanation(self, anomaly_data: Dict[str, Any], server_name: str = None) -> Dict[str, Any]:
+    def _generate_ai_explanation(self, anomaly_data: Dict[str, Any], server_name: str = None,
+                                   prediction_context: str = "") -> Dict[str, Any]:
         """LCWGPT kullanarak anomali verisi için zengin açıklama üret"""
         logger.info(f"=== AI EXPLANATION DEBUG ===")
         logger.info(f"LLM connected: {self.llm_connector.is_connected() if self.llm_connector else False}")
@@ -3660,8 +3733,9 @@ FORMATIN (MAX 600 kelime):
 1. DURUM DEĞERLENDİRMESİ (3-4 cümle): Cluster sağlığı, aciliyet seviyesi, en kritik bulgu
 2. KRİTİK BULGULAR: Her bulgu için → ne oldu, neden oldu (kök neden), etkisi, ilgili component
 3. KÖK NEDEN ANALİZİ: Pattern'lar arası ilişkileri yorumla (örn: COLLSCAN → slow query → connection pool tükenmesi zinciri)
-4. ACİL AKSİYONLAR: Max 5 madde — spesifik MongoDB komutu/ayarı öner (örn: db.collection.createIndex(), profiling level)
-5. İZLEME ÖNERİSİ: Hangi metriklerin izlenmesi gerektiği
+4. TAHMİN & TREND (varsa): Tahmin sistemi verileri varsa, trend yönünü, forecast sonuçlarını ve erken uyarıları yorumla
+5. ACİL AKSİYONLAR: Max 5 madde — spesifik MongoDB komutu/ayarı öner (örn: db.collection.createIndex(), profiling level)
+6. İZLEME ÖNERİSİ: Hangi metriklerin izlenmesi gerektiği
 
 Türkçe yaz. MongoDB best practice'lerini kullan. Genel geçer tavsiye verme, veriye dayalı spesifik önerilerde bulun. Teknik ol ama anlaşılır ol."""
             
@@ -3703,8 +3777,8 @@ Peak saat: {temporal_analysis.get('peak_hours', [0])[0] if temporal_analysis.get
 En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3]))}
 
 ÖNEMLİ FEATURE'LAR:
-{self._format_feature_importance_for_prompt(feature_importance)}"""
-            
+{self._format_feature_importance_for_prompt(feature_importance)}{prediction_context}"""
+
             # DEBUG: Log prompt size
             logger.info(f"[DEBUG AI] System prompt length: {len(system_prompt)} chars")
             logger.info(f"[DEBUG AI] User prompt length: {len(user_prompt)} chars")
@@ -3975,6 +4049,70 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
     # ─────────────────────────────────────────────────────────
     # Prediction Context → AI Explanation Enrichment
     # ─────────────────────────────────────────────────────────
+
+    def _build_prediction_context_for_prompt(self, prediction_results: Dict[str, Any]) -> str:
+        """
+        Prediction sonuçlarından LLM prompt'a eklenecek metin bloğu oluştur.
+
+        AI'ın trend/forecast/rate bilgisini görmesini sağlar.
+        Boş string döner eğer anlamlı prediction verisi yoksa.
+        """
+        if not prediction_results:
+            return ""
+
+        parts: List[str] = []
+
+        # Trend
+        trend = prediction_results.get("trend")
+        if isinstance(trend, dict) and not trend.get("error"):
+            direction = trend.get("trend_direction", "unknown")
+            alerts = trend.get("alerts", [])
+            if direction not in ("stable", "disabled", "insufficient_data", "unknown") or alerts:
+                summary_data = trend.get("summary", {})
+                baseline = summary_data.get("baseline_anomaly_rate", 0)
+                current = summary_data.get("current_anomaly_rate", 0)
+                parts.append(
+                    f"TREND: Yön={direction}, baseline anomali oranı=%{baseline:.2f}, "
+                    f"güncel=%{current:.2f}. {len(alerts)} trend uyarısı."
+                )
+                for a in alerts[:3]:
+                    parts.append(f"  - [{a.get('severity')}] {a.get('title')}: "
+                                 f"{a.get('explainability', '')[:200]}")
+
+        # Rate
+        rate = prediction_results.get("rate")
+        if isinstance(rate, dict) and not rate.get("error"):
+            rate_alerts = rate.get("alerts", [])
+            if rate_alerts:
+                types = set(a.get("alert_type", "") for a in rate_alerts)
+                parts.append(
+                    f"RATE ALERTS: {len(rate_alerts)} uyarı — {', '.join(types)}."
+                )
+                for a in rate_alerts[:3]:
+                    parts.append(f"  - [{a.get('severity')}] {a.get('title')}")
+
+        # Forecast
+        forecast = prediction_results.get("forecast")
+        if isinstance(forecast, dict) and not forecast.get("error"):
+            fc_alerts = forecast.get("alerts", [])
+            forecasts_data = forecast.get("forecasts", {})
+            rising = []
+            for mn, fc in forecasts_data.items():
+                if isinstance(fc, dict) and fc.get("direction") in ("rising", "accelerating"):
+                    fv = fc.get("forecast_value", 0)
+                    cv = fc.get("current_value", 0)
+                    rising.append(f"{fc.get('label', mn)}: şimdi={cv:.2f}→tahmin={fv:.2f}")
+            if rising:
+                parts.append(f"FORECAST: Yükseliş trendi: {'; '.join(rising[:5])}")
+            if fc_alerts:
+                for a in fc_alerts[:3]:
+                    parts.append(f"  - [{a.get('severity')}] {a.get('title')}: "
+                                 f"{a.get('explainability', '')[:200]}")
+
+        if not parts:
+            return ""
+
+        return "\n\nTAHMİN & ERKEN UYARI SİSTEMİ:\n" + "\n".join(parts)
 
     def _build_prediction_insight(self, prediction_results: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
