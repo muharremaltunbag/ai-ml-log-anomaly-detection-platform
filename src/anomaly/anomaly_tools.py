@@ -264,12 +264,20 @@ class AnomalyDetectionTools:
         }
         storage_source = _storage_source_map.get(source_type)
 
-        # 1. Trend Detection
-        if self.trend_analyzer:
+        # ── Single fetch: trend + forecast aynı history'yi kullanır ──
+        history_records = None
+        if self.trend_analyzer or self.forecaster:
             try:
                 history_records = await self._fetch_trend_history(
                     server_name, source_type=storage_source
                 )
+            except Exception as e:
+                logger.warning(f"Prediction history fetch failed (non-critical): {e}")
+                history_records = []
+
+        # 1. Trend Detection
+        if self.trend_analyzer and history_records is not None:
+            try:
                 trend_report = self.trend_analyzer.analyze(
                     history_records, analysis, server_name
                 )
@@ -288,10 +296,12 @@ class AnomalyDetectionTools:
                 logger.error(f"Trend analysis failed (non-critical): {e}")
                 prediction_results["trend"] = {"error": str(e)}
 
-        # 2. Rate-Based Alerting
+        # 2. Rate-Based Alerting (source-aware detector registry)
         if self.rate_alert_engine:
             try:
-                rate_report = self.rate_alert_engine.check(df_filtered, server_name)
+                rate_report = self.rate_alert_engine.check(
+                    df_filtered, server_name, source_type=source_type
+                )
                 prediction_results["rate"] = rate_report.to_dict()
 
                 if rate_report.has_alerts():
@@ -307,13 +317,9 @@ class AnomalyDetectionTools:
                 logger.error(f"Rate check failed (non-critical): {e}")
                 prediction_results["rate"] = {"error": str(e)}
 
-        # 3. Forecasting (Katman 3)
-        if self.forecaster:
+        # 3. Forecasting (Katman 3) — history_records reused from above
+        if self.forecaster and history_records is not None:
             try:
-                history_records = await self._fetch_trend_history(
-                    server_name, source_type=storage_source
-                )
-
                 forecast_report = self.forecaster.forecast(
                     history_records, analysis, server_name, source_type
                 )
@@ -1120,6 +1126,7 @@ class AnomalyDetectionTools:
                         )
                         if prediction_results:
                             result["data"]["prediction_alerts"] = prediction_results
+                            self._enrich_result_with_prediction(result, prediction_results)
                     except Exception as pred_e:
                         logger.warning(f"Prediction layer error on upload (non-critical): {pred_e}")
 
@@ -1471,6 +1478,7 @@ class AnomalyDetectionTools:
                             )
                             if prediction_results:
                                 result["data"]["prediction_alerts"] = prediction_results
+                                self._enrich_result_with_prediction(result, prediction_results)
                         except Exception as pred_e:
                             logger.warning(f"Prediction layer error (non-critical): {pred_e}")
 
@@ -2693,6 +2701,7 @@ class AnomalyDetectionTools:
                     )
                     if prediction_results:
                         result["data"]["prediction_alerts"] = prediction_results
+                        self._enrich_result_with_prediction(result, prediction_results)
                         logger.info(f"MSSQL prediction layer: "
                                     f"{len(prediction_results)} sub-modules ran")
                 except Exception as pred_e:
@@ -2919,6 +2928,7 @@ class AnomalyDetectionTools:
                     )
                     if prediction_results:
                         result["data"]["prediction_alerts"] = prediction_results
+                        self._enrich_result_with_prediction(result, prediction_results)
                         logger.info(f"ES prediction layer: "
                                     f"{len(prediction_results)} sub-modules ran")
                 except Exception as pred_e:
@@ -3332,6 +3342,10 @@ EN KRİTİK 10 ANOMALİ:
                     errorlog['errors_by_host'] = {str(k): int(v) for k, v in host_errors.to_dict().items()}
 
             result['errorlog_analysis'] = errorlog
+
+            # Connection error count (forecaster extractor için)
+            if 'is_connection_error' in df.columns:
+                result['connection_error_count'] = int(df['is_connection_error'].sum())
 
         except Exception as e:
             logger.error(f"MSSQL specific analysis error: {e}")
@@ -3957,6 +3971,144 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         
         return sections
 
+
+    # ─────────────────────────────────────────────────────────
+    # Prediction Context → AI Explanation Enrichment
+    # ─────────────────────────────────────────────────────────
+
+    def _build_prediction_insight(self, prediction_results: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Prediction sonuçlarından AI explanation'a eklenecek insight dict oluştur.
+
+        Prediction modüllerinin kendi explainability field'larını kullanır.
+        Eğer anlamlı alert yoksa None döner (gereksiz veri eklenmez).
+
+        Args:
+            prediction_results: {"trend": {...}, "rate": {...}, "forecast": {...}}
+
+        Returns:
+            {"trend_summary": str, "rate_summary": str, "forecast_summary": str,
+             "prediction_alerts": [...], "risk_level": str} veya None
+        """
+        if not prediction_results:
+            return None
+
+        insight: Dict[str, Any] = {
+            "trend_summary": "",
+            "rate_summary": "",
+            "forecast_summary": "",
+            "prediction_alerts": [],
+            "risk_level": "OK",
+        }
+        has_content = False
+
+        # ── Trend ──
+        trend = prediction_results.get("trend")
+        if isinstance(trend, dict) and not trend.get("error"):
+            direction = trend.get("trend_direction", "unknown")
+            alert_count = len(trend.get("alerts", []))
+            if direction not in ("stable", "disabled", "insufficient_data", "unknown") or alert_count > 0:
+                trend_summary_data = trend.get("summary", {})
+                baseline = trend_summary_data.get("baseline_anomaly_rate", 0)
+                current = trend_summary_data.get("current_anomaly_rate", 0)
+                insight["trend_summary"] = (
+                    f"Trend yönü: {direction}. "
+                    f"Baseline anomali oranı: %{baseline:.2f}, güncel: %{current:.2f}. "
+                    f"{alert_count} trend uyarısı."
+                )
+                for a in trend.get("alerts", []):
+                    insight["prediction_alerts"].append({
+                        "type": a.get("alert_type"),
+                        "severity": a.get("severity"),
+                        "title": a.get("title"),
+                        "explainability": a.get("explainability", ""),
+                    })
+                has_content = True
+
+        # ── Rate ──
+        rate = prediction_results.get("rate")
+        if isinstance(rate, dict) and not rate.get("error"):
+            rate_alerts = rate.get("alerts", [])
+            if rate_alerts:
+                alert_types = set(a.get("alert_type", "") for a in rate_alerts)
+                insight["rate_summary"] = (
+                    f"{len(rate_alerts)} rate-based uyarı: "
+                    f"{', '.join(alert_types)}."
+                )
+                for a in rate_alerts:
+                    insight["prediction_alerts"].append({
+                        "type": a.get("alert_type"),
+                        "severity": a.get("severity"),
+                        "title": a.get("title"),
+                        "explainability": a.get("explainability", ""),
+                    })
+                has_content = True
+
+        # ── Forecast ──
+        forecast = prediction_results.get("forecast")
+        if isinstance(forecast, dict) and not forecast.get("error"):
+            fc_alerts = forecast.get("alerts", [])
+            forecasts_data = forecast.get("forecasts", {})
+            rising_metrics = []
+            for metric_name, fc in forecasts_data.items():
+                if isinstance(fc, dict) and fc.get("direction") in ("rising", "accelerating"):
+                    rising_metrics.append(f"{fc.get('label', metric_name)}")
+            if rising_metrics or fc_alerts:
+                parts = []
+                if rising_metrics:
+                    parts.append(f"Yükseliş trendi: {', '.join(rising_metrics[:5])}.")
+                if fc_alerts:
+                    parts.append(f"{len(fc_alerts)} forecast uyarısı.")
+                insight["forecast_summary"] = " ".join(parts)
+                for a in fc_alerts:
+                    insight["prediction_alerts"].append({
+                        "type": a.get("alert_type"),
+                        "severity": a.get("severity"),
+                        "title": a.get("title"),
+                        "explainability": a.get("explainability", ""),
+                    })
+                has_content = True
+
+        if not has_content:
+            return None
+
+        # Risk level
+        severities = [a.get("severity", "OK") for a in insight["prediction_alerts"]]
+        if "CRITICAL" in severities:
+            insight["risk_level"] = "CRITICAL"
+        elif "WARNING" in severities:
+            insight["risk_level"] = "WARNING"
+        elif severities:
+            insight["risk_level"] = "INFO"
+
+        return insight
+
+    def _enrich_result_with_prediction(self, result: Dict[str, Any],
+                                        prediction_results: Dict[str, Any]) -> None:
+        """
+        Analiz result dict'ini prediction insight ile yerinde zenginleştir.
+
+        - result["data"]["prediction_alerts"] = raw prediction sonuçları (mevcut)
+        - result["ai_explanation"]["prediction_insight"] = insan-okunabilir özet (YENİ)
+
+        Mevcut ai_explanation dict'inin yapısını bozmaz, sadece yeni key ekler.
+        ai_explanation None/boş ise bile prediction_insight'ı result["data"]'ya koyar.
+        """
+        insight = self._build_prediction_insight(prediction_results)
+        if not insight:
+            return
+
+        # ai_explanation varsa oraya ekle
+        ai_exp = result.get("ai_explanation")
+        if isinstance(ai_exp, dict):
+            ai_exp["prediction_insight"] = insight
+        elif ai_exp is None:
+            result["ai_explanation"] = {"prediction_insight": insight}
+
+        # data'ya da koy (frontend/API direkt erişim için)
+        data = result.get("data")
+        if isinstance(data, dict):
+            data["prediction_insight"] = insight
 
     def _create_fallback_explanation(self, anomaly_data: Dict[str, Any]) -> Dict[str, Any]:
         """AI başarısız olursa kullanılacak detaylı fallback açıklama"""

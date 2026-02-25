@@ -1,10 +1,13 @@
 # src/anomaly/rate_alert.py
 
 """
-Rate-Based Alerting - MongoDB Anomaly Detection Prediction Layer (Katman 2)
+Rate-Based Alerting - Cross-Source Prediction Layer (Katman 2)
 
 Time-window bazlı event sayacı. Feature matrix ve enriched DataFrame kullanarak
 belirli event türlerinin threshold'u aşıp aşmadığını kontrol eder.
+
+Source-aware: MongoDB / MSSQL / Elasticsearch DataFrame column isimlerine uyumlu
+ayrı detector registry'leri. check(df, server_name, source_type) ile çağrılır.
 
 Mevcut pipeline'dan bağımsız çalışır. anomaly_tools.py tarafından
 analiz sonrasında opsiyonel olarak çağrılır.
@@ -156,17 +159,183 @@ def _count_oom_events(df_window: pd.DataFrame) -> tuple:
     return 0, []
 
 
+# ──────────────────────────────────────────────
+# MSSQL Event Detectors
+# MSSQL feature columns: is_failed_login, is_connection_error,
+#   is_permission_error, is_high_severity_error, is_fdhost_crash,
+#   is_availability_group_error, is_database_access_error, is_grok_failure
+# ──────────────────────────────────────────────
+
+def _count_mssql_failed_logins(df_window: pd.DataFrame) -> tuple:
+    """MSSQL başarısız login sayısı (is_failed_login column)"""
+    if 'is_failed_login' in df_window.columns:
+        mask = df_window['is_failed_login'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    # Fallback: raw_message'da ara
+    for col in ('raw_message', 'message'):
+        if col in df_window.columns:
+            mask = df_window[col].fillna('').str.lower().str.contains(
+                'login failed|logon failed')
+            count = int(mask.sum())
+            samples = _extract_samples(df_window, mask, 3)
+            return count, samples
+    return 0, []
+
+
+def _count_mssql_connection_errors(df_window: pd.DataFrame) -> tuple:
+    """MSSQL bağlantı hataları (is_connection_error column)"""
+    if 'is_connection_error' in df_window.columns:
+        mask = df_window['is_connection_error'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_mssql_permission_errors(df_window: pd.DataFrame) -> tuple:
+    """MSSQL izin hataları (is_permission_error column)"""
+    if 'is_permission_error' in df_window.columns:
+        mask = df_window['is_permission_error'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_mssql_high_severity(df_window: pd.DataFrame) -> tuple:
+    """MSSQL Severity >= 17 hatalar (is_high_severity_error column)"""
+    if 'is_high_severity_error' in df_window.columns:
+        mask = df_window['is_high_severity_error'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_mssql_ag_errors(df_window: pd.DataFrame) -> tuple:
+    """MSSQL Availability Group hataları"""
+    if 'is_availability_group_error' in df_window.columns:
+        mask = df_window['is_availability_group_error'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_mssql_fdhost_crash(df_window: pd.DataFrame) -> tuple:
+    """MSSQL FDHost crash event'leri"""
+    if 'is_fdhost_crash' in df_window.columns:
+        mask = df_window['is_fdhost_crash'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+# ──────────────────────────────────────────────
+# Elasticsearch Event Detectors
+# ES feature columns: is_oom_error, is_circuit_breaker, is_shard_failure,
+#   is_gc_overhead, is_high_disk_watermark, is_connection_error,
+#   is_master_election, is_node_event, is_shard_relocation,
+#   is_exception, is_error, is_warn
+# ──────────────────────────────────────────────
+
+def _count_es_oom(df_window: pd.DataFrame) -> tuple:
+    """ES OutOfMemory event'leri (is_oom_error column)"""
+    if 'is_oom_error' in df_window.columns:
+        mask = df_window['is_oom_error'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_es_circuit_breaker(df_window: pd.DataFrame) -> tuple:
+    """ES circuit breaker trip event'leri"""
+    if 'is_circuit_breaker' in df_window.columns:
+        mask = df_window['is_circuit_breaker'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_es_shard_failure(df_window: pd.DataFrame) -> tuple:
+    """ES shard failure event'leri"""
+    if 'is_shard_failure' in df_window.columns:
+        mask = df_window['is_shard_failure'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_es_gc_overhead(df_window: pd.DataFrame) -> tuple:
+    """ES GC overhead event'leri"""
+    if 'is_gc_overhead' in df_window.columns:
+        mask = df_window['is_gc_overhead'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_es_disk_watermark(df_window: pd.DataFrame) -> tuple:
+    """ES disk watermark uyarıları"""
+    if 'is_high_disk_watermark' in df_window.columns:
+        mask = df_window['is_high_disk_watermark'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_es_master_election(df_window: pd.DataFrame) -> tuple:
+    """ES master election event'leri"""
+    if 'is_master_election' in df_window.columns:
+        mask = df_window['is_master_election'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_es_connection_errors(df_window: pd.DataFrame) -> tuple:
+    """ES connection error event'leri"""
+    if 'is_connection_error' in df_window.columns:
+        mask = df_window['is_connection_error'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
+def _count_es_errors(df_window: pd.DataFrame) -> tuple:
+    """ES ERROR level log sayısı"""
+    if 'is_error' in df_window.columns:
+        mask = df_window['is_error'] == 1
+        count = int(mask.sum())
+        samples = _extract_samples(df_window, mask, 3)
+        return count, samples
+    return 0, []
+
+
 def _extract_samples(df: pd.DataFrame, mask: pd.Series, n: int) -> List[str]:
-    """Matching log'lardan örnek mesajlar çıkar"""
+    """Matching log'lardan örnek mesajlar çıkar (MongoDB/MSSQL/ES uyumlu)"""
     try:
         sample_rows = df[mask].head(n)
         messages = []
+        # Mesaj sütunu öncelik sırası: full_message > raw_message > message > msg
+        msg_cols = [c for c in ('full_message', 'raw_message', 'message', 'msg')
+                    if c in df.columns]
         for _, row in sample_rows.iterrows():
             msg = ''
-            if 'full_message' in df.columns and pd.notna(row.get('full_message')):
-                msg = str(row['full_message'])[:200]
-            elif 'msg' in df.columns and pd.notna(row.get('msg')):
-                msg = str(row['msg'])[:200]
+            for col in msg_cols:
+                if pd.notna(row.get(col)):
+                    msg = str(row[col])[:200]
+                    break
             if msg:
                 messages.append(msg)
         return messages
@@ -220,6 +389,123 @@ EVENT_DETECTORS = {
     },
 }
 
+# ──────────────────────────────────────────────
+# MSSQL Event Detector Registry
+# ──────────────────────────────────────────────
+MSSQL_EVENT_DETECTORS = {
+    "failed_login": {
+        "func": _count_mssql_failed_logins,
+        "threshold_key": "failed_login_threshold",
+        "alert_type": "mssql_failed_login_spike",
+        "title_template": "MSSQL failed login spike ({count} in {window})",
+        "severity_multiplier": 1.5,
+    },
+    "connection_error": {
+        "func": _count_mssql_connection_errors,
+        "threshold_key": "connection_error_threshold",
+        "alert_type": "mssql_connection_error",
+        "title_template": "MSSQL connection errors ({count} in {window})",
+        "severity_multiplier": 2.0,
+    },
+    "permission_error": {
+        "func": _count_mssql_permission_errors,
+        "threshold_key": "permission_error_threshold",
+        "alert_type": "mssql_permission_error",
+        "title_template": "MSSQL permission errors ({count} in {window})",
+        "severity_multiplier": 1.5,
+    },
+    "high_severity_error": {
+        "func": _count_mssql_high_severity,
+        "threshold_key": "high_severity_threshold",
+        "alert_type": "mssql_high_severity_error",
+        "title_template": "MSSQL high severity errors (≥17) ({count} in {window})",
+        "severity_multiplier": 1.0,
+    },
+    "ag_error": {
+        "func": _count_mssql_ag_errors,
+        "threshold_key": "ag_error_threshold",
+        "alert_type": "mssql_ag_error",
+        "title_template": "MSSQL Availability Group errors ({count} in {window})",
+        "severity_multiplier": 1.0,
+    },
+    "fdhost_crash": {
+        "func": _count_mssql_fdhost_crash,
+        "threshold_key": "fdhost_crash_threshold",
+        "alert_type": "mssql_fdhost_crash",
+        "title_template": "MSSQL FDHost crash events ({count} in {window})",
+        "severity_multiplier": 1.0,
+    },
+}
+
+# ──────────────────────────────────────────────
+# Elasticsearch Event Detector Registry
+# ──────────────────────────────────────────────
+ES_EVENT_DETECTORS = {
+    "oom": {
+        "func": _count_es_oom,
+        "threshold_key": "oom_threshold",
+        "alert_type": "es_oom_alert",
+        "title_template": "ES OutOfMemory events ({count} in {window})",
+        "severity_multiplier": 1.0,
+    },
+    "circuit_breaker": {
+        "func": _count_es_circuit_breaker,
+        "threshold_key": "circuit_breaker_threshold",
+        "alert_type": "es_circuit_breaker",
+        "title_template": "ES circuit breaker trips ({count} in {window})",
+        "severity_multiplier": 1.0,
+    },
+    "shard_failure": {
+        "func": _count_es_shard_failure,
+        "threshold_key": "shard_failure_threshold",
+        "alert_type": "es_shard_failure",
+        "title_template": "ES shard failures ({count} in {window})",
+        "severity_multiplier": 1.5,
+    },
+    "gc_overhead": {
+        "func": _count_es_gc_overhead,
+        "threshold_key": "gc_overhead_threshold",
+        "alert_type": "es_gc_overhead",
+        "title_template": "ES GC overhead events ({count} in {window})",
+        "severity_multiplier": 2.0,
+    },
+    "disk_watermark": {
+        "func": _count_es_disk_watermark,
+        "threshold_key": "disk_watermark_threshold",
+        "alert_type": "es_disk_watermark",
+        "title_template": "ES disk watermark warnings ({count} in {window})",
+        "severity_multiplier": 1.0,
+    },
+    "master_election": {
+        "func": _count_es_master_election,
+        "threshold_key": "master_election_threshold",
+        "alert_type": "es_master_election",
+        "title_template": "ES master election events ({count} in {window})",
+        "severity_multiplier": 1.0,
+    },
+    "connection_error": {
+        "func": _count_es_connection_errors,
+        "threshold_key": "connection_error_threshold",
+        "alert_type": "es_connection_error",
+        "title_template": "ES connection errors ({count} in {window})",
+        "severity_multiplier": 2.0,
+    },
+    "error_burst": {
+        "func": _count_es_errors,
+        "threshold_key": "error_burst_threshold",
+        "alert_type": "es_error_burst",
+        "title_template": "ES ERROR level burst ({count} errors in {window})",
+        "severity_multiplier": 2.0,
+    },
+}
+
+# Source → detector registry mapping
+SOURCE_DETECTOR_REGISTRY = {
+    "mongodb": EVENT_DETECTORS,
+    "mssql": MSSQL_EVENT_DETECTORS,
+    "elasticsearch": ES_EVENT_DETECTORS,
+}
+
 
 class RateAlertEngine:
     """
@@ -246,13 +532,16 @@ class RateAlertEngine:
         logger.info(f"RateAlertEngine initialized (enabled={self.enabled}, "
                      f"windows={len(self.windows)})")
 
-    def check(self, df: pd.DataFrame, server_name: Optional[str] = None) -> RateAlertReport:
+    def check(self, df: pd.DataFrame, server_name: Optional[str] = None,
+              source_type: str = "mongodb") -> RateAlertReport:
         """
         Enriched DataFrame üzerinde rate-based alert kontrolü yap.
 
         Args:
             df: Enriched DataFrame (timestamp sütunu gerekli)
             server_name: Sunucu adı
+            source_type: "mongodb", "mssql", "elasticsearch" — hangi detector
+                         registry kullanılacak
 
         Returns:
             RateAlertReport
@@ -270,6 +559,11 @@ class RateAlertEngine:
         if 'timestamp' not in df.columns:
             logger.warning("RateAlertEngine: 'timestamp' column missing, skipping rate check")
             return RateAlertReport(server_name=server_name, windows_checked=0)
+
+        # Source-aware detector registry seçimi
+        detectors = SOURCE_DETECTOR_REGISTRY.get(source_type, EVENT_DETECTORS)
+        logger.debug(f"RateAlertEngine: using {source_type} registry "
+                     f"({len(detectors)} detectors)")
 
         alerts: List[RateAlert] = []
         all_event_counts: Dict[str, Any] = {}
@@ -303,7 +597,7 @@ class RateAlertEngine:
             windows_checked += 1
             window_counts = {}
 
-            for event_name, detector_cfg in EVENT_DETECTORS.items():
+            for event_name, detector_cfg in detectors.items():
                 threshold = window_cfg.get(detector_cfg['threshold_key'], None)
                 if threshold is None:
                     continue  # Bu pencere için bu event tipi tanımlı değil
@@ -317,7 +611,7 @@ class RateAlertEngine:
                     severity = "CRITICAL" if is_critical else "WARNING"
 
                     # Cooldown kontrolü
-                    cooldown_key = f"{server_name}_{event_name}_{window_name}"
+                    cooldown_key = f"{source_type}_{server_name}_{event_name}_{window_name}"
                     if self._is_in_cooldown(cooldown_key):
                         logger.debug(f"Rate alert in cooldown: {cooldown_key}")
                         continue

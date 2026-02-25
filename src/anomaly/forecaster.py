@@ -310,6 +310,87 @@ def _extract_auth_failure_count(record: Dict[str, Any]) -> Optional[float]:
             val = mssql.get(key)
             if isinstance(val, (int, float)):
                 return float(val)
+        # mssql_specific.login_analysis.failed_logins
+        login_analysis = mssql.get('login_analysis') or {}
+        if isinstance(login_analysis, dict):
+            fl = login_analysis.get('failed_logins')
+            if isinstance(fl, (int, float)):
+                return float(fl)
+    return None
+
+
+# ──────────────────────────────────────────────
+# ES-specific Metric Extractors
+# es_specific.critical_patterns.is_* → {total, anomalous}
+# ──────────────────────────────────────────────
+
+def _es_pattern_count(record: Dict[str, Any], pattern_key: str) -> Optional[float]:
+    """Helper: es_specific.critical_patterns'dan total count çek"""
+    es = record.get('es_specific') or {}
+    patterns = es.get('critical_patterns') or {}
+    entry = patterns.get(pattern_key)
+    if isinstance(entry, dict) and entry.get('total') is not None:
+        return float(entry['total'])
+    return None
+
+
+def _extract_es_oom_count(record: Dict[str, Any]) -> Optional[float]:
+    """ES OOM event sayısı"""
+    return _es_pattern_count(record, 'is_oom_error')
+
+
+def _extract_es_circuit_breaker_count(record: Dict[str, Any]) -> Optional[float]:
+    """ES circuit breaker trip sayısı"""
+    return _es_pattern_count(record, 'is_circuit_breaker')
+
+
+def _extract_es_shard_failure_count(record: Dict[str, Any]) -> Optional[float]:
+    """ES shard failure sayısı"""
+    return _es_pattern_count(record, 'is_shard_failure')
+
+
+def _extract_es_gc_overhead_count(record: Dict[str, Any]) -> Optional[float]:
+    """ES GC overhead event sayısı"""
+    return _es_pattern_count(record, 'is_gc_overhead')
+
+
+def _extract_es_disk_watermark_count(record: Dict[str, Any]) -> Optional[float]:
+    """ES disk watermark uyarı sayısı"""
+    return _es_pattern_count(record, 'is_high_disk_watermark')
+
+
+def _extract_es_master_election_count(record: Dict[str, Any]) -> Optional[float]:
+    """ES master election event sayısı"""
+    return _es_pattern_count(record, 'is_master_election')
+
+
+def _extract_es_connection_error_count(record: Dict[str, Any]) -> Optional[float]:
+    """ES connection error sayısı"""
+    return _es_pattern_count(record, 'is_connection_error')
+
+
+# ──────────────────────────────────────────────
+# MSSQL-specific Metric Extractors (ek)
+# ──────────────────────────────────────────────
+
+def _extract_mssql_high_severity_count(record: Dict[str, Any]) -> Optional[float]:
+    """MSSQL Severity >= 17 hata sayısı"""
+    mssql = record.get('mssql_specific') or {}
+    errorlog = mssql.get('errorlog_analysis') or {}
+    if isinstance(errorlog, dict):
+        val = errorlog.get('high_severity_errors')
+        if isinstance(val, (int, float)):
+            return float(val)
+    return None
+
+
+def _extract_mssql_connection_error_count(record: Dict[str, Any]) -> Optional[float]:
+    """MSSQL connection error sayısı"""
+    mssql = record.get('mssql_specific') or {}
+    if isinstance(mssql, dict):
+        val = mssql.get('connection_error_count')
+        if isinstance(val, (int, float)):
+            return float(val)
     return None
 
 
@@ -396,9 +477,82 @@ MSSQL_METRICS: Dict[str, Dict[str, Any]] = {
         "critical_pct_above_baseline": 80.0,
         "min_absolute_for_alert": 5,
     },
+    "high_severity_count": {
+        "func": _extract_mssql_high_severity_count,
+        "label": "Yüksek Severity Hata Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 50.0,
+        "critical_pct_above_baseline": 100.0,
+        "min_absolute_for_alert": 3,
+    },
+    "connection_error_count": {
+        "func": _extract_mssql_connection_error_count,
+        "label": "Connection Error Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 60.0,
+        "critical_pct_above_baseline": 120.0,
+        "min_absolute_for_alert": 5,
+    },
 }
 
-ES_METRICS: Dict[str, Dict[str, Any]] = {}
+ES_METRICS: Dict[str, Dict[str, Any]] = {
+    "oom_count": {
+        "func": _extract_es_oom_count,
+        "label": "OOM Event Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 30.0,
+        "critical_pct_above_baseline": 80.0,
+        "min_absolute_for_alert": 1,
+    },
+    "circuit_breaker_count": {
+        "func": _extract_es_circuit_breaker_count,
+        "label": "Circuit Breaker Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 40.0,
+        "critical_pct_above_baseline": 100.0,
+        "min_absolute_for_alert": 2,
+    },
+    "shard_failure_count": {
+        "func": _extract_es_shard_failure_count,
+        "label": "Shard Failure Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 50.0,
+        "critical_pct_above_baseline": 100.0,
+        "min_absolute_for_alert": 3,
+    },
+    "gc_overhead_count": {
+        "func": _extract_es_gc_overhead_count,
+        "label": "GC Overhead Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 60.0,
+        "critical_pct_above_baseline": 120.0,
+        "min_absolute_for_alert": 5,
+    },
+    "disk_watermark_count": {
+        "func": _extract_es_disk_watermark_count,
+        "label": "Disk Watermark Uyarı Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 30.0,
+        "critical_pct_above_baseline": 80.0,
+        "min_absolute_for_alert": 2,
+    },
+    "master_election_count": {
+        "func": _extract_es_master_election_count,
+        "label": "Master Election Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 30.0,
+        "critical_pct_above_baseline": 80.0,
+        "min_absolute_for_alert": 2,
+    },
+    "connection_error_count": {
+        "func": _extract_es_connection_error_count,
+        "label": "Connection Error Sayısı",
+        "unit": " adet",
+        "warning_pct_above_baseline": 60.0,
+        "critical_pct_above_baseline": 120.0,
+        "min_absolute_for_alert": 5,
+    },
+}
 
 SOURCE_METRIC_SETS: Dict[str, Dict[str, Dict[str, Any]]] = {
     "mongodb": {**COMMON_METRICS, **MONGODB_METRICS},

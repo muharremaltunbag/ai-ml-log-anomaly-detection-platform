@@ -363,9 +363,24 @@
       "rate_alerting": {
         "enabled": true,
         "windows": [
-          {"name": "short", "minutes": 15, "auth_failure_threshold": 50, "error_burst_threshold": 100, "slow_query_threshold": 30, "collscan_threshold": 20, "drop_operation_threshold": 3, "oom_threshold": 1},
-          {"name": "medium", "minutes": 60, "auth_failure_threshold": 150, "error_burst_threshold": 300, "slow_query_threshold": 80, "collscan_threshold": 60, "drop_operation_threshold": 5, "oom_threshold": 3},
-          {"name": "long", "minutes": 360, "auth_failure_threshold": 500, "error_burst_threshold": 1000, "slow_query_threshold": 200, "collscan_threshold": 150, "drop_operation_threshold": 10, "oom_threshold": 5}
+          {
+            "name": "short", "minutes": 15,
+            "auth_failure_threshold": 50, "error_burst_threshold": 100, "slow_query_threshold": 30, "collscan_threshold": 20, "drop_operation_threshold": 3, "oom_threshold": 1,
+            "failed_login_threshold": 50, "connection_error_threshold": 30, "permission_error_threshold": 10, "high_severity_threshold": 5, "ag_error_threshold": 3, "fdhost_crash_threshold": 2,
+            "circuit_breaker_threshold": 3, "shard_failure_threshold": 5, "gc_overhead_threshold": 10, "disk_watermark_threshold": 3, "master_election_threshold": 3
+          },
+          {
+            "name": "medium", "minutes": 60,
+            "auth_failure_threshold": 150, "error_burst_threshold": 300, "slow_query_threshold": 80, "collscan_threshold": 60, "drop_operation_threshold": 5, "oom_threshold": 3,
+            "failed_login_threshold": 150, "connection_error_threshold": 80, "permission_error_threshold": 30, "high_severity_threshold": 15, "ag_error_threshold": 10, "fdhost_crash_threshold": 5,
+            "circuit_breaker_threshold": 10, "shard_failure_threshold": 15, "gc_overhead_threshold": 30, "disk_watermark_threshold": 10, "master_election_threshold": 5
+          },
+          {
+            "name": "long", "minutes": 360,
+            "auth_failure_threshold": 500, "error_burst_threshold": 1000, "slow_query_threshold": 200, "collscan_threshold": 150, "drop_operation_threshold": 10, "oom_threshold": 5,
+            "failed_login_threshold": 500, "connection_error_threshold": 200, "permission_error_threshold": 80, "high_severity_threshold": 40, "ag_error_threshold": 30, "fdhost_crash_threshold": 15,
+            "circuit_breaker_threshold": 30, "shard_failure_threshold": 50, "gc_overhead_threshold": 100, "disk_watermark_threshold": 30, "master_election_threshold": 10
+          }
         ],
         "alert_cooldown_minutes": 30
       },
@@ -381,7 +396,7 @@
         "forecast_horizon_hours": 6,
         "model_type": "linear_regression",
         "confidence_interval": 0.95,
-        "metrics": ["anomaly_rate", "anomaly_count", "critical_ratio", "critical_count", "error_count"]
+        "metrics": ["anomaly_rate", "anomaly_count", "critical_ratio", "critical_count", "error_count", "auth_failure_count", "high_severity_count", "connection_error_count", "oom_count", "circuit_breaker_count", "shard_failure_count", "gc_overhead_count", "disk_watermark_count", "master_election_count"]
       },
       "storage": {
         "collection_name": "prediction_alerts",
