@@ -1813,6 +1813,9 @@ function displayAnomalyResults(result) {
     // ── Prediction Insight Panel (Tahmin & Erken Uyari) ──
     html += renderPredictionInsightPanel(mlData);
 
+    // ── Prediction Detail Section (Collapsible — Asama 2) ──
+    html += renderPredictionDetailSection(mlData);
+
     // -----------------------------------------------------------------------
     // MEVCUT YAPIYI KORUYARAK BURADAN İTİBAREN GÜNCELLİYORUZ
     // -----------------------------------------------------------------------
@@ -3811,6 +3814,398 @@ function renderPredictionInsightPanel(mlData) {
 }
 
 window.renderPredictionInsightPanel = renderPredictionInsightPanel;
+
+// ═══════════════════════════════════════════════════════════
+// PREDICTION DETAIL SECTION — Collapsible Detay Gorunumu (Asama 2)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * mlData.prediction_alerts icindeki raw trend/rate/forecast verilerini
+ * collapsible detail section olarak render eder.
+ *
+ * Varsayilan olarak kapali gelir. prediction_alerts yoksa bos string doner.
+ *
+ * @param {Object} mlData - displayAnomalyResults icindeki mlData objesi
+ * @returns {string} HTML string
+ */
+function renderPredictionDetailSection(mlData) {
+    var pa = null;
+    if (mlData && typeof mlData === 'object') {
+        pa = mlData.prediction_alerts || null;
+    }
+    if (!pa || typeof pa !== 'object') {
+        return '';
+    }
+
+    // En az bir alt modulde veri olmali
+    var hasTrend = pa.trend && typeof pa.trend === 'object' && !pa.trend.error;
+    var hasRate = pa.rate && typeof pa.rate === 'object' && !pa.rate.error;
+    var hasForecast = pa.forecast && typeof pa.forecast === 'object' && !pa.forecast.error;
+
+    if (!hasTrend && !hasRate && !hasForecast) {
+        return '';
+    }
+
+    var esc = (typeof window.escapeHtml === 'function')
+        ? window.escapeHtml
+        : function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+
+    // Unique ID for toggle
+    var sectionId = 'pdSection_' + Date.now();
+
+    var html = '<div class="pd-wrapper">';
+
+    // Toggle button
+    html += '<button class="pd-toggle-btn" onclick="togglePredictionDetail(\'' + sectionId + '\', this)" type="button">';
+    html += '<span class="pd-toggle-arrow">\u25B6</span> '; // ▶
+    html += 'Tahmin & Forecast Detaylari';
+    var tabCount = (hasTrend ? 1 : 0) + (hasRate ? 1 : 0) + (hasForecast ? 1 : 0);
+    html += ' <span style="color:#999;font-weight:400;">(' + tabCount + ' modul)</span>';
+    html += '</button>';
+
+    // Content (hidden by default)
+    html += '<div id="' + sectionId + '" class="pd-content">';
+
+    // Build tabs
+    var tabs = [];
+    if (hasTrend) tabs.push({ id: 'trend', label: '\uD83D\uDCC8 Trend', renderer: _renderTrendTab });
+    if (hasRate) tabs.push({ id: 'rate', label: '\u26A1 Rate Alert', renderer: _renderRateTab });
+    if (hasForecast) tabs.push({ id: 'forecast', label: '\uD83D\uDD2E Forecast', renderer: _renderForecastTab });
+
+    html += '<div class="pd-tabs">';
+    for (var t = 0; t < tabs.length; t++) {
+        var activeClass = t === 0 ? ' pd-tab-active' : '';
+        html += '<button class="pd-tab' + activeClass + '" onclick="switchPredictionTab(\'' + sectionId + '\', \'' + tabs[t].id + '\', this)" type="button">';
+        html += tabs[t].label;
+        html += '</button>';
+    }
+    html += '</div>';
+
+    // Tab panels
+    for (var t2 = 0; t2 < tabs.length; t2++) {
+        var panelActive = t2 === 0 ? ' pd-tab-panel-active' : '';
+        html += '<div class="pd-tab-panel' + panelActive + '" data-pd-tab="' + tabs[t2].id + '">';
+        html += tabs[t2].renderer(pa, esc);
+        html += '</div>';
+    }
+
+    html += '</div>'; // pd-content
+    html += '</div>'; // pd-wrapper
+
+    console.log('[Prediction UI] Rendered detail section: tabs=' + tabs.map(function(tab){return tab.id;}).join(','));
+    return html;
+}
+
+// ── Trend tab renderer ──
+function _renderTrendTab(pa, esc) {
+    var trend = pa.trend;
+    if (!trend) return '<div class="pd-no-data">Trend verisi mevcut degil.</div>';
+
+    var html = '';
+
+    // Direction badge
+    var dir = trend.trend_direction || 'unknown';
+    var dirClass = 'pd-badge-unknown';
+    if (dir === 'stable') dirClass = 'pd-badge-stable';
+    else if (dir === 'improving') dirClass = 'pd-badge-improving';
+    else if (dir === 'degrading') dirClass = 'pd-badge-degrading';
+    else if (dir === 'critical') dirClass = 'pd-badge-critical';
+
+    html += '<div class="pd-section-header">';
+    html += 'Trend Yonu: <span class="pd-section-badge ' + dirClass + '">' + esc(dir) + '</span>';
+    if (trend.analysis_count) {
+        html += ' <span style="color:#999;font-size:0.85em;">(' + trend.analysis_count + ' analiz karsilastirildi)</span>';
+    }
+    html += '</div>';
+
+    // Summary table
+    var summary = trend.summary || {};
+    if (summary.current_anomaly_rate !== undefined || summary.baseline_anomaly_rate !== undefined) {
+        html += '<table class="pd-data-table">';
+        html += '<thead><tr><th>Metrik</th><th>Deger</th></tr></thead>';
+        html += '<tbody>';
+        if (summary.baseline_anomaly_rate !== undefined) {
+            html += '<tr><td>Baseline Anomali Orani</td><td>%' + Number(summary.baseline_anomaly_rate).toFixed(2) + '</td></tr>';
+        }
+        if (summary.current_anomaly_rate !== undefined) {
+            html += '<tr><td>Guncel Anomali Orani</td><td>%' + Number(summary.current_anomaly_rate).toFixed(2) + '</td></tr>';
+        }
+        if (summary.min_historical_rate !== undefined) {
+            html += '<tr><td>Min. Tarihsel Oran</td><td>%' + Number(summary.min_historical_rate).toFixed(2) + '</td></tr>';
+        }
+        if (summary.max_historical_rate !== undefined) {
+            html += '<tr><td>Max. Tarihsel Oran</td><td>%' + Number(summary.max_historical_rate).toFixed(2) + '</td></tr>';
+        }
+        if (summary.history_window) {
+            html += '<tr><td>Karsilastirma Penceresi</td><td>' + summary.history_window + ' analiz</td></tr>';
+        }
+        html += '</tbody></table>';
+    }
+
+    // Alerts detail
+    var alerts = trend.alerts || [];
+    if (alerts.length > 0) {
+        html += '<table class="pd-data-table" style="margin-top:10px;">';
+        html += '<thead><tr><th>Uyari</th><th>Severity</th><th>Degisim</th><th>Aciklama</th></tr></thead>';
+        html += '<tbody>';
+        for (var i = 0; i < alerts.length && i < 10; i++) {
+            var a = alerts[i];
+            html += '<tr>';
+            html += '<td>' + esc(a.title || a.alert_type || '') + '</td>';
+            html += '<td><span class="pi-badge pi-badge-' + (a.severity || 'info').toLowerCase() + '">' + esc(a.severity || 'INFO') + '</span></td>';
+            html += '<td>';
+            if (a.change_pct !== undefined && a.change_pct !== null) {
+                html += (a.change_pct >= 0 ? '+' : '') + Number(a.change_pct).toFixed(1) + '%';
+            }
+            html += '</td>';
+            html += '<td>' + (a.explainability ? '<div class="pd-explain">' + esc(a.explainability) + '</div>' : '<span style="color:#ccc;">\u2014</span>') + '</td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+    }
+
+    if (!alerts.length && !summary.current_anomaly_rate && summary.message) {
+        html += '<div class="pd-no-data">' + esc(summary.message) + '</div>';
+    }
+
+    return html;
+}
+
+// ── Rate tab renderer ──
+function _renderRateTab(pa, esc) {
+    var rate = pa.rate;
+    if (!rate) return '<div class="pd-no-data">Rate alert verisi mevcut degil.</div>';
+
+    var html = '';
+
+    html += '<div class="pd-section-header">';
+    html += 'Rate-Based Alerting';
+    if (rate.windows_checked) {
+        html += ' <span style="color:#999;font-size:0.85em;">(' + rate.windows_checked + ' pencere kontrol edildi)</span>';
+    }
+    html += '</div>';
+
+    // Event counts
+    var eventCounts = rate.event_counts || {};
+    var windowNames = Object.keys(eventCounts);
+    if (windowNames.length > 0) {
+        html += '<div style="margin-bottom:10px;">';
+        html += '<div style="font-size:0.8em;font-weight:600;color:#666;margin-bottom:6px;">Event Dagilimlari:</div>';
+        html += '<div class="pd-event-counts">';
+        for (var w = 0; w < windowNames.length; w++) {
+            var wName = windowNames[w];
+            var wData = eventCounts[wName] || {};
+            var eventTypes = Object.keys(wData);
+            if (eventTypes.length === 0) continue;
+            for (var e = 0; e < eventTypes.length; e++) {
+                var count = wData[eventTypes[e]];
+                if (!count || count === 0) continue;
+                html += '<div class="pd-event-card">';
+                html += '<div class="pd-event-card-label">' + esc(eventTypes[e]) + ' <span style="color:#aaa;">(' + esc(wName) + ')</span></div>';
+                html += '<div class="pd-event-card-value">' + count + '</div>';
+                html += '</div>';
+            }
+        }
+        html += '</div>';
+        html += '</div>';
+    }
+
+    // Alert detail table
+    var alerts = rate.alerts || [];
+    if (alerts.length > 0) {
+        html += '<table class="pd-data-table">';
+        html += '<thead><tr><th>Alert</th><th>Severity</th><th>Pencere</th><th>Sayi / Esik</th><th>Asim</th><th>Aciklama</th></tr></thead>';
+        html += '<tbody>';
+        for (var i = 0; i < alerts.length && i < 10; i++) {
+            var a = alerts[i];
+            html += '<tr>';
+            html += '<td>' + esc(a.title || a.alert_type || '') + '</td>';
+            html += '<td><span class="pi-badge pi-badge-' + (a.severity || 'warning').toLowerCase() + '">' + esc(a.severity || 'WARNING') + '</span></td>';
+            html += '<td>' + esc(a.window_name || '') + ' (' + (a.window_minutes || '?') + 'dk)</td>';
+            html += '<td>' + (a.event_count || 0) + ' / ' + (a.threshold || '?') + '</td>';
+            html += '<td style="font-weight:700;' + (a.exceed_ratio > 2 ? 'color:#e53935;' : '') + '">' + (a.exceed_ratio || 0) + 'x</td>';
+            html += '<td>' + (a.explainability ? '<div class="pd-explain">' + esc(a.explainability) + '</div>' : '<span style="color:#ccc;">\u2014</span>') + '</td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+    }
+
+    if (!alerts.length && windowNames.length === 0) {
+        html += '<div class="pd-no-data">Rate alert tetiklenmedi. Tum esik degerleri dahilinde.</div>';
+    }
+
+    return html;
+}
+
+// ── Forecast tab renderer ──
+function _renderForecastTab(pa, esc) {
+    var fc = pa.forecast;
+    if (!fc) return '<div class="pd-no-data">Forecast verisi mevcut degil.</div>';
+
+    var html = '';
+
+    html += '<div class="pd-section-header">';
+    html += 'Forecasting';
+    if (fc.model_tier) {
+        html += ' <span class="pd-section-badge pd-badge-stable">' + esc(fc.model_tier) + '</span>';
+    }
+    if (fc.forecast_horizon_hours) {
+        html += ' <span style="color:#999;font-size:0.85em;">(+' + fc.forecast_horizon_hours + ' saat)</span>';
+    }
+    if (fc.data_points) {
+        html += ' <span style="color:#999;font-size:0.85em;">' + fc.data_points + ' veri noktasi</span>';
+    }
+    html += '</div>';
+
+    // Forecasts per metric table
+    var forecasts = fc.forecasts || {};
+    var metricKeys = Object.keys(forecasts);
+    // "message" key'ini filtrele (disabled/insufficient data durumunda string olabiliyor)
+    metricKeys = metricKeys.filter(function(k) { return typeof forecasts[k] === 'object' && forecasts[k] !== null; });
+
+    if (metricKeys.length > 0) {
+        html += '<table class="pd-data-table">';
+        html += '<thead><tr><th>Metrik</th><th>Guncel</th><th>Tahmin</th><th>Yon</th><th>Guven</th><th>Method</th></tr></thead>';
+        html += '<tbody>';
+        for (var i = 0; i < metricKeys.length; i++) {
+            var m = forecasts[metricKeys[i]];
+            if (!m || m.status === 'insufficient_data') {
+                // insufficient_data durumu
+                html += '<tr>';
+                html += '<td>' + esc(m && m.label ? m.label : metricKeys[i]) + '</td>';
+                html += '<td colspan="5" style="color:#aaa;font-style:italic;">Yetersiz veri (' + (m && m.data_points ? m.data_points : 0) + ' nokta)</td>';
+                html += '</tr>';
+                continue;
+            }
+
+            var dirIcon = '\u2194'; // ↔
+            var dirClass = 'pd-dir-stable';
+            var direction = m.direction || 'unknown';
+            if (direction === 'rising') { dirIcon = '\u2191'; dirClass = 'pd-dir-rising'; }
+            else if (direction === 'accelerating') { dirIcon = '\u21C8'; dirClass = 'pd-dir-accelerating'; }
+            else if (direction === 'falling') { dirIcon = '\u2193'; dirClass = 'pd-dir-falling'; }
+            else if (direction === 'unknown') { dirIcon = '?'; dirClass = 'pd-dir-unknown'; }
+
+            var confVal = m.confidence || 0;
+            var confPct = Math.round(confVal * 100);
+            var confClass = 'pd-conf-fill-low';
+            if (confVal >= 0.5) confClass = 'pd-conf-fill-med';
+            if (confVal >= 0.7) confClass = 'pd-conf-fill-high';
+
+            var unit = m.unit || '';
+            var currentStr = m.current_value !== undefined && m.current_value !== null
+                ? Number(m.current_value).toFixed(2) + unit : '\u2014';
+            var forecastStr = m.forecast_value !== undefined && m.forecast_value !== null
+                ? Number(m.forecast_value).toFixed(2) + unit : '\u2014';
+            // Upper/lower bound info
+            if (m.forecast_value !== undefined && m.upper_bound !== undefined && m.lower_bound !== undefined) {
+                forecastStr += ' <span style="color:#999;font-size:0.85em;">[' +
+                    Number(m.lower_bound).toFixed(1) + ' \u2013 ' + Number(m.upper_bound).toFixed(1) + ']</span>';
+            }
+
+            html += '<tr>';
+            html += '<td><strong>' + esc(m.label || metricKeys[i]) + '</strong></td>';
+            html += '<td>' + currentStr + '</td>';
+            html += '<td>' + forecastStr + '</td>';
+            html += '<td class="' + dirClass + '" style="font-size:1.1em;text-align:center;">' + dirIcon + ' ' + esc(direction) + '</td>';
+            html += '<td>';
+            html += '<div class="pd-confidence">';
+            html += '<div class="pd-conf-bar"><div class="pd-conf-fill ' + confClass + '" style="width:' + confPct + '%;"></div></div>';
+            html += '<span style="font-size:0.85em;">' + confPct + '%</span>';
+            html += '</div>';
+            html += '</td>';
+            html += '<td style="font-size:0.8em;color:#888;">' + esc(m.method || '') + '</td>';
+            html += '</tr>';
+
+            // Explanation row
+            if (m.explanation) {
+                html += '<tr><td colspan="6"><div class="pd-explain">' + esc(m.explanation) + '</div></td></tr>';
+            }
+        }
+        html += '</tbody></table>';
+    }
+
+    // Forecast alerts
+    var alerts = fc.alerts || [];
+    if (alerts.length > 0) {
+        html += '<div style="margin-top:12px;font-size:0.82em;font-weight:600;color:#666;">Forecast Uyarilari:</div>';
+        html += '<table class="pd-data-table" style="margin-top:6px;">';
+        html += '<thead><tr><th>Uyari</th><th>Severity</th><th>Guncel \u2192 Tahmin</th><th>Guven</th><th>Aciklama</th></tr></thead>';
+        html += '<tbody>';
+        for (var j = 0; j < alerts.length && j < 10; j++) {
+            var fa = alerts[j];
+            html += '<tr>';
+            html += '<td>' + esc(fa.title || fa.alert_type || '') + '</td>';
+            html += '<td><span class="pi-badge pi-badge-' + (fa.severity || 'info').toLowerCase() + '">' + esc(fa.severity || 'INFO') + '</span></td>';
+            html += '<td>';
+            if (fa.current_value !== undefined && fa.forecast_value !== undefined) {
+                html += Number(fa.current_value).toFixed(2) + ' \u2192 ' + Number(fa.forecast_value).toFixed(2);
+            }
+            html += '</td>';
+            html += '<td>' + (fa.confidence !== undefined ? Math.round(fa.confidence * 100) + '%' : '\u2014') + '</td>';
+            html += '<td>' + (fa.explainability ? '<div class="pd-explain">' + esc(fa.explainability) + '</div>' : '<span style="color:#ccc;">\u2014</span>') + '</td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+    }
+
+    // Change points
+    var cps = fc.change_points || [];
+    if (cps.length > 0) {
+        html += '<div style="margin-top:10px;font-size:0.82em;color:#666;">';
+        html += '<strong>Rejim Degisiklikleri:</strong> ';
+        for (var c = 0; c < cps.length && c < 5; c++) {
+            html += esc(cps[c].message || cps[c].metric || '');
+            if (c < cps.length - 1 && c < 4) html += ' \u00B7 ';
+        }
+        html += '</div>';
+    }
+
+    if (metricKeys.length === 0 && alerts.length === 0) {
+        var msgText = forecasts.message || 'Forecast verisi hesaplanamadi.';
+        html += '<div class="pd-no-data">' + esc(String(msgText)) + '</div>';
+    }
+
+    return html;
+}
+
+// ── Toggle / tab switch helpers ──
+function togglePredictionDetail(sectionId, btn) {
+    var content = document.getElementById(sectionId);
+    if (!content) return;
+    var isVisible = content.classList.contains('pd-visible');
+    if (isVisible) {
+        content.classList.remove('pd-visible');
+        btn.classList.remove('pd-open');
+    } else {
+        content.classList.add('pd-visible');
+        btn.classList.add('pd-open');
+    }
+}
+
+function switchPredictionTab(sectionId, tabId, clickedBtn) {
+    var container = document.getElementById(sectionId);
+    if (!container) return;
+    // Deactivate all tabs
+    var allTabs = container.querySelectorAll('.pd-tab');
+    for (var i = 0; i < allTabs.length; i++) {
+        allTabs[i].classList.remove('pd-tab-active');
+    }
+    clickedBtn.classList.add('pd-tab-active');
+    // Show target panel, hide others
+    var allPanels = container.querySelectorAll('.pd-tab-panel');
+    for (var j = 0; j < allPanels.length; j++) {
+        if (allPanels[j].getAttribute('data-pd-tab') === tabId) {
+            allPanels[j].classList.add('pd-tab-panel-active');
+        } else {
+            allPanels[j].classList.remove('pd-tab-panel-active');
+        }
+    }
+}
+
+window.renderPredictionDetailSection = renderPredictionDetailSection;
+window.togglePredictionDetail = togglePredictionDetail;
+window.switchPredictionTab = switchPredictionTab;
 
 console.log('Anomaly module loaded successfully');
 
