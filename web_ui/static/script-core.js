@@ -68,7 +68,11 @@ window.API_ENDPOINTS = {
     // LCWGPT ASSISTANT
     analyzedServers: '/api/analyzed-servers',
     // SYSTEM RESET
-    systemReset: '/api/system-reset'
+    systemReset: '/api/system-reset',
+    // PREDICTION & EARLY WARNING
+    predictionAlerts: '/api/prediction/alerts',
+    predictionSummary: '/api/prediction/summary',
+    predictionConfig: '/api/prediction/config'
 };
 
 // ============================================

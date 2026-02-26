@@ -234,6 +234,10 @@
                     <span class="qa-icon">📊</span>
                     <span class="qa-label">ML Metrikleri</span>
                 </button>
+                <button id="predictionDashboardBtn" class="quick-action-card">
+                    <span class="qa-icon">🚨</span>
+                    <span class="qa-label">Prediction</span>
+                </button>
                 <button id="systemResetBtn" class="quick-action-card">
                     <span class="qa-icon">🔄</span>
                     <span class="qa-label">Sistem Reset</span>
@@ -635,6 +639,52 @@
 
             </section>
 
+            <!-- ===== PREDICTION DASHBOARD SECTION ===== -->
+            <section id="predictionDashboardSection" class="ppd-section">
+                <div class="ppd-header">
+                    <div class="ppd-header-left">
+                        <h3>🚨 Prediction & Erken Uyari Dashboard</h3>
+                        <span class="ppd-header-badge" id="ppdConfigBadge">--</span>
+                    </div>
+                    <div class="ppd-toolbar">
+                        <select id="ppdServerFilter" title="Sunucu filtresi">
+                            <option value="">Tum Sunucular</option>
+                        </select>
+                        <select id="ppdDaysFilter" title="Zaman araligi">
+                            <option value="1">Son 1 Gun</option>
+                            <option value="7" selected>Son 7 Gun</option>
+                            <option value="30">Son 30 Gun</option>
+                        </select>
+                        <button id="ppdRefreshBtn" type="button">Yenile</button>
+                    </div>
+                </div>
+
+                <!-- Config pills -->
+                <div class="ppd-config-grid" id="ppdConfigGrid"></div>
+
+                <!-- Summary cards -->
+                <div class="ppd-summary-grid" id="ppdSummaryGrid">
+                    <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
+                </div>
+
+                <!-- Alert history table -->
+                <div class="ppd-table-wrapper" id="ppdTableWrapper" style="display:none;">
+                    <table class="ppd-table">
+                        <thead>
+                            <tr>
+                                <th>Zaman</th>
+                                <th>Kaynak</th>
+                                <th>Sunucu</th>
+                                <th>Severity</th>
+                                <th>Uyari Sayisi</th>
+                                <th>Detay</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ppdTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
             <!-- Log Yükleme Bölümü -->
             <section class="log-upload-section">
                 <h3>📁 Manuel Log Yükleme (OpenSearch Öncesi Test)</h3>
@@ -951,6 +1001,9 @@
 
     <!-- DBA Explorer Module -->
     <script src="/static/script-dba-explorer.js"></script>
+
+    <!-- Prediction Dashboard Module -->
+    <script src="/static/script-prediction.js"></script>
 
     <script src="/static/script.js"></script>
 </body>
