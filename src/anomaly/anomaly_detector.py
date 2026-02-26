@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Any, Optional
 from collections import deque
 from sklearn.preprocessing import StandardScaler
+import copy  # ✅ Deep copy for per-model scaler snapshots
 import threading  # ✅ Thread synchronization
 
 # YENİ: Message extraction import
@@ -124,6 +125,7 @@ class MongoDBAnomalyDetector:
         
         # Incremental Learning - Ensemble of Mini Models
         self.incremental_models = deque(maxlen=10)  # Max 10 mini model
+        self.model_scalers = deque(maxlen=10)  # Her mini-modelin kendi scaler snapshot'ı
         self.model_weights = []  # Her modelin ağırlığı
         self.model_metadata = []  # Her modelin metadata'sı
         self.incremental_config = {
@@ -136,6 +138,7 @@ class MongoDBAnomalyDetector:
         }
         self.scaler = StandardScaler()  # Feature normalization için
         self.is_scaler_fitted = False
+        self._ensemble_mode = False  # True = ensemble aktif, self.model sentinel olarak None kullanılmaz
         self.rule_stats = {'total_overrides': 0, 'rule_hits': {}}
         
         
@@ -711,10 +714,10 @@ class MongoDBAnomalyDetector:
                 else:
                     X_for_predict = X_new
 
-                # FIX: self.model None ise ensemble'dan recover et
+                # Safety: self.model None ise (legacy sentinel) ensemble'dan recover et
                 if self.model is None and self.incremental_models:
                     self.model = self.incremental_models[-1]
-                    logger.warning("_update_historical_buffer: recovered model from ensemble (new mode)")
+                    logger.warning("_update_historical_buffer: recovered model from ensemble (legacy None sentinel)")
 
                 predictions = self.model.predict(X_for_predict)
                 scores = self.model.score_samples(X_for_predict)
@@ -768,10 +771,10 @@ class MongoDBAnomalyDetector:
                 else:
                     buffer_scaled = self.historical_data['features']
 
-                # FIX: self.model None ise ensemble'dan recover et
+                # Safety: self.model None ise (legacy sentinel) ensemble'dan recover et
                 if self.model is None and self.incremental_models:
                     self.model = self.incremental_models[-1]
-                    logger.warning("_update_historical_buffer: recovered model from ensemble (incremental mode)")
+                    logger.warning("_update_historical_buffer: recovered model from ensemble (legacy None sentinel, incremental mode)")
 
                 predictions = self.model.predict(buffer_scaled)
                 scores = self.model.score_samples(buffer_scaled)
@@ -944,14 +947,13 @@ class MongoDBAnomalyDetector:
                         logger.debug(f"Using first ensemble model's feature order")
                         X = X[first_model.feature_names_in_]
             
-            # Incremental ensemble varsa onu kullan
-            if self.incremental_models and self.incremental_config['enabled']:
+            # Incremental ensemble varsa onu kullan (_ensemble_mode flag veya models varlığı)
+            if (self._ensemble_mode or self.incremental_models) and self.incremental_config['enabled']:
                 predictions, anomaly_scores = self.predict_ensemble(X)
             else:
                 # Legacy single model prediction
 
-                # FIX: self.model can be None if ensemble mode was active.
-                # Recover from ensemble models if possible, otherwise raise clear error.
+                # Safety: self.model None ise (legacy sentinel) ensemble'dan recover et
                 if self.model is None:
                     if self.incremental_models:
                         self.model = self.incremental_models[-1]
@@ -1512,6 +1514,9 @@ class MongoDBAnomalyDetector:
             feature_score += 8
             factors.append("Slow Query: +8")
 
+        # Feature score cap — MSSQL/ES ile tutarlı (0-40 skalası)
+        feature_score = min(feature_score, 40)
+
         severity_score += feature_score
 
         # 4. Temporal Factor (0-10 puan)
@@ -1646,10 +1651,11 @@ class MongoDBAnomalyDetector:
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
                 
                 # Model ve metadata'yı kaydet
-                # Ensemble mode kontrolü: incremental_models doluysa ensemble aktif
-                is_ensemble_mode = bool(self.incremental_models) and self.incremental_config.get('enabled', True)
+                # Ensemble mode kontrolü: flag veya incremental_models varlığı
+                is_ensemble_mode = self._ensemble_mode or (
+                    bool(self.incremental_models) and self.incremental_config.get('enabled', True))
 
-                # FIX: self.model None ise ve ensemble varsa, kaydetmeden önce recover et
+                # Safety: self.model None ise (legacy sentinel) ensemble'dan recover et
                 if self.model is None and self.incremental_models:
                     self.model = self.incremental_models[-1]
                     logger.warning(
@@ -1681,6 +1687,7 @@ class MongoDBAnomalyDetector:
                     'incremental_models': list(self.incremental_models) if is_ensemble_mode else [],
                     'model_weights': self.model_weights.copy() if is_ensemble_mode else [],
                     'model_metadata': self.model_metadata.copy() if is_ensemble_mode else [],
+                    'model_scalers': list(self.model_scalers) if is_ensemble_mode else [],
                     'incremental_config': self.incremental_config,
                     # Ensemble rule stats (persistent across restarts)
                     'rule_stats': {
@@ -1875,7 +1882,8 @@ class MongoDBAnomalyDetector:
                         }
 
                 is_ensemble_mode = model_data.get('is_ensemble_mode', False)
-                
+                self._ensemble_mode = is_ensemble_mode
+
                 if is_ensemble_mode:
                     # Ensemble modelleri yükle (list -> deque dönüşümü)
                     loaded_models = model_data.get('incremental_models', [])
@@ -1888,11 +1896,21 @@ class MongoDBAnomalyDetector:
                         # Weights ve metadata yükle
                         self.model_weights = model_data.get('model_weights', [1.0] * len(loaded_models))
                         self.model_metadata = model_data.get('model_metadata', [])
-                        
+
+                        # Per-model scaler'ları yükle (backward compatible: eski dosyalarda yoksa boş)
+                        loaded_scalers = model_data.get('model_scalers', [])
+                        self.model_scalers.clear()
+                        for s in loaded_scalers:
+                            self.model_scalers.append(s)
+                        if loaded_scalers:
+                            logger.info(f"   Per-model scalers loaded: {len(loaded_scalers)}")
+                        else:
+                            logger.debug("   No per-model scalers in file (legacy model) — will use global scaler fallback")
+
                         # Incremental config güncelle
                         if 'incremental_config' in model_data:
                             self.incremental_config.update(model_data['incremental_config'])
-                        
+
                         logger.info(f"✅ Ensemble models loaded: {len(self.incremental_models)} models")
                         logger.debug(f"   Model weights: {self.model_weights}")
                     else:
@@ -2595,11 +2613,18 @@ class MongoDBAnomalyDetector:
             }
 
         # Model predictions (ensemble or single model)
-        if self.model is not None:
-            predictions = self.model.predict(X)
-            anomaly_scores = self.model.score_samples(X)
-        elif self.incremental_models:
+        # Ensemble path (predict_ensemble) kendi içinde per-model scaler uygular (F1).
+        # Single model path için burada global scaler uygulanmalı.
+        if (self._ensemble_mode or self.incremental_models) and self.incremental_config['enabled']:
             predictions, anomaly_scores = self.predict_ensemble(X)
+        elif self.model is not None:
+            X_eval = X
+            if self.is_scaler_fitted:
+                X_eval = pd.DataFrame(
+                    self.scaler.transform(X), columns=X.columns
+                )
+            predictions = self.model.predict(X_eval)
+            anomaly_scores = self.model.score_samples(X_eval)
         else:
             raise ValueError("No model available for evaluation")
         # Isolation Forest -1: anomaly, 1: normal -> 1: anomaly, 0: normal'e çevir
@@ -2858,28 +2883,33 @@ class MongoDBAnomalyDetector:
             if self.feature_names is None:
                 self.feature_names = list(X.columns)
             
-            # Feature normalization (consistency için)
+            # Feature normalization — per-model scaler snapshot
+            # Her mini-model kendi scaler'ıyla eğitilir ve bu scaler
+            # predict_ensemble'da aynı modele özel olarak kullanılır.
+            # Bu sayede partial_fit kaynaklı scaler drift'i önlenir.
+            batch_scaler = StandardScaler()
+            X_scaled = batch_scaler.fit_transform(X)
+
+            # Ana scaler'ı da güncel tut (single-model path ve genel amaçlı)
             if not self.is_scaler_fitted:
-                X_scaled = self.scaler.fit_transform(X)
+                self.scaler.fit(X)
                 self.is_scaler_fitted = True
             else:
-                # Incremental scaler update: adapt mean/std with new batch
                 self.scaler.partial_fit(X)
-                X_scaled = self.scaler.transform(X)
-            
+
             X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
-            
+
             # Yeni mini model oluştur
             mini_model_params = self.model_config['parameters'].copy()
             mini_model_params['n_estimators'] = min(100, mini_model_params.get('n_estimators', 100))  # Daha küçük model
-            
+
             mini_model = IsolationForest(**mini_model_params)
-            
+
             # Mini model'i eğit
             start_time = datetime.now()
             mini_model.fit(X_scaled_df)
             training_time = (datetime.now() - start_time).total_seconds()
-            
+
             # Model metadata
             metadata = {
                 'batch_id': batch_id or datetime.now().isoformat(),
@@ -2888,17 +2918,18 @@ class MongoDBAnomalyDetector:
                 'training_time': training_time,
                 'anomaly_ratio': 0  # Henüz bilinmiyor
             }
-            
+
             # Model performansını test et (kendi verisi üzerinde)
             predictions = mini_model.predict(X_scaled_df)
             anomaly_ratio = (predictions == -1).mean()
             metadata['anomaly_ratio'] = float(anomaly_ratio)
-            
+
             # Model ağırlığını hesapla (yeni model full ağırlık)
             model_weight = 1.0
-            
-            # Ensemble'a ekle
+
+            # Ensemble'a ekle (model + kendi scaler'ı birlikte)
             self.incremental_models.append(mini_model)
+            self.model_scalers.append(batch_scaler)
             self.model_metadata.append(metadata)
             self.model_weights.append(model_weight)
             
@@ -2914,11 +2945,15 @@ class MongoDBAnomalyDetector:
             # Eğer maksimum model sayısına ulaştıysak, en eski modeli çıkar
             if len(self.incremental_models) > self.incremental_config['max_models']:
                 self.incremental_models.popleft()
+                if self.model_scalers:
+                    self.model_scalers.popleft()
                 self.model_metadata.pop(0)
                 self.model_weights.pop(0)
             
-            # Ana model olarak ensemble'ı kullan - self.model'i None yaparak ensemble mode'u işaretle
-            self.model = None  # None = ensemble mode aktif
+            # Ensemble mode aktif — flag ile işaretle, model'i None yapmak yerine
+            # son mini-model'i fallback olarak tut (concurrent predict güvenliği)
+            self._ensemble_mode = True
+            self.model = mini_model  # Fallback: concurrent predict için geçerli bir model
             self.is_trained = True
             # Training stats
             training_stats = {
@@ -2979,34 +3014,44 @@ class MongoDBAnomalyDetector:
     def predict_ensemble(self, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         """
         Ensemble prediction - Weighted voting from all mini models
-        
+        Her model kendi eğitildiği scaler snapshot'ıyla predict eder.
+
         Args:
             X: Feature matrix
-            
+
         Returns:
             (predictions, anomaly_scores)
         """
         if not self.incremental_models:
             raise ValueError("No incremental models available!")
-        
-        
-        
-        # Feature normalization
-        if self.is_scaler_fitted:
-            X_scaled = self.scaler.transform(X)
-            X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
+
+        # Per-model scaler mevcutsa her model kendi scaler'ıyla predict eder
+        has_per_model_scalers = len(self.model_scalers) == len(self.incremental_models)
+
+        # Fallback: per-model scaler yoksa (eski model dosyası) genel scaler ile
+        if not has_per_model_scalers and self.is_scaler_fitted:
+            X_fallback_scaled = self.scaler.transform(X)
+            X_fallback_df = pd.DataFrame(X_fallback_scaled, columns=X.columns)
         else:
-            X_scaled_df = X
-        
+            X_fallback_df = X
+
         # Her modelden prediction al
         all_predictions = []
         all_scores = []
-        
+
         total_weight = 0.0
         for i, (model, weight) in enumerate(zip(self.incremental_models, self.model_weights)):
             try:
-                pred = model.predict(X_scaled_df)
-                scores = model.score_samples(X_scaled_df)
+                # Per-model scaler varsa onu kullan, yoksa fallback
+                if has_per_model_scalers:
+                    scaler_i = self.model_scalers[i]
+                    X_scaled_i = scaler_i.transform(X)
+                    X_input = pd.DataFrame(X_scaled_i, columns=X.columns)
+                else:
+                    X_input = X_fallback_df
+
+                pred = model.predict(X_input)
+                scores = model.score_samples(X_input)
 
                 all_predictions.append(pred * weight)  # Weighted prediction
                 all_scores.append(scores * weight)  # Weighted scores
@@ -3196,17 +3241,26 @@ class MongoDBAnomalyDetector:
         
         # Ensemble mode aktifse ensemble scoring kullan
         if self.incremental_models and self.incremental_config['enabled']:
-            # Ensemble scoring - tüm modellerin weighted average'ı
-            if self.is_scaler_fitted:
-                X_scaled = self.scaler.transform(X)
-                X_scaled_df = pd.DataFrame(X_scaled, columns=X.columns)
+            # Per-model scaler mevcutsa her model kendi scaler'ıyla score eder
+            has_per_model_scalers = len(self.model_scalers) == len(self.incremental_models)
+
+            # Fallback: per-model scaler yoksa (eski model dosyası) genel scaler ile
+            if not has_per_model_scalers and self.is_scaler_fitted:
+                X_fallback_scaled = self.scaler.transform(X)
+                X_fallback_df = pd.DataFrame(X_fallback_scaled, columns=X.columns)
             else:
-                X_scaled_df = X
-                
+                X_fallback_df = X
+
             all_scores = []
             for i, (model, weight) in enumerate(zip(self.incremental_models, self.model_weights)):
                 try:
-                    scores = model.score_samples(X_scaled_df)
+                    if has_per_model_scalers:
+                        scaler_i = self.model_scalers[i]
+                        X_scaled_i = scaler_i.transform(X)
+                        X_input = pd.DataFrame(X_scaled_i, columns=X.columns)
+                    else:
+                        X_input = X_fallback_df
+                    scores = model.score_samples(X_input)
                     all_scores.append(scores * weight)
                 except Exception as e:
                     continue

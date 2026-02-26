@@ -2573,6 +2573,9 @@ class AnomalyDetectionTools:
 
             logger.info(f"Feature engineering completed: {X.shape[0]} samples, {X.shape[1]} features")
 
+            # Apply MSSQL-specific filters (gürültü loglarını çıkar)
+            df_enriched, X = mssql_feature_engineer.apply_filters(df_enriched, X)
+
             # =====================================================
             # 3. MSSQL ANOMALY DETECTOR
             # =====================================================

@@ -9,6 +9,7 @@ Sadece critical rules, severity scoring, message extraction ve model path overri
 """
 
 import logging
+import threading
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List
@@ -28,8 +29,9 @@ class ElasticsearchAnomalyDetector(MongoDBAnomalyDetector):
     Model, training, prediction, online learning aynı kalır.
     """
 
-    # Class-level instance cache (MongoDB ve MSSQL ile ayrı)
+    # Class-level instance cache ve lock (MongoDB ve MSSQL ile ayrı)
     _es_instances = {}
+    _instance_lock = threading.Lock()  # ES'ye özel lock (parent'ı shadow'lar)
 
     @classmethod
     def get_instance(cls, server_name: str = "global",

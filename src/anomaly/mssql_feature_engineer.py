@@ -762,3 +762,46 @@ class MSSQLFeatureEngineer:
         }
 
         return summary
+
+    def apply_filters(self, df: pd.DataFrame,
+                      X: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Config'deki filtreleri uygula — gürültü loglarını çıkar.
+
+        Filters:
+        - exclude_service_account_success: Service account başarılı loginlerini atla
+
+        Args:
+            df: Enriched DataFrame
+            X: Feature matrix
+
+        Returns:
+            Tuple[filtered_df, filtered_X]
+        """
+        try:
+            filter_mask = pd.Series([True] * len(df), index=df.index)
+
+            # Service account successful login filter
+            if self.filters.get('exclude_service_account_success', False):
+                if 'is_service_account' in df.columns and 'is_successful_login' in df.columns:
+                    svc_success = (
+                        (df['is_service_account'] == 1) &
+                        (df['is_successful_login'] == 1)
+                    )
+                    filter_mask &= ~svc_success
+                    excluded = svc_success.sum()
+                    if excluded > 0:
+                        logger.info(f"Filtered {excluded} service-account successful login logs")
+
+            df_filtered = df[filter_mask].reset_index(drop=True)
+            X_filtered = X[filter_mask].reset_index(drop=True)
+
+            reduction = (1 - len(df_filtered) / len(df)) * 100 if len(df) > 0 else 0
+            logger.info(f"MSSQL filters applied. Reduction: {reduction:.1f}% "
+                        f"({len(df)} -> {len(df_filtered)})")
+
+            return df_filtered, X_filtered
+
+        except Exception as e:
+            logger.error(f"Error applying MSSQL filters: {e}")
+            return df, X

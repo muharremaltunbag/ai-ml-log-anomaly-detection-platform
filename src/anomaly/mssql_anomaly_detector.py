@@ -7,6 +7,7 @@ Yapı: MongoDBAnomalyDetector ile aynı, sadece critical rules MSSQL'e uyarlanm�
 """
 
 import logging
+import threading
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, List
@@ -26,8 +27,9 @@ class MSSQLAnomalyDetector(MongoDBAnomalyDetector):
     Model, training, prediction, online learning aynı kalır.
     """
 
-    # Class-level instance cache (MongoDB ile ayrı)
+    # Class-level instance cache ve lock (MongoDB ile ayrı)
     _mssql_instances = {}
+    _instance_lock = threading.Lock()  # MSSQL'e özel lock (parent'ı shadow'lar)
 
     @classmethod
     def get_instance(cls, server_name: str = "global", config_path: str = "config/mssql_anomaly_config.json"):
