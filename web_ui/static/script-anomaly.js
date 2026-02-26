@@ -1810,6 +1810,9 @@ function displayAnomalyResults(result) {
         html += '</div>';
     }
 
+    // ── Prediction Insight Panel (Tahmin & Erken Uyari) ──
+    html += renderPredictionInsightPanel(mlData);
+
     // -----------------------------------------------------------------------
     // MEVCUT YAPIYI KORUYARAK BURADAN İTİBAREN GÜNCELLİYORUZ
     // -----------------------------------------------------------------------
@@ -3654,5 +3657,160 @@ async function submitAnomalyFeedback(anomalyIndex, label, btnElement) {
 }
 
 window.submitAnomalyFeedback = submitAnomalyFeedback;
+
+// ═══════════════════════════════════════════════════════════
+// PREDICTION INSIGHT PANEL — Tahmin & Erken Uyari Render
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Prediction insight verisini HTML paneline donusturur.
+ *
+ * mlData.prediction_insight yapisi (backend _build_prediction_insight):
+ *   { trend_summary, rate_summary, forecast_summary,
+ *     prediction_alerts: [{type, severity, title, explainability}],
+ *     risk_level: "OK"|"INFO"|"WARNING"|"CRITICAL" }
+ *
+ * Veri yoksa bos string doner — ekrana hicbir sey eklenmez.
+ *
+ * @param {Object} mlData - displayAnomalyResults icindeki mlData objesi
+ * @returns {string} HTML string (bos olabilir)
+ */
+function renderPredictionInsightPanel(mlData) {
+    // Guvenli erisim: prediction_insight yoksa panel gosterme
+    var insight = null;
+    if (mlData && typeof mlData === 'object') {
+        insight = mlData.prediction_insight || null;
+    }
+
+    if (!insight || typeof insight !== 'object') {
+        return '';
+    }
+
+    // risk_level kontrolu
+    var riskLevel = (insight.risk_level || 'OK').toUpperCase();
+    var riskBadgeClass = 'pi-badge-ok';
+    var riskLabel = 'Stabil';
+    if (riskLevel === 'CRITICAL') {
+        riskBadgeClass = 'pi-badge-critical';
+        riskLabel = 'Kritik';
+    } else if (riskLevel === 'WARNING') {
+        riskBadgeClass = 'pi-badge-warning';
+        riskLabel = 'Uyari';
+    } else if (riskLevel === 'INFO') {
+        riskBadgeClass = 'pi-badge-info';
+        riskLabel = 'Bilgi';
+    }
+
+    // Summary satirlarini topla (sadece dolu olanlari goster)
+    var summaryRows = [];
+
+    var trendSummary = (insight.trend_summary || '').trim();
+    if (trendSummary) {
+        summaryRows.push({
+            icon: '\uD83D\uDCC8', // 📈
+            label: 'Trend',
+            text: trendSummary
+        });
+    }
+
+    var rateSummary = (insight.rate_summary || '').trim();
+    if (rateSummary) {
+        summaryRows.push({
+            icon: '\u26A1',  // ⚡
+            label: 'Rate Alert',
+            text: rateSummary
+        });
+    }
+
+    var forecastSummary = (insight.forecast_summary || '').trim();
+    if (forecastSummary) {
+        summaryRows.push({
+            icon: '\uD83D\uDD2E', // 🔮
+            label: 'Forecast',
+            text: forecastSummary
+        });
+    }
+
+    // Hic icerik yoksa (tum summary'ler bos ve alert yok) panel gosterme
+    var alerts = Array.isArray(insight.prediction_alerts) ? insight.prediction_alerts : [];
+    if (summaryRows.length === 0 && alerts.length === 0) {
+        return '';
+    }
+
+    // escapeHtml helper — window.escapeHtml varsa kullan, yoksa fallback
+    var esc = (typeof window.escapeHtml === 'function')
+        ? window.escapeHtml
+        : function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+
+    // HTML olustur
+    var html = '<div class="pi-panel">';
+
+    // Header
+    html += '<div class="pi-header">';
+    html += '<div class="pi-header-left">';
+    html += '<span class="pi-header-icon">\uD83D\uDEA8</span>'; // 🚨
+    html += '<h4 class="pi-header-title">Tahmin & Erken Uyari Sistemi</h4>';
+    html += '</div>';
+    html += '<span class="pi-badge ' + riskBadgeClass + '">' + esc(riskLabel) + '</span>';
+    html += '</div>';
+
+    // Body
+    html += '<div class="pi-body">';
+
+    // Summary satirlari
+    for (var i = 0; i < summaryRows.length; i++) {
+        var row = summaryRows[i];
+        html += '<div class="pi-summary-row">';
+        html += '<span class="pi-summary-icon">' + row.icon + '</span>';
+        html += '<span class="pi-summary-label">' + esc(row.label) + '</span>';
+        html += '<span class="pi-summary-text">' + esc(row.text) + '</span>';
+        html += '</div>';
+    }
+
+    // Alert listesi (max 5 adet)
+    if (alerts.length > 0) {
+        var visibleAlerts = alerts.slice(0, 5);
+        html += '<div class="pi-alert-list">';
+        html += '<div class="pi-alert-list-title">Aktif Uyarilar (' + alerts.length + ')</div>';
+
+        for (var j = 0; j < visibleAlerts.length; j++) {
+            var alert = visibleAlerts[j];
+            var severity = (alert.severity || 'INFO').toUpperCase();
+            var sevClass = 'pi-sev-info';
+            if (severity === 'CRITICAL') sevClass = 'pi-sev-critical';
+            else if (severity === 'WARNING') sevClass = 'pi-sev-warning';
+
+            var alertTitle = alert.title || alert.type || 'Uyari';
+            var alertExplain = (alert.explainability || '').trim();
+
+            html += '<div class="pi-alert-item">';
+            html += '<span class="pi-sev ' + sevClass + '"></span>';
+            html += '<span class="pi-alert-title">' + esc(alertTitle) + '</span>';
+            if (alertExplain) {
+                html += '<span class="pi-alert-explain">' + esc(alertExplain) + '</span>';
+            }
+            html += '</div>';
+        }
+
+        if (alerts.length > 5) {
+            html += '<div class="pi-alert-item" style="justify-content: center; color: #999; font-style: italic;">';
+            html += '... ve ' + (alerts.length - 5) + ' uyari daha';
+            html += '</div>';
+        }
+
+        html += '</div>';
+    }
+
+    html += '</div>'; // pi-body
+    html += '</div>'; // pi-panel
+
+    console.log('[Prediction UI] Rendered insight panel: risk=' + riskLevel +
+                ', summaries=' + summaryRows.length + ', alerts=' + alerts.length);
+
+    return html;
+}
+
+window.renderPredictionInsightPanel = renderPredictionInsightPanel;
+
 console.log('Anomaly module loaded successfully');
 
