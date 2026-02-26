@@ -683,6 +683,27 @@
                         <tbody id="ppdTableBody"></tbody>
                     </table>
                 </div>
+
+                <!-- Scheduler Management Panel -->
+                <div class="ppd-sched-panel" id="ppdSchedPanel">
+                    <div class="ppd-sched-header">
+                        <h4>Scheduler Yonetimi</h4>
+                        <div class="ppd-sched-controls">
+                            <button type="button" id="ppdSchedStartBtn" class="ppd-sched-btn ppd-sched-btn-start" disabled>Baslat</button>
+                            <button type="button" id="ppdSchedStopBtn" class="ppd-sched-btn ppd-sched-btn-stop" disabled>Durdur</button>
+                            <button type="button" id="ppdSchedTriggerBtn" class="ppd-sched-btn ppd-sched-btn-trigger" disabled>Manuel Calistir</button>
+                        </div>
+                    </div>
+                    <div class="ppd-sched-body">
+                        <div class="ppd-sched-grid" id="ppdSchedGrid">
+                            <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
+                        </div>
+                        <div class="ppd-sched-hosts" id="ppdSchedHosts" style="display:none;">
+                            <div class="ppd-sched-hosts-title">Hedef Sunucular</div>
+                            <div class="ppd-sched-host-list" id="ppdSchedHostList"></div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- Log Yükleme Bölümü -->

@@ -6,6 +6,10 @@
  *   - /api/prediction/alerts   → alert history table
  *   - /api/prediction/summary  → summary cards
  *   - /api/prediction/config   → config pills & badge
+ *   - /api/scheduler/status    → scheduler status panel
+ *   - /api/scheduler/start     → start scheduler (POST, confirmation)
+ *   - /api/scheduler/stop      → stop scheduler (POST, confirmation)
+ *   - /api/scheduler/trigger   → manual trigger (POST, confirmation)
  *
  * CSS prefix: .ppd-*  (prediction-panel-dashboard)
  * HTML section: #predictionDashboardSection
@@ -82,6 +86,7 @@
         loadConfig();
         loadSummary(serverVal, daysVal);
         loadAlerts(serverVal, daysVal);
+        loadSchedulerStatus();
     }
 
     // ============================
@@ -324,6 +329,227 @@
     }
 
     // ============================
+    // SCHEDULER STATUS
+    // ============================
+    var _schedBusy = false;  // prevent double-click on scheduler actions
+
+    function loadSchedulerStatus() {
+        var url = _apiUrl('schedulerStatus');
+        if (!url) return;
+
+        fetch(url)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.status !== 'success') return;
+                renderSchedulerStatus(data.scheduler || {});
+            })
+            .catch(function (err) {
+                console.warn('[PredictionDashboard] Scheduler status error:', err);
+                var grid = _el('ppdSchedGrid');
+                if (grid) grid.innerHTML = '<div class="ppd-error">Scheduler durumu alinamadi</div>';
+            });
+    }
+
+    function renderSchedulerStatus(sched) {
+        var grid = _el('ppdSchedGrid');
+        if (!grid) return;
+
+        var enabled = !!sched.enabled;
+        var running = !!sched.running;
+        var interval = sched.interval_minutes || '-';
+        var runCount = sched.run_count || 0;
+        var lastRun = sched.last_run || null;
+
+        // Format last run time
+        var lastRunStr = '-';
+        if (lastRun) {
+            lastRunStr = String(lastRun);
+            if (lastRunStr.length > 19) lastRunStr = lastRunStr.substring(0, 19).replace('T', ' ');
+        }
+
+        // Status label
+        var statusLabel, statusClass;
+        if (!enabled) { statusLabel = 'DEVRE DISI'; statusClass = 'ppd-sched-status-disabled'; }
+        else if (running) { statusLabel = 'CALISIYOR'; statusClass = 'ppd-sched-status-running'; }
+        else { statusLabel = 'DURDU'; statusClass = 'ppd-sched-status-stopped'; }
+
+        var stats = [
+            { label: 'Durum', value: statusLabel, cls: statusClass },
+            { label: 'Aralik', value: interval + ' dk', cls: '' },
+            { label: 'Calisma Sayisi', value: String(runCount), cls: '' },
+            { label: 'Son Calisma', value: lastRunStr, cls: '' }
+        ];
+
+        var html = '';
+        for (var i = 0; i < stats.length; i++) {
+            var s = stats[i];
+            html += '<div class="ppd-sched-stat">'
+                + '<div class="ppd-sched-stat-label">' + esc(s.label) + '</div>'
+                + '<div class="ppd-sched-stat-value ' + s.cls + '">' + esc(s.value) + '</div>'
+                + '</div>';
+        }
+        grid.innerHTML = html;
+
+        // Update button states
+        var startBtn = _el('ppdSchedStartBtn');
+        var stopBtn = _el('ppdSchedStopBtn');
+        var triggerBtn = _el('ppdSchedTriggerBtn');
+        if (startBtn) startBtn.disabled = !enabled || running || _schedBusy;
+        if (stopBtn) stopBtn.disabled = !running || _schedBusy;
+        if (triggerBtn) triggerBtn.disabled = !enabled || _schedBusy;
+
+        // Render target hosts + last results into a single container
+        var hosts = sched.target_hosts || [];
+        var hostsDiv = _el('ppdSchedHosts');
+        var hostList = _el('ppdSchedHostList');
+        var lastResults = sched.last_results_summary || {};
+        var resultKeys = Object.keys(lastResults);
+        var hasContent = hosts.length > 0 || resultKeys.length > 0;
+
+        if (hostsDiv && hostList) {
+            if (hasContent) {
+                hostsDiv.style.display = 'block';
+                var hhtml = '';
+                // Target hosts
+                for (var j = 0; j < hosts.length; j++) {
+                    hhtml += '<span class="ppd-sched-host-tag">' + esc(hosts[j]) + '</span>';
+                }
+                // Last results (appended as extra tags)
+                if (resultKeys.length > 0) {
+                    hhtml += '</div><div class="ppd-sched-hosts-title" style="margin-top:8px;">Son Sonuclar</div>';
+                    hhtml += '<div class="ppd-sched-host-list">';
+                    for (var k = 0; k < resultKeys.length; k++) {
+                        var h = resultKeys[k];
+                        var r = lastResults[h];
+                        var anomCount = r.anomaly_count || 0;
+                        var rStatus = r.status || 'unknown';
+                        hhtml += '<span class="ppd-sched-host-tag">'
+                            + esc(h) + ': ' + esc(rStatus) + ' (' + anomCount + ' anomaly)</span>';
+                    }
+                }
+                hostList.innerHTML = hhtml;
+            } else {
+                hostsDiv.style.display = 'none';
+                hostList.innerHTML = '';
+            }
+        }
+    }
+
+    // ============================
+    // SCHEDULER ACTIONS (with confirmation)
+    // ============================
+    function _showConfirm(title, message, onYes) {
+        // Remove any existing confirm overlay
+        _hideConfirm();
+
+        var overlay = document.createElement('div');
+        overlay.className = 'ppd-sched-confirm-overlay';
+        overlay.id = 'ppdSchedConfirmOverlay';
+
+        overlay.innerHTML = '<div class="ppd-sched-confirm-box">'
+            + '<h4>' + esc(title) + '</h4>'
+            + '<p>' + esc(message) + '</p>'
+            + '<div class="ppd-sched-confirm-actions">'
+            + '<button type="button" class="ppd-sched-confirm-yes" id="ppdConfirmYes">Evet</button>'
+            + '<button type="button" class="ppd-sched-confirm-no" id="ppdConfirmNo">Iptal</button>'
+            + '</div></div>';
+
+        document.body.appendChild(overlay);
+
+        // Event listeners
+        document.getElementById('ppdConfirmYes').addEventListener('click', function () {
+            _hideConfirm();
+            onYes();
+        });
+        document.getElementById('ppdConfirmNo').addEventListener('click', function () {
+            _hideConfirm();
+        });
+        // Click outside to cancel
+        overlay.addEventListener('click', function (e) {
+            if (e.target === overlay) _hideConfirm();
+        });
+    }
+
+    function _hideConfirm() {
+        var existing = document.getElementById('ppdSchedConfirmOverlay');
+        if (existing) existing.parentNode.removeChild(existing);
+    }
+
+    function _postScheduler(endpointKey, body, successMsg) {
+        var base = window.API_ENDPOINTS ? window.API_ENDPOINTS[endpointKey] : null;
+        if (!base) return;
+
+        _schedBusy = true;
+        _updateSchedButtons();
+
+        fetch(base, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            _schedBusy = false;
+            if (data.scheduler) {
+                renderSchedulerStatus(data.scheduler);
+            }
+            console.log('[PredictionDashboard] ' + successMsg, data);
+            loadSchedulerStatus(); // refresh after action
+        })
+        .catch(function (err) {
+            _schedBusy = false;
+            _updateSchedButtons();
+            console.error('[PredictionDashboard] Scheduler action error:', err);
+        });
+    }
+
+    function _updateSchedButtons() {
+        var startBtn = _el('ppdSchedStartBtn');
+        var stopBtn = _el('ppdSchedStopBtn');
+        var triggerBtn = _el('ppdSchedTriggerBtn');
+        if (startBtn) startBtn.disabled = _schedBusy;
+        if (stopBtn) stopBtn.disabled = _schedBusy;
+        if (triggerBtn) triggerBtn.disabled = _schedBusy;
+    }
+
+    function startScheduler() {
+        _showConfirm(
+            'Scheduler Baslat',
+            'Periyodik anomaly analizi baslatilacak. Devam etmek istiyor musunuz?',
+            function () {
+                _postScheduler('schedulerStart',
+                    { api_key: window.apiKey || '' },
+                    'Scheduler started');
+            }
+        );
+    }
+
+    function stopScheduler() {
+        _showConfirm(
+            'Scheduler Durdur',
+            'Periyodik analiz durdurulacak. Devam etmek istiyor musunuz?',
+            function () {
+                _postScheduler('schedulerStop',
+                    { api_key: window.apiKey || '' },
+                    'Scheduler stopped');
+            }
+        );
+    }
+
+    function triggerScheduler() {
+        var serverVal = (_el('ppdServerFilter') || {}).value || '';
+        var msg = serverVal
+            ? 'Manuel analiz "' + serverVal + '" icin tetiklenecek. Devam?'
+            : 'Manuel analiz tum sunucular icin tetiklenecek. Devam?';
+
+        _showConfirm('Manuel Calistir', msg, function () {
+            var body = { api_key: window.apiKey || '' };
+            if (serverVal) body.server_name = serverVal;
+            _postScheduler('schedulerTrigger', body, 'Scheduler triggered');
+        });
+    }
+
+    // ============================
     // INITIALIZATION
     // ============================
     function initPredictionDashboard() {
@@ -356,6 +582,20 @@
             });
         }
 
+        // Scheduler buttons
+        var schedStartBtn = _el('ppdSchedStartBtn');
+        if (schedStartBtn) {
+            schedStartBtn.addEventListener('click', function () { startScheduler(); });
+        }
+        var schedStopBtn = _el('ppdSchedStopBtn');
+        if (schedStopBtn) {
+            schedStopBtn.addEventListener('click', function () { stopScheduler(); });
+        }
+        var schedTriggerBtn = _el('ppdSchedTriggerBtn');
+        if (schedTriggerBtn) {
+            schedTriggerBtn.addEventListener('click', function () { triggerScheduler(); });
+        }
+
         // Start hidden
         var section = _el('predictionDashboardSection');
         if (section) section.style.display = 'none';
@@ -380,7 +620,11 @@
         refresh: refreshAll,
         loadConfig: loadConfig,
         loadSummary: loadSummary,
-        loadAlerts: loadAlerts
+        loadAlerts: loadAlerts,
+        loadSchedulerStatus: loadSchedulerStatus,
+        startScheduler: startScheduler,
+        stopScheduler: stopScheduler,
+        triggerScheduler: triggerScheduler
     };
 
     // Backward compat globals

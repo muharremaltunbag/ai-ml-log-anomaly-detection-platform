@@ -72,7 +72,12 @@ window.API_ENDPOINTS = {
     // PREDICTION & EARLY WARNING
     predictionAlerts: '/api/prediction/alerts',
     predictionSummary: '/api/prediction/summary',
-    predictionConfig: '/api/prediction/config'
+    predictionConfig: '/api/prediction/config',
+    // SCHEDULER
+    schedulerStatus: '/api/scheduler/status',
+    schedulerStart: '/api/scheduler/start',
+    schedulerStop: '/api/scheduler/stop',
+    schedulerTrigger: '/api/scheduler/trigger'
 };
 
 // ============================================
