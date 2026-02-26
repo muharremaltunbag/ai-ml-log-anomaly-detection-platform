@@ -5479,7 +5479,8 @@ def _get_scheduler_tools():
 @app.get("/api/scheduler/status")
 async def get_scheduler_status(api_key: str = Query(...)):
     """Scheduler durumunu döndür."""
-    validate_api_key(api_key)
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
     tools = _get_scheduler_tools()
     if tools.scheduler:
         return {"status": "success", "scheduler": tools.scheduler.get_status()}
@@ -5490,7 +5491,8 @@ async def get_scheduler_status(api_key: str = Query(...)):
 async def start_scheduler(request: Dict[str, Any]):
     """Scheduler'ı başlat. Body: {api_key, target_hosts: [...]}"""
     api_key = request.get("api_key", "")
-    validate_api_key(api_key)
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
     tools = _get_scheduler_tools()
     if not tools.scheduler:
         raise HTTPException(status_code=400, detail="Scheduler not initialized")
@@ -5510,7 +5512,8 @@ async def start_scheduler(request: Dict[str, Any]):
 async def stop_scheduler(request: Dict[str, Any]):
     """Scheduler'ı durdur."""
     api_key = request.get("api_key", "")
-    validate_api_key(api_key)
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
     tools = _get_scheduler_tools()
     if tools.scheduler:
         tools.scheduler.stop()
@@ -5521,7 +5524,8 @@ async def stop_scheduler(request: Dict[str, Any]):
 async def trigger_scheduler(request: Dict[str, Any]):
     """Manuel tek çalıştırma tetikle. Body: {api_key, server_name?: str}"""
     api_key = request.get("api_key", "")
-    validate_api_key(api_key)
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
     tools = _get_scheduler_tools()
     if not tools.scheduler:
         raise HTTPException(status_code=400, detail="Scheduler not initialized")

@@ -244,9 +244,14 @@ class AnomalyDetectionTools:
                 try:
                     new_loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(new_loop)
+                    # Temporarily disable storage manager reuse — its Motor client
+                    # is bound to the FastAPI event loop, not our new thread loop.
+                    saved_sm = self._storage_manager
+                    self._storage_manager = None
                     try:
                         result.update(new_loop.run_until_complete(coro))
                     finally:
+                        self._storage_manager = saved_sm
                         new_loop.close()
                 except Exception as e:
                     exc_holder.append(e)
