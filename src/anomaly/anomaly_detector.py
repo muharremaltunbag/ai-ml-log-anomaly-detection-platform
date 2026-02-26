@@ -431,37 +431,7 @@ class MongoDBAnomalyDetector:
             # Hata durumunda sadece yeni veriyi kullan
             return X_new
 
-    def _calculate_sample_weights(self, X_combined: pd.DataFrame, X_new_size: int) -> np.ndarray:
-        """
-        Combined dataset için sample weight'leri hesapla
-        Historical data'ya azalan weight, yeni data'ya full weight
-        
-        Args:
-            X_combined: Birleştirilmiş dataset
-            X_new_size: Yeni data'nın boyutu
-            
-        Returns:
-            Sample weights array
-        """
-        total_size = len(X_combined)
-        historical_size = total_size - X_new_size
-        
-        # Weight decay factor from config
-        weight_decay = self.online_learning_config.get('weight_decay', 0.95)
-        
-        # Historical data weights (decayed)
-        historical_weights = np.full(historical_size, weight_decay)
-        
-        # New data weights (full weight = 1.0)
-        new_weights = np.ones(X_new_size)
-        
-        # Combine weights
-        weights = np.concatenate([historical_weights, new_weights])
-        
-        
-        return weights
-
-    def train(self, X: pd.DataFrame, save_model: bool = None, incremental: bool = None, 
+    def train(self, X: pd.DataFrame, save_model: bool = None, incremental: bool = None,
               server_name: str = None) -> Dict[str, Any]:
         """
         Anomali modelini eğit (Online Learning desteği ile)
@@ -1394,7 +1364,7 @@ class MongoDBAnomalyDetector:
                 'ensemble_method': 'override',
                 'rule_hits': dict(self.rule_stats['rule_hits'])
             }
-            print("[DEBUG] Ensemble stats added to summary")
+            logger.debug("Ensemble stats added to summary")
 
         logger.debug(f"Anomaly analysis completed")
         return analysis
@@ -1566,60 +1536,6 @@ class MongoDBAnomalyDetector:
             "factors": factors
         }
         
-    def export_results(self, df: pd.DataFrame, predictions: np.ndarray, 
-                      anomaly_scores: np.ndarray, analysis: Dict[str, Any]) -> Dict[str, str]:
-        """
-        Sonuçları dışa aktar
-        
-        Args:
-            df: Enriched DataFrame
-            predictions: Model tahminleri
-            anomaly_scores: Anomali skorları
-            analysis: Analiz sonuçları
-            
-        Returns:
-            Export edilen dosya yolları
-        """
-        export_paths = {}
-        
-        try:
-            # Timestamp ekle
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            # Anomalileri DataFrame'e ekle
-            df['anomaly_score'] = anomaly_scores
-            df['is_anomaly'] = predictions == -1
-            
-            # Anomalileri CSV olarak export
-            if self.output_config.get('export_anomalies', True):
-                anomaly_path = self.output_config.get('anomaly_path', 'output/anomalies_{timestamp}.csv')
-                anomaly_path = anomaly_path.replace('{timestamp}', timestamp)
-                
-                # Output klasörünü oluştur
-                Path(anomaly_path).parent.mkdir(parents=True, exist_ok=True)
-                
-                # Sadece anomalileri export et
-                anomaly_df = df[df['is_anomaly']].sort_values('anomaly_score')
-                anomaly_df.to_csv(anomaly_path, index=False)
-                export_paths['anomalies'] = anomaly_path
-                
-                logger.info(f"Anomalies exported to: {anomaly_path}")
-            
-            # Analiz sonuçlarını JSON olarak export
-            analysis_path = f"output/anomaly_analysis_{timestamp}.json"
-            Path(analysis_path).parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(analysis_path, 'w', encoding='utf-8') as f:
-                json.dump(analysis, f, indent=2, ensure_ascii=False)
-            
-            export_paths['analysis'] = analysis_path
-            logger.info(f"Analysis exported to: {analysis_path}")
-            
-        except Exception as e:
-            logger.error(f"Error exporting results: {e}")
-        
-        return export_paths
-    
     def save_model(self, path: str = None, server_name: str = None) -> str:
         """
         Modeli kaydet (sunucu bazlı)
@@ -2439,19 +2355,17 @@ class MongoDBAnomalyDetector:
         }
         
         # Özet rapor
-        print(f"\n[DEBUG] ========== FEATURE OPTIMIZATION REPORT ==========")
-        print(f"Current features: {len(X.columns)}")
-        print(f"Dead features found: {len(dead_features)}")
-        print(f"Low impact features: {len(low_impact_features)}")
-        print(f"High correlation pairs: {len(high_corr_pairs)}")
-        print(f"Recommended features: {len(recommended_features)}")
-        print(f"Expected reduction: {len(X.columns) - len(recommended_features)} features")
-        print(f"\nTop 10 Most Important Features:")
-        for i, (feature, score) in enumerate(list(importance_scores.items())[:10], 1):
-            print(f"  {i}. {feature}: {score:.4f}")
-        print(f"\nDead Features to Remove:")
-        for feature in dead_features[:10]:  # İlk 10'u göster
-            print(f"  - {feature}")
+        logger.info("========== FEATURE OPTIMIZATION REPORT ==========")
+        logger.info(f"Current features: {len(X.columns)}")
+        logger.info(f"Dead features found: {len(dead_features)}")
+        logger.info(f"Low impact features: {len(low_impact_features)}")
+        logger.info(f"High correlation pairs: {len(high_corr_pairs)}")
+        logger.info(f"Recommended features: {len(recommended_features)}")
+        logger.info(f"Expected reduction: {len(X.columns) - len(recommended_features)} features")
+        top_features = list(importance_scores.items())[:10]
+        logger.info(f"Top 10 Features: {', '.join(f'{f}:{s:.4f}' for f, s in top_features)}")
+        if dead_features:
+            logger.info(f"Dead Features to Remove: {', '.join(dead_features[:10])}")
         
         
         # Config güncelleme önerisi
@@ -2467,8 +2381,8 @@ class MongoDBAnomalyDetector:
         
         return results
 
-    def create_validation_dataset(self, X: pd.DataFrame, df: pd.DataFrame, 
-                                 method: str = 'rule_based') -> Tuple[pd.DataFrame, np.ndarray]:
+    def create_validation_dataset(self, X: pd.DataFrame, df: pd.DataFrame,
+                                 method: str = 'rule_based') -> Tuple[pd.DataFrame, np.ndarray, np.ndarray]:
         """
         Semi-supervised validation dataset oluştur
         Rule engine ve statistical methods kullanarak pseudo-labels oluştur
@@ -2479,7 +2393,7 @@ class MongoDBAnomalyDetector:
             method: 'rule_based', 'statistical', or 'combined'
             
         Returns:
-            (X_validation, y_validation): Validation features ve labels
+            (X_validation, y_validation, confidence_scores): Features, labels, confidence per sample
         """
         
         
@@ -2845,19 +2759,14 @@ class MongoDBAnomalyDetector:
             
             report["report_path"] = report_path
         
-        # Print summary
-        print(f"\n[DEBUG] ========== MODEL EVALUATION SUMMARY ==========")
-        print(f"Overall Rating: {assessment}")
-        print(f"Precision: {precision:.3f}")
-        print(f"Recall: {recall:.3f}")
-        print(f"F1-Score: {f1:.3f}")
-        print(f"False Positive Rate: {fpr:.3f}")
-        print(f"Top 3 Features: {', '.join(list(importance.keys())[:3])}")
-        print(f"Dead Features: {len(report['feature_analysis']['dead_features'])}")
+        # Log summary
+        logger.info("========== MODEL EVALUATION SUMMARY ==========")
+        logger.info(f"Overall Rating: {assessment}")
+        logger.info(f"Precision: {precision:.3f} | Recall: {recall:.3f} | F1: {f1:.3f} | FPR: {fpr:.3f}")
+        logger.info(f"Top 3 Features: {', '.join(list(importance.keys())[:3])}")
+        logger.info(f"Dead Features: {len(report['feature_analysis']['dead_features'])}")
         if report["assessment"]["recommendations"]:
-            print(f"\nRecommendations:")
-            for rec in report["assessment"]["recommendations"]:
-                print(f"  • {rec}")
+            logger.info(f"Recommendations: {'; '.join(report['assessment']['recommendations'])}")
         
         
         return report
