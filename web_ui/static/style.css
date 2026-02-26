@@ -315,7 +315,7 @@ input:focus, textarea:focus {
 /* Quick Actions — Figma card grid */
 .quick-actions {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 12px;
     margin-bottom: 20px;
 }
