@@ -18,7 +18,7 @@ import os
 from pymongo import MongoClient
 import numpy as np
 import requests
-import threading
+
 import asyncio
 
 from .log_reader import MongoDBLogReader, OpenSearchProxyReader
@@ -54,14 +54,24 @@ class AnomalyDetectionTools:
 
     # Class-level storage manager reference (set once, shared across instances)
     _shared_storage_manager = None
+    # Event loop that owns _shared_storage_manager (Motor client is loop-bound)
+    _shared_storage_loop = None
 
     @classmethod
     def set_shared_storage_manager(cls, storage_manager) -> None:
         """
         Class-level StorageManager set et. Tüm instance'lar bu referansı kullanır.
         api.py startup'ında bir kez çağrılır.
+
+        Motor (async MongoDB driver) client'ları oluşturuldukları event loop'a bağlıdır.
+        Bu yüzden loop referansını da saklıyoruz; worker thread'lerden prediction
+        çalıştırılırken coroutine'ler bu loop'a schedule edilir.
         """
         cls._shared_storage_manager = storage_manager
+        try:
+            cls._shared_storage_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            cls._shared_storage_loop = None
         logger.info("AnomalyDetectionTools: shared StorageManager reference set")
 
     def __init__(self, config_path: str = "config/anomaly_config.json", environment: str = "test"):
@@ -214,57 +224,41 @@ class AnomalyDetectionTools:
                              source_type: str = "mongodb") -> Dict[str, Any]:
         """
         Sync context'ten (analyze_mongodb_logs) prediction checks'i güvenli çağır.
-        FastAPI (running loop) ve standalone (no loop) durumlarını handle eder.
 
-        Args:
-            analysis: Enhanced analysis dict
-            df_filtered: Enriched DataFrame
-            server_name: Sunucu adı
-            source_type: "mongodb", "mssql", "elasticsearch"
+        Motor (async MongoDB driver) client'ları oluşturuldukları event loop'a
+        bağlıdır.  Bu metod üç durumu handle eder:
 
-        Returns:
-            Prediction sonuçları dict'i (boş olabilir)
+        1. Worker thread (asyncio.to_thread) + main loop mevcut:
+           → run_coroutine_threadsafe ile coroutine'i main loop'a schedule et.
+             Main loop boşta (worker thread'i bekliyor), deadlock olmaz.
+             Storage manager kendi loop'unda çalışır — sorun yok.
+
+        2. Doğrudan running loop içinde (nadir):
+           → Aynı şekilde run_coroutine_threadsafe kullan.
+
+        3. Standalone (hiçbir loop yok):
+           → asyncio.run() ile yeni loop oluştur.  _storage_manager None'dır,
+             fallback path kendi bağlantısını açar.
         """
         if not self.prediction_enabled:
             return {}
 
         coro = self._run_prediction_checks(analysis, df_filtered, server_name, source_type)
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
+        # Main event loop referansı (Motor client buraya bağlı)
+        main_loop = self.__class__._shared_storage_loop
 
-        if loop and loop.is_running():
-            # FastAPI context: running loop var, yeni thread'de çalıştır
-            result = {}
-            exc_holder = []
-
-            def _run_in_thread():
-                try:
-                    new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(new_loop)
-                    # Temporarily disable storage manager reuse — its Motor client
-                    # is bound to the FastAPI event loop, not our new thread loop.
-                    saved_sm = self._storage_manager
-                    self._storage_manager = None
-                    try:
-                        result.update(new_loop.run_until_complete(coro))
-                    finally:
-                        self._storage_manager = saved_sm
-                        new_loop.close()
-                except Exception as e:
-                    exc_holder.append(e)
-
-            t = threading.Thread(target=_run_in_thread, daemon=True)
-            t.start()
-            t.join(timeout=30)  # max 30 saniye bekle
-
-            if exc_holder:
-                logger.warning(f"Prediction checks failed in thread: {exc_holder[0]}")
-            return result
+        if main_loop and main_loop.is_running():
+            # Durum 1 & 2: Main loop var ve çalışıyor.
+            # Coroutine'i oraya schedule et — storage manager doğru loop'ta kalır.
+            future = asyncio.run_coroutine_threadsafe(coro, main_loop)
+            try:
+                return future.result(timeout=60)
+            except Exception as e:
+                logger.warning(f"Prediction checks failed on main loop: {e}")
+                return {}
         else:
-            # Standalone context: doğrudan asyncio.run
+            # Durum 3: Standalone — güvenle yeni loop oluştur.
             try:
                 return asyncio.run(coro)
             except Exception as e:
