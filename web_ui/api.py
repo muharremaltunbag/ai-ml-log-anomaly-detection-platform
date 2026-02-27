@@ -5368,6 +5368,7 @@ async def get_prediction_alerts(
     api_key: str,
     server_name: Optional[str] = None,
     alert_source: Optional[str] = None,
+    source_type: Optional[str] = None,
     only_with_alerts: bool = False,
     days: int = Query(default=7, le=90),
     limit: int = Query(default=50, le=500)
@@ -5386,7 +5387,8 @@ async def get_prediction_alerts(
             alert_source=alert_source,
             only_with_alerts=only_with_alerts,
             limit=limit,
-            days=days
+            days=days,
+            source_type=source_type
         )
         return {
             "status": "success",
@@ -5402,6 +5404,7 @@ async def get_prediction_alerts(
 async def get_prediction_summary(
     api_key: str,
     server_name: Optional[str] = None,
+    source_type: Optional[str] = None,
     days: int = Query(default=7, le=90)
 ):
     """Prediction alert istatistik özeti"""
@@ -5414,7 +5417,8 @@ async def get_prediction_summary(
             return {"status": "error", "message": "Prediction storage not available"}
 
         summary = await storage.get_prediction_summary(
-            server_name=server_name, days=days
+            server_name=server_name, days=days,
+            source_type=source_type
         )
         return {"status": "success", "summary": summary}
     except Exception as e:
@@ -5427,6 +5431,7 @@ async def get_prediction_timeseries(
     api_key: str,
     server_name: Optional[str] = None,
     alert_source: Optional[str] = None,
+    source_type: Optional[str] = None,
     days: int = Query(default=7, le=90)
 ):
     """Prediction alert zaman serisi (chart-ready bucket aggregation)"""
@@ -5441,7 +5446,8 @@ async def get_prediction_timeseries(
         ts_data = await storage.get_prediction_timeseries(
             server_name=server_name,
             alert_source=alert_source,
-            days=days
+            days=days,
+            source_type=source_type
         )
         return {"status": "success", "timeseries": ts_data}
     except Exception as e:

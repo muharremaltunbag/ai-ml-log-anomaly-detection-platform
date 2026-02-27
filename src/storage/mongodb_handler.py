@@ -142,6 +142,7 @@ class MongoDBHandler:
             await prediction_collection.create_index([("timestamp", DESCENDING)])
             await prediction_collection.create_index([("server_name", ASCENDING)])
             await prediction_collection.create_index([("alert_source", ASCENDING)])
+            await prediction_collection.create_index([("source_type", ASCENDING)])
             await prediction_collection.create_index([("max_severity", ASCENDING)])
             await prediction_collection.create_index(
                 [("ttl_date", ASCENDING)],
@@ -889,15 +890,17 @@ class MongoDBHandler:
     async def save_prediction_alert(self, alert_data: Dict[str, Any],
                                     alert_source: str = "trend",
                                     server_name: str = None,
-                                    retention_days: int = 90) -> Optional[str]:
+                                    retention_days: int = 90,
+                                    source_type: str = None) -> Optional[str]:
         """
         Prediction/trend/rate alert sonucunu kaydet.
 
         Args:
             alert_data: TrendReport.to_dict() veya RateAlertReport.to_dict()
-            alert_source: "trend" veya "rate"
+            alert_source: "trend", "rate" veya "forecast"
             server_name: Sunucu adı
             retention_days: Saklama süresi
+            source_type: Veri kaynağı — "mongodb", "mssql", "elasticsearch" (None = bilinmiyor)
 
         Returns:
             Inserted document ID veya None
@@ -909,6 +912,7 @@ class MongoDBHandler:
                 "timestamp": datetime.utcnow(),
                 "alert_source": alert_source,
                 "server_name": server_name,
+                "source_type": source_type,
                 "has_alerts": alert_data.get("has_alerts", False),
                 "max_severity": alert_data.get("max_severity", "OK"),
                 "alert_count": len(alert_data.get("alerts", [])),
@@ -930,7 +934,8 @@ class MongoDBHandler:
                                     alert_source: str = None,
                                     only_with_alerts: bool = False,
                                     limit: int = 50,
-                                    days: int = 7) -> List[Dict[str, Any]]:
+                                    days: int = 7,
+                                    source_type: str = None) -> List[Dict[str, Any]]:
         """
         Prediction alert geçmişini sorgula.
 
@@ -940,6 +945,7 @@ class MongoDBHandler:
             only_with_alerts: Sadece alert içerenleri getir
             limit: Max kayıt
             days: Son kaç gün
+            source_type: Veri kaynağı filtresi — "mongodb", "mssql", "elasticsearch" (None = tümü)
 
         Returns:
             Alert kayıtları listesi
@@ -954,6 +960,8 @@ class MongoDBHandler:
                 query["server_name"] = server_name
             if alert_source:
                 query["alert_source"] = alert_source
+            if source_type:
+                query["source_type"] = source_type
             if only_with_alerts:
                 query["has_alerts"] = True
 
@@ -973,13 +981,15 @@ class MongoDBHandler:
             return []
 
     async def get_prediction_summary(self, server_name: str = None,
-                                     days: int = 7) -> Dict[str, Any]:
+                                     days: int = 7,
+                                     source_type: str = None) -> Dict[str, Any]:
         """
         Prediction alert istatistik özeti.
 
         Args:
             server_name: Filtre
             days: Son kaç gün
+            source_type: Veri kaynağı filtresi — "mongodb", "mssql", "elasticsearch" (None = tümü)
 
         Returns:
             Özet istatistikler
@@ -991,6 +1001,8 @@ class MongoDBHandler:
             match_stage = {"timestamp": {"$gte": cutoff}}
             if server_name:
                 match_stage["server_name"] = server_name
+            if source_type:
+                match_stage["source_type"] = source_type
 
             pipeline = [
                 {"$match": match_stage},
@@ -1028,7 +1040,8 @@ class MongoDBHandler:
 
     async def get_prediction_timeseries(self, server_name: str = None,
                                         alert_source: str = None,
-                                        days: int = 7) -> Dict[str, Any]:
+                                        days: int = 7,
+                                        source_type: str = None) -> Dict[str, Any]:
         """
         Prediction alert verilerini zaman serisi formatında döndür.
         days <= 3 ise saatlik, >3 ise günlük bucket kullanır.
@@ -1046,6 +1059,8 @@ class MongoDBHandler:
                 match_stage["server_name"] = server_name
             if alert_source:
                 match_stage["alert_source"] = alert_source
+            if source_type:
+                match_stage["source_type"] = source_type
 
             # Bucket granularity
             if days <= 3:

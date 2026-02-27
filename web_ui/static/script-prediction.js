@@ -87,6 +87,18 @@
         }
     }
 
+    // Map selectedDataSource (storage-level) → prediction source_type
+    var _sourceTypeMap = {
+        'opensearch': 'mongodb',
+        'mssql_opensearch': 'mssql',
+        'elasticsearch_opensearch': 'elasticsearch'
+    };
+
+    function _getSourceType() {
+        var ds = window.selectedDataSource || 'opensearch';
+        return _sourceTypeMap[ds] || null;
+    }
+
     function _initSourceToggle() {
         var container = _el('ppsSourceToggle');
         if (!container) return;
@@ -106,6 +118,9 @@
 
             // Update toggle visual
             _syncSourceToggle();
+
+            // Refresh prediction data with new source filter
+            refreshAll();
         });
     }
 
@@ -195,6 +210,8 @@
     function loadSummary(server, days) {
         var extra = 'days=' + encodeURIComponent(days);
         if (server) extra += '&server_name=' + encodeURIComponent(server);
+        var st = _getSourceType();
+        if (st) extra += '&source_type=' + encodeURIComponent(st);
         var url = _apiUrl('predictionSummary', extra);
         if (!url) return;
 
@@ -277,6 +294,8 @@
     function loadAlerts(server, days) {
         var extra = 'days=' + encodeURIComponent(days) + '&limit=50';
         if (server) extra += '&server_name=' + encodeURIComponent(server);
+        var st = _getSourceType();
+        if (st) extra += '&source_type=' + encodeURIComponent(st);
         var url = _apiUrl('predictionAlerts', extra);
         if (!url) return;
 
@@ -405,6 +424,8 @@
     function loadTimeseries(server, days) {
         var extra = 'days=' + encodeURIComponent(days);
         if (server) extra += '&server_name=' + encodeURIComponent(server);
+        var st = _getSourceType();
+        if (st) extra += '&source_type=' + encodeURIComponent(st);
         var url = _apiUrl('predictionTimeseries', extra);
         if (!url) return;
 

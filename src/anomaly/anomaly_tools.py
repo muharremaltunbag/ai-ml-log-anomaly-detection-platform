@@ -322,7 +322,8 @@ class AnomalyDetectionTools:
 
                 # Storage'a kaydet
                 await self._save_prediction_result(
-                    trend_report.to_dict(), "trend", server_name
+                    trend_report.to_dict(), "trend", server_name,
+                    source_type=source_type
                 )
 
             except Exception as e:
@@ -343,7 +344,8 @@ class AnomalyDetectionTools:
 
                 # Storage'a kaydet
                 await self._save_prediction_result(
-                    rate_report.to_dict(), "rate", server_name
+                    rate_report.to_dict(), "rate", server_name,
+                    source_type=source_type
                 )
 
             except Exception as e:
@@ -364,7 +366,8 @@ class AnomalyDetectionTools:
 
                 # Storage'a kaydet
                 await self._save_prediction_result(
-                    forecast_report.to_dict(), "forecast", server_name
+                    forecast_report.to_dict(), "forecast", server_name,
+                    source_type=source_type
                 )
 
             except Exception as e:
@@ -433,7 +436,8 @@ class AnomalyDetectionTools:
 
     async def _save_prediction_result(self, result_data: Dict[str, Any],
                                       alert_source: str,
-                                      server_name: Optional[str]) -> None:
+                                      server_name: Optional[str],
+                                      source_type: Optional[str] = None) -> None:
         """Prediction sonucunu storage'a kaydet"""
         try:
             retention = self._prediction_storage_config.get('retention_days', 90)
@@ -441,7 +445,8 @@ class AnomalyDetectionTools:
             # Reuse existing storage manager connection if available
             if self._storage_manager and self._storage_manager.mongodb.is_connected:
                 await self._storage_manager.mongodb.save_prediction_alert(
-                    result_data, alert_source, server_name, retention
+                    result_data, alert_source, server_name, retention,
+                    source_type=source_type
                 )
                 return
 
@@ -456,7 +461,8 @@ class AnomalyDetectionTools:
             await handler.connect()
             try:
                 await handler.save_prediction_alert(
-                    result_data, alert_source, server_name, retention
+                    result_data, alert_source, server_name, retention,
+                    source_type=source_type
                 )
             finally:
                 await handler.disconnect()
