@@ -334,7 +334,8 @@ class AnomalyDetectionTools:
         if self.rate_alert_engine:
             try:
                 rate_report = self.rate_alert_engine.check(
-                    df_filtered, server_name, source_type=source_type
+                    df_filtered, server_name, source_type=source_type,
+                    analysis_data=analysis
                 )
                 prediction_results["rate"] = rate_report.to_dict()
 

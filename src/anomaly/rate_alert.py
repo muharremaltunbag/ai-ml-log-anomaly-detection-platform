@@ -45,6 +45,7 @@ class RateAlert:
     timestamp: str = ""
     explainability: str = ""
     sample_messages: List[str] = field(default_factory=list)
+    ml_context: Optional[Dict[str, Any]] = None  # ML-derived overlay (anomaly density, corroboration)
 
     def __post_init__(self):
         if not self.timestamp:
@@ -533,7 +534,8 @@ class RateAlertEngine:
                      f"windows={len(self.windows)})")
 
     def check(self, df: pd.DataFrame, server_name: Optional[str] = None,
-              source_type: str = "mongodb") -> RateAlertReport:
+              source_type: str = "mongodb",
+              analysis_data: Optional[Dict[str, Any]] = None) -> RateAlertReport:
         """
         Enriched DataFrame üzerinde rate-based alert kontrolü yap.
 
@@ -542,6 +544,9 @@ class RateAlertEngine:
             server_name: Sunucu adı
             source_type: "mongodb", "mssql", "elasticsearch" — hangi detector
                          registry kullanılacak
+            analysis_data: Opsiyonel — anomaly detection analiz sonucu.
+                          Verilirse all_anomalies'deki timestamp'lar kullanılarak
+                          per-window ML anomaly density hesaplanır.
 
         Returns:
             RateAlertReport
@@ -580,6 +585,28 @@ class RateAlertEngine:
         if pd.isna(ts_max) or pd.isna(ts_min):
             return RateAlertReport(server_name=server_name, windows_checked=0)
 
+        # ML anomaly timestamp'larını hazırla (per-window density için)
+        ml_anomaly_timestamps = []
+        ml_global_rate = 0.0
+        ml_global_mean_score = 0.0
+        if analysis_data:
+            try:
+                ml_global_rate = float(
+                    (analysis_data.get('summary') or {}).get('anomaly_rate', 0))
+                score_range = (analysis_data.get('summary') or {}).get('score_range') or {}
+                ml_global_mean_score = abs(float(score_range.get('mean', 0)))
+
+                for anom in (analysis_data.get('all_anomalies') or []):
+                    ts_val = anom.get('timestamp')
+                    if ts_val:
+                        parsed = pd.to_datetime(ts_val, errors='coerce')
+                        if not pd.isna(parsed):
+                            ml_anomaly_timestamps.append(parsed)
+            except Exception as e:
+                logger.debug(f"RateAlertEngine: ML timestamp parsing skipped: {e}")
+
+        ml_anomaly_timestamps.sort()
+
         windows_checked = 0
 
         for window_cfg in self.windows:
@@ -596,6 +623,16 @@ class RateAlertEngine:
 
             windows_checked += 1
             window_counts = {}
+
+            # Per-window ML anomaly density
+            window_ml_count = 0
+            window_ml_density = 0.0
+            if ml_anomaly_timestamps:
+                for ml_ts in ml_anomaly_timestamps:
+                    if ml_ts >= window_start:
+                        window_ml_count += 1
+                window_total = len(df_window)
+                window_ml_density = (window_ml_count / window_total * 100) if window_total > 0 else 0.0
 
             for event_name, detector_cfg in detectors.items():
                 threshold = window_cfg.get(detector_cfg['threshold_key'], None)
@@ -621,6 +658,29 @@ class RateAlertEngine:
                         count=count, window=window_label
                     )
 
+                    # ML context: pencere içi anomaly density
+                    ml_ctx = None
+                    ml_explain_suffix = ""
+                    if analysis_data and window_ml_density > 0:
+                        ml_corroborated = window_ml_density > 5.0
+                        ml_ctx = {
+                            "window_anomaly_count": window_ml_count,
+                            "window_anomaly_density_pct": round(window_ml_density, 2),
+                            "global_anomaly_rate": round(ml_global_rate, 2),
+                            "global_mean_score": round(ml_global_mean_score, 4),
+                            "ml_corroborated": ml_corroborated,
+                        }
+                        if ml_corroborated:
+                            ml_explain_suffix = (
+                                f" ML modeli de bu pencerede yüksek anomaly yoğunluğu tespit etti "
+                                f"(%{window_ml_density:.1f} anomaly density). Spike ML-destekli."
+                            )
+                        else:
+                            ml_explain_suffix = (
+                                f" ML anomaly density bu pencerede %{window_ml_density:.1f} — "
+                                f"düşük. Spike, ML modeli tarafından güçlü şekilde desteklenmiyor."
+                            )
+
                     alert = RateAlert(
                         alert_type=detector_cfg['alert_type'],
                         severity=severity,
@@ -641,10 +701,15 @@ class RateAlertEngine:
                                        f"Config eşiği: {threshold}. "
                                        f"Aşım: {exceed_ratio:.1f}x. "
                                        f"{'CRITICAL çünkü ' + str(detector_cfg['severity_multiplier']) + 'x üstü.' if is_critical else 'WARNING seviyesinde.'}"
+                                       + ml_explain_suffix,
+                        ml_context=ml_ctx,
                     )
                     alerts.append(alert)
                     self._record_alert_time(cooldown_key)
 
+            if window_ml_density > 0:
+                window_counts["_ml_anomaly_density_pct"] = round(window_ml_density, 2)
+                window_counts["_ml_anomaly_count"] = window_ml_count
             all_event_counts[window_name] = window_counts
 
         report = RateAlertReport(
