@@ -167,11 +167,23 @@
         ];
 
         var html = '';
+        var allOff = true;
         for (var i = 0; i < pills.length; i++) {
             var p = pills[i];
+            if (p.on) allOff = false;
             html += '<span class="ppd-config-pill ' + (p.on ? 'ppd-pill-on' : 'ppd-pill-off') + '">'
                 + esc(p.label) + ': ' + (p.on ? 'ON' : 'OFF') + '</span>';
         }
+
+        // Hint when all modules disabled
+        if (allOff) {
+            html += '<div class="pps-config-hint">'
+                + 'Tum prediction modulleri devre disi. '
+                + 'Etkinlestirmek icin <code>config/anomaly_config.json</code> dosyasindaki '
+                + '<code>prediction</code> bolumunu yapilandiriniz.'
+                + '</div>';
+        }
+
         grid.innerHTML = html;
     }
 
@@ -226,6 +238,18 @@
 
         var alertRate = totalChecks > 0 ? ((totalAlerts / totalChecks) * 100).toFixed(1) : '0.0';
 
+        var html = '';
+
+        // Empty state banner if no checks at all
+        if (totalChecks === 0) {
+            html += '<div class="pps-empty-state">'
+                + '<div class="pps-empty-icon">&#x1F4CA;</div>'
+                + '<div class="pps-empty-title">Henuz prediction verisi yok</div>'
+                + '<div class="pps-empty-desc">Bu zaman araliginda hic analiz yapilmamis. '
+                + 'Anomali analizi calistirarak veya Scheduler\'i baslat butonuyla otomatik analiz etkinlestirerek baslayabilirsiniz.</div>'
+                + '</div>';
+        }
+
         var cards = [
             { title: 'Toplam Kontrol', value: totalChecks, sub: 'Son ' + periodDays + ' gun', cls: '' },
             { title: 'Toplam Uyari', value: totalAlerts, sub: 'Alert orani: %' + alertRate, cls: totalAlerts > 0 ? 'ppd-card-warn' : '' },
@@ -234,7 +258,6 @@
             { title: 'Forecast Alerts', value: forecastAlerts + ' / ' + forecastTotal, sub: 'Tahmin modeli', cls: forecastAlerts > 0 ? 'ppd-card-warn' : '' }
         ];
 
-        var html = '';
         for (var j = 0; j < cards.length; j++) {
             var c = cards[j];
             html += '<div class="ppd-summary-card ' + c.cls + '">'
@@ -264,7 +287,17 @@
             .then(function (data) {
                 _loading = false;
                 if (data.status !== 'success' || !data.alerts || data.alerts.length === 0) {
-                    if (wrapper) wrapper.style.display = 'none';
+                    if (wrapper) {
+                        wrapper.style.display = 'block';
+                        var emptyTbody = _el('ppdTableBody');
+                        if (emptyTbody) {
+                            emptyTbody.innerHTML = '<tr><td colspan="6" class="pps-table-empty">'
+                                + '<div class="pps-empty-icon" style="font-size:24px;">&#x1F50D;</div>'
+                                + '<div style="margin-top:6px;font-weight:600;color:#555;">Bu zaman araliginda alert kaydi bulunamadi</div>'
+                                + '<div style="margin-top:4px;font-size:12px;color:#999;">Farkli bir zaman araligi veya sunucu filtresi deneyin.</div>'
+                                + '</td></tr>';
+                        }
+                    }
                     return;
                 }
                 renderAlerts(data.alerts);
@@ -428,6 +461,15 @@
                 + '<div class="ppd-sched-stat-value ' + s.cls + '">' + esc(s.value) + '</div>'
                 + '</div>';
         }
+        // Disabled hint
+        if (!enabled) {
+            html += '<div class="pps-sched-hint">'
+                + 'Scheduler devre disi. Etkinlestirmek icin '
+                + '<code>anomaly_config.json &gt; prediction &gt; scheduler &gt; enabled: true</code> '
+                + 'yapilandiriniz.'
+                + '</div>';
+        }
+
         grid.innerHTML = html;
 
         // Update button states
