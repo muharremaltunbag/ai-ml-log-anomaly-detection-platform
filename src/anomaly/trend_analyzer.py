@@ -168,6 +168,10 @@ class TrendAnalyzer:
             history_records, current_analysis, server_name, source_type)
         alerts.extend(src_alerts)
 
+        # 6. ML anomaly score trend (IsolationForest mean score)
+        ml_alerts = self._check_ml_score_trend(history_records, current_analysis, server_name)
+        alerts.extend(ml_alerts)
+
         # Trend direction
         direction = self._determine_trend_direction(alerts, history_records, current_analysis)
 
@@ -575,6 +579,111 @@ class TrendAnalyzer:
         return alerts
 
     # ──────────────────────────────────────────────
+    # Check: ML Anomaly Score Trend (IsolationForest)
+    # ──────────────────────────────────────────────
+
+    def _check_ml_score_trend(self, history: List[Dict], current: Dict,
+                              server_name: Optional[str]) -> List[TrendAlert]:
+        """
+        IsolationForest mean anomaly score trendini kontrol et.
+
+        score_range.mean: Modelin ortalama anomaly skoru.
+        Daha negatif → daha anomalous. Skorların sistematik olarak
+        kötüleşmesi, anomaly rate artmadan önce erken uyarı verebilir.
+
+        Skor aralığı: tipik olarak -1.0 (çok anomalous) … 0.0 (normal).
+        abs(mean) kullanılır: yüksek abs = daha anomalous.
+        """
+        alerts = []
+
+        # Geçmiş mean score'ları çıkar
+        past_scores = []
+        for record in history:
+            score_range = record.get('score_range') or record.get('summary', {}).get('score_range') or {}
+            mean_score = score_range.get('mean')
+            if mean_score is not None and isinstance(mean_score, (int, float)):
+                past_scores.append(abs(float(mean_score)))
+
+        if len(past_scores) < 2:
+            return alerts
+
+        # Current mean score
+        current_score_range = current.get('summary', {}).get('score_range', {})
+        current_mean = current_score_range.get('mean')
+        if current_mean is None or not isinstance(current_mean, (int, float)):
+            return alerts
+        current_abs = abs(float(current_mean))
+
+        # Baseline: geçmiş ortalama abs(mean_score)
+        baseline_abs = sum(past_scores) / len(past_scores)
+
+        if baseline_abs <= 0:
+            return alerts
+
+        # Yüzde değişim (abs artıyorsa → daha anomalous)
+        change_pct = ((current_abs - baseline_abs) / baseline_abs) * 100
+
+        # Eşik: %30 artış → skorlar belirgin şekilde kötüleşiyor
+        ML_SCORE_THRESHOLD = 30.0
+
+        if change_pct > ML_SCORE_THRESHOLD:
+            severity = "CRITICAL" if change_pct > ML_SCORE_THRESHOLD * 2 else "WARNING"
+            alerts.append(TrendAlert(
+                alert_type="ml_score_degradation",
+                severity=severity,
+                title="ML anomaly skoru kötüleşiyor",
+                description=(
+                    f"IsolationForest ortalama anomaly skoru son {len(past_scores)} analize göre "
+                    f"%{change_pct:.1f} kötüleşti. "
+                    f"Baseline |mean|: {baseline_abs:.4f} → Güncel: {current_abs:.4f}. "
+                    f"Model daha fazla anomalous davranış tespit ediyor."
+                ),
+                metric_name="ml_mean_anomaly_score",
+                baseline_value=round(baseline_abs, 4),
+                current_value=round(current_abs, 4),
+                change_pct=round(change_pct, 2),
+                window_size=len(past_scores),
+                server_name=server_name,
+                explainability=(
+                    f"IsolationForest modelinin ortalama anomaly skoru (|mean|) "
+                    f"son {len(past_scores)} analizde ortalama {baseline_abs:.4f} idi, "
+                    f"şimdi {current_abs:.4f}. "
+                    f"Bu, sistemde anomaly rate henüz artmamış olsa bile "
+                    f"ML modelinin daha fazla anomalous pattern tespit ettiğini gösterir."
+                )
+            ))
+
+        # Monoton kötüleşme: son 3+ analizde score sürekli artıyor mu?
+        if len(past_scores) >= 3:
+            recent_3 = past_scores[:3]  # En yeni 3 (DESC sıralı)
+            # recent_3[0] en yeni, recent_3[2] en eski → artış = [0] > [1] > [2]
+            if all(recent_3[i] >= recent_3[i + 1] for i in range(len(recent_3) - 1)):
+                if current_abs > recent_3[0]:
+                    alerts.append(TrendAlert(
+                        alert_type="ml_score_monotonic_degradation",
+                        severity="WARNING",
+                        title="ML skoru sürekli kötüleşiyor",
+                        description=(
+                            f"Son 4 analizde IsolationForest anomaly skoru kesintisiz artıyor: "
+                            f"{' → '.join(f'{s:.4f}' for s in reversed(recent_3))} → {current_abs:.4f}. "
+                            f"Bu, geçici bir spike değil süregelen bir ML-tespit bozulması olabilir."
+                        ),
+                        metric_name="ml_score_trend",
+                        baseline_value=round(recent_3[-1], 4),
+                        current_value=round(current_abs, 4),
+                        change_pct=round(change_pct, 2),
+                        window_size=4,
+                        server_name=server_name,
+                        explainability=(
+                            f"Son 4 analiz boyunca ML anomaly skoru her seferinde artmış. "
+                            f"Anomaly rate henüz eşik aşmamış olsa bile, "
+                            f"ML modeli davranış bozulmasını erken tespit ediyor olabilir."
+                        )
+                    ))
+
+        return alerts
+
+    # ──────────────────────────────────────────────
     # Trend Direction & Summary
     # ──────────────────────────────────────────────
 
@@ -607,7 +716,32 @@ class TrendAnalyzer:
 
         current_rate = float(current.get('summary', {}).get('anomaly_rate', 0))
 
-        return {
+        # ML score trend bilgisi
+        past_ml_scores = []
+        for record in history:
+            sr = record.get('score_range') or record.get('summary', {}).get('score_range') or {}
+            m = sr.get('mean')
+            if m is not None and isinstance(m, (int, float)):
+                past_ml_scores.append(abs(float(m)))
+
+        current_score_range = current.get('summary', {}).get('score_range', {})
+        current_mean_raw = current_score_range.get('mean')
+        current_ml_score = abs(float(current_mean_raw)) if current_mean_raw is not None else None
+
+        ml_score_summary = {}
+        if past_ml_scores and current_ml_score is not None:
+            baseline_ml = sum(past_ml_scores) / len(past_ml_scores)
+            ml_score_summary = {
+                "current_mean_score": round(current_ml_score, 4),
+                "baseline_mean_score": round(baseline_ml, 4),
+                "ml_score_direction": (
+                    "worsening" if current_ml_score > baseline_ml * 1.1 else
+                    "improving" if current_ml_score < baseline_ml * 0.9 else
+                    "stable"
+                ),
+            }
+
+        summary = {
             "history_window": len(history),
             "current_anomaly_rate": round(current_rate, 4),
             "baseline_anomaly_rate": round(sum(past_rates) / len(past_rates), 4) if past_rates else 0,
@@ -621,3 +755,8 @@ class TrendAnalyzer:
                 "CRITICAL": sum(1 for a in alerts if a.severity == "CRITICAL"),
             }
         }
+
+        if ml_score_summary:
+            summary["ml_score_trend"] = ml_score_summary
+
+        return summary
