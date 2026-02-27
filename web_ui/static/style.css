@@ -16299,6 +16299,55 @@ mark.text-highlight:hover {
     border-color: var(--lcw-blue, #0047BA);
     box-shadow: 0 0 0 2px rgba(0, 71, 186, 0.1);
 }
+/* Source toggle */
+.pps-source-toggle {
+    display: flex;
+    border-radius: 8px;
+    border: 1px solid var(--border-color, #e2e8f0);
+    background: #fff;
+    overflow: hidden;
+}
+.pps-source-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 10px 4px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-right: 1px solid var(--border-color, #e2e8f0);
+}
+.pps-source-btn:last-child {
+    border-right: none;
+}
+.pps-source-btn:hover {
+    background: #f1f5f9;
+}
+.pps-source-icon {
+    font-size: 16px;
+    line-height: 1;
+}
+.pps-source-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--text-secondary, #64748b);
+}
+.pps-source-btn.pps-source-active {
+    background: var(--lcw-blue, #0047BA);
+    color: #fff;
+}
+.pps-source-btn.pps-source-active .pps-source-label {
+    color: #fff;
+}
+.pps-source-btn.pps-source-active:hover {
+    background: #003a9e;
+}
+
 .pps-sidebar-divider {
     height: 1px;
     background: var(--border-color, #e2e8f0);

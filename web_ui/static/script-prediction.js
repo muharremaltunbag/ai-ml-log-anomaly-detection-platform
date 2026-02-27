@@ -65,7 +65,47 @@
         _visible = true;
         overlay.style.display = 'flex';
         document.body.classList.add('pps-body-lock');
+        _syncSourceToggle();
         refreshAll();
+    }
+
+    // ============================
+    // SOURCE TOGGLE
+    // ============================
+    function _syncSourceToggle() {
+        var current = window.selectedDataSource || 'opensearch';
+        var container = _el('ppsSourceToggle');
+        if (!container) return;
+        var btns = container.querySelectorAll('.pps-source-btn');
+        for (var i = 0; i < btns.length; i++) {
+            if (btns[i].getAttribute('data-source') === current) {
+                btns[i].classList.add('pps-source-active');
+            } else {
+                btns[i].classList.remove('pps-source-active');
+            }
+        }
+    }
+
+    function _initSourceToggle() {
+        var container = _el('ppsSourceToggle');
+        if (!container) return;
+        container.addEventListener('click', function (e) {
+            var btn = e.target.closest('.pps-source-btn');
+            if (!btn) return;
+            var source = btn.getAttribute('data-source');
+            if (!source) return;
+
+            // Update main page datasource radio (keeps in sync)
+            var radio = document.querySelector('input[name="dataSource"][value="' + source + '"]');
+            if (radio) {
+                radio.checked = true;
+                radio.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            window.selectedDataSource = source;
+
+            // Update toggle visual
+            _syncSourceToggle();
+        });
     }
 
     function hideDashboard() {
@@ -616,6 +656,9 @@
         if (schedTriggerBtn) {
             schedTriggerBtn.addEventListener('click', function () { triggerScheduler(); });
         }
+
+        // Source toggle
+        _initSourceToggle();
 
         // Overlay starts hidden (via inline style="display:none")
         console.log('Prediction Studio initialized (modal overlay mode)');
