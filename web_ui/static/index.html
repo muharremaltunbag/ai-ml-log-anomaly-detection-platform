@@ -713,12 +713,20 @@
                                         <div class="ppd-sched-grid" id="ppdSchedGrid">
                                             <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
                                         </div>
-                                        <div class="ppd-sched-hosts" id="ppdSchedHosts" style="display:none;">
-                                            <div class="ppd-sched-hosts-title">Hedef Sunucular</div>
-                                            <div class="ppd-sched-host-list" id="ppdSchedHostList"></div>
-                                        </div>
                                     </div>
                                 </div>
+
+                                <!-- Target hosts (interactive checkboxes) -->
+                                <div class="pps-sidebar-field" style="margin-top:10px;">
+                                    <div class="pps-sidebar-hosts-header">
+                                        <label class="pps-sidebar-label">Hedef Sunucular</label>
+                                        <button type="button" id="ppsHostsSelectAll" class="pps-hosts-toggle-btn">Tumu Sec</button>
+                                    </div>
+                                    <div class="pps-hosts-list" id="ppsHostsList">
+                                        <span class="pps-hosts-empty">Scheduler verisi bekleniyor...</span>
+                                    </div>
+                                </div>
+
                                 <div class="pps-sidebar-sched-actions">
                                     <button type="button" id="ppdSchedStartBtn" class="ppd-sched-btn ppd-sched-btn-start" disabled>Baslat</button>
                                     <button type="button" id="ppdSchedStopBtn" class="ppd-sched-btn ppd-sched-btn-stop" disabled>Durdur</button>

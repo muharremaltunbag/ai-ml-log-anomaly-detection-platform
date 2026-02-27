@@ -438,41 +438,74 @@
         if (stopBtn) stopBtn.disabled = !running || _schedBusy;
         if (triggerBtn) triggerBtn.disabled = !enabled || _schedBusy;
 
-        // Render target hosts + last results into a single container
+        // Render target hosts as interactive checkboxes in sidebar
         var hosts = sched.target_hosts || [];
-        var hostsDiv = _el('ppdSchedHosts');
-        var hostList = _el('ppdSchedHostList');
-        var lastResults = sched.last_results_summary || {};
-        var resultKeys = Object.keys(lastResults);
-        var hasContent = hosts.length > 0 || resultKeys.length > 0;
+        _renderHostCheckboxes(hosts);
+    }
 
-        if (hostsDiv && hostList) {
-            if (hasContent) {
-                hostsDiv.style.display = 'block';
-                var hhtml = '';
-                // Target hosts
-                for (var j = 0; j < hosts.length; j++) {
-                    hhtml += '<span class="ppd-sched-host-tag">' + esc(hosts[j]) + '</span>';
-                }
-                // Last results (appended as extra tags)
-                if (resultKeys.length > 0) {
-                    hhtml += '</div><div class="ppd-sched-hosts-title" style="margin-top:8px;">Son Sonuclar</div>';
-                    hhtml += '<div class="ppd-sched-host-list">';
-                    for (var k = 0; k < resultKeys.length; k++) {
-                        var h = resultKeys[k];
-                        var r = lastResults[h];
-                        var anomCount = r.anomaly_count || 0;
-                        var rStatus = r.status || 'unknown';
-                        hhtml += '<span class="ppd-sched-host-tag">'
-                            + esc(h) + ': ' + esc(rStatus) + ' (' + anomCount + ' anomaly)</span>';
-                    }
-                }
-                hostList.innerHTML = hhtml;
-            } else {
-                hostsDiv.style.display = 'none';
-                hostList.innerHTML = '';
-            }
+    // ============================
+    // HOST CHECKBOX LIST
+    // ============================
+    function _renderHostCheckboxes(hosts) {
+        var container = _el('ppsHostsList');
+        if (!container) return;
+
+        if (hosts.length === 0) {
+            container.innerHTML = '<span class="pps-hosts-empty">Hedef sunucu bulunamadi</span>';
+            return;
         }
+
+        var html = '';
+        for (var i = 0; i < hosts.length; i++) {
+            var id = 'ppsHost_' + i;
+            html += '<label class="pps-host-item pps-host-checked" for="' + id + '">'
+                + '<input type="checkbox" id="' + id + '" value="' + esc(hosts[i]) + '" checked>'
+                + '<span class="pps-host-item-label">' + esc(hosts[i]) + '</span>'
+                + '</label>';
+        }
+        container.innerHTML = html;
+
+        // Toggle checked visual
+        container.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+            cb.addEventListener('change', function () {
+                var label = cb.closest('.pps-host-item');
+                if (label) {
+                    if (cb.checked) label.classList.add('pps-host-checked');
+                    else label.classList.remove('pps-host-checked');
+                }
+            });
+        });
+    }
+
+    function _getSelectedHosts() {
+        var container = _el('ppsHostsList');
+        if (!container) return [];
+        var checked = container.querySelectorAll('input[type="checkbox"]:checked');
+        var result = [];
+        for (var i = 0; i < checked.length; i++) {
+            result.push(checked[i].value);
+        }
+        return result;
+    }
+
+    function _initHostSelectAll() {
+        var btn = _el('ppsHostsSelectAll');
+        if (!btn) return;
+        var allSelected = true;
+        btn.addEventListener('click', function () {
+            allSelected = !allSelected;
+            var container = _el('ppsHostsList');
+            if (!container) return;
+            btn.textContent = allSelected ? 'Tumu Sec' : 'Temizle';
+            container.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+                cb.checked = allSelected;
+                var label = cb.closest('.pps-host-item');
+                if (label) {
+                    if (allSelected) label.classList.add('pps-host-checked');
+                    else label.classList.remove('pps-host-checked');
+                }
+            });
+        });
     }
 
     // ============================
@@ -557,9 +590,10 @@
             'Scheduler Baslat',
             'Periyodik anomaly analizi baslatilacak. Devam etmek istiyor musunuz?',
             function () {
-                _postScheduler('schedulerStart',
-                    { api_key: window.apiKey || '' },
-                    'Scheduler started');
+                var body = { api_key: window.apiKey || '' };
+                var selectedHosts = _getSelectedHosts();
+                if (selectedHosts.length > 0) body.target_hosts = selectedHosts;
+                _postScheduler('schedulerStart', body, 'Scheduler started');
             }
         );
     }
@@ -657,8 +691,9 @@
             schedTriggerBtn.addEventListener('click', function () { triggerScheduler(); });
         }
 
-        // Source toggle
+        // Source toggle + host select all
         _initSourceToggle();
+        _initHostSelectAll();
 
         // Overlay starts hidden (via inline style="display:none")
         console.log('Prediction Studio initialized (modal overlay mode)');
