@@ -639,72 +639,89 @@
 
             </section>
 
-            <!-- ===== PREDICTION DASHBOARD SECTION ===== -->
-            <section id="predictionDashboardSection" class="ppd-section">
-                <div class="ppd-header">
-                    <div class="ppd-header-left">
-                        <h3>🚨 Prediction & Erken Uyari Dashboard</h3>
-                        <span class="ppd-header-badge" id="ppdConfigBadge">--</span>
-                    </div>
-                    <div class="ppd-toolbar">
-                        <select id="ppdServerFilter" title="Sunucu filtresi">
-                            <option value="">Tum Sunucular</option>
-                        </select>
-                        <select id="ppdDaysFilter" title="Zaman araligi">
-                            <option value="1">Son 1 Gun</option>
-                            <option value="7" selected>Son 7 Gun</option>
-                            <option value="30">Son 30 Gun</option>
-                        </select>
-                        <button id="ppdRefreshBtn" type="button">Yenile</button>
-                    </div>
-                </div>
-
-                <!-- Config pills -->
-                <div class="ppd-config-grid" id="ppdConfigGrid"></div>
-
-                <!-- Summary cards -->
-                <div class="ppd-summary-grid" id="ppdSummaryGrid">
-                    <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
-                </div>
-
-                <!-- Alert history table -->
-                <div class="ppd-table-wrapper" id="ppdTableWrapper" style="display:none;">
-                    <table class="ppd-table">
-                        <thead>
-                            <tr>
-                                <th>Zaman</th>
-                                <th>Kaynak</th>
-                                <th>Sunucu</th>
-                                <th>Severity</th>
-                                <th>Uyari Sayisi</th>
-                                <th>Detay</th>
-                            </tr>
-                        </thead>
-                        <tbody id="ppdTableBody"></tbody>
-                    </table>
-                </div>
-
-                <!-- Scheduler Management Panel -->
-                <div class="ppd-sched-panel" id="ppdSchedPanel">
-                    <div class="ppd-sched-header">
-                        <h4>Scheduler Yonetimi</h4>
-                        <div class="ppd-sched-controls">
-                            <button type="button" id="ppdSchedStartBtn" class="ppd-sched-btn ppd-sched-btn-start" disabled>Baslat</button>
-                            <button type="button" id="ppdSchedStopBtn" class="ppd-sched-btn ppd-sched-btn-stop" disabled>Durdur</button>
-                            <button type="button" id="ppdSchedTriggerBtn" class="ppd-sched-btn ppd-sched-btn-trigger" disabled>Manuel Calistir</button>
+            <!-- ===== PREDICTION STUDIO MODAL OVERLAY ===== -->
+            <div id="ppsOverlay" class="pps-overlay" style="display:none;">
+                <div class="pps-modal">
+                    <!-- Studio Header -->
+                    <div class="pps-modal-header">
+                        <div class="pps-header-left">
+                            <div class="pps-header-icon"><span>🔍</span></div>
+                            <div class="pps-header-text">
+                                <h2>Prediction & Forecasting Studio</h2>
+                                <p>Trend &bull; Rate Alert &bull; Forecast &bull; Scheduler &bull; Alert History</p>
+                            </div>
+                            <span class="ppd-header-badge" id="ppdConfigBadge">--</span>
+                        </div>
+                        <div class="pps-header-right">
+                            <button id="ppdRefreshBtn" type="button" class="pps-header-btn" title="Yenile">&#x21bb;</button>
+                            <button id="ppsCloseBtn" type="button" class="pps-header-btn pps-close-btn" title="Kapat">&times;</button>
                         </div>
                     </div>
-                    <div class="ppd-sched-body">
-                        <div class="ppd-sched-grid" id="ppdSchedGrid">
-                            <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
-                        </div>
-                        <div class="ppd-sched-hosts" id="ppdSchedHosts" style="display:none;">
-                            <div class="ppd-sched-hosts-title">Hedef Sunucular</div>
-                            <div class="ppd-sched-host-list" id="ppdSchedHostList"></div>
-                        </div>
+
+                    <!-- Studio Body -->
+                    <div class="pps-modal-body">
+                        <section id="predictionDashboardSection" class="ppd-section pps-content">
+                            <!-- Toolbar (filters) -->
+                            <div class="ppd-toolbar pps-toolbar-row">
+                                <select id="ppdServerFilter" title="Sunucu filtresi">
+                                    <option value="">Tum Sunucular</option>
+                                </select>
+                                <select id="ppdDaysFilter" title="Zaman araligi">
+                                    <option value="1">Son 1 Gun</option>
+                                    <option value="7" selected>Son 7 Gun</option>
+                                    <option value="30">Son 30 Gun</option>
+                                </select>
+                            </div>
+
+                            <!-- Config pills -->
+                            <div class="ppd-config-grid" id="ppdConfigGrid"></div>
+
+                            <!-- Summary cards -->
+                            <div class="ppd-summary-grid" id="ppdSummaryGrid">
+                                <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
+                            </div>
+
+                            <!-- Alert history table -->
+                            <div class="ppd-table-wrapper" id="ppdTableWrapper" style="display:none;">
+                                <table class="ppd-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Zaman</th>
+                                            <th>Kaynak</th>
+                                            <th>Sunucu</th>
+                                            <th>Severity</th>
+                                            <th>Uyari Sayisi</th>
+                                            <th>Detay</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ppdTableBody"></tbody>
+                                </table>
+                            </div>
+
+                            <!-- Scheduler Management Panel -->
+                            <div class="ppd-sched-panel" id="ppdSchedPanel">
+                                <div class="ppd-sched-header">
+                                    <h4>Scheduler Yonetimi</h4>
+                                    <div class="ppd-sched-controls">
+                                        <button type="button" id="ppdSchedStartBtn" class="ppd-sched-btn ppd-sched-btn-start" disabled>Baslat</button>
+                                        <button type="button" id="ppdSchedStopBtn" class="ppd-sched-btn ppd-sched-btn-stop" disabled>Durdur</button>
+                                        <button type="button" id="ppdSchedTriggerBtn" class="ppd-sched-btn ppd-sched-btn-trigger" disabled>Manuel Calistir</button>
+                                    </div>
+                                </div>
+                                <div class="ppd-sched-body">
+                                    <div class="ppd-sched-grid" id="ppdSchedGrid">
+                                        <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
+                                    </div>
+                                    <div class="ppd-sched-hosts" id="ppdSchedHosts" style="display:none;">
+                                        <div class="ppd-sched-hosts-title">Hedef Sunucular</div>
+                                        <div class="ppd-sched-host-list" id="ppdSchedHostList"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
                     </div>
                 </div>
-            </section>
+            </div>
 
             <!-- Log Yükleme Bölümü -->
             <section class="log-upload-section">

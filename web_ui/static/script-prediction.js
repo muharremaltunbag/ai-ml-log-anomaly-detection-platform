@@ -51,29 +51,29 @@
     function _el(id) { return document.getElementById(id); }
 
     // ============================
-    // TOGGLE VISIBILITY
+    // MODAL OVERLAY VISIBILITY
     // ============================
+    function _getOverlay() { return _el('ppsOverlay'); }
+
     function toggleDashboard() {
-        var section = _el('predictionDashboardSection');
-        if (!section) return;
-        _visible = !_visible;
-        section.style.display = _visible ? 'block' : 'none';
-        if (_visible) refreshAll();
+        _visible ? hideDashboard() : showDashboard();
     }
 
     function showDashboard() {
-        var section = _el('predictionDashboardSection');
-        if (!section) return;
+        var overlay = _getOverlay();
+        if (!overlay) return;
         _visible = true;
-        section.style.display = 'block';
+        overlay.style.display = 'flex';
+        document.body.classList.add('pps-body-lock');
         refreshAll();
     }
 
     function hideDashboard() {
-        var section = _el('predictionDashboardSection');
-        if (!section) return;
+        var overlay = _getOverlay();
+        if (!overlay) return;
         _visible = false;
-        section.style.display = 'none';
+        overlay.style.display = 'none';
+        document.body.classList.remove('pps-body-lock');
     }
 
     // ============================
@@ -553,11 +553,32 @@
     // INITIALIZATION
     // ============================
     function initPredictionDashboard() {
-        // Quick-action button
+        // Quick-action button → opens modal
         var btn = _el('predictionDashboardBtn');
         if (btn) {
             btn.addEventListener('click', toggleDashboard);
         }
+
+        // Close button inside modal header
+        var closeBtn = _el('ppsCloseBtn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', hideDashboard);
+        }
+
+        // Backdrop click → close modal
+        var overlay = _getOverlay();
+        if (overlay) {
+            overlay.addEventListener('click', function (e) {
+                if (e.target === overlay) hideDashboard();
+            });
+        }
+
+        // ESC key → close modal
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && _visible) {
+                hideDashboard();
+            }
+        });
 
         // Refresh button
         var refreshBtn = _el('ppdRefreshBtn');
@@ -596,11 +617,8 @@
             schedTriggerBtn.addEventListener('click', function () { triggerScheduler(); });
         }
 
-        // Start hidden
-        var section = _el('predictionDashboardSection');
-        if (section) section.style.display = 'none';
-
-        console.log('✅ Prediction Dashboard initialized');
+        // Overlay starts hidden (via inline style="display:none")
+        console.log('Prediction Studio initialized (modal overlay mode)');
     }
 
     // Auto-init when DOM ready
