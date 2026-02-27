@@ -16119,6 +16119,72 @@ mark.text-highlight:hover {
     line-height: 1.5;
 }
 
+/* Tier guidance — insufficient data / low-tier info */
+.pd-insufficient-row td {
+    background: #fafbfc;
+}
+
+.pd-tier-guidance {
+    padding: 8px 10px;
+    font-size: 0.85em;
+    line-height: 1.6;
+}
+
+.pd-tier-guidance-inline {
+    padding: 4px 10px;
+    background: #f0f4ff;
+    border-left: 3px solid #90a4ae;
+    border-radius: 0 4px 4px 0;
+    margin-top: 2px;
+}
+
+.pd-tier-guidance-current {
+    margin-bottom: 4px;
+}
+
+.pd-tier-guidance-icon {
+    font-size: 0.9em;
+}
+
+.pd-tier-guidance-conf {
+    color: #999;
+    font-size: 0.9em;
+}
+
+.pd-tier-guidance-next {
+    color: #555;
+    font-size: 0.92em;
+}
+
+.pd-tier-guidance-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.pd-tier-progress-bar {
+    width: 80px;
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.pd-tier-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #42a5f5, #1976d2);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.pd-tier-progress-label {
+    font-size: 0.82em;
+    color: #888;
+    white-space: nowrap;
+}
+
 /* Empty state for a section */
 .pd-no-data {
     padding: 12px;

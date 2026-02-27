@@ -4054,7 +4054,18 @@ function _renderForecastTab(pa, esc) {
     html += '<div class="pd-section-header">';
     html += 'Forecasting';
     if (fc.model_tier) {
-        html += ' <span class="pd-section-badge pd-badge-stable">' + esc(fc.model_tier) + '</span>';
+        // Tier label: insan-okunabilir ise onu goster, degilse raw method string
+        var tierDisplay = fc.model_tier;
+        var tierLabels = {
+            'tier0_no_data': 'Veri Yetersiz',
+            'tier0_single_point': 'Veri Yetersiz',
+            'tier0_direction_only': 'Tier 0 \u2014 Yon Gostergesi',
+            'tier1_wma': 'Tier 1 \u2014 Agirlikli Ortalama',
+            'tier2_linear_regression': 'Tier 2 \u2014 Lineer Regresyon',
+            'tier3_ewma_decomposition': 'Tier 3 \u2014 EWMA Trend Ayristirma'
+        };
+        if (tierLabels[fc.model_tier]) tierDisplay = tierLabels[fc.model_tier];
+        html += ' <span class="pd-section-badge pd-badge-stable">' + esc(tierDisplay) + '</span>';
     }
     if (fc.forecast_horizon_hours) {
         html += ' <span style="color:#999;font-size:0.85em;">(+' + fc.forecast_horizon_hours + ' saat)</span>';
@@ -4077,10 +4088,44 @@ function _renderForecastTab(pa, esc) {
         for (var i = 0; i < metricKeys.length; i++) {
             var m = forecasts[metricKeys[i]];
             if (!m || m.status === 'insufficient_data') {
-                // insufficient_data durumu
-                html += '<tr>';
+                // insufficient_data durumu — zengin guidance bilgisi
+                var dp = (m && m.data_points) ? m.data_points : 0;
+                var cv = (m && m.current_value !== undefined && m.current_value !== null)
+                    ? Number(m.current_value).toFixed(2) + (m.unit || '') : '\u2014';
+                var guidance = (m && m.guidance) ? m.guidance : null;
+                html += '<tr class="pd-insufficient-row">';
                 html += '<td>' + esc(m && m.label ? m.label : metricKeys[i]) + '</td>';
-                html += '<td colspan="5" style="color:#aaa;font-style:italic;">Yetersiz veri (' + (m && m.data_points ? m.data_points : 0) + ' nokta)</td>';
+                html += '<td>' + cv + '</td>';
+                html += '<td colspan="4">';
+                html += '<div class="pd-tier-guidance">';
+                if (guidance) {
+                    html += '<div class="pd-tier-guidance-current">';
+                    html += '<span class="pd-tier-guidance-icon">\u2139\uFE0F</span> ';
+                    html += '<strong>' + esc(guidance.current || 'Veri Yetersiz') + '</strong>';
+                    if (guidance.confidence_range) {
+                        html += ' <span class="pd-tier-guidance-conf">(\u2248 ' + esc(guidance.confidence_range) + ' guven)</span>';
+                    }
+                    html += '</div>';
+                    if (guidance.analyses_needed > 0 && guidance.next) {
+                        html += '<div class="pd-tier-guidance-next">';
+                        html += esc(guidance.message);
+                        html += '</div>';
+                        html += '<div class="pd-tier-guidance-progress">';
+                        var total = dp + guidance.analyses_needed;
+                        var pct = total > 0 ? Math.round((dp / total) * 100) : 0;
+                        html += '<div class="pd-tier-progress-bar">';
+                        html += '<div class="pd-tier-progress-fill" style="width:' + pct + '%;"></div>';
+                        html += '</div>';
+                        html += '<span class="pd-tier-progress-label">' + dp + '/' + total + ' analiz \u2192 ' + esc(guidance.next) + '</span>';
+                        html += '</div>';
+                    } else if (guidance.message) {
+                        html += '<div class="pd-tier-guidance-next">' + esc(guidance.message) + '</div>';
+                    }
+                } else {
+                    html += '<span style="color:#aaa;font-style:italic;">Yetersiz veri (' + dp + ' nokta). Daha fazla analiz calistirin.</span>';
+                }
+                html += '</div>';
+                html += '</td>';
                 html += '</tr>';
                 continue;
             }
@@ -4121,12 +4166,28 @@ function _renderForecastTab(pa, esc) {
             html += '<span style="font-size:0.85em;">' + confPct + '%</span>';
             html += '</div>';
             html += '</td>';
-            html += '<td style="font-size:0.8em;color:#888;">' + esc(m.method || '') + '</td>';
+            // Method kolonu: tier_label varsa onu goster, yoksa raw method
+            var methodDisplay = m.tier_label || m.method || '';
+            html += '<td style="font-size:0.8em;color:#888;">' + esc(methodDisplay) + '</td>';
             html += '</tr>';
 
             // Explanation row
             if (m.explanation) {
                 html += '<tr><td colspan="6"><div class="pd-explain">' + esc(m.explanation) + '</div></td></tr>';
+            }
+
+            // Tier guidance row (dusuk tier'larda sonraki seviye bilgisi)
+            var mGuidance = m.guidance;
+            if (mGuidance && mGuidance.analyses_needed > 0 && mGuidance.next) {
+                html += '<tr><td colspan="6">';
+                html += '<div class="pd-tier-guidance pd-tier-guidance-inline">';
+                html += '<span class="pd-tier-guidance-icon">\u2197\uFE0F</span> ';
+                html += '<span class="pd-tier-guidance-next">' + mGuidance.analyses_needed + ' analiz daha \u2192 <strong>' + esc(mGuidance.next) + '</strong></span>';
+                if (mGuidance.confidence_range) {
+                    html += ' <span class="pd-tier-guidance-conf">(guven: ' + esc(mGuidance.confidence_range) + ')</span>';
+                }
+                html += '</div>';
+                html += '</td></tr>';
             }
         }
         html += '</tbody></table>';

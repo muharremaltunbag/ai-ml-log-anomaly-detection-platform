@@ -4208,6 +4208,20 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                         "explainability": a.get("explainability", ""),
                     })
                 has_content = True
+            elif forecasts_data:
+                # Tüm metrikler insufficient_data ise kullanıcıya bilgi ver
+                insuff = [f for f in forecasts_data.values()
+                          if isinstance(f, dict) and f.get("status") == "insufficient_data"]
+                if insuff:
+                    max_dp = max((f.get("data_points", 0) for f in insuff), default=0)
+                    guidance = insuff[0].get("guidance") or {}
+                    next_tier = guidance.get("next", "")
+                    needed = guidance.get("analyses_needed", 0)
+                    note = f"Tahmin verisi henüz yeterli değil ({len(insuff)} metrik, maks. {max_dp} veri noktası)."
+                    if needed > 0 and next_tier:
+                        note += f" {needed} analiz daha → {next_tier}."
+                    insight["forecast_summary"] = note
+                    has_content = True
 
         if not has_content:
             return None

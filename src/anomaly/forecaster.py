@@ -771,9 +771,23 @@ def _select_and_run_tier(values: List[float], min_points: int,
 # Explainability Engine
 # ═══════════════════════════════════════════════════════════
 
+def _tier_method_label(method: str) -> str:
+    """Tier method string → insan-okunabilir etiket."""
+    labels = {
+        "tier0_no_data": "Veri Yetersiz",
+        "tier0_single_point": "Veri Yetersiz",
+        "tier0_direction_only": "Tier 0 — Yön Göstergesi",
+        "tier1_wma": "Tier 1 — Ağırlıklı Ortalama",
+        "tier2_linear_regression": "Tier 2 — Lineer Regresyon",
+        "tier3_ewma_decomposition": "Tier 3 — EWMA Trend Ayrıştırma",
+    }
+    return labels.get(method, method)
+
+
 def _build_explanation(metric_cfg: Dict, tier_result: Dict,
                         values: List[float], horizon_hours: int,
-                        server_name: Optional[str]) -> str:
+                        server_name: Optional[str],
+                        min_data_points: int = 5) -> str:
     """İnsan-okunabilir forecast açıklaması."""
     method = tier_result.get("method", "unknown")
     direction = tier_result.get("direction", "unknown")
@@ -786,9 +800,12 @@ def _build_explanation(metric_cfg: Dict, tier_result: Dict,
     parts: List[str] = []
 
     if "tier0" in method:
+        needed = max(0, min_data_points - len(values))
         parts.append(
             f"{label}{srv}: Henüz yeterli geçmiş veri yok ({len(values)} nokta). "
-            f"Mevcut değer: {current:.2f}{unit}. Yön: {direction}."
+            f"Mevcut değer: {current:.2f}{unit}. Yön: {direction}. "
+            f"Sayısal tahmin için {needed} analiz daha gerekli "
+            f"(min. {min_data_points} nokta)."
         )
     else:
         parts.append(
@@ -1033,7 +1050,11 @@ class AnomalyForecaster:
                 forecasts[metric_name] = {
                     "metric": metric_name, "label": metric_cfg["label"],
                     "status": "insufficient_data", "data_points": len(values),
-                    "current_value": values[-1] if values else None}
+                    "current_value": values[-1] if values else None,
+                    "min_required": 2,
+                    "analyses_needed": 2 - len(values),
+                    "guidance": self._build_tier_guidance(len(values)),
+                }
                 continue
 
             # Seasonality katsayısı hesapla
@@ -1080,7 +1101,11 @@ class AnomalyForecaster:
                 forecast_data["seasonality_factor"] = tier_result["seasonality_factor"]
 
             forecast_data["explanation"] = _build_explanation(
-                metric_cfg, tier_result, values, self.forecast_horizon_hours, server_name)
+                metric_cfg, tier_result, values, self.forecast_horizon_hours, server_name,
+                min_data_points=self.min_data_points)
+
+            forecast_data["tier_label"] = _tier_method_label(method)
+            forecast_data["guidance"] = self._build_tier_guidance(len(values))
 
             forecasts[metric_name] = forecast_data
 
@@ -1141,3 +1166,63 @@ class AnomalyForecaster:
             if 0 < diff_h < 168:
                 intervals.append(diff_h)
         return sum(intervals) / len(intervals) if intervals else 0.5
+
+    def _build_tier_guidance(self, data_points: int) -> Dict[str, Any]:
+        """Veri miktarına göre tier yol haritası ve kullanıcı rehberliği."""
+        min_pts = self.min_data_points
+
+        if data_points < 2:
+            return {
+                "current": "Veri Yetersiz",
+                "next": "Tier 0 — Yön Göstergesi",
+                "analyses_needed": 2 - data_points,
+                "confidence_range": None,
+                "message": (
+                    f"Tahmin için en az 2 geçmiş analiz gerekli. "
+                    f"{2 - data_points} analiz daha çalıştırın."
+                ),
+            }
+        elif data_points < min_pts:
+            return {
+                "current": "Tier 0 — Yön Göstergesi",
+                "next": "Tier 1 — Ağırlıklı Ortalama",
+                "analyses_needed": min_pts - data_points,
+                "confidence_range": "%0–10",
+                "message": (
+                    f"Şu an sadece yön bilgisi gösterilebilir. "
+                    f"Sayısal tahmin için {min_pts - data_points} analiz daha gerekli."
+                ),
+            }
+        elif data_points < 10:
+            return {
+                "current": "Tier 1 — Ağırlıklı Ortalama",
+                "next": "Tier 2 — Lineer Regresyon",
+                "analyses_needed": 10 - data_points,
+                "confidence_range": "%20–40",
+                "message": (
+                    f"Temel tahmin aktif. Daha güvenilir regresyon tahmini "
+                    f"için {10 - data_points} analiz daha gerekli."
+                ),
+            }
+        elif data_points < 20:
+            return {
+                "current": "Tier 2 — Lineer Regresyon",
+                "next": "Tier 3 — EWMA Trend Ayrıştırma",
+                "analyses_needed": 20 - data_points,
+                "confidence_range": "%40–70",
+                "message": (
+                    f"Regresyon tabanlı tahmin aktif. En yüksek doğruluk "
+                    f"için {20 - data_points} analiz daha gerekli."
+                ),
+            }
+        else:
+            return {
+                "current": "Tier 3 — EWMA Trend Ayrıştırma",
+                "next": None,
+                "analyses_needed": 0,
+                "confidence_range": "%50–90",
+                "message": (
+                    "En gelişmiş tahmin seviyesi aktif. Trend ayrıştırma, "
+                    "momentum analizi ve rejim tespiti kullanılıyor."
+                ),
+            }
