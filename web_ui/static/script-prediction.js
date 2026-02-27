@@ -327,10 +327,11 @@
             var hasAlerts = a.has_alerts;
             var alertCount = 0;
 
-            // Count alerts from embedded data
-            if (a.trend_alerts && Array.isArray(a.trend_alerts)) alertCount += a.trend_alerts.length;
-            if (a.rate_alerts && Array.isArray(a.rate_alerts)) alertCount += a.rate_alerts.length;
-            if (a.forecast_alerts && Array.isArray(a.forecast_alerts)) alertCount += a.forecast_alerts.length;
+            // Count alerts from nested data.alerts (backend stores alerts in data.alerts)
+            var dataAlerts = (a.data && Array.isArray(a.data.alerts)) ? a.data.alerts : [];
+            alertCount = dataAlerts.length;
+            // Fallback: top-level alert_count field
+            if (alertCount === 0 && a.alert_count) alertCount = a.alert_count;
             if (alertCount === 0 && hasAlerts) alertCount = '?';
 
             var sevClass = 'ppd-sev-' + severity.toLowerCase();
@@ -354,23 +355,16 @@
     function _buildDetailSnippet(alertDoc) {
         var parts = [];
 
-        // Trend alerts
-        if (alertDoc.trend_alerts && alertDoc.trend_alerts.length > 0) {
-            for (var i = 0; i < Math.min(alertDoc.trend_alerts.length, 2); i++) {
-                parts.push(esc(alertDoc.trend_alerts[i].title || alertDoc.trend_alerts[i].alert_type || 'trend'));
-            }
+        // Backend stores all alerts in data.alerts (source-specific via alert_source field)
+        var dataAlerts = (alertDoc.data && Array.isArray(alertDoc.data.alerts))
+            ? alertDoc.data.alerts : [];
+
+        for (var i = 0; i < Math.min(dataAlerts.length, 3); i++) {
+            var al = dataAlerts[i];
+            parts.push(esc(al.title || al.alert_type || alertDoc.alert_source || '-'));
         }
-        // Rate alerts
-        if (alertDoc.rate_alerts && alertDoc.rate_alerts.length > 0) {
-            for (var j = 0; j < Math.min(alertDoc.rate_alerts.length, 2); j++) {
-                parts.push(esc(alertDoc.rate_alerts[j].title || alertDoc.rate_alerts[j].alert_type || 'rate'));
-            }
-        }
-        // Forecast alerts
-        if (alertDoc.forecast_alerts && alertDoc.forecast_alerts.length > 0) {
-            for (var k = 0; k < Math.min(alertDoc.forecast_alerts.length, 2); k++) {
-                parts.push(esc(alertDoc.forecast_alerts[k].title || alertDoc.forecast_alerts[k].alert_type || 'forecast'));
-            }
+        if (dataAlerts.length > 3) {
+            parts.push('+' + (dataAlerts.length - 3) + ' daha');
         }
 
         if (parts.length === 0) return '<span style="color:#888;">-</span>';
