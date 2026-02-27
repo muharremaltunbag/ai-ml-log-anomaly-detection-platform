@@ -380,7 +380,15 @@
 
         for (var i = 0; i < Math.min(dataAlerts.length, 3); i++) {
             var al = dataAlerts[i];
-            parts.push(esc(al.title || al.alert_type || alertDoc.alert_source || '-'));
+            var label = esc(al.title || al.alert_type || alertDoc.alert_source || '-');
+
+            // ML corroboration badge for rate alerts
+            if (al.ml_context && al.ml_context.ml_corroborated) {
+                label += ' <span class="ppd-ml-badge ppd-ml-confirmed" title="ML modeli bu spike\'i destekliyor">ML &#x2713;</span>';
+            } else if (al.ml_context && !al.ml_context.ml_corroborated) {
+                label += ' <span class="ppd-ml-badge ppd-ml-weak" title="ML destegi zayif">ML ?</span>';
+            }
+            parts.push(label);
         }
         if (dataAlerts.length > 3) {
             parts.push('+' + (dataAlerts.length - 3) + ' daha');

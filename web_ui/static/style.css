@@ -16119,6 +16119,57 @@ mark.text-highlight:hover {
     line-height: 1.5;
 }
 
+/* ML risk context row in forecast table */
+.pd-ml-risk-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82em;
+    padding: 5px 10px;
+    border-radius: 4px;
+    margin-top: 2px;
+}
+.pd-ml-risk-icon {
+    font-size: 1em;
+}
+.pd-ml-risk-text {
+    line-height: 1.4;
+}
+.pd-ml-risk-info {
+    background: #e3f2fd;
+    color: #1565c0;
+    border-left: 3px solid #90caf9;
+}
+.pd-ml-risk-warning {
+    background: #fff3e0;
+    color: #e65100;
+    border-left: 3px solid #ffb74d;
+}
+.pd-ml-risk-critical {
+    background: #fce4ec;
+    color: #c62828;
+    border-left: 3px solid #ef9a9a;
+}
+
+/* ML corroboration badges in Prediction Studio alert table */
+.ppd-ml-badge {
+    display: inline-block;
+    font-size: 0.75em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+    font-weight: 600;
+    vertical-align: middle;
+}
+.ppd-ml-confirmed {
+    background: #c8e6c9;
+    color: #2e7d32;
+}
+.ppd-ml-weak {
+    background: #fff9c4;
+    color: #f57f17;
+}
+
 /* Tier guidance — insufficient data / low-tier info */
 .pd-insufficient-row td {
     background: #fafbfc;

@@ -4193,6 +4193,31 @@ function _renderForecastTab(pa, esc) {
             html += '<td style="font-size:0.8em;color:#888;">' + esc(methodDisplay) + '</td>';
             html += '</tr>';
 
+            // ML risk context row (forecast'a entegre ML sinyali)
+            var mlCtx = m.ml_risk_context;
+            if (mlCtx && mlCtx.ml_risk_level && mlCtx.ml_risk_level !== 'OK') {
+                var mlRiskClass = 'pd-ml-risk-info';
+                if (mlCtx.ml_risk_level === 'CRITICAL') mlRiskClass = 'pd-ml-risk-critical';
+                else if (mlCtx.ml_risk_level === 'WARNING') mlRiskClass = 'pd-ml-risk-warning';
+
+                var mlText = 'ML Risk: ' + mlCtx.ml_risk_level;
+                mlText += ' \u2014 Anomali orani: %' + (mlCtx.anomaly_rate || 0);
+                mlText += ', Skor: ' + (mlCtx.current_mean_score || 0).toFixed(4);
+                if (mlCtx.baseline_mean_score) {
+                    mlText += ' (baseline: ' + mlCtx.baseline_mean_score.toFixed(4) + ')';
+                }
+                if (mlCtx.score_worsening) {
+                    mlText += ' \u2191 kotu\u015fle\u015fiyor';
+                }
+
+                html += '<tr><td colspan="6">';
+                html += '<div class="pd-ml-risk-row ' + mlRiskClass + '">';
+                html += '<span class="pd-ml-risk-icon">\uD83E\uDD16</span> ';
+                html += '<span class="pd-ml-risk-text">' + esc(mlText) + '</span>';
+                html += '</div>';
+                html += '</td></tr>';
+            }
+
             // Explanation row
             if (m.explanation) {
                 html += '<tr><td colspan="6"><div class="pd-explain">' + esc(m.explanation) + '</div></td></tr>';
