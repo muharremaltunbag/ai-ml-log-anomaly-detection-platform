@@ -336,6 +336,19 @@ def _extract_error_rate(record: Dict[str, Any]) -> Optional[float]:
     return float(total)
 
 
+def _extract_mean_anomaly_score(record: Dict[str, Any]) -> Optional[float]:
+    """IsolationForest mean anomaly score (abs). Daha yüksek = daha anomalous.
+
+    History record'larda score_range top-level veya summary altında bulunabilir.
+    abs() kullanılır çünkü raw skor negatiftir (-1.0 = anomaly, 0 = normal).
+    """
+    sr = record.get('score_range') or (record.get('summary') or {}).get('score_range') or {}
+    mean = sr.get('mean')
+    if mean is not None and isinstance(mean, (int, float)):
+        return abs(float(mean))
+    return None
+
+
 def _extract_slow_query_count(record: Dict[str, Any]) -> Optional[float]:
     """Slow query sayısı — MongoDB specific"""
     perf = record.get('performance_alerts') or {}
@@ -496,6 +509,14 @@ COMMON_METRICS: Dict[str, Dict[str, Any]] = {
         "warning_pct_above_baseline": 60.0,
         "critical_pct_above_baseline": 120.0,
         "min_absolute_for_alert": 3,
+    },
+    "mean_anomaly_score": {
+        "func": _extract_mean_anomaly_score,
+        "label": "ML Anomaly Skoru (ort.)",
+        "unit": "",
+        "warning_pct_above_baseline": 40.0,
+        "critical_pct_above_baseline": 80.0,
+        "min_absolute_for_alert": 0.15,
     },
 }
 
@@ -873,8 +894,13 @@ def _build_explanation(metric_cfg: Dict, tier_result: Dict,
 
 def _evaluate_alert(metric_name: str, metric_cfg: Dict, tier_result: Dict,
                      values: List[float], horizon_hours: int,
-                     server_name: Optional[str]) -> Optional[ForecastAlert]:
-    """Baseline'a göre yüzdesel karşılaştırma ile alert kararı."""
+                     server_name: Optional[str],
+                     ml_risk_ctx: Optional[Dict[str, Any]] = None) -> Optional[ForecastAlert]:
+    """Baseline'a göre yüzdesel karşılaştırma ile alert kararı.
+
+    ml_risk_ctx verilirse: ML risk seviyesi yüksekse ve forecast da artış
+    gösteriyorsa, severity boost edilebilir (WARNING → CRITICAL).
+    """
     fv = tier_result.get("forecast_value")
     confidence = tier_result.get("confidence", 0)
     direction = tier_result.get("direction", "stable")
@@ -905,15 +931,32 @@ def _evaluate_alert(metric_name: str, metric_cfg: Dict, tier_result: Dict,
     if vol > 0.6 and severity == "CRITICAL":
         severity = "WARNING"
 
+    # ML severity boost: ML risk yüksekse VE forecast artış gösteriyorsa
+    ml_boosted = False
+    ml_explain = ""
+    if ml_risk_ctx and severity == "WARNING" and metric_name != "mean_anomaly_score":
+        ml_risk = ml_risk_ctx.get("ml_risk_level", "OK")
+        if ml_risk in ("CRITICAL", "WARNING") and ml_risk_ctx.get("score_worsening"):
+            severity = "CRITICAL"
+            ml_boosted = True
+            ml_explain = (
+                f" ML modeli de risk artışı tespit ediyor "
+                f"(risk: {ml_risk}, skor trendi: kötüleşiyor). "
+                f"Forecast severity ML-destekli olarak yükseltildi."
+            )
+
     label = metric_cfg.get("label", metric_name)
     unit = metric_cfg.get("unit", "")
     method = tier_result.get("method", "unknown")
     explanation = _build_explanation(metric_cfg, tier_result, values, horizon_hours, server_name)
+    if ml_explain:
+        explanation += ml_explain
 
     return ForecastAlert(
         alert_type=f"forecast_{metric_name}_rising",
         severity=severity,
-        title=f"{label} artış tahmini — {horizon_hours}h içinde {fv:.1f}{unit}",
+        title=f"{label} artış tahmini — {horizon_hours}h içinde {fv:.1f}{unit}"
+              + (" (ML-destekli)" if ml_boosted else ""),
         description=(
             f"{label} baseline'ın %{pct_above:.0f} üstüne çıkması bekleniyor. "
             f"Baseline: {baseline:.2f}{unit}, Mevcut: {current:.2f}{unit}, "
@@ -1041,6 +1084,9 @@ class AnomalyForecaster:
         all_cps: List[Dict] = []
         tier_used = ""
 
+        # ML risk context: current_analysis'teki IsolationForest sinyalleri
+        ml_risk_ctx = self._compute_ml_risk_context(current_analysis, history_records)
+
         for metric_name, metric_cfg in active_metrics.items():
             extract_fn = metric_cfg["func"]
             values = [v for rec in records_asc
@@ -1107,6 +1153,10 @@ class AnomalyForecaster:
             forecast_data["tier_label"] = _tier_method_label(method)
             forecast_data["guidance"] = self._build_tier_guidance(len(values))
 
+            # ML risk context ekle (mean_anomaly_score kendi metriği için ekleme)
+            if ml_risk_ctx and metric_name != "mean_anomaly_score":
+                forecast_data["ml_risk_context"] = ml_risk_ctx
+
             forecasts[metric_name] = forecast_data
 
             cps = tier_result.get("change_points", [])
@@ -1117,7 +1167,8 @@ class AnomalyForecaster:
 
             alert = _evaluate_alert(
                 metric_name, metric_cfg, tier_result, values,
-                self.forecast_horizon_hours, server_name)
+                self.forecast_horizon_hours, server_name,
+                ml_risk_ctx=ml_risk_ctx)
             if alert:
                 alerts.append(alert)
 
@@ -1138,6 +1189,66 @@ class AnomalyForecaster:
                 f"no alerts, tier={tier_used}, {n} data points")
 
         return report
+
+    @staticmethod
+    def _compute_ml_risk_context(current_analysis: Dict[str, Any],
+                                  history_records: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        current_analysis ve history'den ML risk context hesapla.
+
+        Returns:
+            ML risk context dict veya None (veri yoksa).
+            Alanlar:
+              - current_mean_score: abs(current mean anomaly score)
+              - baseline_mean_score: abs(historical mean anomaly score ort.)
+              - score_worsening: bool — skor kötüleşiyor mu
+              - anomaly_rate: current anomaly rate
+              - critical_count: current CRITICAL + HIGH count
+              - ml_risk_level: "CRITICAL" | "WARNING" | "INFO" | "OK"
+        """
+        try:
+            curr_sr = (current_analysis.get('summary') or {}).get('score_range') or {}
+            curr_mean_raw = curr_sr.get('mean')
+            if curr_mean_raw is None:
+                return None
+            curr_mean = abs(float(curr_mean_raw))
+
+            curr_rate = float((current_analysis.get('summary') or {}).get('anomaly_rate', 0))
+            sev_dist = current_analysis.get('severity_distribution') or {}
+            critical_count = int(sev_dist.get('CRITICAL', 0)) + int(sev_dist.get('HIGH', 0))
+
+            # Historical baseline
+            past_scores = []
+            for rec in history_records:
+                sr = rec.get('score_range') or (rec.get('summary') or {}).get('score_range') or {}
+                m = sr.get('mean')
+                if m is not None and isinstance(m, (int, float)):
+                    past_scores.append(abs(float(m)))
+
+            baseline_mean = sum(past_scores) / len(past_scores) if past_scores else curr_mean
+            score_worsening = curr_mean > baseline_mean * 1.15 if baseline_mean > 0 else False
+
+            # Risk level
+            if critical_count >= 3 or curr_rate > 15:
+                ml_risk = "CRITICAL"
+            elif critical_count >= 1 or curr_rate > 8:
+                ml_risk = "WARNING"
+            elif curr_rate > 0:
+                ml_risk = "INFO"
+            else:
+                ml_risk = "OK"
+
+            return {
+                "current_mean_score": round(curr_mean, 4),
+                "baseline_mean_score": round(baseline_mean, 4),
+                "score_worsening": score_worsening,
+                "anomaly_rate": round(curr_rate, 2),
+                "critical_count": critical_count,
+                "ml_risk_level": ml_risk,
+            }
+        except Exception as e:
+            logger.debug(f"ML risk context computation skipped: {e}")
+            return None
 
     def _estimate_avg_interval(self, records_asc: List[Dict]) -> float:
         """Analizler arası ortalama süre (saat cinsinden)."""
