@@ -643,7 +643,8 @@
         var triggerBtn = _el('ppdSchedTriggerBtn');
         if (startBtn) startBtn.disabled = !enabled || running || _schedBusy;
         if (stopBtn) stopBtn.disabled = !running || _schedBusy;
-        if (triggerBtn) triggerBtn.disabled = !enabled || _schedBusy;
+        // Trigger is independent of scheduler enabled state — trigger_now works standalone
+        if (triggerBtn) triggerBtn.disabled = _schedBusy;
 
         // Render target hosts as interactive checkboxes in sidebar
         var hosts = sched.target_hosts || [];
@@ -774,7 +775,11 @@
                 renderSchedulerStatus(data.scheduler);
             }
             console.log('[PredictionDashboard] ' + successMsg, data);
-            loadSchedulerStatus(); // refresh after action
+            loadSchedulerStatus(); // refresh scheduler status
+            // After trigger/start, refresh all prediction data (new results may be available)
+            if (endpointKey === 'schedulerTrigger' || endpointKey === 'schedulerStart') {
+                setTimeout(function () { refreshAll(); }, 1500);
+            }
         })
         .catch(function (err) {
             _schedBusy = false;
