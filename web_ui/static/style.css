@@ -16329,6 +16329,55 @@ mark.text-highlight:hover {
     border-color: #fecaca;
 }
 
+/* Header "Analiz ve Tahmin Çalıştır" button */
+.pps-run-analysis-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: 1px solid #1976d2;
+    background: #1976d2;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+.pps-run-analysis-btn:hover:not(:disabled) {
+    background: #1565c0;
+    border-color: #1565c0;
+}
+.pps-run-analysis-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.pps-run-icon {
+    font-size: 11px;
+}
+.pps-run-spinning {
+    display: inline-block;
+    animation: pps-spin 0.8s linear infinite;
+    font-size: 15px;
+}
+@keyframes pps-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+.pps-run-busy {
+    background: #546e7a;
+    border-color: #546e7a;
+}
+.pps-run-success {
+    background: #2e7d32;
+    border-color: #2e7d32;
+}
+.pps-run-error {
+    background: #c62828;
+    border-color: #c62828;
+}
+
 /* Body – two-column layout: sidebar + main */
 .pps-modal-body {
     flex: 1;

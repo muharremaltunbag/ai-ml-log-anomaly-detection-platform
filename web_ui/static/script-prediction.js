@@ -835,6 +835,68 @@
         });
     }
 
+    // Header "Analiz ve Tahmin Çalıştır" button handler
+    function runAnalysis() {
+        var btn = _el('ppdRunAnalysisBtn');
+        if (!btn || btn.disabled) return;
+
+        var serverVal = (_el('ppdServerFilter') || {}).value || '';
+        var msg = serverVal
+            ? '"' + serverVal + '" icin analiz ve tahmin calistirilacak. Devam?'
+            : 'Tum sunucular icin analiz ve tahmin calistirilacak. Devam?';
+
+        _showConfirm('Analiz ve Tahmin Calistir', msg, function () {
+            // Set loading state on header button
+            btn.disabled = true;
+            var origText = btn.innerHTML;
+            btn.innerHTML = '<span class="pps-run-icon pps-run-spinning">&#x21bb;</span> Calisiyor...';
+            btn.classList.add('pps-run-busy');
+
+            var body = { api_key: window.apiKey || '' };
+            if (serverVal) body.server_name = serverVal;
+
+            var base = window.API_ENDPOINTS ? window.API_ENDPOINTS['schedulerTrigger'] : null;
+            if (!base) {
+                btn.disabled = false;
+                btn.innerHTML = origText;
+                btn.classList.remove('pps-run-busy');
+                return;
+            }
+
+            fetch(base, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                btn.classList.remove('pps-run-busy');
+                btn.classList.add('pps-run-success');
+                btn.innerHTML = '<span class="pps-run-icon">&#x2714;</span> Tamamlandi';
+                console.log('[PredictionDashboard] Analysis triggered', data);
+                loadSchedulerStatus();
+                // Refresh prediction data after pipeline completes
+                setTimeout(function () {
+                    refreshAll();
+                    btn.disabled = false;
+                    btn.innerHTML = origText;
+                    btn.classList.remove('pps-run-success');
+                }, 2000);
+            })
+            .catch(function (err) {
+                btn.classList.remove('pps-run-busy');
+                btn.classList.add('pps-run-error');
+                btn.innerHTML = '<span class="pps-run-icon">&#x26A0;</span> Hata';
+                console.error('[PredictionDashboard] Analysis trigger error:', err);
+                setTimeout(function () {
+                    btn.disabled = false;
+                    btn.innerHTML = origText;
+                    btn.classList.remove('pps-run-error');
+                }, 3000);
+            });
+        });
+    }
+
     // ============================
     // INITIALIZATION
     // ============================
@@ -901,6 +963,12 @@
         var schedTriggerBtn = _el('ppdSchedTriggerBtn');
         if (schedTriggerBtn) {
             schedTriggerBtn.addEventListener('click', function () { triggerScheduler(); });
+        }
+
+        // Header "Analiz ve Tahmin Çalıştır" button
+        var runAnalysisBtn = _el('ppdRunAnalysisBtn');
+        if (runAnalysisBtn) {
+            runAnalysisBtn.addEventListener('click', function () { runAnalysis(); });
         }
 
         // Source toggle + host select all
