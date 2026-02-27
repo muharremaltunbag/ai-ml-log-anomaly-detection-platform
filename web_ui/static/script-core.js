@@ -72,6 +72,7 @@ window.API_ENDPOINTS = {
     // PREDICTION & EARLY WARNING
     predictionAlerts: '/api/prediction/alerts',
     predictionSummary: '/api/prediction/summary',
+    predictionTimeseries: '/api/prediction/timeseries',
     predictionConfig: '/api/prediction/config',
     // SCHEDULER
     schedulerStatus: '/api/scheduler/status',

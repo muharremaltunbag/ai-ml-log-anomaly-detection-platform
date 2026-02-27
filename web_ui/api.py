@@ -5422,6 +5422,33 @@ async def get_prediction_summary(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/prediction/timeseries")
+async def get_prediction_timeseries(
+    api_key: str,
+    server_name: Optional[str] = None,
+    alert_source: Optional[str] = None,
+    days: int = Query(default=7, le=90)
+):
+    """Prediction alert zaman serisi (chart-ready bucket aggregation)"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    try:
+        storage = await get_storage_manager()
+        if not hasattr(storage, 'get_prediction_timeseries'):
+            return {"status": "error", "message": "Prediction timeseries not available"}
+
+        ts_data = await storage.get_prediction_timeseries(
+            server_name=server_name,
+            alert_source=alert_source,
+            days=days
+        )
+        return {"status": "success", "timeseries": ts_data}
+    except Exception as e:
+        logger.error(f"Error getting prediction timeseries: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/prediction/config")
 async def get_prediction_config(api_key: str):
     """Prediction layer config durumunu göster"""

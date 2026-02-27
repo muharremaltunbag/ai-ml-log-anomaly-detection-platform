@@ -1233,3 +1233,9 @@ class StorageManager:
                                      days: int = 7) -> Dict[str, Any]:
         """Delegate to MongoDBHandler"""
         return await self.mongodb.get_prediction_summary(server_name, days)
+
+    async def get_prediction_timeseries(self, server_name: str = None,
+                                        alert_source: str = None,
+                                        days: int = 7) -> Dict[str, Any]:
+        """Delegate to MongoDBHandler"""
+        return await self.mongodb.get_prediction_timeseries(server_name, alert_source, days)

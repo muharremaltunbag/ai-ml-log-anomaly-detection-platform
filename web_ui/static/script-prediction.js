@@ -3,9 +3,10 @@
  * LC Waikiki MongoDB Assistant - Prediction Dashboard Module
  *
  * Standalone dashboard that fetches prediction data via API:
- *   - /api/prediction/alerts   → alert history table
- *   - /api/prediction/summary  → summary cards
- *   - /api/prediction/config   → config pills & badge
+ *   - /api/prediction/alerts      → alert history table
+ *   - /api/prediction/summary     → summary cards
+ *   - /api/prediction/timeseries  → time-series chart data
+ *   - /api/prediction/config      → config pills & badge
  *   - /api/scheduler/status    → scheduler status panel
  *   - /api/scheduler/start     → start scheduler (POST, confirmation)
  *   - /api/scheduler/stop      → stop scheduler (POST, confirmation)
@@ -126,6 +127,7 @@
         loadConfig();
         loadSummary(serverVal, daysVal);
         loadAlerts(serverVal, daysVal);
+        loadTimeseries(serverVal, daysVal);
         loadSchedulerStatus();
     }
 
@@ -399,6 +401,154 @@
             html += '<option value="' + esc(sorted[j]) + '"' + sel + '>' + esc(sorted[j]) + '</option>';
         }
         select.innerHTML = html;
+    }
+
+    // ============================
+    // TIME-SERIES CHART
+    // ============================
+    var _chartInstance = null;
+
+    function loadTimeseries(server, days) {
+        var extra = 'days=' + encodeURIComponent(days);
+        if (server) extra += '&server_name=' + encodeURIComponent(server);
+        var url = _apiUrl('predictionTimeseries', extra);
+        if (!url) return;
+
+        fetch(url)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.status !== 'success' || !data.timeseries) return;
+                renderTimeseries(data.timeseries);
+            })
+            .catch(function (err) {
+                console.warn('[PredictionDashboard] Timeseries fetch error:', err);
+            });
+    }
+
+    function renderTimeseries(ts) {
+        var canvas = _el('ppsTimeseriesCanvas');
+        var emptyEl = _el('ppsChartEmpty');
+        if (!canvas) return;
+
+        var labels = ts.labels || [];
+        var ds = ts.datasets || {};
+
+        // Show empty state if no data
+        if (labels.length === 0) {
+            canvas.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'block';
+            if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+            return;
+        }
+        canvas.style.display = 'block';
+        if (emptyEl) emptyEl.style.display = 'none';
+
+        // Format labels for display
+        var bucketType = ts.bucket_type || 'daily';
+        var displayLabels = labels.map(function (lbl) {
+            if (bucketType === 'hourly') {
+                // "2026-02-27T14:00" → "27 Feb 14:00"
+                var parts = lbl.split('T');
+                var datePart = parts[0].split('-');
+                var months = ['Oca','Sub','Mar','Nis','May','Haz','Tem','Agu','Eyl','Eki','Kas','Ara'];
+                return datePart[2] + ' ' + months[parseInt(datePart[1], 10) - 1] + ' ' + (parts[1] || '');
+            }
+            // "2026-02-27" → "27 Sub"
+            var d = lbl.split('-');
+            var m = ['Oca','Sub','Mar','Nis','May','Haz','Tem','Agu','Eyl','Eki','Kas','Ara'];
+            return d[2] + ' ' + m[parseInt(d[1], 10) - 1];
+        });
+
+        // Destroy previous chart
+        if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+
+        // Check for Chart.js
+        if (typeof Chart === 'undefined') {
+            console.warn('[PredictionDashboard] Chart.js not loaded');
+            return;
+        }
+
+        var ctx = canvas.getContext('2d');
+        _chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: displayLabels,
+                datasets: [
+                    {
+                        label: 'Toplam Kontrol',
+                        data: ds.total_checks || [],
+                        backgroundColor: 'rgba(63, 81, 181, 0.18)',
+                        borderColor: 'rgba(63, 81, 181, 0.7)',
+                        borderWidth: 1.5,
+                        borderRadius: 4,
+                        order: 3
+                    },
+                    {
+                        label: 'Trend Alert',
+                        data: ds.trend_alerts || [],
+                        backgroundColor: 'rgba(255, 152, 0, 0.65)',
+                        borderColor: 'rgba(255, 152, 0, 1)',
+                        borderWidth: 1.5,
+                        borderRadius: 4,
+                        order: 2
+                    },
+                    {
+                        label: 'Rate Alert',
+                        data: ds.rate_alerts || [],
+                        backgroundColor: 'rgba(244, 67, 54, 0.65)',
+                        borderColor: 'rgba(244, 67, 54, 1)',
+                        borderWidth: 1.5,
+                        borderRadius: 4,
+                        order: 1
+                    },
+                    {
+                        label: 'Forecast Alert',
+                        data: ds.forecast_alerts || [],
+                        backgroundColor: 'rgba(76, 175, 80, 0.65)',
+                        borderColor: 'rgba(76, 175, 80, 1)',
+                        borderWidth: 1.5,
+                        borderRadius: 4,
+                        order: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            boxWidth: 14,
+                            padding: 12,
+                            font: { size: 12 }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(26, 35, 126, 0.9)',
+                        titleFont: { size: 13 },
+                        bodyFont: { size: 12 },
+                        padding: 10,
+                        cornerRadius: 6
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 11 }, maxRotation: 45, minRotation: 0 }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { font: { size: 11 }, precision: 0 },
+                        grid: { color: 'rgba(0,0,0,0.06)' }
+                    }
+                }
+            }
+        });
     }
 
     // ============================
@@ -759,6 +909,7 @@
         loadConfig: loadConfig,
         loadSummary: loadSummary,
         loadAlerts: loadAlerts,
+        loadTimeseries: loadTimeseries,
         loadSchedulerStatus: loadSchedulerStatus,
         startScheduler: startScheduler,
         stopScheduler: stopScheduler,

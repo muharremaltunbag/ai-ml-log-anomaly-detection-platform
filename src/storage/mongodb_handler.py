@@ -1025,3 +1025,101 @@ class MongoDBHandler:
         except Exception as e:
             logger.error(f"Error getting prediction summary: {e}")
             return {"error": str(e)}
+
+    async def get_prediction_timeseries(self, server_name: str = None,
+                                        alert_source: str = None,
+                                        days: int = 7) -> Dict[str, Any]:
+        """
+        Prediction alert verilerini zaman serisi formatında döndür.
+        days <= 3 ise saatlik, >3 ise günlük bucket kullanır.
+
+        Returns:
+            { bucket_type, labels[], datasets: { total_checks[], total_alerts[],
+              trend_alerts[], rate_alerts[], forecast_alerts[] } }
+        """
+        try:
+            collection = self.db[self.collections.get("prediction_alerts", "prediction_alerts")]
+
+            cutoff = datetime.utcnow() - timedelta(days=days)
+            match_stage: Dict[str, Any] = {"timestamp": {"$gte": cutoff}}
+            if server_name:
+                match_stage["server_name"] = server_name
+            if alert_source:
+                match_stage["alert_source"] = alert_source
+
+            # Bucket granularity
+            if days <= 3:
+                bucket_type = "hourly"
+                date_fmt = "%Y-%m-%dT%H:00"
+            else:
+                bucket_type = "daily"
+                date_fmt = "%Y-%m-%d"
+
+            pipeline = [
+                {"$match": match_stage},
+                {"$group": {
+                    "_id": {
+                        "bucket": {"$dateToString": {"format": date_fmt, "date": "$timestamp"}},
+                        "source": "$alert_source"
+                    },
+                    "checks": {"$sum": 1},
+                    "alerts": {"$sum": {"$cond": ["$has_alerts", 1, 0]}}
+                }},
+                {"$sort": {"_id.bucket": 1}}
+            ]
+
+            # Collect raw buckets
+            raw: Dict[str, Dict[str, Dict[str, int]]] = {}
+            async for doc in collection.aggregate(pipeline):
+                bucket = doc["_id"]["bucket"]
+                source = doc["_id"]["source"] or "unknown"
+                if bucket not in raw:
+                    raw[bucket] = {}
+                raw[bucket][source] = {
+                    "checks": doc["checks"],
+                    "alerts": doc["alerts"]
+                }
+
+            # Build sorted labels and datasets
+            labels = sorted(raw.keys())
+            ds = {
+                "total_checks": [],
+                "total_alerts": [],
+                "trend_alerts": [],
+                "rate_alerts": [],
+                "forecast_alerts": []
+            }
+            for lbl in labels:
+                bucket_data = raw[lbl]
+                total_c = 0
+                total_a = 0
+                trend_a = 0
+                rate_a = 0
+                forecast_a = 0
+                for src, vals in bucket_data.items():
+                    total_c += vals["checks"]
+                    total_a += vals["alerts"]
+                    if src == "trend":
+                        trend_a += vals["alerts"]
+                    elif src == "rate":
+                        rate_a += vals["alerts"]
+                    elif src == "forecast":
+                        forecast_a += vals["alerts"]
+                ds["total_checks"].append(total_c)
+                ds["total_alerts"].append(total_a)
+                ds["trend_alerts"].append(trend_a)
+                ds["rate_alerts"].append(rate_a)
+                ds["forecast_alerts"].append(forecast_a)
+
+            logger.debug(f"Prediction timeseries: {len(labels)} buckets ({bucket_type}), "
+                         f"server={server_name}, source={alert_source}")
+            return {
+                "bucket_type": bucket_type,
+                "period_days": days,
+                "labels": labels,
+                "datasets": ds
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting prediction timeseries: {e}")
+            return {"error": str(e)}

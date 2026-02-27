@@ -17026,3 +17026,33 @@ body.pps-body-lock {
 .ppd-sched-confirm-no:hover {
     background: #e0e0e0;
 }
+
+/* ── Prediction Studio Chart ── */
+.pps-chart-wrapper {
+    background: #fff;
+    border: 1px solid #e0e4ea;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 22px;
+    position: relative;
+    min-height: 180px;
+}
+.pps-chart-title {
+    font-size: 1.05em;
+    font-weight: 700;
+    color: #1a237e;
+    margin: 0 0 14px 0;
+    letter-spacing: 0.2px;
+}
+.pps-chart-empty {
+    text-align: center;
+    padding: 30px 16px;
+}
+.pps-chart-empty .pps-empty-icon {
+    font-size: 32px;
+}
+/* Make canvas responsive inside wrapper */
+.pps-chart-wrapper canvas {
+    width: 100% !important;
+    max-height: 280px;
+}

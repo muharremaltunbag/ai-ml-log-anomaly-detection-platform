@@ -746,6 +746,17 @@
                                     <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
                                 </div>
 
+                                <!-- Time-series Chart -->
+                                <div class="pps-chart-wrapper" id="ppsChartWrapper">
+                                    <h3 class="pps-chart-title">Alert Zaman Serisi</h3>
+                                    <canvas id="ppsTimeseriesCanvas" height="260"></canvas>
+                                    <div class="pps-chart-empty" id="ppsChartEmpty" style="display:none;">
+                                        <div class="pps-empty-icon">&#x1F4C8;</div>
+                                        <div style="margin-top:6px;font-weight:600;color:#555;">Grafik icin yeterli veri yok</div>
+                                        <div style="margin-top:4px;font-size:12px;color:#999;">Analiz calistiktan sonra zaman serisi burada goruntulenecek.</div>
+                                    </div>
+                                </div>
+
                                 <!-- Alert history table -->
                                 <div class="ppd-table-wrapper" id="ppdTableWrapper" style="display:none;">
                                     <table class="ppd-table">
@@ -1063,6 +1074,9 @@
         </div>
     </div>
 </aside>
+
+    <!-- Chart.js (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 
     <!-- Core Configuration Module - EN ÖNCE YÜKLENMELİ -->
     <script src="/static/script-core.js?v=20260226"></script>
