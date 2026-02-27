@@ -15887,6 +15887,30 @@ mark.text-highlight:hover {
     text-align: right;
 }
 
+/* Link to Prediction Studio */
+.pi-studio-link {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #e8ecf0;
+    text-align: right;
+}
+.pi-studio-link-btn {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--lcw-blue, #0047BA);
+    text-decoration: none;
+    padding: 6px 14px;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+.pi-studio-link-btn:hover {
+    background: rgba(0, 71, 186, 0.06);
+    text-decoration: none;
+    color: #003a9e;
+}
+
 /* Empty / disabled state */
 .pi-empty {
     padding: 10px 16px;

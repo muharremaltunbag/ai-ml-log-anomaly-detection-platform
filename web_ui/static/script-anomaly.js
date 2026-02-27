@@ -3804,6 +3804,13 @@ function renderPredictionInsightPanel(mlData) {
         html += '</div>';
     }
 
+    // Link to open Prediction Studio modal
+    html += '<div class="pi-studio-link">';
+    html += '<a href="javascript:void(0)" onclick="if(window.PredictionDashboard){window.PredictionDashboard.show();}" class="pi-studio-link-btn">';
+    html += 'Detayli analiz icin Prediction Studio&#x2019;yu acin &#x2192;';
+    html += '</a>';
+    html += '</div>';
+
     html += '</div>'; // pi-body
     html += '</div>'; // pi-panel
 
