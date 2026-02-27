@@ -4243,6 +4243,54 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
 
         return insight
 
+    def _extract_ml_signal(self, analysis_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Anomaly detection sonucundan ML risk sinyali çıkar.
+
+        IsolationForest model çıktılarını kullanarak anlık risk seviyesini hesaplar.
+        Prediction insight'a ek bağlam olarak eklenir.
+        Bu bir 'ML forecast modeli' DEĞİL, anomaly detection'ın anlık risk göstergesidir.
+
+        Returns:
+            ML signal dict veya None (anlamlı veri yoksa)
+        """
+        if not analysis_data:
+            return None
+
+        summary = analysis_data.get('summary') or {}
+        anomaly_rate = summary.get('anomaly_rate', 0)
+        n_anomalies = summary.get('n_anomalies', 0)
+        total_logs = summary.get('total_logs', 0)
+        score_range = summary.get('score_range') or {}
+        mean_score = abs(score_range.get('mean', 0))
+        severity_dist = analysis_data.get('severity_distribution') or {}
+
+        if n_anomalies == 0 and anomaly_rate == 0:
+            return None
+
+        critical = severity_dist.get('CRITICAL', 0)
+        high = severity_dist.get('HIGH', 0)
+
+        # ML risk seviyesi — anomaly detection modelinin anlık değerlendirmesi
+        if critical >= 3 or anomaly_rate > 15:
+            ml_risk = "CRITICAL"
+        elif critical >= 1 or high >= 3 or anomaly_rate > 8:
+            ml_risk = "WARNING"
+        elif n_anomalies > 0:
+            ml_risk = "INFO"
+        else:
+            ml_risk = "OK"
+
+        return {
+            "anomaly_rate": round(anomaly_rate, 2),
+            "n_anomalies": n_anomalies,
+            "total_logs": total_logs,
+            "mean_score": round(mean_score, 4),
+            "critical_count": critical,
+            "high_count": high,
+            "ml_risk": ml_risk,
+        }
+
     def _enrich_result_with_prediction(self, result: Dict[str, Any],
                                         prediction_results: Dict[str, Any]) -> None:
         """
@@ -4250,6 +4298,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
 
         - result["data"]["prediction_alerts"] = raw prediction sonuçları (mevcut)
         - result["ai_explanation"]["prediction_insight"] = insan-okunabilir özet (YENİ)
+        - result["data"]["prediction_insight"]["ml_signal"] = ML risk sinyali (YENİ)
 
         Mevcut ai_explanation dict'inin yapısını bozmaz, sadece yeni key ekler.
         ai_explanation None/boş ise bile prediction_insight'ı result["data"]'ya koyar.
@@ -4257,6 +4306,24 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         insight = self._build_prediction_insight(prediction_results)
         if not insight:
             return
+
+        # ML signal: anomaly detection model çıktısından risk sinyali çıkar
+        analysis_data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        ml_signal = self._extract_ml_signal(analysis_data)
+        if ml_signal:
+            insight["ml_signal"] = ml_signal
+
+            # Risk boosting: ML ve prediction aynı anda uyarıyorsa,
+            # insight risk seviyesini ML seviyesine yükselt.
+            # Güvenlik: sadece prediction_alerts varsa boost yapılır.
+            if (ml_signal["ml_risk"] in ("WARNING", "CRITICAL")
+                    and insight.get("prediction_alerts")):
+                sev_order = {"OK": 0, "INFO": 1, "WARNING": 2, "CRITICAL": 3}
+                current = sev_order.get(insight.get("risk_level", "OK"), 0)
+                ml_level = sev_order.get(ml_signal["ml_risk"], 0)
+                if ml_level > current:
+                    insight["risk_level"] = ml_signal["ml_risk"]
+                    insight["risk_boosted_by_ml"] = True
 
         # ai_explanation varsa oraya ekle
         ai_exp = result.get("ai_explanation")

@@ -3734,6 +3734,28 @@ function renderPredictionInsightPanel(mlData) {
         });
     }
 
+    // ML Risk Sinyali — anomaly detection modelinin anlik risk degerlendirmesi
+    var mlSignal = insight.ml_signal;
+    if (mlSignal && mlSignal.ml_risk && mlSignal.ml_risk !== 'OK') {
+        var mlDesc = 'Anomali orani: %' + (mlSignal.anomaly_rate || 0);
+        mlDesc += ' (' + (mlSignal.n_anomalies || 0) + ' anomali';
+        if (mlSignal.total_logs) mlDesc += ' / ' + mlSignal.total_logs + ' log';
+        mlDesc += ')';
+        if (mlSignal.critical_count > 0) mlDesc += '. ' + mlSignal.critical_count + ' kritik';
+        if (mlSignal.high_count > 0) mlDesc += ', ' + mlSignal.high_count + ' yuksek';
+        mlDesc += '.';
+        summaryRows.push({
+            icon: '\uD83E\uDD16', // 🤖
+            label: 'ML Risk Sinyali',
+            text: mlDesc
+        });
+    }
+
+    // Risk boost notu
+    if (insight.risk_boosted_by_ml) {
+        riskLabel += ' (ML destekli)';
+    }
+
     // Hic icerik yoksa (tum summary'ler bos ve alert yok) panel gosterme
     var alerts = Array.isArray(insight.prediction_alerts) ? insight.prediction_alerts : [];
     if (summaryRows.length === 0 && alerts.length === 0) {
