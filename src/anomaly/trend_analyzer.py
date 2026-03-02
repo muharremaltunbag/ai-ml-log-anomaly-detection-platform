@@ -172,6 +172,18 @@ class TrendAnalyzer:
         ml_alerts = self._check_ml_score_trend(history_records, current_analysis, server_name)
         alerts.extend(ml_alerts)
 
+        # 7. Rate acceleration (2. türev — artış hızlanıyor mu?)
+        accel_alerts = self._check_rate_acceleration(history_records, current_analysis, server_name)
+        alerts.extend(accel_alerts)
+
+        # 8. Volatility indicator (gürültü seviyesi)
+        vol_alerts = self._check_volatility(history_records, current_analysis, server_name)
+        alerts.extend(vol_alerts)
+
+        # 9. Improvement detection (iyileşme tespiti)
+        imp_alerts = self._check_improvement(history_records, current_analysis, server_name)
+        alerts.extend(imp_alerts)
+
         # Trend direction
         direction = self._determine_trend_direction(alerts, history_records, current_analysis)
 
@@ -684,19 +696,238 @@ class TrendAnalyzer:
         return alerts
 
     # ──────────────────────────────────────────────
+    # Check: Rate Acceleration (2. türev)
+    # ──────────────────────────────────────────────
+
+    def _check_rate_acceleration(self, history: List[Dict], current: Dict,
+                                  server_name: Optional[str]) -> List[TrendAlert]:
+        """
+        Anomaly rate artış hızının artıp artmadığını kontrol et (2. türev).
+
+        Lineer artış: rate 2 → 4 → 6 → 8  (fark: +2, +2, +2)
+        İvmelenen artış: rate 2 → 3 → 5 → 9  (fark: +1, +2, +4 — hızlanıyor)
+
+        İvmelenen artış eksponensiyal büyümeye işaret eder ve çok daha ciddidir.
+        """
+        alerts = []
+
+        # Rate serisi oluştur (en yeniden en eskiye → ters çevir)
+        past_rates = []
+        for record in history:
+            rate = record.get('anomaly_rate', 0)
+            if rate is None:
+                rate = record.get('summary', {}).get('anomaly_rate', 0)
+            past_rates.append(float(rate or 0))
+
+        current_rate = float(current.get('summary', {}).get('anomaly_rate', 0))
+
+        if len(past_rates) < 3:
+            return alerts
+
+        # Kronolojik sıra: en eski → en yeni → current
+        series = list(reversed(past_rates[:self.lookback])) + [current_rate]
+
+        if len(series) < 4:
+            return alerts
+
+        # 1. türev (farklar)
+        deltas = [series[i + 1] - series[i] for i in range(len(series) - 1)]
+
+        # 2. türev (farkların farkları)
+        accels = [deltas[i + 1] - deltas[i] for i in range(len(deltas) - 1)]
+
+        if not accels:
+            return alerts
+
+        # Son 3 ivmelenme pozitifse → artış hızlanıyor
+        recent_accels = accels[-min(3, len(accels)):]
+        positive_accels = sum(1 for a in recent_accels if a > 0.1)  # gürültü filtresi
+
+        if positive_accels >= 2 and deltas[-1] > 0:
+            avg_accel = sum(recent_accels) / len(recent_accels)
+            alerts.append(TrendAlert(
+                alert_type="rate_acceleration",
+                severity="CRITICAL" if avg_accel > 1.0 else "WARNING",
+                title="Anomali artış hızı ivmeleniyor",
+                description=(
+                    f"Anomali oranı artış hızı son {len(recent_accels)} periyotta pozitif ivme gösteriyor. "
+                    f"Ortalama ivme: +{avg_accel:.2f} puan/periyot². "
+                    f"Son rate serisi: {' → '.join(f'%{r:.1f}' for r in series[-4:])}."
+                ),
+                metric_name="anomaly_rate_acceleration",
+                baseline_value=round(deltas[-2] if len(deltas) >= 2 else 0, 4),
+                current_value=round(deltas[-1], 4),
+                change_pct=round(avg_accel, 4),
+                window_size=len(series),
+                server_name=server_name,
+                explainability=(
+                    f"Anomali oranı sadece artmıyor, artış hızı da hızlanıyor. "
+                    f"Bu, lineer bozulma değil üstel büyüme işareti olabilir. "
+                    f"İvmelenme devam ederse kısa sürede kontrolden çıkabilir."
+                )
+            ))
+
+        return alerts
+
+    # ──────────────────────────────────────────────
+    # Check: Volatility (Coefficient of Variation)
+    # ──────────────────────────────────────────────
+
+    def _check_volatility(self, history: List[Dict], current: Dict,
+                          server_name: Optional[str]) -> List[TrendAlert]:
+        """
+        Anomaly rate'in volatilitesini (dalgalanma) ölç.
+
+        Düşük CV + yükselen trend = güvenilir, sürekli bozulma (daha ciddi)
+        Yüksek CV = gürültülü veri, trend yorumları daha az güvenilir
+
+        Coefficient of Variation = std_dev / mean
+        """
+        alerts = []
+
+        past_rates = []
+        for record in history:
+            rate = record.get('anomaly_rate', 0)
+            if rate is None:
+                rate = record.get('summary', {}).get('anomaly_rate', 0)
+            past_rates.append(float(rate or 0))
+
+        if len(past_rates) < 4:
+            return alerts
+
+        mean_rate = sum(past_rates) / len(past_rates)
+        if mean_rate <= 0:
+            return alerts
+
+        # Standard deviation (population)
+        variance = sum((r - mean_rate) ** 2 for r in past_rates) / len(past_rates)
+        std_dev = variance ** 0.5
+        cv = std_dev / mean_rate  # Coefficient of Variation
+
+        current_rate = float(current.get('summary', {}).get('anomaly_rate', 0))
+
+        # Düşük volatilite + yükselen trend = güvenilir bozulma sinyali
+        if cv < 0.3 and current_rate > mean_rate * 1.3:
+            alerts.append(TrendAlert(
+                alert_type="stable_degradation",
+                severity="WARNING",
+                title="Kararlı bozulma trendi",
+                description=(
+                    f"Anomali oranı düşük volatilite ile (CV={cv:.2f}) sürekli yükseliyor. "
+                    f"Baseline ortalama: %{mean_rate:.2f} (σ={std_dev:.2f}) → "
+                    f"Güncel: %{current_rate:.2f}. "
+                    f"Düşük dalgalanma bu trendin rastgele olmadığını gösterir."
+                ),
+                metric_name="volatility_cv",
+                baseline_value=round(mean_rate, 4),
+                current_value=round(current_rate, 4),
+                change_pct=round(cv * 100, 2),
+                window_size=len(past_rates),
+                server_name=server_name,
+                explainability=(
+                    f"Coefficient of Variation (CV) = {cv:.2f}. "
+                    f"CV < 0.3 demek, anomali oranı geçmişte çok stabil değişiyordu. "
+                    f"Bu stabil pattern'den belirgin yükselme, rastgele bir spike değil "
+                    f"yapısal bir sorunun göstergesidir."
+                )
+            ))
+
+        return alerts
+
+    # ──────────────────────────────────────────────
+    # Check: Improvement Detection
+    # ──────────────────────────────────────────────
+
+    def _check_improvement(self, history: List[Dict], current: Dict,
+                           server_name: Optional[str]) -> List[TrendAlert]:
+        """
+        Anomaly rate ve ML score'un belirgin iyileşme gösterip göstermediğini kontrol et.
+
+        Operasyonel değer: fix/config değişikliğinden sonra iyileşme teyidi.
+        """
+        alerts = []
+
+        past_rates = []
+        for record in history:
+            rate = record.get('anomaly_rate', 0)
+            if rate is None:
+                rate = record.get('summary', {}).get('anomaly_rate', 0)
+            past_rates.append(float(rate or 0))
+
+        if len(past_rates) < 3:
+            return alerts
+
+        current_rate = float(current.get('summary', {}).get('anomaly_rate', 0))
+        baseline_rate = sum(past_rates) / len(past_rates)
+
+        if baseline_rate <= 0:
+            return alerts
+
+        # Rate %40'tan fazla düştüyse → iyileşme
+        change_pct = ((current_rate - baseline_rate) / baseline_rate) * 100
+
+        if change_pct < -40:
+            alerts.append(TrendAlert(
+                alert_type="improvement_detected",
+                severity="INFO",
+                title="Anomali oranında iyileşme",
+                description=(
+                    f"Anomali oranı son {len(past_rates)} analize göre "
+                    f"%{abs(change_pct):.0f} azaldı. "
+                    f"Baseline: %{baseline_rate:.2f} → Güncel: %{current_rate:.2f}."
+                ),
+                metric_name="anomaly_rate",
+                baseline_value=round(baseline_rate, 4),
+                current_value=round(current_rate, 4),
+                change_pct=round(change_pct, 2),
+                window_size=len(past_rates),
+                server_name=server_name,
+                explainability=(
+                    f"Anomali oranı geçmiş ortalamasının belirgin altına düştü. "
+                    f"Bu, yapılan düzeltmelerin veya config değişikliklerinin "
+                    f"olumlu etki gösterdiğini işaret edebilir."
+                )
+            ))
+
+        return alerts
+
+    # ──────────────────────────────────────────────
     # Trend Direction & Summary
     # ──────────────────────────────────────────────
 
     def _determine_trend_direction(self, alerts: List[TrendAlert],
                                    history: List[Dict], current: Dict) -> str:
-        """Genel trend yönünü belirle"""
+        """
+        Genel trend yönünü belirle.
+
+        Multi-signal compound logic:
+        - Tek WARNING = degrading
+        - Tek CRITICAL veya 3+ WARNING = critical
+        - Sadece improvement_detected = improving
+        - Hiç alert yok = stable
+        """
         if not alerts:
             return "stable"
 
-        severity_scores = {"INFO": 1, "WARNING": 2, "CRITICAL": 3}
-        max_score = max(severity_scores.get(a.severity, 0) for a in alerts)
+        # İyileşme var mı?
+        improvement_only = all(a.alert_type == "improvement_detected" for a in alerts)
+        if improvement_only:
+            return "improving"
 
-        if max_score >= 3:
+        # Degradation alert'lerini say (improvement hariç)
+        degradation_alerts = [a for a in alerts if a.alert_type != "improvement_detected"]
+        if not degradation_alerts:
+            return "stable"
+
+        severity_scores = {"INFO": 1, "WARNING": 2, "CRITICAL": 3}
+        max_score = max(severity_scores.get(a.severity, 0) for a in degradation_alerts)
+        warning_count = sum(1 for a in degradation_alerts if a.severity in ("WARNING", "CRITICAL"))
+
+        # Compound risk: 3+ farklı check tipi alarm veriyorsa → critical
+        unique_types = set(a.alert_type for a in degradation_alerts if a.severity != "INFO")
+        compound_escalation = len(unique_types) >= 3
+
+        if max_score >= 3 or compound_escalation:
             return "critical"
         elif max_score >= 2:
             return "degrading"
@@ -741,12 +972,20 @@ class TrendAnalyzer:
                 ),
             }
 
+        # Volatility (coefficient of variation)
+        baseline_rate = sum(past_rates) / len(past_rates) if past_rates else 0
+        volatility_cv = None
+        if past_rates and baseline_rate > 0:
+            variance = sum((r - baseline_rate) ** 2 for r in past_rates) / len(past_rates)
+            volatility_cv = round((variance ** 0.5) / baseline_rate, 3)
+
         summary = {
             "history_window": len(history),
             "current_anomaly_rate": round(current_rate, 4),
-            "baseline_anomaly_rate": round(sum(past_rates) / len(past_rates), 4) if past_rates else 0,
+            "baseline_anomaly_rate": round(baseline_rate, 4),
             "min_historical_rate": round(min(past_rates), 4) if past_rates else 0,
             "max_historical_rate": round(max(past_rates), 4) if past_rates else 0,
+            "volatility_cv": volatility_cv,
             "alert_count": len(alerts),
             "alert_types": list(set(a.alert_type for a in alerts)),
             "alert_severities": {
