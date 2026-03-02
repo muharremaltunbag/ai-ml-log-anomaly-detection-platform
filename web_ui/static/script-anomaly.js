@@ -3811,6 +3811,10 @@ function renderPredictionInsightPanel(mlData) {
             html += '<div class="pi-alert-item">';
             html += '<span class="pi-sev ' + sevClass + '"></span>';
             html += '<span class="pi-alert-title">' + esc(alertTitle) + '</span>';
+            // ML corroboration badge for rate alerts
+            if (alert.ml_context && alert.ml_context.ml_corroborated) {
+                html += '<span class="ppd-ml-badge ppd-ml-confirmed" title="ML destekli">ML &#x2713;</span>';
+            }
             if (alertExplain) {
                 html += '<span class="pi-alert-explain">' + esc(alertExplain) + '</span>';
             }

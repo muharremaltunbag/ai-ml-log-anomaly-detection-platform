@@ -4158,11 +4158,23 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                 trend_summary_data = trend.get("summary", {})
                 baseline = trend_summary_data.get("baseline_anomaly_rate", 0)
                 current = trend_summary_data.get("current_anomaly_rate", 0)
-                insight["trend_summary"] = (
-                    f"Trend yönü: {direction}. "
-                    f"Baseline anomali oranı: %{baseline:.2f}, güncel: %{current:.2f}. "
-                    f"{alert_count} trend uyarısı."
-                )
+                parts = [
+                    f"Trend yönü: {direction}.",
+                    f"Baseline anomali oranı: %{baseline:.2f}, güncel: %{current:.2f}.",
+                    f"{alert_count} trend uyarısı.",
+                ]
+                # ML score trend enrichment
+                ml_score_trend = trend_summary_data.get("ml_score_trend")
+                if isinstance(ml_score_trend, dict) and ml_score_trend.get("direction"):
+                    ml_dir = ml_score_trend["direction"]
+                    ml_cur = ml_score_trend.get("current_score", 0)
+                    ml_base = ml_score_trend.get("baseline_score", 0)
+                    if ml_dir != "stable":
+                        parts.append(
+                            f"ML skor trendi: {ml_dir} "
+                            f"(baseline: {ml_base:.4f} → güncel: {ml_cur:.4f})."
+                        )
+                insight["trend_summary"] = " ".join(parts)
                 for a in trend.get("alerts", []):
                     insight["prediction_alerts"].append({
                         "type": a.get("alert_type"),
@@ -4178,17 +4190,32 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
             rate_alerts = rate.get("alerts", [])
             if rate_alerts:
                 alert_types = set(a.get("alert_type", "") for a in rate_alerts)
-                insight["rate_summary"] = (
+                # ML corroboration stats
+                ml_confirmed = sum(
+                    1 for a in rate_alerts
+                    if isinstance(a.get("ml_context"), dict)
+                    and a["ml_context"].get("ml_corroborated")
+                )
+                summary_parts = [
                     f"{len(rate_alerts)} rate-based uyarı: "
                     f"{', '.join(alert_types)}."
-                )
+                ]
+                if ml_confirmed > 0:
+                    summary_parts.append(
+                        f"{ml_confirmed}/{len(rate_alerts)} uyarı ML tarafından destekleniyor."
+                    )
+                insight["rate_summary"] = " ".join(summary_parts)
                 for a in rate_alerts:
-                    insight["prediction_alerts"].append({
+                    alert_entry = {
                         "type": a.get("alert_type"),
                         "severity": a.get("severity"),
                         "title": a.get("title"),
                         "explainability": a.get("explainability", ""),
-                    })
+                    }
+                    # Forward ML context for UI badge rendering
+                    if isinstance(a.get("ml_context"), dict):
+                        alert_entry["ml_context"] = a["ml_context"]
+                    insight["prediction_alerts"].append(alert_entry)
                 has_content = True
 
         # ── Forecast ──
