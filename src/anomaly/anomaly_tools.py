@@ -196,26 +196,42 @@ class AnomalyDetectionTools:
             logger.warning(f"Prediction layer init failed (non-critical): {e}")
             self.prediction_enabled = False
 
-    def _scheduler_analysis_callback(self, server_name: str) -> Dict[str, Any]:
+    def _scheduler_analysis_callback(self, server_name: str,
+                                     source_type: str = "mongodb") -> Dict[str, Any]:
         """
-        Scheduler tarafından çağrılan analiz callback'i.
+        Scheduler ve on-demand tarafından çağrılan analiz callback'i.
 
-        Mevcut analyze_mongodb_logs fonksiyonunu wrap eder.
+        source_type'a göre doğru analiz fonksiyonunu çağırır.
         JSON string döndüren fonksiyonu dict'e parse eder.
+
+        Args:
+            server_name: Sunucu adı
+            source_type: "mongodb" (default), "mssql", "elasticsearch"
         """
         try:
-            result_str = self.analyze_mongodb_logs({
-                "source_type": "opensearch",
-                "server_name": server_name,
-                "time_range": "last_hour"
-            })
-            # analyze_mongodb_logs JSON string döndürür, parse et
+            if source_type == "mssql":
+                result_str = self.analyze_mssql_logs({
+                    "host_filter": server_name,
+                    "last_hours": 1,
+                })
+            elif source_type == "elasticsearch":
+                result_str = self.analyze_elasticsearch_logs({
+                    "host_filter": server_name,
+                    "last_hours": 1,
+                })
+            else:
+                result_str = self.analyze_mongodb_logs({
+                    "source_type": "opensearch",
+                    "server_name": server_name,
+                    "time_range": "last_hour"
+                })
+
             if isinstance(result_str, str):
                 parsed = json.loads(result_str)
                 return parsed
             return result_str if isinstance(result_str, dict) else {"status": "unknown"}
         except Exception as e:
-            logger.error(f"Scheduler callback error for {server_name}: {e}")
+            logger.error(f"Scheduler callback error for {server_name} ({source_type}): {e}")
             return {"status": "error", "error": str(e)}
 
     def _run_prediction_sync(self, analysis: Dict[str, Any],

@@ -5492,6 +5492,82 @@ async def get_prediction_config(api_key: str):
 
 
 # ─────────────────────────────────────────────────
+# On-Demand Prediction Run Endpoint
+# ─────────────────────────────────────────────────
+
+@app.post("/api/prediction/run")
+async def run_prediction_on_demand(request: Dict[str, Any]):
+    """
+    On-demand analiz + prediction çalıştır.
+
+    Prediction Studio'dan "Analiz ve Tahmin Çalıştır" butonuyla tetiklenir.
+    Scheduler'dan bağımsız çalışır, source_type desteği vardır.
+
+    Body: {
+        api_key: str,
+        server_name: str (opsiyonel),
+        source_type: "mongodb" | "mssql" | "elasticsearch" (default: "mongodb")
+    }
+
+    Returns: {
+        status: "success" | "error",
+        analysis_summary: { n_anomalies, anomaly_rate, total_logs },
+        prediction_insight: { ... },
+        prediction_alerts: { trend: {...}, rate: {...}, forecast: {...} }
+    }
+    """
+    api_key = request.get("api_key", "")
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    server_name = request.get("server_name")
+    source_type = request.get("source_type", "mongodb")
+
+    if source_type not in ("mongodb", "mssql", "elasticsearch"):
+        raise HTTPException(status_code=400,
+                            detail=f"Geçersiz source_type: {source_type}")
+
+    tools = _get_scheduler_tools()
+
+    try:
+        # Analiz + prediction pipeline çalıştır (source_type aware)
+        raw_result = await asyncio.to_thread(
+            tools._scheduler_analysis_callback,
+            server_name or "global",
+            source_type
+        )
+
+        # Sonuçtan prediction ve summary bilgilerini çıkar
+        result_data = {}
+        if isinstance(raw_result, dict):
+            sonuc = raw_result.get("sonuç", raw_result)
+            data = sonuc.get("data", {}) if isinstance(sonuc, dict) else {}
+
+            result_data = {
+                "status": "success",
+                "server_name": server_name or "global",
+                "source_type": source_type,
+                "analysis_summary": {
+                    "n_anomalies": data.get("summary", {}).get("n_anomalies", 0),
+                    "anomaly_rate": data.get("summary", {}).get("anomaly_rate", 0),
+                    "total_logs": data.get("summary", {}).get("total_logs",
+                                    data.get("logs_analyzed", 0)),
+                },
+                "prediction_alerts": data.get("prediction_alerts", {}),
+                "prediction_insight": data.get("prediction_insight", {}),
+            }
+        else:
+            result_data = {"status": "error", "message": "Beklenmeyen sonuç formatı"}
+
+        return result_data
+
+    except Exception as e:
+        logger.error(f"On-demand prediction error: {e}", exc_info=True)
+        raise HTTPException(status_code=500,
+                            detail=f"Analiz hatası: {str(e)}")
+
+
+# ─────────────────────────────────────────────────
 # Scheduler API Endpoints
 # ─────────────────────────────────────────────────
 

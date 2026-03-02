@@ -849,9 +849,12 @@
         if (!btn || btn.disabled) return;
 
         var serverVal = (_el('ppdServerFilter') || {}).value || '';
+        var sourceType = _getSourceType() || 'mongodb';
+        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+
         var msg = serverVal
-            ? '"' + serverVal + '" icin analiz ve tahmin calistirilacak. Devam?'
-            : 'Tum sunucular icin analiz ve tahmin calistirilacak. Devam?';
+            ? '"' + serverVal + '" icin ' + sourceLabel + ' analiz ve tahmin calistirilacak. Devam?'
+            : sourceLabel + ' icin analiz ve tahmin calistirilacak. Devam?';
 
         _showConfirm('Analiz ve Tahmin Calistir', msg, function () {
             // Set loading state on header button
@@ -860,10 +863,18 @@
             btn.innerHTML = '<span class="pps-run-icon pps-run-spinning">&#x21bb;</span> Calisiyor...';
             btn.classList.add('pps-run-busy');
 
-            var body = { api_key: window.apiKey || '' };
+            var body = {
+                api_key: window.apiKey || '',
+                source_type: sourceType
+            };
             if (serverVal) body.server_name = serverVal;
 
-            var base = window.API_ENDPOINTS ? window.API_ENDPOINTS['schedulerTrigger'] : null;
+            // Dedicated on-demand prediction endpoint
+            var base = window.API_ENDPOINTS ? window.API_ENDPOINTS['predictionRun'] : null;
+            if (!base) {
+                // Fallback to scheduler trigger if new endpoint not registered
+                base = window.API_ENDPOINTS ? window.API_ENDPOINTS['schedulerTrigger'] : null;
+            }
             if (!base) {
                 btn.disabled = false;
                 btn.innerHTML = origText;
@@ -879,17 +890,29 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 btn.classList.remove('pps-run-busy');
-                btn.classList.add('pps-run-success');
-                btn.innerHTML = '<span class="pps-run-icon">&#x2714;</span> Tamamlandi';
-                console.log('[PredictionDashboard] Analysis triggered', data);
+
+                if (data.status === 'success') {
+                    btn.classList.add('pps-run-success');
+                    var summary = data.analysis_summary || {};
+                    var anomalies = summary.n_anomalies || 0;
+                    var rate = (summary.anomaly_rate || 0).toFixed(1);
+                    btn.innerHTML = '<span class="pps-run-icon">&#x2714;</span> ' +
+                        anomalies + ' anomali (%' + rate + ')';
+                    console.log('[PredictionDashboard] Analysis completed', data);
+                } else {
+                    btn.classList.add('pps-run-success');
+                    btn.innerHTML = '<span class="pps-run-icon">&#x2714;</span> Tamamlandi';
+                    console.log('[PredictionDashboard] Analysis triggered', data);
+                }
+
                 loadSchedulerStatus();
-                // Refresh prediction data after pipeline completes
+                // Refresh prediction panels with fresh data
+                refreshAll();
                 setTimeout(function () {
-                    refreshAll();
                     btn.disabled = false;
                     btn.innerHTML = origText;
                     btn.classList.remove('pps-run-success');
-                }, 2000);
+                }, 3000);
             })
             .catch(function (err) {
                 btn.classList.remove('pps-run-busy');
