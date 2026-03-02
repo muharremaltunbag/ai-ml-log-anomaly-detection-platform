@@ -2974,7 +2974,15 @@ class AnomalyDetectionTools:
                     "source": "Elasticsearch_OpenSearch",
                     "index_pattern": "db-elasticsearch-*",
                     "host_filter": host_filter,
-                    "time_range": f"last_{last_hours}h",
+                    "time_range_info": {
+                        "custom_range": True if (start_time and end_time) else False,
+                        "start_time": start_time,
+                        "end_time": end_time,
+                        "last_hours": last_hours if not (start_time and end_time) else None,
+                        "description": time_desc
+                    },
+                    "logs_analyzed": len(df_enriched),
+                    "filtered_logs": len(df_enriched),
                     "total_logs": len(df_enriched),
                     "anomaly_count": anomaly_count,
                     "anomaly_rate": round(anomaly_rate, 2),
@@ -2983,18 +2991,29 @@ class AnomalyDetectionTools:
                     "all_anomalies": self._select_diverse_anomalies(
                         analysis.get("all_anomalies", []), limit=100
                     ),
-                    "unfiltered_anomalies": analysis.get("critical_anomalies", []),  # Chat endpoint için TÜM kritik anomaliler
+                    "unfiltered_anomalies": analysis.get("critical_anomalies", []),
                     "unfiltered_count": len(analysis.get("critical_anomalies", [])),
                     "es_specific": es_specific,
                     "security_alerts": analysis.get("security_alerts", {}),
+                    "component_analysis": analysis.get("component_analysis", {}),
+                    "feature_importance": analysis.get("feature_importance", {}),
+                    "temporal_analysis": analysis.get("temporal_analysis", {}),
+                    "anomaly_score_stats": {
+                        "min": analysis.get("summary", {}).get("score_range", {}).get("min", 0),
+                        "max": analysis.get("summary", {}).get("score_range", {}).get("max", 0),
+                        "mean": analysis.get("summary", {}).get("score_range", {}).get("mean", 0)
+                    },
                     "model_info": {
                         "is_trained": es_detector.is_trained,
                         "rules_count": len(es_detector.critical_rules),
                         "min_training_samples": es_detector.min_training_samples,
                     },
-                    "training_info": {
+                    "server_info": {
+                        "server_name": host_filter or "global",
                         "model_status": "existing" if es_detector.is_trained else "newly_trained",
                         "model_path": f"models/es_isolation_forest_{host_filter.upper()}.pkl" if host_filter else "models/es_isolation_forest.pkl",
+                        "historical_buffer_size": es_detector.historical_data['metadata']['total_samples'] if es_detector.historical_data.get('features') is not None else 0,
+                        "last_update": es_detector.historical_data['metadata'].get('last_update', 'N/A')
                     }
                 },
                 "ai_explanation": ai_explanation,
@@ -4233,14 +4252,39 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                     parts.append(f"Yükseliş trendi: {', '.join(rising_metrics[:5])}.")
                 if fc_alerts:
                     parts.append(f"{len(fc_alerts)} forecast uyarısı.")
+                # Forecast confidence — en yüksek ve en düşük güveni göster
+                fc_confidences = [a.get("confidence", 0) for a in fc_alerts
+                                  if isinstance(a.get("confidence"), (int, float))]
+                if fc_confidences:
+                    avg_conf = sum(fc_confidences) / len(fc_confidences)
+                    parts.append(f"Güven: %{avg_conf*100:.0f}.")
                 insight["forecast_summary"] = " ".join(parts)
+
+                # Forecast model tier ve data points
+                model_tier = forecast.get("model_tier", "")
+                data_points = forecast.get("data_points", 0)
+                if model_tier:
+                    insight["forecast_tier"] = model_tier
+                if data_points:
+                    insight["forecast_data_points"] = data_points
+
                 for a in fc_alerts:
-                    insight["prediction_alerts"].append({
+                    alert_entry = {
                         "type": a.get("alert_type"),
                         "severity": a.get("severity"),
                         "title": a.get("title"),
                         "explainability": a.get("explainability", ""),
-                    })
+                    }
+                    # Confidence ve method bilgisini aktar
+                    if isinstance(a.get("confidence"), (int, float)):
+                        alert_entry["confidence"] = round(a["confidence"], 3)
+                    if a.get("forecast_method"):
+                        alert_entry["forecast_method"] = a["forecast_method"]
+                    if isinstance(a.get("upper_bound"), (int, float)):
+                        alert_entry["upper_bound"] = round(a["upper_bound"], 4)
+                    if isinstance(a.get("lower_bound"), (int, float)):
+                        alert_entry["lower_bound"] = round(a["lower_bound"], 4)
+                    insight["prediction_alerts"].append(alert_entry)
                 has_content = True
             elif forecasts_data:
                 # Tüm metrikler insufficient_data ise kullanıcıya bilgi ver
@@ -4260,7 +4304,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         if not has_content:
             return None
 
-        # Risk level
+        # Risk level — base severity
         severities = [a.get("severity", "OK") for a in insight["prediction_alerts"]]
         if "CRITICAL" in severities:
             insight["risk_level"] = "CRITICAL"
@@ -4268,6 +4312,44 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
             insight["risk_level"] = "WARNING"
         elif severities:
             insight["risk_level"] = "INFO"
+
+        # Cross-module convergence: birden fazla modül alarm veriyorsa riski yükselt
+        modules_with_alerts = 0
+        if insight.get("trend_summary"):
+            trend_data = prediction_results.get("trend", {})
+            if trend_data.get("alerts"):
+                modules_with_alerts += 1
+        if insight.get("rate_summary"):
+            rate_data = prediction_results.get("rate", {})
+            if rate_data.get("alerts"):
+                modules_with_alerts += 1
+        if insight.get("forecast_summary"):
+            forecast_data = prediction_results.get("forecast", {})
+            if forecast_data.get("alerts"):
+                modules_with_alerts += 1
+
+        if modules_with_alerts >= 2:
+            sev_order = {"OK": 0, "INFO": 1, "WARNING": 2, "CRITICAL": 3}
+            current_level = sev_order.get(insight.get("risk_level", "OK"), 0)
+            # 2 modül = en az WARNING, 3 modül = en az CRITICAL
+            convergence_min = 2 if modules_with_alerts == 2 else 3
+            if convergence_min > current_level:
+                insight["risk_level"] = {2: "WARNING", 3: "CRITICAL"}.get(
+                    convergence_min, insight["risk_level"])
+                insight["convergence_boost"] = True
+                insight["converging_modules"] = modules_with_alerts
+
+        # Prediction meta
+        insight["prediction_meta"] = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "modules_ran": [
+                m for m in ("trend", "rate", "forecast")
+                if isinstance(prediction_results.get(m), dict)
+                and not prediction_results[m].get("error")
+            ],
+            "modules_with_alerts": modules_with_alerts,
+            "total_alert_count": len(insight["prediction_alerts"]),
+        }
 
         return insight
 
@@ -4325,8 +4407,9 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         Analiz result dict'ini prediction insight ile yerinde zenginleştir.
 
         - result["data"]["prediction_alerts"] = raw prediction sonuçları (mevcut)
-        - result["ai_explanation"]["prediction_insight"] = insan-okunabilir özet (YENİ)
-        - result["data"]["prediction_insight"]["ml_signal"] = ML risk sinyali (YENİ)
+        - result["ai_explanation"]["prediction_insight"] = insan-okunabilir özet
+        - result["data"]["prediction_insight"]["ml_signal"] = ML risk sinyali
+        - result["data"]["prediction_insight"]["prediction_meta"] = modül/kaynak bilgisi
 
         Mevcut ai_explanation dict'inin yapısını bozmaz, sadece yeni key ekler.
         ai_explanation None/boş ise bile prediction_insight'ı result["data"]'ya koyar.
@@ -4352,6 +4435,14 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                 if ml_level > current:
                     insight["risk_level"] = ml_signal["ml_risk"]
                     insight["risk_boosted_by_ml"] = True
+
+        # Source type meta: analiz kaynağını prediction_meta'ya ekle
+        meta = insight.get("prediction_meta")
+        if isinstance(meta, dict):
+            source = analysis_data.get("source", "")
+            server_info = analysis_data.get("server_info") or {}
+            meta["source_type"] = source
+            meta["server_name"] = server_info.get("server_name", "")
 
         # ai_explanation varsa oraya ekle
         ai_exp = result.get("ai_explanation")
