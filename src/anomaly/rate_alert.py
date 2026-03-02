@@ -629,7 +629,7 @@ class RateAlertEngine:
             window_ml_density = 0.0
             if ml_anomaly_timestamps:
                 for ml_ts in ml_anomaly_timestamps:
-                    if ml_ts >= window_start:
+                    if window_start <= ml_ts <= ts_max:
                         window_ml_count += 1
                 window_total = len(df_window)
                 window_ml_density = (window_ml_count / window_total * 100) if window_total > 0 else 0.0
