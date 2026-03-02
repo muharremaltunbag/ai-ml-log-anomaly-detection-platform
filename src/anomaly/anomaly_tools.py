@@ -4165,10 +4165,10 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                 ]
                 # ML score trend enrichment
                 ml_score_trend = trend_summary_data.get("ml_score_trend")
-                if isinstance(ml_score_trend, dict) and ml_score_trend.get("direction"):
-                    ml_dir = ml_score_trend["direction"]
-                    ml_cur = ml_score_trend.get("current_score", 0)
-                    ml_base = ml_score_trend.get("baseline_score", 0)
+                if isinstance(ml_score_trend, dict) and ml_score_trend.get("ml_score_direction"):
+                    ml_dir = ml_score_trend["ml_score_direction"]
+                    ml_cur = ml_score_trend.get("current_mean_score", 0)
+                    ml_base = ml_score_trend.get("baseline_mean_score", 0)
                     if ml_dir != "stable":
                         parts.append(
                             f"ML skor trendi: {ml_dir} "
