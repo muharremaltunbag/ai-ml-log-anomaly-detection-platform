@@ -1971,7 +1971,7 @@ async function loadClusterHosts(clusterId) {
                         padding: 2px 8px;
                         border-radius: 4px;
                         margin: 2px;
-                        font-size: 11px;
+                        font-size: 13px;
                     ">${host}</span>
                 `).join('');
                 
@@ -2712,7 +2712,7 @@ function renderDBACriticalAnomalies(anomalies) {
                     </div>
                     <span class="anomaly-score" style="color: ${severityColor}; font-weight: 600;">Score: ${anomaly.anomaly_score?.toFixed(3) || anomaly.score?.toFixed(3) || 'N/A'}</span>
                 </div>
-                <div class="anomaly-message" style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 15px; font-weight: bold; word-break: break-word; white-space: pre-wrap; line-height: 1.5; width: 100%; box-sizing: border-box; overflow-x: auto;">
+                <div class="anomaly-message" style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 15px; font-weight: bold; word-break: break-word; white-space: pre-wrap; line-height: 1.5; width: 100%; box-sizing: border-box; overflow-x: auto;">
                     ${escapeHtml(anomaly.message || anomaly.full_message || 'No message available')}
                 </div>
                 ${anomaly.component ? `<div style="margin-top: 8px; font-size: 12px; color: #666;">Component: ${anomaly.component}</div>` : ''}

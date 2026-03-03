@@ -301,7 +301,7 @@ const DBAExplorer = {
                         <td colspan="4" style="text-align: center; padding: 30px; color: #e74c3c;">
                             <strong>Veri cekilirken hata olustu</strong>
                             <p style="font-size: 12px; margin-top: 10px;">${error.message}</p>
-                            <p style="font-size: 11px; color: #888;">API endpoint: ${window.API_ENDPOINTS?.filterAnomalies || '/api/filter-anomalies'}</p>
+                            <p style="font-size: 13px; color: #888;">API endpoint: ${window.API_ENDPOINTS?.filterAnomalies || '/api/filter-anomalies'}</p>
                         </td>
                     </tr>
                 `;

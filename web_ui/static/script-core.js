@@ -605,7 +605,7 @@ window.formatSidebarAIResponse = function(chatResult) {
                             var subText = trimmed.replace(/^\s*[-•]\s*/, '');
                             stepsHtml +=
                                 '<div class="report-step" style="margin-left:12px;">' +
-                                    '<p style="font-size:11px;">\u2022 ' + mdToHtml(subText) + '</p>' +
+                                    '<p style="font-size:13px;">\u2022 ' + mdToHtml(subText) + '</p>' +
                                 '</div>';
                         } else {
                             // Düz metin satırı

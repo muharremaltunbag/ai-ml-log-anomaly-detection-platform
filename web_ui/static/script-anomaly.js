@@ -1401,7 +1401,7 @@ function displayAnomalyResults(result) {
                 color: #27ae60;
             }
             .detail-value.model-path {
-                font-family: monospace;
+                font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
                 font-size: 0.85em;
                 background: #e9ecef;
                 padding: 2px 6px;

@@ -2,6 +2,10 @@
 
 /* LC Waikiki MongoDB Assistant Kurumsal Stil Dosyası */
 :root {
+    /* Typography */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+
     /* LC Waikiki Kurumsal Renk Paleti */
     --lcw-blue: #0047BA;           /* LC Waikiki Mavisi (Primary) */
     --lcw-internet-blue: #0033A0;  /* LC Waikiki İnternet Mavisi (Secondary) */
@@ -60,10 +64,14 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-sans);
     background-color: var(--bg-color);
     color: var(--text-primary);
     line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv01', 'cv02', 'ss01';
 }
 
 .container {
@@ -113,7 +121,7 @@ body {
     color: var(--text-secondary);
     padding: 3px 10px;
     border-radius: 6px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -479,7 +487,7 @@ input:focus, textarea:focus {
     margin: 0;
 }
 .sr-header-text p {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-secondary);
     margin: 2px 0 0;
 }
@@ -567,7 +575,7 @@ input:focus, textarea:focus {
 
 /* Categories */
 .sr-categories-title {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     text-transform: uppercase;
     color: var(--text-secondary);
@@ -616,7 +624,7 @@ input:focus, textarea:focus {
     transition: color 0.15s;
 }
 .sr-cat-desc {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--text-secondary);
     margin-top: 1px;
 }
@@ -927,7 +935,7 @@ textarea {
 
 /* JSON Display */
 .json-display {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.6;
     white-space: pre-wrap;
@@ -1529,7 +1537,7 @@ footer {
     background-color: var(--lcw-light-gray);
     border-radius: 8px;
     padding: 20px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
     font-size: 14px;
 }
 
@@ -1791,7 +1799,7 @@ footer {
 .priority-badge {
     padding: 4px 12px;
     border-radius: 15px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -1859,7 +1867,7 @@ footer {
 }
 
 .analysis-text {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.6;
     color: var(--text-primary);
@@ -1871,7 +1879,7 @@ footer {
 }
 
 .formatted-description {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.8;
     color: var(--text-primary);
@@ -2111,7 +2119,7 @@ footer {
     background-color: var(--lcw-blue);
     color: white;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     margin-left: 8px;
 }
@@ -2290,7 +2298,7 @@ footer {
 .anomaly-severity {
     padding: 4px 12px;
     border-radius: 15px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -2328,7 +2336,7 @@ footer {
     background-color: var(--lcw-light-gray);
     padding: 8px 12px;
     border-radius: 4px;
-    font-family: 'SF Mono', Monaco, monospace;
+    font-family: var(--font-mono);
 }
 
 /* Upload Progress */
@@ -2568,7 +2576,7 @@ footer {
     border-radius: 20px;
     font-size: 13px;
     font-weight: 600;
-    font-family: 'Monaco', 'Consolas', monospace;
+    font-family: var(--font-mono);
 }
 
 .alert-actions {
@@ -3393,7 +3401,7 @@ footer {
 }
 
 .mini-heatmap-cell .hour-label {
-    font-size: 10px;
+    font-size: 12px;
     color: white;
     font-weight: 600;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
@@ -3609,7 +3617,7 @@ footer {
     }
     
     .mini-heatmap-cell .hour-label {
-        font-size: 8px;
+        font-size: 12px;
     }
     
     .visualization-actions {
@@ -3913,7 +3921,7 @@ footer {
     right: 10px;
     padding: 4px 12px;
     border-radius: 20px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: bold;
     text-transform: uppercase;
 }
@@ -4260,7 +4268,7 @@ footer {
     text-align: right;
     font-weight: 600;
     color: #2c3e50;
-    font-family: 'Monaco', 'Consolas', monospace;
+    font-family: var(--font-mono);
 }
 
 .analysis-table td.percentage {
@@ -4299,7 +4307,7 @@ footer {
 .criticality-badge {
     padding: 5px 15px;
     border-radius: 20px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: bold;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -4370,7 +4378,7 @@ footer {
     top: -25px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: bold;
     color: #2c3e50;
     opacity: 0;
@@ -4386,7 +4394,7 @@ footer {
     bottom: -25px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 10px;
+    font-size: 12px;
     color: #7f8c8d;
 }
 
@@ -4450,7 +4458,7 @@ footer {
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: 600;
-    font-family: 'Roboto Mono', monospace;
+    font-family: var(--font-mono);
 }
 
 .percentage-highlight {
@@ -4459,7 +4467,7 @@ footer {
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: 600;
-    font-family: 'Roboto Mono', monospace;
+    font-family: var(--font-mono);
 }
 
 .time-highlight {
@@ -4894,7 +4902,7 @@ footer {
 .priority-badge {
     padding: 4px 12px;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: bold;
     color: white;
 }
@@ -4922,7 +4930,7 @@ footer {
 }
 
 .analysis-text {
-    font-family: 'Monaco', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.8;
     color: #333;
@@ -5191,7 +5199,7 @@ footer {
 
     border-radius: 12px;
 
-    font-size: 11px;
+    font-size: 13px;
 
     font-weight: 600;
 
@@ -5252,7 +5260,7 @@ footer {
 
 .execution-time {
 
-    font-size: 11px;
+    font-size: 13px;
 
     color: #6c757d;
 
@@ -6130,7 +6138,7 @@ footer {
 }
 
 .hour-label {
-    font-size: 11px;
+    font-size: 13px;
     text-align: center;
     color: #7f8c8d;
     font-weight: 600;
@@ -6330,7 +6338,7 @@ footer {
 .severity-badge {
     padding: 4px 12px;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: bold;
     text-transform: uppercase;
 }
@@ -7206,7 +7214,7 @@ footer {
 }
 
 .feature-ratio-label {
-    font-size: 11px;
+    font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 600;
@@ -7834,7 +7842,7 @@ footer {
 .hour-label-item {
     flex: 1;
     text-align: center;
-    font-size: 11px;
+    font-size: 13px;
     color: #7f8c8d;
 }
 
@@ -8213,8 +8221,8 @@ footer {
     background: white;
     border: 1px solid #dee2e6;
     border-radius: 12px;
-    font-size: 11px;
-    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 13px;
+    font-family: var(--font-mono);
     color: #495057;
 }
 
@@ -9215,13 +9223,13 @@ footer {
 }
 
 .online-status-card .status-info {
-    font-size: 11px;
+    font-size: 13px;
     color: #888;
     margin-top: 2px;
 }
 
 .online-status-card .status-warning {
-    font-size: 11px;
+    font-size: 13px;
     color: #ff9800;
     margin-top: 4px;
     font-weight: 500;
@@ -9342,7 +9350,7 @@ footer {
     margin: 0;
     white-space: pre-wrap;
     word-wrap: break-word;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.5;
     color: #333;
@@ -9465,7 +9473,7 @@ footer {
 /* History için kompakt buton */
 .btn-expand-history {
     padding: 1px 6px;
-    font-size: 11px;
+    font-size: 13px;
     margin-left: 8px;
 }
 
@@ -9506,7 +9514,7 @@ message-container {
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.5;
 }
@@ -9516,7 +9524,7 @@ message-container {
     padding: 8px;
     border-radius: 4px;
     margin-bottom: 5px;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
 }
 
@@ -9550,7 +9558,7 @@ message-container {
 
 .mongodb-json-content {
     color: #d4d4d4;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.6;
     margin: 0;
@@ -9631,7 +9639,7 @@ message-container {
 }
 
 .message-highlight {
-    font-family: 'Monaco', 'Menlo', monospace;
+    font-family: var(--font-mono);
     font-size: 14px;
     color: #f8f8f2;
     padding: 10px;
@@ -9679,7 +9687,7 @@ message-container {
 }
 
 .message-text {
-    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 15px;
     color: #ffffff;
     line-height: 1.6;
@@ -9703,7 +9711,7 @@ message-container {
     align-items: center;
     padding: 4px 10px;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -9737,7 +9745,7 @@ message-container {
 }
 
 .factor-mini {
-    font-size: 10px;
+    font-size: 12px;
     padding: 3px 8px;
     background: rgba(255, 255, 255, 0.08);
     border-radius: 4px;
@@ -9751,7 +9759,7 @@ message-container {
     color: #bb8fce;
     padding: 3px 10px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 13px;
     margin-left: 8px;
     border: 1px solid rgba(155, 89, 182, 0.3);
     font-weight: 500;
@@ -9806,7 +9814,7 @@ message-container {
     }
     
     .slow-badge, .io-badge, .error-badge {
-        font-size: 10px;
+        font-size: 12px;
         padding: 3px 8px;
     }
 }
@@ -9815,7 +9823,7 @@ message-container {
 .log-message-pre {
     white-space: pre-wrap;
     word-wrap: break-word;
-    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.6;
     background: var(--bg-color);
@@ -9866,7 +9874,7 @@ message-container {
 .message-short {
     white-space: pre-wrap;
     word-wrap: break-word;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.5;
     background: #f5f5f5;
@@ -9983,7 +9991,7 @@ input:checked + .toggle-slider:before {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: bold;
     margin-left: 8px;
     white-space: nowrap;
@@ -10059,7 +10067,7 @@ input:checked + .toggle-slider:before {
 }
 
 .original-message {
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     color: #555;
 }
@@ -10097,7 +10105,7 @@ input:checked + .toggle-slider:before {
     }
     
     .risk-badge {
-        font-size: 10px;
+        font-size: 12px;
         padding: 1px 6px;
     }
 }
@@ -10436,7 +10444,7 @@ input:checked + .toggle-slider:before {
     color: white;
     padding: 4px 10px;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -10838,12 +10846,12 @@ input:checked + .toggle-slider:before {
 /* Compact mode'da badge'ler için boyut optimizasyonu */
 .compact-mode .severity-badge,
 .compact-mode .component-badge {
-    font-size: 11px;
+    font-size: 13px;
     padding: 3px 8px;
 }
 
 .compact-mode .severity-score-inline {
-    font-size: 11px;
+    font-size: 13px;
 }
 
 /* EXPANDED MODE - DEFAULT */
@@ -11074,7 +11082,7 @@ input:checked + .toggle-slider:before {
 
 .message-preview pre,
 .message-full pre {
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 14px !important;
     line-height: 1.6 !important;
     color: #2d3748;
@@ -11512,7 +11520,7 @@ input:checked + .toggle-slider:before {
 
 .code-block pre {
     margin: 0;
-    font-family: 'Monaco', 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -11568,7 +11576,7 @@ input:checked + .toggle-slider:before {
     border-left: 4px solid #ff6b6b;
     margin: 15px 0;
     overflow-x: auto;
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
     line-height: 1.5;
     white-space: pre-wrap;
@@ -11853,7 +11861,7 @@ input:checked + .toggle-slider:before {
     background: #f8f9fa;
     padding: 10px;
     border-radius: 4px;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     word-break: break-all;
 }
@@ -12269,7 +12277,7 @@ input:checked + .toggle-slider:before {
     color: var(--lcw-info);
     padding: 3px 8px;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     text-transform: uppercase;
 }
@@ -12279,7 +12287,7 @@ input:checked + .toggle-slider:before {
     color: var(--text-secondary);
     padding: 3px 8px;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
 }
 
@@ -12288,7 +12296,7 @@ input:checked + .toggle-slider:before {
     color: #e74c3c;
     padding: 3px 8px;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
 }
 
@@ -12404,8 +12412,8 @@ input:checked + .toggle-slider:before {
     color: var(--lcw-blue);
     padding: 5px 10px;
     border-radius: 12px;
-    font-size: 11px;
-    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    font-family: var(--font-mono);
     cursor: pointer;
     border: 1px solid var(--lcw-blue);
     transition: all 0.2s ease;
@@ -12434,7 +12442,7 @@ input:checked + .toggle-slider:before {
     color: white;
     padding: 4px 8px;
     border-radius: 4px;
-    font-size: 10px;
+    font-size: 12px;
     white-space: nowrap;
     opacity: 0;
     pointer-events: none;
@@ -12449,7 +12457,7 @@ input:checked + .toggle-slider:before {
 
 .pattern-hint {
     display: block;
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-secondary);
     font-style: italic;
     margin-top: 5px;
@@ -12458,12 +12466,12 @@ input:checked + .toggle-slider:before {
 /* Responsive */
 @media (max-width: 480px) {
     .pattern-chip {
-        font-size: 10px;
+        font-size: 12px;
         padding: 4px 8px;
     }
     
     .pattern-chip::after {
-        font-size: 9px;
+        font-size: 12px;
     }
 }
 /* ========== EMPTY STATE STYLES ========== */
@@ -12529,7 +12537,7 @@ input:checked + .toggle-slider:before {
     }
     
     .empty-state-hint {
-        font-size: 11px;
+        font-size: 13px;
         padding: 8px 12px;
     }
 }
@@ -12542,7 +12550,7 @@ input:checked + .toggle-slider:before {
     justify-content: center;
     background: #e74c3c; /* Kırmızı - dikkat çekici */
     color: white;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     min-width: 20px;
     height: 20px;
@@ -12583,7 +12591,7 @@ input:checked + .toggle-slider:before {
 /* Responsive */
 @media (max-width: 768px) {
     .filter-badge {
-        font-size: 10px;
+        font-size: 12px;
         min-width: 18px;
         height: 18px;
         padding: 0 5px;
@@ -12657,7 +12665,7 @@ input:checked + .toggle-slider:before {
 /* Responsive */
 @media (max-width: 480px) {
     .regex-validation {
-        font-size: 11px;
+        font-size: 13px;
         padding: 6px 10px;
     }
     
@@ -12706,7 +12714,7 @@ mark.text-highlight {
     color: white;
     padding: 3px 8px;
     border-radius: 12px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
     animation: badgeSlideIn 0.3s ease;
@@ -12757,7 +12765,7 @@ mark.text-highlight:hover {
     }
     
     .match-count-badge {
-        font-size: 10px;
+        font-size: 12px;
         padding: 2px 6px;
     }
 }
@@ -12949,7 +12957,7 @@ mark.text-highlight:hover {
 .pattern-complexity {
     padding: 2px 8px;
     border-radius: 12px;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
 }
@@ -13003,14 +13011,14 @@ mark.text-highlight:hover {
 }
 
 .pattern-item-pattern code {
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     color: #c7254e;
     word-break: break-all;
 }
 
 .pattern-item-example {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-secondary);
     font-style: italic;
 }
@@ -13133,7 +13141,7 @@ mark.text-highlight:hover {
 }
 
 .ml-panel .metric-label {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--text-secondary);
     display: block;
     margin-bottom: 4px;
@@ -13181,7 +13189,7 @@ mark.text-highlight:hover {
     padding: 10px;
     border: 1px solid var(--border-color);
     border-radius: 10px;
-    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     resize: vertical;
     transition: border-color 0.2s;
@@ -13337,7 +13345,7 @@ mark.text-highlight:hover {
 }
 
 .ml-section-title {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -13374,7 +13382,7 @@ mark.text-highlight:hover {
 }
 
 .ml-perf-label {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-secondary);
     text-transform: uppercase;
     font-weight: 600;
@@ -13421,7 +13429,7 @@ mark.text-highlight:hover {
 }
 
 .ml-stat-label {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -13448,7 +13456,7 @@ mark.text-highlight:hover {
 }
 
 .ml-feature-group-title {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     color: #9ca3af;
     text-transform: uppercase;
@@ -13484,7 +13492,7 @@ mark.text-highlight:hover {
 
 .ml-feature-name {
     font-size: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-sans);
     font-weight: 500;
     color: var(--text-primary);
     letter-spacing: 0.2px;
@@ -13509,7 +13517,7 @@ mark.text-highlight:hover {
 .ml-feature-badge-warning {
     padding: 3px 10px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     background: rgba(249, 115, 22, 0.12);
     color: #c2410c;
@@ -13553,7 +13561,7 @@ mark.text-highlight:hover {
 }
 
 .ml-info-value-mono {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-sans);
     font-weight: 700;
     color: var(--lcw-blue);
     font-size: 15px;
@@ -13585,7 +13593,7 @@ mark.text-highlight:hover {
 }
 
 .ml-info-value-small {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--font-sans);
     font-size: 14px;
     color: var(--text-secondary);
     display: block;
@@ -13611,7 +13619,7 @@ mark.text-highlight:hover {
 }
 
 .ml-info-value-filepath {
-    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     color: var(--accent-color, #4fc3f7);
     word-break: break-all;
@@ -13632,7 +13640,7 @@ mark.text-highlight:hover {
     padding: 10px 12px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     resize: vertical;
     transition: border-color 0.2s;
@@ -13754,7 +13762,7 @@ mark.text-highlight:hover {
     color: white;
     padding: 3px 8px;
     border-radius: 10px;
-    font-size: 0.75em;
+    font-size: 0.85em;
 }
 
 /* Model Details Button */
@@ -13849,7 +13857,7 @@ mark.text-highlight:hover {
 }
 
 .model-detail-item .detail-label {
-    font-size: 0.75em;
+    font-size: 0.85em;
     color: #666;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -13866,7 +13874,7 @@ mark.text-highlight:hover {
 }
 
 .model-detail-item .detail-value.model-path {
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: 0.85em;
     background: #e9ecef;
     padding: 2px 6px;
@@ -13999,7 +14007,7 @@ mark.text-highlight:hover {
 }
 
 .app-header-subtitle {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--text-secondary);
     letter-spacing: 0.2px;
@@ -14097,7 +14105,7 @@ mark.text-highlight:hover {
     color: #15803d;
     padding: 4px 14px;
     border-radius: 9999px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -14461,7 +14469,7 @@ mark.text-highlight:hover {
 }
 
 .server-tag {
-    font-size: 10px;
+    font-size: 12px;
     padding: 1px 5px;
     border-radius: 4px;
     background-color: rgba(0, 71, 186, 0.1);
@@ -14470,7 +14478,7 @@ mark.text-highlight:hover {
 }
 
 .server-anomaly-count {
-    font-size: 10px;
+    font-size: 12px;
     padding: 1px 5px;
     border-radius: 4px;
     background-color: rgba(231, 76, 60, 0.15);
@@ -14660,7 +14668,7 @@ mark.text-highlight:hover {
 }
 
 .report-header-text .report-id {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--text-secondary);
     font-weight: 500;
     display: flex;
@@ -14691,7 +14699,7 @@ mark.text-highlight:hover {
     background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 .report-context-item {
@@ -14703,7 +14711,7 @@ mark.text-highlight:hover {
 }
 
 .report-context-item .ctx-label {
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -14712,10 +14720,10 @@ mark.text-highlight:hover {
 }
 
 .report-context-item .ctx-value {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-primary);
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -14743,7 +14751,7 @@ mark.text-highlight:hover {
     padding: 8px 10px;
     border-bottom: 1px solid var(--border-color);
     background-color: var(--bg-color);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -14757,7 +14765,7 @@ mark.text-highlight:hover {
 
 .report-card-body {
     padding: 10px;
-    font-size: 12.5px;
+    font-size: 13px;
     line-height: 1.6;
     color: var(--text-primary);
 }
@@ -14796,7 +14804,7 @@ mark.text-highlight:hover {
 }
 
 .report-score-label {
-    font-size: 10px;
+    font-size: 12px;
     color: var(--text-secondary);
     white-space: nowrap;
 }
@@ -14817,10 +14825,10 @@ mark.text-highlight:hover {
 }
 
 .report-score-value {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--text-primary);
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     min-width: 28px;
     text-align: right;
 }
@@ -14840,7 +14848,7 @@ mark.text-highlight:hover {
 }
 
 .report-metric-label {
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.4px;
@@ -14853,11 +14861,11 @@ mark.text-highlight:hover {
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1.1;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
 }
 
 .report-metric-change {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     display: inline-flex;
     align-items: center;
@@ -14869,7 +14877,7 @@ mark.text-highlight:hover {
 .report-metric-change.down { color: var(--lcw-success); }
 
 .report-metric-baseline {
-    font-size: 9px;
+    font-size: 12px;
     color: var(--text-secondary);
     margin-top: 3px;
 }
@@ -14892,14 +14900,14 @@ mark.text-highlight:hover {
 }
 
 .report-impact-content h4 {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     color: #92400e;
     margin: 0 0 3px 0;
 }
 
 .report-impact-content p {
-    font-size: 11px;
+    font-size: 13px;
     color: #a16207;
     margin: 0;
     line-height: 1.5;
@@ -14941,7 +14949,7 @@ mark.text-highlight:hover {
     border-radius: 50%;
     background-color: var(--lcw-blue);
     color: #fff;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 700;
     display: flex;
     align-items: center;
@@ -14962,7 +14970,7 @@ mark.text-highlight:hover {
 }
 
 .report-step p {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-secondary);
     margin: 0;
     line-height: 1.45;
@@ -15001,9 +15009,9 @@ mark.text-highlight:hover {
 .report-code-dots .dot-green { background-color: #27c93f; }
 
 .report-code-title {
-    font-size: 10px;
+    font-size: 12px;
     color: #999;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     flex: 1;
     text-align: center;
 }
@@ -15018,7 +15026,7 @@ mark.text-highlight:hover {
     align-items: center;
     gap: 4px;
     padding: 3px 8px;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     color: #ccc;
     background-color: #2d2d2e;
@@ -15042,8 +15050,8 @@ mark.text-highlight:hover {
 
 .report-code-body {
     padding: 10px 12px;
-    font-family: 'Courier New', monospace;
-    font-size: 11px;
+    font-family: var(--font-mono);
+    font-size: 13px;
     line-height: 1.6;
     color: #d4d4d4;
     overflow-x: auto;
@@ -15074,7 +15082,7 @@ mark.text-highlight:hover {
     align-items: center;
     padding: 6px 0;
     border-bottom: 1px dashed var(--border-color);
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .report-specs li:last-child {
@@ -15087,13 +15095,13 @@ mark.text-highlight:hover {
 }
 
 .report-specs .spec-value {
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
     font-weight: 600;
     color: var(--text-primary);
     background-color: var(--bg-color);
     padding: 1px 6px;
     border-radius: 3px;
-    font-size: 10px;
+    font-size: 12px;
     border: 1px solid var(--border-color);
 }
 
@@ -15104,7 +15112,7 @@ mark.text-highlight:hover {
     justify-content: space-between;
     padding-top: 8px;
     border-top: 1px solid var(--border-color);
-    font-size: 10px;
+    font-size: 12px;
     color: var(--text-secondary);
 }
 
@@ -15134,7 +15142,7 @@ mark.text-highlight:hover {
     align-items: center;
     gap: 3px;
     padding: 2px 6px;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 500;
     color: var(--text-secondary);
     background: none;
@@ -15153,8 +15161,8 @@ mark.text-highlight:hover {
 
 /* ── Kod bloğu olmayan satır içi vurgular ── */
 .report-inline-code {
-    font-family: 'Courier New', monospace;
-    font-size: 11px;
+    font-family: var(--font-mono);
+    font-size: 13px;
     background-color: var(--bg-color);
     border: 1px solid var(--border-color);
     padding: 0px 4px;
@@ -15252,9 +15260,9 @@ mark.text-highlight:hover {
 }
 
 .history-card-date {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-secondary);
-    font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
+    font-family: var(--font-mono);
 }
 
 .history-card-dot {
@@ -15275,7 +15283,7 @@ mark.text-highlight:hover {
 }
 
 .history-card-source {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-secondary);
     display: flex;
     align-items: center;
@@ -15297,7 +15305,7 @@ mark.text-highlight:hover {
 }
 
 .history-card-status {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-secondary);
 }
 
@@ -15511,7 +15519,7 @@ mark.text-highlight:hover {
 .dba-explorer-panel table thead th {
     padding: 12px 16px !important;
     border-bottom: 1px solid var(--border-color) !important;
-    font-size: 11px !important;
+    font-size: 13px !important;
     font-weight: 700 !important;
     text-transform: uppercase !important;
     letter-spacing: 0.05em !important;
@@ -15547,7 +15555,7 @@ mark.text-highlight:hover {
 .dba-result-row .component-badge {
     padding: 4px 10px;
     border-radius: 6px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     background-color: var(--bg-color);
     color: var(--text-secondary);
@@ -15582,7 +15590,7 @@ mark.text-highlight:hover {
     gap: 6px;
     padding: 6px 16px;
     border-radius: 8px;
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.25s ease;
@@ -15648,7 +15656,7 @@ mark.text-highlight:hover {
 }
 
 .feedback-status {
-    font-size: 11.5px;
+    font-size: 13px;
     color: var(--text-muted, #888);
     margin-left: 6px;
     font-weight: 500;
@@ -15697,7 +15705,7 @@ mark.text-highlight:hover {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 10px;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
 }
@@ -15710,7 +15718,7 @@ mark.text-highlight:hover {
 
 /* Log mesaj hücresi */
 .log-message-cell {
-    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.5;
     color: var(--text-secondary);
@@ -15762,7 +15770,7 @@ mark.text-highlight:hover {
     display: inline-block;
     padding: 3px 10px;
     border-radius: 12px;
-    font-size: 0.75em;
+    font-size: 0.85em;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -15952,7 +15960,7 @@ mark.text-highlight:hover {
 
 .pd-toggle-arrow {
     transition: transform 0.2s;
-    font-size: 0.75em;
+    font-size: 0.85em;
 }
 
 .pd-toggle-btn.pd-open .pd-toggle-arrow {
@@ -16033,7 +16041,7 @@ mark.text-highlight:hover {
     display: inline-block;
     padding: 2px 8px;
     border-radius: 10px;
-    font-size: 0.75em;
+    font-size: 0.85em;
     font-weight: 700;
     text-transform: uppercase;
 }
@@ -16154,7 +16162,7 @@ mark.text-highlight:hover {
 /* ML corroboration badges in Prediction Studio alert table */
 .ppd-ml-badge {
     display: inline-block;
-    font-size: 0.75em;
+    font-size: 0.85em;
     padding: 1px 5px;
     border-radius: 3px;
     margin-left: 4px;
@@ -16405,7 +16413,7 @@ mark.text-highlight:hover {
     cursor: not-allowed;
 }
 .pps-run-icon {
-    font-size: 11px;
+    font-size: 13px;
 }
 .pps-run-spinning {
     display: inline-block;
@@ -16456,7 +16464,7 @@ mark.text-highlight:hover {
     gap: 12px;
 }
 .pps-sidebar-title {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.8px;
@@ -16521,7 +16529,7 @@ mark.text-highlight:hover {
     line-height: 1;
 }
 .pps-source-label {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -16568,7 +16576,7 @@ mark.text-highlight:hover {
     justify-content: space-between;
 }
 .pps-hosts-toggle-btn {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--lcw-blue, #0047BA);
     background: none;
@@ -16590,7 +16598,7 @@ mark.text-highlight:hover {
     padding: 2px 0;
 }
 .pps-hosts-empty {
-    font-size: 11px;
+    font-size: 13px;
     color: #999;
     font-style: italic;
     padding: 6px 0;
@@ -16643,7 +16651,7 @@ mark.text-highlight:hover {
     flex: 1;
     min-width: 0;
     padding: 7px 6px;
-    font-size: 11px;
+    font-size: 13px;
     text-align: center;
     border-radius: 6px;
 }
@@ -16737,7 +16745,7 @@ body.pps-body-lock {
 }
 
 .ppd-header-badge {
-    font-size: 0.75em;
+    font-size: 0.85em;
     padding: 3px 10px;
     border-radius: 12px;
     font-weight: 600;
@@ -16951,7 +16959,7 @@ body.pps-body-lock {
 .pps-sched-hint {
     margin-top: 10px;
     padding: 10px 12px;
-    font-size: 11px;
+    font-size: 13px;
     color: #6b7280;
     background: #fffbeb;
     border: 1px solid #fde68a;
@@ -16963,11 +16971,11 @@ body.pps-body-lock {
 }
 .pps-config-hint code,
 .pps-sched-hint code {
-    font-size: 10px;
+    font-size: 12px;
     background: #fef3c7;
     padding: 1px 4px;
     border-radius: 3px;
-    font-family: monospace;
+    font-family: var(--font-mono);
 }
 
 /* Severity tags */
@@ -17004,7 +17012,7 @@ body.pps-body-lock {
     color: #1a237e;
 }
 .ppd-card-sub {
-    font-size: 0.72em;
+    font-size: 0.85em;
     color: #aaa;
     margin-top: 4px;
 }
@@ -17034,7 +17042,7 @@ body.pps-body-lock {
     display: inline-block;
     padding: 1px 6px;
     border-radius: 8px;
-    font-size: 0.7em;
+    font-size: 0.85em;
     font-weight: 600;
     vertical-align: middle;
 }
@@ -17049,7 +17057,7 @@ body.pps-body-lock {
     background: #e8eaf6;
     color: #283593;
     border-radius: 8px;
-    font-size: 0.7em;
+    font-size: 0.85em;
     font-weight: 500;
 }
 
@@ -17060,7 +17068,7 @@ body.pps-body-lock {
     background: #fce4ec;
     color: #880e4f;
     border-radius: 8px;
-    font-size: 0.7em;
+    font-size: 0.85em;
     font-weight: 600;
 }
 
@@ -17106,7 +17114,7 @@ body.pps-body-lock {
     margin-top: 4px;
     font-size: 0.8em;
     color: #1565c0;
-    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-family: var(--font-mono);
 }
 .ppd-drill-explain {
     margin-top: 8px;
@@ -17224,7 +17232,7 @@ body.pps-body-lock {
     padding: 8px;
 }
 .ppd-sched-stat-label {
-    font-size: 0.72em;
+    font-size: 0.85em;
     color: #888;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -17265,7 +17273,7 @@ body.pps-body-lock {
     padding: 2px 8px;
     background: #f5f5f5;
     border-radius: 10px;
-    font-size: 0.75em;
+    font-size: 0.85em;
     color: #555;
 }
 .ppd-sched-confirm-overlay {
@@ -17386,7 +17394,7 @@ body.pps-body-lock {
     color: var(--text-secondary);
 }
 .qa-group-secondary .qa-label {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-secondary);
 }
@@ -17551,7 +17559,7 @@ body.pps-body-lock {
     margin-top: 15px;
 }
 .dba-result-count {
-    font-size: 11px;
+    font-size: 13px;
     color: #999;
     margin-top: 5px;
 }
@@ -17608,7 +17616,7 @@ body.pps-body-lock {
     border-radius: 50%;
     background: var(--lcw-blue);
     color: #fff;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     flex-shrink: 0;
 }
@@ -17626,3 +17634,48 @@ body.pps-body-lock {
 }
 
 /* ========== END UI PROFESSIONALIZATION PATCH ========== */
+
+/* ========== TYPOGRAPHY ENHANCEMENT PATCH ========== */
+
+/* Heading hierarchy — clear weight/size/spacing differentiation */
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+    letter-spacing: -0.01em;
+}
+
+/* Section titles — consistent weight for card headings */
+.section-title,
+.card-header h3,
+.anomaly-results h3,
+.history-section h3 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+/* Body text — improve readability baseline */
+p, li, td, th, label, span, a, div {
+    font-family: var(--font-sans);
+}
+
+/* Monospace elements — ensure JetBrains Mono everywhere */
+code, pre, samp, kbd, tt,
+.log-entry, .json-value, .anomaly-message,
+[class*="mono"] {
+    font-family: var(--font-mono);
+    font-feature-settings: 'liga' 0;
+}
+
+/* Input/Select/Button — inherit Inter for form controls */
+input, select, textarea, button {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Improve letter-spacing for all-caps text (badges, labels) */
+[style*="text-transform: uppercase"],
+.environment-badge,
+.dba-table th {
+    letter-spacing: 0.04em;
+}
+
+/* ========== END TYPOGRAPHY ENHANCEMENT PATCH ========== */

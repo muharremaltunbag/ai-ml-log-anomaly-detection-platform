@@ -1237,9 +1237,9 @@ function updateHistoryDisplayWithDBA(filter = 'all') {
                  style="border-left: 4px solid ${borderColor};">
                 <div class="history-item-header">
                     <span class="history-type">${typeIcon}</span>
-                    ${item.subType === 'Elasticsearch' ? '<span class="es-badge" style="background: #F0BF1A; color: #333; padding: 2px 6px; border-radius: 3px; font-size: 11px;">ES</span>' : ''}
-                    ${item.subType === 'MSSQL' ? '<span class="mssql-badge" style="background: #CC2936; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px;">MSSQL</span>' : ''}
-                    ${item.subType === 'DBA' ? '<span class="dba-badge" style="background: #0047BA; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px;">DBA</span>' : ''}
+                    ${item.subType === 'Elasticsearch' ? '<span class="es-badge" style="background: #F0BF1A; color: #333; padding: 2px 6px; border-radius: 3px; font-size: 13px;">ES</span>' : ''}
+                    ${item.subType === 'MSSQL' ? '<span class="mssql-badge" style="background: #CC2936; color: white; padding: 2px 6px; border-radius: 3px; font-size: 13px;">MSSQL</span>' : ''}
+                    ${item.subType === 'DBA' ? '<span class="dba-badge" style="background: #0047BA; color: white; padding: 2px 6px; border-radius: 3px; font-size: 13px;">DBA</span>' : ''}
                     <span class="history-time">${date.toLocaleString('tr-TR')}</span>
                     ${item.fromMongoDB ? '<span class="mongodb-indicator" title="MongoDB\'den yüklendi"></span>' : ''}
                     <span class="history-status ${statusClass}">${statusIcon} ${item.durum}</span>
