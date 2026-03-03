@@ -89,6 +89,31 @@ class ForecastReport:
         severity_order = {"INFO": 0, "WARNING": 1, "CRITICAL": 2}
         return max(self.alerts, key=lambda a: severity_order.get(a.severity, 0)).severity
 
+    def summary(self) -> Dict[str, Any]:
+        """Tüm metriklerin toplu risk/confidence/yön özeti."""
+        if not self.forecasts:
+            return {"overall_risk": "OK", "metrics_assessed": 0}
+
+        confidences = []
+        directions: Dict[str, int] = {}
+        for metric_data in self.forecasts.values():
+            if isinstance(metric_data, dict):
+                conf = metric_data.get("confidence")
+                if conf is not None and isinstance(conf, (int, float)):
+                    confidences.append(conf)
+                d = metric_data.get("direction", "unknown")
+                directions[d] = directions.get(d, 0) + 1
+
+        avg_conf = sum(confidences) / len(confidences) if confidences else 0
+
+        return {
+            "overall_risk": self.max_severity(),
+            "alert_count": len(self.alerts),
+            "metrics_assessed": len(self.forecasts),
+            "avg_confidence": round(avg_conf, 4),
+            "direction_distribution": {k: v for k, v in directions.items() if v > 0},
+        }
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "server_name": self.server_name,
@@ -100,7 +125,8 @@ class ForecastReport:
             "change_points": self.change_points,
             "timestamp": self.timestamp,
             "max_severity": self.max_severity(),
-            "has_alerts": self.has_alerts()
+            "has_alerts": self.has_alerts(),
+            "summary": self.summary(),
         }
 
 
@@ -258,6 +284,35 @@ def _cusum_change_points(values: List[float], threshold: float = 3.0) -> List[in
             cps.append(i)
             pos, neg = 0.0, 0.0
     return cps
+
+
+def _residual_consistency(values: List[float], slope: float, intercept: float) -> float:
+    """Residual consistency score (0-1). Model fit kalitesini ölçer.
+
+    Durbin-Watson yaklaşımı ile otokorelasyon ve son residual'larda
+    sistematik bias tespit eder. Düşük skor → düşük güvenilirlik.
+    """
+    n = len(values)
+    if n < 4:
+        return 0.5
+
+    x = list(range(n))
+    residuals = [values[i] - (slope * x[i] + intercept) for i in range(n)]
+
+    # Durbin-Watson: DW ≈ 2 → otokorelasyon yok
+    sum_diff_sq = sum((residuals[i] - residuals[i - 1]) ** 2 for i in range(1, n))
+    sum_res_sq = sum(r ** 2 for r in residuals)
+    if sum_res_sq == 0:
+        return 1.0
+    dw = sum_diff_sq / sum_res_sq
+    dw_score = max(0.0, 1.0 - abs(dw - 2.0) / 2.0)
+
+    # Recent bias: son 3 residual hep aynı işaretse → model sapıyor
+    recent_res = residuals[-3:]
+    all_same_sign = all(r > 0 for r in recent_res) or all(r < 0 for r in recent_res)
+    bias_penalty = 0.15 if all_same_sign else 0.0
+
+    return max(0.0, min(1.0, dw_score - bias_penalty))
 
 
 def _prediction_interval(values: List[float], slope: float, intercept: float,
@@ -672,7 +727,9 @@ def _forecast_tier1(values: List[float], steps_ahead: float) -> Dict[str, Any]:
     trend_per_step = (recent_3[-1] - recent_3[0]) / max(len(recent_3) - 1, 1)
     forecast_value = max(0.0, current + trend_per_step * steps_ahead)
     volatility = _coefficient_of_variation(values)
-    confidence = min(0.4, 0.2 + n * 0.03)
+    # Volatility penalty: noisy data → lower confidence
+    vol_factor = max(0.5, 1.0 - min(volatility, 1.0) * 0.4)
+    confidence = min(0.4, 0.2 + n * 0.03) * vol_factor
     spread = _std_dev(values) * 2
     return {
         "method": "tier1_wma", "forecast_value": forecast_value,
@@ -695,7 +752,11 @@ def _forecast_tier2(values: List[float], steps_ahead: float,
     forecast_value = max(0.0, slope * forecast_x + intercept)
     lower, upper = _prediction_interval(values, slope, intercept, forecast_x, confidence_level)
     volatility = _coefficient_of_variation(values)
-    confidence = min(0.7, r2 * 0.6 + len(values) * 0.01)
+    # Residual consistency + volatility penalty
+    res_consistency = _residual_consistency(values, slope, intercept)
+    base_conf = r2 * 0.5 + len(values) * 0.01 + res_consistency * 0.15
+    vol_factor = max(0.5, 1.0 - min(volatility, 1.0) * 0.3)
+    confidence = min(0.7, base_conf) * vol_factor
     return {
         "method": "tier2_linear_regression", "forecast_value": forecast_value,
         "slope": slope, "intercept": intercept, "r_squared": r2,
@@ -735,8 +796,17 @@ def _forecast_tier3(values: List[float], steps_ahead: float,
     upper = forecast_value + vol_spread * 2
     lower = max(0.0, forecast_value - vol_spread * 2)
 
-    confidence = min(0.9, r2 * 0.5 + min(n, 50) * 0.005 + (1 - min(volatility, 1.0)) * 0.2)
     change_points = _cusum_change_points(values)
+    res_consistency = _residual_consistency(recent, slope, intercept)
+    # Recent change-point penalty: son 5 değerde CP varsa model güvenilirliği düşer
+    cp_penalty = 0.0
+    if change_points and change_points[-1] > n - 5:
+        cp_penalty = min(0.15, len([cp for cp in change_points if cp > n - 5]) * 0.07)
+    base_conf = (r2 * 0.4
+                 + min(n, 50) * 0.005
+                 + (1 - min(volatility, 1.0)) * 0.2
+                 + res_consistency * 0.1)
+    confidence = max(0.1, min(0.9, base_conf - cp_penalty))
 
     if slope > 0.001 and momentum > 0:
         direction = "rising"
@@ -931,18 +1001,47 @@ def _evaluate_alert(metric_name: str, metric_cfg: Dict, tier_result: Dict,
     if vol > 0.6 and severity == "CRITICAL":
         severity = "WARNING"
 
-    # ML severity boost: ML risk yüksekse VE forecast artış gösteriyorsa
+    # ML severity boost: çoklu sinyal yakınsaması
     ml_boosted = False
     ml_explain = ""
-    if ml_risk_ctx and severity == "WARNING" and metric_name != "mean_anomaly_score":
+    if ml_risk_ctx and metric_name != "mean_anomaly_score":
         ml_risk = ml_risk_ctx.get("ml_risk_level", "OK")
-        if ml_risk in ("CRITICAL", "WARNING") and ml_risk_ctx.get("score_worsening"):
+        score_worsening = ml_risk_ctx.get("score_worsening", False)
+        score_slope = ml_risk_ctx.get("score_trajectory_slope", 0)
+        density_ratio = ml_risk_ctx.get("anomaly_density_ratio", 1.0)
+
+        # Sinyal sayımı
+        boost_signals = 0
+        boost_reasons = []
+        if ml_risk in ("CRITICAL", "WARNING"):
+            boost_signals += 1
+            boost_reasons.append(f"ML risk: {ml_risk}")
+        if score_worsening:
+            boost_signals += 1
+            boost_reasons.append("skor kötüleşiyor")
+        if score_slope > 0.01:
+            boost_signals += 1
+            boost_reasons.append(f"skor trendi yükseliyor (slope={score_slope:.4f})")
+        if density_ratio > 1.5:
+            boost_signals += 1
+            boost_reasons.append(f"anomali yoğunluğu artmış (x{density_ratio:.1f})")
+
+        # 2+ sinyal → WARNING'i CRITICAL'e yükselt
+        if severity == "WARNING" and boost_signals >= 2:
             severity = "CRITICAL"
             ml_boosted = True
             ml_explain = (
-                f" ML modeli de risk artışı tespit ediyor "
-                f"(risk: {ml_risk}, skor trendi: kötüleşiyor). "
+                f" ML çoklu sinyal yakınsaması ({boost_signals} sinyal: "
+                f"{', '.join(boost_reasons)}). "
                 f"Forecast severity ML-destekli olarak yükseltildi."
+            )
+        # Yüksek güven + kritik eşiğe yakın → yükselt
+        elif severity == "WARNING" and confidence > 0.65 and pct_above >= critical_pct * 0.8:
+            severity = "CRITICAL"
+            ml_boosted = True
+            ml_explain = (
+                f" Yüksek güven ({confidence:.0%}) ile kritik eşiğe yakın "
+                f"(%{pct_above:.0f} vs %{critical_pct:.0f}). Severity yükseltildi."
             )
 
     label = metric_cfg.get("label", metric_name)
@@ -1226,7 +1325,31 @@ class AnomalyForecaster:
                     past_scores.append(abs(float(m)))
 
             baseline_mean = sum(past_scores) / len(past_scores) if past_scores else curr_mean
-            score_worsening = curr_mean > baseline_mean * 1.15 if baseline_mean > 0 else False
+
+            # Statistical worsening: stddev-based threshold (arbitrary 1.15 yerine)
+            if past_scores and len(past_scores) >= 3:
+                score_std = _std_dev(past_scores)
+                worsening_threshold = baseline_mean + max(score_std * 1.5, baseline_mean * 0.1)
+                score_worsening = curr_mean > worsening_threshold
+            else:
+                score_worsening = curr_mean > baseline_mean * 1.15 if baseline_mean > 0 else False
+
+            # Score trajectory: ML skorlarının zaman içindeki trendi
+            score_trajectory_slope = 0.0
+            all_scores = past_scores + [curr_mean]
+            if len(all_scores) >= 3:
+                x_scores = list(range(len(all_scores)))
+                slope_s, _, _ = _linear_regression(x_scores, all_scores)
+                score_trajectory_slope = slope_s
+
+            # Anomaly density: recent vs baseline anomaly rate oranı
+            past_rates = []
+            for rec in history_records:
+                r = rec.get('anomaly_rate') or (rec.get('summary') or {}).get('anomaly_rate')
+                if r is not None:
+                    past_rates.append(float(r))
+            baseline_rate = sum(past_rates) / len(past_rates) if past_rates else curr_rate
+            anomaly_density_ratio = curr_rate / baseline_rate if baseline_rate > 0 else 1.0
 
             # Risk level
             if critical_count >= 3 or curr_rate > 15:
@@ -1242,7 +1365,10 @@ class AnomalyForecaster:
                 "current_mean_score": round(curr_mean, 4),
                 "baseline_mean_score": round(baseline_mean, 4),
                 "score_worsening": score_worsening,
+                "score_trajectory_slope": round(score_trajectory_slope, 6),
                 "anomaly_rate": round(curr_rate, 2),
+                "baseline_anomaly_rate": round(baseline_rate, 2),
+                "anomaly_density_ratio": round(anomaly_density_ratio, 2),
                 "critical_count": critical_count,
                 "ml_risk_level": ml_risk,
             }
