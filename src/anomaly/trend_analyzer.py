@@ -22,6 +22,22 @@ from dataclasses import dataclass, field, asdict
 logger = logging.getLogger(__name__)
 
 
+# Source type normalization map
+_SOURCE_TYPE_MAP = {
+    "opensearch": "mongodb",
+    "mssql_opensearch": "mssql",
+    "elasticsearch_opensearch": "elasticsearch",
+    "mongodb": "mongodb",
+    "mssql": "mssql",
+    "elasticsearch": "elasticsearch",
+}
+
+
+def _normalize_source_type(raw: str) -> str:
+    """Storage-level source type → prediction module source type."""
+    return _SOURCE_TYPE_MAP.get(raw.lower().strip(), raw.lower().strip())
+
+
 @dataclass
 class TrendAlert:
     """Tek bir trend alert'ini temsil eder"""
@@ -528,7 +544,7 @@ class TrendAnalyzer:
                                        source_type: str) -> List[TrendAlert]:
         """Source-specific metric'lerin trend kontrolü."""
         alerts = []
-        src_key = source_type.lower().replace("_opensearch", "").replace("opensearch", "mongodb")
+        src_key = _normalize_source_type(source_type)
         metrics = self._SOURCE_METRICS.get(src_key, [])
 
         for current_key, history_key, label, threshold_pct in metrics:

@@ -49,6 +49,29 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+# ─────────────────────────────────────────────────
+# Source Type Normalization — shared across modules
+# ─────────────────────────────────────────────────
+_SOURCE_TYPE_MAP = {
+    "opensearch": "mongodb",
+    "mssql_opensearch": "mssql",
+    "elasticsearch_opensearch": "elasticsearch",
+    "mongodb": "mongodb",
+    "mssql": "mssql",
+    "elasticsearch": "elasticsearch",
+}
+
+
+def _normalize_source_type(raw: str) -> str:
+    """Storage-level source type → prediction module source type.
+
+    Replaces brittle string replacement (.replace("_opensearch", ""))
+    with a proper mapping.
+    """
+    return _SOURCE_TYPE_MAP.get(raw.lower().strip(), raw.lower().strip())
+
+
 class AnomalyDetectionTools:
     """MongoDB log anomali tespiti için LangChain tool'ları"""
 
@@ -1103,7 +1126,8 @@ class AnomalyDetectionTools:
                 if self.prediction_enabled:
                     try:
                         _pre_prediction_results = self._run_prediction_sync(
-                            analysis, df_filtered, server_for_model
+                            analysis, df_filtered, server_for_model,
+                            source_type="mongodb"
                         )
                         _prediction_prompt_ctx = self._build_prediction_context_for_prompt(
                             _pre_prediction_results)
@@ -1433,7 +1457,8 @@ class AnomalyDetectionTools:
                     if self.prediction_enabled:
                         try:
                             _pre_prediction_results = self._run_prediction_sync(
-                                analysis, df_filtered, server_for_model
+                                analysis, df_filtered, server_for_model,
+                                source_type="mongodb"
                             )
                             _prediction_prompt_ctx = self._build_prediction_context_for_prompt(
                                 _pre_prediction_results)
@@ -4215,6 +4240,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                         "type": a.get("alert_type"),
                         "severity": a.get("severity"),
                         "title": a.get("title"),
+                        "description": a.get("description", ""),
                         "explainability": a.get("explainability", ""),
                     })
                 has_content = True
@@ -4245,8 +4271,12 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                         "type": a.get("alert_type"),
                         "severity": a.get("severity"),
                         "title": a.get("title"),
+                        "description": a.get("description", ""),
                         "explainability": a.get("explainability", ""),
                     }
+                    # Forward confidence for UI badge rendering
+                    if isinstance(a.get("confidence"), (int, float)):
+                        alert_entry["confidence"] = round(a["confidence"], 3)
                     # Forward ML context for UI badge rendering
                     if isinstance(a.get("ml_context"), dict):
                         alert_entry["ml_context"] = a["ml_context"]
@@ -4289,6 +4319,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                         "type": a.get("alert_type"),
                         "severity": a.get("severity"),
                         "title": a.get("title"),
+                        "description": a.get("description", ""),
                         "explainability": a.get("explainability", ""),
                     }
                     # Confidence ve method bilgisini aktar
@@ -4369,13 +4400,31 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
 
         return insight
 
-    def _extract_ml_signal(self, analysis_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    # Source-aware ML risk thresholds
+    _ML_RISK_THRESHOLDS = {
+        "mongodb": {
+            "critical_rate": 15, "warning_rate": 8,
+            "critical_count": 3, "high_count_warning": 3,
+        },
+        "mssql": {
+            "critical_rate": 12, "warning_rate": 6,
+            "critical_count": 2, "high_count_warning": 2,
+        },
+        "elasticsearch": {
+            "critical_rate": 10, "warning_rate": 5,
+            "critical_count": 1, "high_count_warning": 2,
+        },
+    }
+
+    def _extract_ml_signal(self, analysis_data: Dict[str, Any],
+                           source_type: str = "mongodb") -> Optional[Dict[str, Any]]:
         """
         Anomaly detection sonucundan ML risk sinyali çıkar.
 
         IsolationForest model çıktılarını kullanarak anlık risk seviyesini hesaplar.
         Prediction insight'a ek bağlam olarak eklenir.
         Bu bir 'ML forecast modeli' DEĞİL, anomaly detection'ın anlık risk göstergesidir.
+        Source-aware eşikler kullanır (MSSQL/ES daha düşük toleranslı).
 
         Returns:
             ML signal dict veya None (anlamlı veri yoksa)
@@ -4397,10 +4446,13 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         critical = severity_dist.get('CRITICAL', 0)
         high = severity_dist.get('HIGH', 0)
 
-        # ML risk seviyesi — anomaly detection modelinin anlık değerlendirmesi
-        if critical >= 3 or anomaly_rate > 15:
+        # Source-aware ML risk thresholds
+        thresholds = self._ML_RISK_THRESHOLDS.get(
+            source_type, self._ML_RISK_THRESHOLDS["mongodb"])
+
+        if critical >= thresholds["critical_count"] or anomaly_rate > thresholds["critical_rate"]:
             ml_risk = "CRITICAL"
-        elif critical >= 1 or high >= 3 or anomaly_rate > 8:
+        elif critical >= 1 or high >= thresholds["high_count_warning"] or anomaly_rate > thresholds["warning_rate"]:
             ml_risk = "WARNING"
         elif n_anomalies > 0:
             ml_risk = "INFO"
@@ -4436,7 +4488,10 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
 
         # ML signal: anomaly detection model çıktısından risk sinyali çıkar
         analysis_data = result.get("data") if isinstance(result.get("data"), dict) else {}
-        ml_signal = self._extract_ml_signal(analysis_data)
+        # Source type normalization for ML thresholds
+        raw_source = analysis_data.get("source", "mongodb")
+        src_type = _normalize_source_type(raw_source)
+        ml_signal = self._extract_ml_signal(analysis_data, source_type=src_type)
         if ml_signal:
             insight["ml_signal"] = ml_signal
 

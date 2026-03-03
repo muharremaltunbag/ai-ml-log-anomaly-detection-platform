@@ -29,6 +29,22 @@ from dataclasses import dataclass, asdict, field
 logger = logging.getLogger(__name__)
 
 
+# Source type normalization map
+_SOURCE_TYPE_MAP = {
+    "opensearch": "mongodb",
+    "mssql_opensearch": "mssql",
+    "elasticsearch_opensearch": "elasticsearch",
+    "mongodb": "mongodb",
+    "mssql": "mssql",
+    "elasticsearch": "elasticsearch",
+}
+
+
+def _normalize_source_type(raw: str) -> str:
+    """Storage-level source type → prediction module source type."""
+    return _SOURCE_TYPE_MAP.get(raw.lower().strip(), raw.lower().strip())
+
+
 # ═══════════════════════════════════════════════════════════
 # Data Classes (public API — backward compatible)
 # ═══════════════════════════════════════════════════════════
@@ -1168,7 +1184,7 @@ class AnomalyForecaster:
                 forecast_target_hour = None
 
         # Source-aware metric set
-        src_key = source_type.lower().replace("_opensearch", "").replace("opensearch", "mongodb")
+        src_key = _normalize_source_type(source_type)
         metric_set = SOURCE_METRIC_SETS.get(src_key, COMMON_METRICS)
 
         active_metrics: Dict[str, Dict] = {}
