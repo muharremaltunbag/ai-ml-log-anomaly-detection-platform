@@ -1119,11 +1119,7 @@ document.addEventListener('DOMContentLoaded', function() {
         sidebar.classList.add('open');
     }
 
-    // ML Metrics Sidebar da varsayilan olarak acik gelsin
-    var mlSidebar = document.getElementById('mlModelPanel');
-    if (mlSidebar && !mlSidebar.classList.contains('open')) {
-        mlSidebar.classList.add('open');
-    }
+    // ML Metrics Sidebar — kullanici butona tiklayarak acsin (varsayilan kapali)
 
     // LCWGPT: Sunucu listesini yükle ve seçim göster
     // apiKey henüz set edilmemiş olabilir — bağlantı kurulunca tekrar çekilecek
