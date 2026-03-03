@@ -312,7 +312,7 @@
                         wrapper.style.display = 'block';
                         var emptyTbody = _el('ppdTableBody');
                         if (emptyTbody) {
-                            emptyTbody.innerHTML = '<tr><td colspan="6" class="pps-table-empty">'
+                            emptyTbody.innerHTML = '<tr><td colspan="7" class="pps-table-empty">'
                                 + '<div class="pps-empty-icon" style="font-size:24px;">&#x1F50D;</div>'
                                 + '<div style="margin-top:6px;font-weight:600;color:#555;">Bu zaman araliginda alert kaydi bulunamadi</div>'
                                 + '<div style="margin-top:4px;font-size:12px;color:#999;">Farkli bir zaman araligi veya sunucu filtresi deneyin.</div>'
@@ -355,20 +355,33 @@
 
             var sevClass = 'ppd-sev-' + severity.toLowerCase();
 
+            // Confidence cell
+            var confidenceHtml = _buildConfidenceCell(dataAlerts);
+
             // Build detail snippet
             var detail = _buildDetailSnippet(a);
 
-            html += '<tr>'
+            html += '<tr class="ppd-alert-row" data-row-idx="' + i + '">'
                 + '<td>' + esc(ts) + '</td>'
                 + '<td>' + esc(source) + '</td>'
                 + '<td>' + esc(server) + '</td>'
                 + '<td><span class="ppd-severity-tag ' + sevClass + '">' + esc(severity) + '</span></td>'
+                + '<td>' + confidenceHtml + '</td>'
                 + '<td>' + esc(String(alertCount)) + '</td>'
                 + '<td class="ppd-detail-cell">' + detail + '</td>'
                 + '</tr>';
+
+            // Drill-down row (hidden by default)
+            html += '<tr class="ppd-drilldown-row" id="ppdDrill_' + i + '" style="display:none;">'
+                + '<td colspan="7" class="ppd-drilldown-cell">'
+                + _buildDrillDownPanel(a, dataAlerts)
+                + '</td></tr>';
         }
         tbody.innerHTML = html;
         wrapper.style.display = 'block';
+
+        // Attach drill-down click handlers
+        _initRowDrillDown();
     }
 
     function _buildDetailSnippet(alertDoc) {
@@ -388,14 +401,193 @@
             } else if (al.ml_context && !al.ml_context.ml_corroborated) {
                 label += ' <span class="ppd-ml-badge ppd-ml-weak" title="ML destegi zayif">ML ?</span>';
             }
+
+            // ML risk level badge for forecast alerts
+            if (al.ml_risk_context) {
+                var mlLvl = al.ml_risk_context.ml_risk_level;
+                if (mlLvl && mlLvl !== 'OK') {
+                    var mlCls = 'ppd-ml-risk-' + mlLvl.toLowerCase();
+                    label += ' <span class="ppd-ml-risk ' + mlCls + '" title="ML Risk: ' + mlLvl + '">ML ' + mlLvl + '</span>';
+                }
+            }
             parts.push(label);
         }
         if (dataAlerts.length > 3) {
             parts.push('+' + (dataAlerts.length - 3) + ' daha');
         }
 
-        if (parts.length === 0) return '<span style="color:#888;">-</span>';
+        if (parts.length === 0) return '<span style="color:#888;">Uyari yok — detay icin tiklayin</span>';
         return parts.join(', ');
+    }
+
+    // ============================
+    // CONFIDENCE CELL
+    // ============================
+    function _buildConfidenceCell(dataAlerts) {
+        var maxConf = 0;
+        var hasConf = false;
+        for (var i = 0; i < dataAlerts.length; i++) {
+            var c = dataAlerts[i].confidence;
+            if (typeof c === 'number') {
+                hasConf = true;
+                if (c > maxConf) maxConf = c;
+            }
+        }
+        if (!hasConf) return '<span class="ppd-conf-na">-</span>';
+
+        var pct = Math.round(maxConf * 100);
+        var cls = 'ppd-conf-low';
+        if (pct >= 60) cls = 'ppd-conf-high';
+        else if (pct >= 30) cls = 'ppd-conf-med';
+
+        return '<span class="ppd-conf-badge ' + cls + '" title="Maks. guven: %' + pct + '">%' + pct + '</span>';
+    }
+
+    // ============================
+    // TIER LABEL HELPER
+    // ============================
+    function _tierLabel(method) {
+        var labels = {
+            'tier0_no_data': 'Veri Yetersiz',
+            'tier0_single_point': 'Tek Nokta',
+            'tier0_direction_only': 'Tier 0',
+            'tier1_wma': 'Tier 1 — WMA',
+            'tier2_linear_regression': 'Tier 2 — LR',
+            'tier3_ewma_decomposition': 'Tier 3 — EWMA'
+        };
+        return labels[method] || method;
+    }
+
+    // ============================
+    // DRILL-DOWN PANEL
+    // ============================
+    function _buildDrillDownPanel(alertDoc, dataAlerts) {
+        if (dataAlerts.length === 0) {
+            // Contextual message based on source
+            var src = alertDoc.alert_source || '';
+            var msg = 'Bu kontrol sirasinda uyari tespit edilmedi.';
+            if (src === 'forecast') {
+                var forecasts = (alertDoc.data && alertDoc.data.forecasts) || {};
+                var insuffCount = 0;
+                var maxDp = 0;
+                var fKeys = Object.keys(forecasts);
+                for (var k = 0; k < fKeys.length; k++) {
+                    var fc = forecasts[fKeys[k]];
+                    if (fc && fc.status === 'insufficient_data') {
+                        insuffCount++;
+                        if (fc.data_points > maxDp) maxDp = fc.data_points;
+                    }
+                }
+                if (insuffCount > 0) {
+                    msg = insuffCount + ' metrik icin yeterli veri yok (maks. ' + maxDp + ' nokta). '
+                        + 'Daha fazla analiz calistirarak tahmin dogrulugunu artirabilirsiniz.';
+                } else {
+                    msg = 'Tahmin modeli risk artisi tespit etmedi. Tum metrikler normal seyrediyor.';
+                }
+            } else if (src === 'trend') {
+                msg = 'Trend analizi anomali degisimi tespit etmedi. Mevcut seyir stabil.';
+            } else if (src === 'rate') {
+                msg = 'Rate alert modulu esik asimi tespit etmedi. Anomali oranlari normal araliklarda.';
+            }
+            return '<div class="ppd-drill-empty">' + esc(msg) + '</div>';
+        }
+
+        var html = '<div class="ppd-drill-panel">';
+
+        for (var i = 0; i < dataAlerts.length; i++) {
+            var al = dataAlerts[i];
+            var sevClass = 'ppd-sev-' + (al.severity || 'info').toLowerCase();
+
+            html += '<div class="ppd-drill-alert">';
+
+            // Header row: severity + title + badges
+            html += '<div class="ppd-drill-header">'
+                + '<span class="ppd-severity-tag ' + sevClass + '">' + esc(al.severity || 'INFO') + '</span>'
+                + '<span class="ppd-drill-title">' + esc(al.title || al.alert_type || '-') + '</span>';
+
+            // Confidence badge
+            if (typeof al.confidence === 'number') {
+                var pct = Math.round(al.confidence * 100);
+                var confCls = pct >= 60 ? 'ppd-conf-high' : (pct >= 30 ? 'ppd-conf-med' : 'ppd-conf-low');
+                html += '<span class="ppd-conf-badge ' + confCls + '">%' + pct + '</span>';
+            }
+
+            // ML corroboration badge
+            if (al.ml_context) {
+                if (al.ml_context.ml_corroborated) {
+                    html += '<span class="ppd-ml-badge ppd-ml-confirmed" title="ML destekli">ML &#x2713;</span>';
+                } else {
+                    html += '<span class="ppd-ml-badge ppd-ml-weak" title="ML destegi zayif">ML ?</span>';
+                }
+            }
+
+            // Forecast method badge
+            if (al.forecast_method) {
+                html += '<span class="ppd-method-badge">' + esc(_tierLabel(al.forecast_method)) + '</span>';
+            }
+
+            html += '</div>'; // end header
+
+            // Description
+            if (al.description) {
+                html += '<div class="ppd-drill-desc">' + esc(al.description) + '</div>';
+            }
+
+            // Forecast bounds
+            if (typeof al.forecast_value === 'number') {
+                var lb = typeof al.lower_bound === 'number' ? al.lower_bound.toFixed(2) : '?';
+                var ub = typeof al.upper_bound === 'number' ? al.upper_bound.toFixed(2) : '?';
+                html += '<div class="ppd-drill-forecast">'
+                    + 'Tahmin: ' + al.forecast_value.toFixed(2)
+                    + ' [' + lb + ' \u2013 ' + ub + ']'
+                    + '</div>';
+            }
+
+            // ML context detail for rate alerts
+            if (al.ml_context && typeof al.ml_context === 'object') {
+                var ctx = al.ml_context;
+                var ctxParts = [];
+                if (ctx.ml_corroborated) ctxParts.push('ML Destekli');
+                if (typeof ctx.ml_mean_score === 'number') ctxParts.push('ML Skor: ' + ctx.ml_mean_score.toFixed(4));
+                if (typeof ctx.ml_anomaly_rate === 'number') ctxParts.push('ML Anomali: %' + ctx.ml_anomaly_rate.toFixed(1));
+                if (ctx.isolation_forest_severity) ctxParts.push('IF Severity: ' + ctx.isolation_forest_severity);
+                if (ctxParts.length > 0) {
+                    html += '<div class="ppd-drill-ml-ctx">' + esc(ctxParts.join(' | ')) + '</div>';
+                }
+            }
+
+            // Explainability (collapsible)
+            if (al.explainability) {
+                html += '<details class="ppd-drill-explain">'
+                    + '<summary>Aciklama ve Analiz Detayi</summary>'
+                    + '<div class="ppd-drill-explain-text">' + esc(al.explainability) + '</div>'
+                    + '</details>';
+            }
+
+            html += '</div>'; // end ppd-drill-alert
+        }
+
+        html += '</div>'; // end ppd-drill-panel
+        return html;
+    }
+
+    // ============================
+    // ROW DRILL-DOWN CLICK HANDLER
+    // ============================
+    function _initRowDrillDown() {
+        var rows = document.querySelectorAll('.ppd-alert-row');
+        for (var i = 0; i < rows.length; i++) {
+            (function (row) {
+                row.addEventListener('click', function () {
+                    var idx = row.getAttribute('data-row-idx');
+                    var drillRow = _el('ppdDrill_' + idx);
+                    if (!drillRow) return;
+                    var isVisible = drillRow.style.display !== 'none';
+                    drillRow.style.display = isVisible ? 'none' : 'table-row';
+                    row.classList.toggle('ppd-row-expanded', !isVisible);
+                });
+            })(rows[i]);
+        }
     }
 
     // ============================
@@ -896,8 +1088,22 @@
                     var summary = data.analysis_summary || {};
                     var anomalies = summary.n_anomalies || 0;
                     var rate = (summary.anomaly_rate || 0).toFixed(1);
+
+                    // Build rich result text
+                    var resultParts = [anomalies + ' anomali (%' + rate + ')'];
+
+                    // Show prediction insight risk level if available
+                    var insight = data.prediction_insight || {};
+                    if (insight.risk_level && insight.risk_level !== 'OK') {
+                        resultParts.push('Risk: ' + insight.risk_level);
+                    }
+                    // Show convergence if detected
+                    if (insight.convergence_boost) {
+                        resultParts.push(insight.converging_modules + ' modul yakinsamasi');
+                    }
+
                     btn.innerHTML = '<span class="pps-run-icon">&#x2714;</span> ' +
-                        anomalies + ' anomali (%' + rate + ')';
+                        resultParts.join(' | ');
                     console.log('[PredictionDashboard] Analysis completed', data);
                 } else {
                     btn.classList.add('pps-run-success');
