@@ -6356,11 +6356,12 @@ footer {
 }
 
 .severity-badge {
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 700;
     text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .severity-badge.w,
@@ -9011,84 +9012,67 @@ footer {
 .severity-badge.critical {
     background: #e74c3c;
     color: white;
-    box-shadow: 0 2px 4px rgba(231, 76, 60, 0.3);
 }
 
 .severity-badge.high {
     background: #e67e22;
     color: white;
-    box-shadow: 0 2px 4px rgba(230, 126, 34, 0.3);
 }
 
 .severity-badge.medium {
     background: #f39c12;
     color: white;
-    box-shadow: 0 2px 4px rgba(243, 156, 18, 0.3);
 }
 
 .severity-badge.low {
     background: #3498db;
     color: white;
-    box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
 }
 
 .severity-badge.info {
     background: #95a5a6;
     color: white;
-    box-shadow: 0 2px 4px rgba(149, 165, 166, 0.3);
 }
 
 /* Critical Anomaly Card with Severity */
 .critical-anomaly-card {
     border: 1px solid var(--border-color);
     border-left: 4px solid var(--severity-color);
-    border-radius: 12px;
-    padding: 20px 24px;
-    margin-bottom: 16px;
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
     background: var(--card-bg);
-    transition: all 0.3s ease;
+    transition: border-color var(--transition);
     position: relative;
-    overflow: hidden;
-}
-
-.critical-anomaly-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: var(--severity-color);
 }
 
 .critical-anomaly-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    border-color: var(--severity-color);
 }
 
 .anomaly-header-with-severity {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    margin-bottom: 6px;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
 }
 
 .anomaly-info {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-wrap: wrap;
 }
 
 .anomaly-time {
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
 }
 
 .anomaly-content {
-    margin-top: 12px;
+    margin-top: 4px;
 }
 
 .anomaly-message {
@@ -9622,19 +9606,22 @@ message-container {
 }
 
 .severity-score-inline {
-    background: rgba(255, 255, 255, 0.1);
-    padding: 2px 8px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: bold;
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-secondary);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
 }
 
 .component-badge {
-    background: #2196F3;
-    color: white;
+    background: #e3f2fd;
+    color: #1565c0;
     padding: 2px 8px;
-    border-radius: 6px;
-    font-size: 12px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
 }
 
 .host-badge {
@@ -9698,12 +9685,10 @@ message-container {
 
 /* Sadeleştirilmiş ana mesaj gösterimi */
 .anomaly-main-message {
-    padding: 15px;
-    background: rgba(0, 0, 0, 0.5);
-    border-radius: 8px;
-    margin-top: 10px;
-    border-left: 4px solid var(--severity-color, #e74c3c);
-    backdrop-filter: blur(5px);
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    margin-top: 0;
 }
 
 .message-text {
@@ -9773,23 +9758,14 @@ message-container {
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Host badge stili - zaten var olabilir ama güncelleyelim */
+/* Host badge stili */
 .host-badge {
-    background: rgba(155, 89, 182, 0.15);
-    color: #bb8fce;
-    padding: 3px 10px;
-    border-radius: 6px;
-    font-size: 13px;
-    margin-left: 8px;
-    border: 1px solid rgba(155, 89, 182, 0.3);
-    font-weight: 500;
-}
-
-/* Anomaly card hover efekti için güncelleme */
-.critical-anomaly-card:hover .anomaly-main-message {
-    background: rgba(0, 0, 0, 0.65);
-    border-left-width: 5px;
-    transition: all 0.3s ease;
+    background: #f3e5f5;
+    color: #7b1fa2;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
 }
 
 /* Badge hover efektleri */
@@ -9822,7 +9798,7 @@ message-container {
 /* Responsive düzenlemeler */
 @media (max-width: 768px) {
     .anomaly-main-message {
-        padding: 12px;
+        padding: 0;
     }
     
     .message-text {
@@ -9844,15 +9820,24 @@ message-container {
     white-space: pre-wrap;
     word-wrap: break-word;
     font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 1.6;
-    background: var(--bg-color);
-    padding: 16px;
-    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    background: #f8f9fa;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
     max-width: 100%;
-    overflow-x: auto;
+    max-height: 3.2em;
+    overflow: hidden;
     margin: 0;
     border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: max-height var(--transition);
+}
+
+.log-message-pre.expanded {
+    max-height: 600px;
+    overflow-y: auto;
 }
 
 .message-text.expandable {
@@ -10808,34 +10793,32 @@ input:checked + .toggle-slider:before {
 /* View Mode Controls */
 .view-controls {
     display: flex;
-    gap: 10px;
-    margin: 15px 0;
-    padding: 10px;
-    background: #f8f9fa;
-    border-radius: 8px;
+    gap: 4px;
+    margin: 0 0 10px;
+    padding: 0;
+    background: transparent;
 }
 
 .btn-view-mode {
-    padding: 8px 16px;
-    background: white;
-    border: 2px solid #e0e0e0;
-    border-radius: 6px;
+    padding: 4px 12px;
+    background: #f8f9fa;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 500;
-    transition: all 0.3s;
+    transition: all var(--transition);
 }
 
 .btn-view-mode:hover {
-    background: #f8f9fa;
-    border-color: #0047BA;
-    transform: translateY(-2px);
+    background: #e9ecef;
+    border-color: var(--gray-400);
 }
 
 .btn-view-mode.active {
-    background: #0047BA;
+    background: var(--lcw-blue);
     color: white;
-    border-color: #0047BA;
+    border-color: var(--lcw-blue);
 }
 
 /* COMPACT MODE */
@@ -10844,34 +10827,31 @@ input:checked + .toggle-slider:before {
 }
 
 .compact-mode .critical-anomaly-card {
-    padding: 15px;
-    margin-bottom: 12px;
+    padding: 6px 10px;
 }
 
 .compact-mode .log-message-pre {
-    max-height: 280px;
+    max-height: 1.6em;
     font-size: 12px;
     line-height: 1.5;
-    padding: 15px;
-    overflow-y: auto;
+    padding: 4px 8px;
+    overflow: hidden;
 }
 
-/* Compact mode'da anomali mesaj alanı için özel ayar */
-.compact-mode .anomaly-main-message {
-    padding: 12px;
-    margin: 10px 0;
-    background: #f5f7fa;
+/* Compact mode'da feedback gizle */
+.compact-mode .anomaly-feedback-actions {
+    display: none;
 }
 
 /* Compact mode'da badge'ler için boyut optimizasyonu */
 .compact-mode .severity-badge,
 .compact-mode .component-badge {
-    font-size: 13px;
-    padding: 3px 8px;
+    font-size: 11px;
+    padding: 2px 6px;
 }
 
 .compact-mode .severity-score-inline {
-    font-size: 13px;
+    font-size: 11px;
 }
 
 /* EXPANDED MODE - DEFAULT */
@@ -10900,17 +10880,16 @@ input:checked + .toggle-slider:before {
 }
 
 .compact-mode .critical-anomalies-section {
-    max-height: 250px;
+    max-height: none;
     overflow-y: auto;
 }
 
 .compact-mode .critical-anomaly-card {
-    padding: 10px;
-    margin: 8px 0;
+    padding: 6px 10px;
 }
 
 .compact-mode .log-message-pre {
-    max-height: 80px !important;
+    max-height: 1.6em !important;
     font-size: 12px !important;
 }
 
@@ -10926,13 +10905,12 @@ input:checked + .toggle-slider:before {
 }
 
 .expanded-mode .critical-anomaly-card {
-    padding: 15px 20px;
-    margin: 12px 0;
+    padding: 10px 14px;
 }
 
 .expanded-mode .log-message-pre {
-    max-height: 400px !important;
-    font-size: 13px !important;
+    max-height: 3.2em;
+    font-size: 12.5px !important;
 }
 
 /* FULLSCREEN MODE - Tam ekran deneyimi */
@@ -10962,14 +10940,18 @@ input:checked + .toggle-slider:before {
 }
 
 .fullscreen-mode .critical-anomaly-card {
-    padding: 20px 25px;
-    margin: 15px 0;
+    padding: 12px 16px;
 }
 
 .fullscreen-mode .log-message-pre {
-    max-height: 600px !important;
-    font-size: 14px !important;
-    line-height: 1.6 !important;
+    max-height: 4.8em;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+}
+
+.fullscreen-mode .log-message-pre.expanded {
+    max-height: 600px;
+    overflow-y: auto !important;
 }
 
 /* Fullscreen mode için view controls sticky */
@@ -10986,37 +10968,37 @@ input:checked + .toggle-slider:before {
 /* View Mode Button Stilleri */
 .view-controls {
     display: flex;
-    gap: 8px;
-    margin-bottom: 15px;
+    gap: 4px;
+    margin-bottom: 10px;
     flex-wrap: wrap;
 }
 
 .btn-view-mode {
-    padding: 6px 14px;
-    border: 1px solid #ddd;
+    padding: 4px 12px;
+    border: 1px solid var(--border-color);
     background: #f8f9fa;
-    border-radius: 6px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 13px;
-    transition: all 0.2s ease;
+    font-size: 12px;
+    transition: all var(--transition);
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
 }
 
 .btn-view-mode:hover {
     background: #e9ecef;
-    border-color: var(--gray-300);
+    border-color: var(--gray-400);
 }
 
 .btn-view-mode.active {
-    background: #0047BA;
+    background: var(--lcw-blue);
     color: white;
-    border-color: #0047BA;
+    border-color: var(--lcw-blue);
 }
 
 .btn-view-mode.active:hover {
-    background: #003d9e;
+    background: var(--lcw-internet-blue);
 }
 
 
@@ -11028,22 +11010,25 @@ input:checked + .toggle-slider:before {
 
 .expanded-mode .critical-anomaly-card,
 .expanded-view .critical-anomaly-card {
-    margin: 15px 0;
-    padding: 20px;
+    padding: 10px 14px;
 }
 
 .expanded-mode .log-message-pre,
 .expanded-view .log-message-pre {
-    max-height: 600px !important;
-    min-height: 100px;
-    font-size: 14px !important;
-    line-height: 1.7 !important;
-    padding: 20px !important;
+    max-height: 3.2em;
+    font-size: 12.5px !important;
+    line-height: 1.5 !important;
+    padding: 8px 10px !important;
     background: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.expanded-mode .log-message-pre.expanded,
+.expanded-view .log-message-pre.expanded {
+    max-height: 600px;
     overflow-y: auto !important;
-    overflow-x: auto !important;
 }
 
 /* FULLSCREEN MODE */
@@ -11089,11 +11074,11 @@ input:checked + .toggle-slider:before {
 
 /* Enhanced Log Message Display */
 .anomaly-main-message {
-    background: #f5f7fa;
-    border-radius: 12px;
-    padding: 20px;
-    margin: 15px 0;
-    box-shadow: var(--shadow-md);
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    margin: 0;
+    box-shadow: none;
 }
 
 .message-expandable {
@@ -11120,74 +11105,73 @@ input:checked + .toggle-slider:before {
 /* Scrollbar Styling */
 .log-message-pre::-webkit-scrollbar,
 .message-full pre::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 6px;
+    height: 6px;
 }
 
 .log-message-pre::-webkit-scrollbar-track,
 .message-full pre::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 10px;
+    background: transparent;
 }
 
 .log-message-pre::-webkit-scrollbar-thumb,
 .message-full pre::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 10px;
+    background: var(--gray-300);
+    border-radius: 3px;
 }
 
 .log-message-pre::-webkit-scrollbar-thumb:hover,
 .message-full pre::-webkit-scrollbar-thumb:hover {
-    background: #555;
+    background: var(--gray-500);
 }
 
 /* Critical Section Enhanced */
 .critical-anomalies-section {
     background: var(--bg-color);
-    border-radius: 16px;
-    padding: 32px;
-    margin: 24px 0;
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    margin: 16px 0;
     box-shadow: none;
     border: 1px solid var(--border-color);
 }
 
 .critical-anomalies-section h3 {
-    color: #1a202c;
-    font-size: 24px;
-    margin-bottom: 20px;
-    padding-bottom: 15px;
-    border-bottom: 3px solid #0047BA;
+    color: var(--text-primary);
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--lcw-blue);
 }
 
 /* Anomaly List Enhanced */
 #criticalAnomaliesList {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 6px;
 }
 
 /* Load More Button Enhanced */
 .load-more-section {
-    margin: 30px 0;
+    margin: 12px 0;
     text-align: center;
 }
 
 .load-more-section .btn {
-    padding: 12px 30px;
-    font-size: 16px;
+    padding: 8px 24px;
+    font-size: 13px;
     font-weight: 600;
     background: var(--lcw-blue);
     color: white;
     border: none;
-    border-radius: 20px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: all 0.3s;
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    transition: all var(--transition);
+    box-shadow: none;
 }
 
 .load-more-section .btn:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    background: var(--lcw-internet-blue);
 }
 
 /* LCWGPT Results Enhanced Display */
@@ -11256,11 +11240,11 @@ input:checked + .toggle-slider:before {
     .expanded-mode .critical-anomaly-card,
     .fullscreen-mode .critical-anomaly-card {
         max-width: 1600px;
-        margin: 20px auto;
+        margin: 0 auto;
     }
-    
+
     .log-message-pre {
-        font-size: 15px !important;
+        font-size: 13px !important;
     }
 }
 
@@ -12293,31 +12277,31 @@ input:checked + .toggle-slider:before {
 
 /* Component Badge (Filter içinde kullanılacak) */
 .component-badge {
-    background: var(--lcw-info-bg);
-    color: var(--lcw-info);
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 13px;
+    background: #e3f2fd;
+    color: #1565c0;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
 }
 
 .host-badge {
-    background: var(--lcw-light-gray);
-    color: var(--text-secondary);
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 13px;
+    background: #f3e5f5;
+    color: #7b1fa2;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
     font-weight: 600;
 }
 
 .severity-score-inline {
-    background: rgba(231, 76, 60, 0.1);
-    color: #e74c3c;
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 13px;
-    font-weight: 700;
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-secondary);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
 }
 
 /* Responsive Design */
@@ -15589,11 +15573,10 @@ mark.text-highlight:hover {
 .anomaly-feedback-actions {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 20px;
-    border-top: 1px solid rgba(255,255,255,0.08);
-    background: linear-gradient(135deg, rgba(52,152,219,0.06) 0%, rgba(155,89,182,0.04) 100%);
-    border-radius: 0 0 12px 12px;
+    gap: 8px;
+    padding: 6px 0 0;
+    border-top: none;
+    background: transparent;
 }
 
 .feedback-prompt {
@@ -15608,18 +15591,18 @@ mark.text-highlight:hover {
 .btn-feedback {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 16px;
-    border-radius: 8px;
-    font-size: 13px;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.25s ease;
-    letter-spacing: 0.3px;
+    transition: all var(--transition);
+    letter-spacing: 0.2px;
 }
 
 .btn-feedback .fb-icon {
-    font-size: 15px;
+    font-size: 13px;
     line-height: 1;
 }
 
@@ -15634,8 +15617,6 @@ mark.text-highlight:hover {
     background: rgba(39, 174, 96, 0.25);
     border-color: #2ecc71;
     color: #27ae60;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(39, 174, 96, 0.2);
 }
 
 /* Yanlis Alarm — varsayilan belirgin kirmizi/turuncu */
@@ -15649,8 +15630,6 @@ mark.text-highlight:hover {
     background: rgba(231, 76, 60, 0.22);
     border-color: #e74c3c;
     color: #e74c3c;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(231, 76, 60, 0.2);
 }
 
 /* Secildikten sonra — aktif durumlar */

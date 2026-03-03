@@ -1474,11 +1474,10 @@ function displayAnomalyResults(result) {
         visibleAnomalies.forEach((anomaly, idx) => {
             const severityColor = anomaly.severity_color || '#e74c3c';
             const severityLevel = anomaly.severity_level || 'HIGH';
-            const severityScore = anomaly.severity_score || 0;
+            const severityScore = typeof anomaly.severity_score === 'number' ? anomaly.severity_score.toFixed(1) : '0.0';
             const anomalyIdx = anomaly.index !== undefined ? anomaly.index : idx;
 
             const fullMessage = anomaly.message || 'No message available';
-            const isLongMessage = fullMessage.length > 500;
 
             html += `
                 <div class="critical-anomaly-card" style="--severity-color: ${severityColor}" data-anomaly-index="${anomalyIdx}">
@@ -1493,30 +1492,16 @@ function displayAnomalyResults(result) {
                     </div>
                     <div class="anomaly-content">
                         <div class="anomaly-main-message">
-                            ${isLongMessage ? `
-                                <div class="message-expandable">
-                                    <div class="message-preview">
-                                        <pre class="log-message-pre">${window.escapeHtml(fullMessage.substring(0, 500))}...</pre>
-                                    </div>
-                                    <div class="message-full" style="display: none;">
-                                        <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
-                                    </div>
-                                    <button class="btn-expand" onclick="toggleMessageExpand(this)">
-                                        Tam Mesaji Goster
-                                    </button>
-                                </div>
-                            ` : `
-                                <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
-                            `}
+                            <pre class="log-message-pre" onclick="this.classList.toggle('expanded')" title="Genisletmek icin tiklayin">${window.escapeHtml(fullMessage)}</pre>
                         </div>
                     </div>
                     <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
                         <span class="feedback-prompt">Bu tespit dogru mu?</span>
                         <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Evet, bu gercek bir anomali">
-                            <span class="fb-icon">&#10003;</span> Dogru Tespit
+                            <span class="fb-icon">&#10003;</span> Dogru
                         </button>
                         <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Hayir, bu normal bir log">
-                            <span class="fb-icon">&#10007;</span> Yanlis Alarm
+                            <span class="fb-icon">&#10007;</span> Yanlis
                         </button>
                         <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                     </div>
@@ -1527,7 +1512,7 @@ function displayAnomalyResults(result) {
         // "Daha fazla göster" butonu ekle
         if (remainingCount > 0) {
             html += `
-                <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+                <div class="load-more-section">
                     <button class="btn btn-secondary" onclick="loadMoreCriticalAnomalies()" id="loadMoreCriticalBtn">
                         Daha Fazla Göster (+${remainingCount} anomali)
                     </button>
@@ -1576,13 +1561,12 @@ function displayAnomalyResults(result) {
             visibleOther.forEach((anomaly, idx) => {
                 const severityColor = anomaly.severity_color || '#95a5a6';
                 const severityLevel = anomaly.severity_level || 'LOW';
-                const severityScore = anomaly.severity_score || 0;
+                const severityScore = typeof anomaly.severity_score === 'number' ? anomaly.severity_score.toFixed(1) : '0.0';
                 const anomalyIdx = anomaly.index !== undefined ? anomaly.index : idx;
                 const fullMessage = anomaly.message || anomaly.raw_message || 'No message available';
-                const isLongMessage = fullMessage.length > 500;
 
                 html += `
-                    <div class="critical-anomaly-card" style="--severity-color: ${severityColor}; opacity: 0.9;" data-anomaly-index="${anomalyIdx}">
+                    <div class="critical-anomaly-card" style="--severity-color: ${severityColor};" data-anomaly-index="${anomalyIdx}">
                         <div class="anomaly-header-with-severity">
                             <div class="anomaly-info">
                                 <span class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleString('tr-TR') : 'N/A'}</span>
@@ -1595,30 +1579,16 @@ function displayAnomalyResults(result) {
                         </div>
                         <div class="anomaly-content">
                             <div class="anomaly-main-message">
-                                ${isLongMessage ? `
-                                    <div class="message-expandable">
-                                        <div class="message-preview">
-                                            <pre class="log-message-pre">${window.escapeHtml(fullMessage.substring(0, 500))}...</pre>
-                                        </div>
-                                        <div class="message-full" style="display: none;">
-                                            <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
-                                        </div>
-                                        <button class="btn-expand" onclick="toggleMessageExpand(this)">
-                                            Tam Mesaji Goster
-                                        </button>
-                                    </div>
-                                ` : `
-                                    <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
-                                `}
+                                <pre class="log-message-pre" onclick="this.classList.toggle('expanded')" title="Genisletmek icin tiklayin">${window.escapeHtml(fullMessage)}</pre>
                             </div>
                         </div>
                         <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
                             <span class="feedback-prompt">Bu tespit dogru mu?</span>
                             <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Evet, bu gercek bir anomali">
-                                <span class="fb-icon">&#10003;</span> Dogru Tespit
+                                <span class="fb-icon">&#10003;</span> Dogru
                             </button>
                             <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Hayir, bu normal bir log">
-                                <span class="fb-icon">&#10007;</span> Yanlis Alarm
+                                <span class="fb-icon">&#10007;</span> Yanlis
                             </button>
                             <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                         </div>
@@ -1628,7 +1598,7 @@ function displayAnomalyResults(result) {
 
             if (otherRemaining > 0) {
                 html += `
-                    <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+                    <div class="load-more-section">
                         <button class="btn btn-secondary" onclick="loadMoreOtherAnomalies()" id="loadMoreOtherBtn">
                             Daha Fazla Goster (+${otherRemaining} anomali)
                         </button>
@@ -1666,10 +1636,9 @@ function displayAnomalyResults(result) {
         visibleAnomalies.forEach((anomaly, idx) => {
             const severityColor = anomaly.severity_color || '#f39c12';
             const severityLevel = anomaly.severity_level || 'LOW';
-            const severityScore = anomaly.severity_score || 0;
+            const severityScore = typeof anomaly.severity_score === 'number' ? anomaly.severity_score.toFixed(1) : '0.0';
             const anomalyIdx = anomaly.index !== undefined ? anomaly.index : idx;
             const fullMessage = anomaly.message || anomaly.raw_message || 'No message available';
-            const isLongMessage = fullMessage.length > 500;
 
             html += `
                 <div class="critical-anomaly-card" style="--severity-color: ${severityColor}" data-anomaly-index="${anomalyIdx}">
@@ -1685,30 +1654,16 @@ function displayAnomalyResults(result) {
                     </div>
                     <div class="anomaly-content">
                         <div class="anomaly-main-message">
-                            ${isLongMessage ? `
-                                <div class="message-expandable">
-                                    <div class="message-preview">
-                                        <pre class="log-message-pre">${window.escapeHtml(fullMessage.substring(0, 500))}...</pre>
-                                    </div>
-                                    <div class="message-full" style="display: none;">
-                                        <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
-                                    </div>
-                                    <button class="btn-expand" onclick="toggleMessageExpand(this)">
-                                        Tam Mesaji Goster
-                                    </button>
-                                </div>
-                            ` : `
-                                <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
-                            `}
+                            <pre class="log-message-pre" onclick="this.classList.toggle('expanded')" title="Genisletmek icin tiklayin">${window.escapeHtml(fullMessage)}</pre>
                         </div>
                     </div>
                     <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
                         <span class="feedback-prompt">Bu tespit dogru mu?</span>
                         <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Evet, bu gercek bir anomali">
-                            <span class="fb-icon">&#10003;</span> Dogru Tespit
+                            <span class="fb-icon">&#10003;</span> Dogru
                         </button>
                         <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Hayir, bu normal bir log">
-                            <span class="fb-icon">&#10007;</span> Yanlis Alarm
+                            <span class="fb-icon">&#10007;</span> Yanlis
                         </button>
                         <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                     </div>
@@ -1718,7 +1673,7 @@ function displayAnomalyResults(result) {
 
         if (remainingCount > 0) {
             html += `
-                <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+                <div class="load-more-section">
                     <button class="btn btn-secondary" onclick="loadMoreCriticalAnomalies()" id="loadMoreCriticalBtn">
                         Daha Fazla Goster (+${remainingCount} anomali)
                     </button>
@@ -2096,11 +2051,11 @@ function loadMoreCriticalAnomalies() {
     newAnomalies.forEach(anomaly => {
         const severityColor = anomaly.severity_color || '#e74c3c';
         const severityLevel = anomaly.severity_level || 'HIGH';
-        const severityScore = anomaly.severity_score || 0;
+        const severityScore = typeof anomaly.severity_score === 'number' ? anomaly.severity_score.toFixed(1) : '0.0';
+        const anomalyIdx = anomaly.index !== undefined ? anomaly.index : 0;
         const fullMessage = anomaly.message || 'No message available';
-        const isLongMessage = fullMessage.length > 500;
         html += `
-            <div class="critical-anomaly-card" style="--severity-color: ${severityColor}">
+            <div class="critical-anomaly-card" style="--severity-color: ${severityColor}" data-anomaly-index="${anomalyIdx}">
                 <div class="anomaly-header-with-severity">
                     <div class="anomaly-info">
                         <span class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleString('tr-TR') : '-'}</span>
@@ -2109,22 +2064,20 @@ function loadMoreCriticalAnomalies() {
                         ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
                     </div>
                 </div>
-                <div class="anomaly-message">
-                    ${
-                        isLongMessage
-                        ? `
-                            <div class="message-preview">
-                                <pre class="log-message-pre">${window.escapeHtml(fullMessage.substring(0, 500))}...</pre>
-                            </div>
-                            <div class="message-full" style="display: none;">
-                                <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
-                            </div>
-                            <button class="btn-expand" onclick="window.toggleMessageExpand(this)">
-                                Tam Mesajı Göster
-                            </button>
-                        `
-                        : `<pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>`
-                    }
+                <div class="anomaly-content">
+                    <div class="anomaly-main-message">
+                        <pre class="log-message-pre" onclick="this.classList.toggle('expanded')" title="Genisletmek icin tiklayin">${window.escapeHtml(fullMessage)}</pre>
+                    </div>
+                </div>
+                <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
+                    <span class="feedback-prompt">Bu tespit dogru mu?</span>
+                    <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Evet, bu gercek bir anomali">
+                        <span class="fb-icon">&#10003;</span> Dogru
+                    </button>
+                    <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Hayir, bu normal bir log">
+                        <span class="fb-icon">&#10007;</span> Yanlis
+                    </button>
+                    <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                 </div>
             </div>
         `;
@@ -2145,7 +2098,7 @@ function loadMoreCriticalAnomalies() {
     const remainingCount = totalCount - endIndex;
     if (remainingCount > 0) {
         const loadMoreHtml = `
-            <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+            <div class="load-more-section">
                 <button class="btn btn-secondary" onclick="window.loadMoreCriticalAnomalies()" id="loadMoreCriticalBtn">
                     Daha Fazla Göster (+${remainingCount} anomali)
                 </button>
@@ -2186,38 +2139,34 @@ function loadMoreOtherAnomalies() {
     newAnomalies.forEach(anomaly => {
         const severityColor = anomaly.severity_color || '#95a5a6';
         const severityLevel = anomaly.severity_level || 'LOW';
-        const severityScore = anomaly.severity_score || 0;
+        const severityScore = typeof anomaly.severity_score === 'number' ? anomaly.severity_score.toFixed(1) : '0.0';
+        const anomalyIdx = anomaly.index !== undefined ? anomaly.index : 0;
         const fullMessage = anomaly.message || anomaly.raw_message || 'No message available';
-        const isLongMessage = fullMessage.length > 500;
         html += `
-            <div class="critical-anomaly-card" style="--severity-color: ${severityColor}; opacity: 0.9;">
+            <div class="critical-anomaly-card" style="--severity-color: ${severityColor};" data-anomaly-index="${anomalyIdx}">
                 <div class="anomaly-header-with-severity">
                     <div class="anomaly-info">
                         <span class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleString('tr-TR') : 'N/A'}</span>
                         <span class="severity-badge ${severityLevel.toLowerCase()}">${severityLevel}</span>
                         <span class="severity-score-inline">${severityScore}/100</span>
                         ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
-                        ${anomaly.username && anomaly.username !== 'unknown' ? `<span class="host-badge">👤 ${anomaly.username}</span>` : ''}
+                        ${anomaly.username && anomaly.username !== 'unknown' ? `<span class="host-badge">${anomaly.username}</span>` : ''}
                     </div>
                 </div>
                 <div class="anomaly-content">
                     <div class="anomaly-main-message">
-                        ${isLongMessage ? `
-                            <div class="message-expandable">
-                                <div class="message-preview">
-                                    <pre class="log-message-pre">${window.escapeHtml(fullMessage.substring(0, 500))}...</pre>
-                                </div>
-                                <div class="message-full" style="display: none;">
-                                    <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
-                                </div>
-                                <button class="btn-expand" onclick="toggleMessageExpand(this)">
-                                    Tam Mesaji Goster
-                                </button>
-                            </div>
-                        ` : `
-                            <pre class="log-message-pre">${window.escapeHtml(fullMessage)}</pre>
-                        `}
+                        <pre class="log-message-pre" onclick="this.classList.toggle('expanded')" title="Genisletmek icin tiklayin">${window.escapeHtml(fullMessage)}</pre>
                     </div>
+                </div>
+                <div class="anomaly-feedback-actions" data-anomaly-index="${anomalyIdx}">
+                    <span class="feedback-prompt">Bu tespit dogru mu?</span>
+                    <button class="btn-feedback btn-tp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'true_positive', this)" title="Evet, bu gercek bir anomali">
+                        <span class="fb-icon">&#10003;</span> Dogru
+                    </button>
+                    <button class="btn-feedback btn-fp" onclick="submitAnomalyFeedback(${anomalyIdx}, 'false_positive', this)" title="Hayir, bu normal bir log">
+                        <span class="fb-icon">&#10007;</span> Yanlis
+                    </button>
+                    <span class="feedback-status" id="feedbackStatus_${anomalyIdx}"></span>
                 </div>
             </div>
         `;
@@ -2234,7 +2183,7 @@ function loadMoreOtherAnomalies() {
     const remainingCount = totalCount - endIndex;
     if (remainingCount > 0) {
         const loadMoreHtml = `
-            <div class="load-more-section" style="text-align: center; margin: 20px 0;">
+            <div class="load-more-section">
                 <button class="btn btn-secondary" onclick="loadMoreOtherAnomalies()" id="loadMoreOtherBtn">
                     Daha Fazla Goster (+${remainingCount} anomali)
                 </button>

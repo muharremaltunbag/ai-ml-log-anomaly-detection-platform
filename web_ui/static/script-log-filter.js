@@ -789,10 +789,9 @@ function updateFilteredAnomalyDisplay() {
     state.filteredAnomalies.forEach(anomaly => {
         const severityColor = anomaly.severity_color || '#e74c3c';
         const severityLevel = anomaly.severity_level || 'HIGH';
-        const severityScore = anomaly.severity_score || 0;
-        
+        const severityScore = typeof anomaly.severity_score === 'number' ? anomaly.severity_score.toFixed(1) : '0.0';
+
         const fullMessage = anomaly.message || 'No message available';
-        const isLongMessage = fullMessage.length > 500;
 
         // YENİ: Aktif arama pattern'ini al
         const searchPattern = state.activeFilters.searchPattern;
@@ -807,15 +806,11 @@ function updateFilteredAnomalyDisplay() {
 
         // YENİ: Mesajı vurgula (eğer arama varsa)
         let highlightedMessage = fullMessage;
-        let highlightedPreview = fullMessage.substring(0, 500);
 
         if (hasSearchPattern) {
             highlightedMessage = highlightMatches(fullMessage, searchPattern, useRegex);
-            highlightedPreview = highlightMatches(fullMessage.substring(0, 500), searchPattern, useRegex);
         } else {
-            // Arama yoksa normal escape
             highlightedMessage = window.escapeHtml(fullMessage);
-            highlightedPreview = window.escapeHtml(fullMessage.substring(0, 500));
         }
 
         let html = `
@@ -826,32 +821,18 @@ function updateFilteredAnomalyDisplay() {
                         <span class="severity-badge ${severityLevel.toLowerCase()}">${severityLevel}</span>
                         <span class="severity-score-inline">${severityScore}/100</span>
                         ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
-                        ${anomaly.host ? `<span class="host-badge">📍 ${anomaly.host}</span>` : ''}
+                        ${anomaly.host ? `<span class="host-badge">${anomaly.host}</span>` : ''}
                         ${matchCount > 0 ? `<span class="match-count-badge">${matchCount} eslesme</span>` : ''}
                     </div>
                 </div>
                 <div class="anomaly-content">
                     <div class="anomaly-main-message">
-                        ${isLongMessage ? `
-                            <div class="message-expandable">
-                                <div class="message-preview">
-                                    <pre class="log-message-pre">${highlightedPreview}...</pre>
-                                </div>
-                                <div class="message-full" style="display: none;">
-                                    <pre class="log-message-pre">${highlightedMessage}</pre>
-                                </div>
-                                <button class="btn-expand" onclick="toggleMessageExpand(this)">
-                                    Tam Mesajı Göster
-                                </button>
-                            </div>
-                        ` : `
-                            <pre class="log-message-pre">${highlightedMessage}</pre>
-                        `}
+                        <pre class="log-message-pre" onclick="this.classList.toggle('expanded')" title="Genisletmek icin tiklayin">${highlightedMessage}</pre>
                     </div>
                 </div>
             </div>
         `;
-        
+
         container.innerHTML += html;
     });
     
