@@ -46,6 +46,7 @@ class RateAlert:
     explainability: str = ""
     sample_messages: List[str] = field(default_factory=list)
     ml_context: Optional[Dict[str, Any]] = None  # ML-derived overlay (anomaly density, corroboration)
+    confidence: float = 0.5  # 0-1 arası normalize güven skoru
 
     def __post_init__(self):
         if not self.timestamp:
@@ -661,6 +662,7 @@ class RateAlertEngine:
                     # ML context: pencere içi anomaly density
                     ml_ctx = None
                     ml_explain_suffix = ""
+                    ml_corroborated = False
                     if analysis_data and window_ml_density > 0:
                         ml_corroborated = window_ml_density > 5.0
                         ml_ctx = {
@@ -681,6 +683,19 @@ class RateAlertEngine:
                                 f"düşük. Spike, ML modeli tarafından güçlü şekilde desteklenmiyor."
                             )
 
+                    # ML severity boost: ML corroborate ediyorsa ve henüz
+                    # CRITICAL değilse, severity'yi yükselt
+                    if ml_corroborated and severity == "WARNING":
+                        severity = "CRITICAL"
+                        ml_explain_suffix += " (ML destekli → CRITICAL'e yükseltildi)"
+
+                    # Confidence score (0-1):
+                    # - Base: exceed_ratio'ya göre (1x=0.5, 2x=0.75, 3x+=0.85)
+                    # - Boost: ML corroboration varsa +0.1 (max 0.99)
+                    base_conf = min(0.5 + (exceed_ratio - 1) * 0.15, 0.85)
+                    ml_boost = 0.1 if ml_corroborated else 0.0
+                    confidence = min(round(base_conf + ml_boost, 3), 0.99)
+
                     alert = RateAlert(
                         alert_type=detector_cfg['alert_type'],
                         severity=severity,
@@ -699,10 +714,11 @@ class RateAlertEngine:
                         sample_messages=samples,
                         explainability=f"{event_name} sayısı son {window_label} içinde {count} olarak ölçüldü. "
                                        f"Config eşiği: {threshold}. "
-                                       f"Aşım: {exceed_ratio:.1f}x. "
+                                       f"Aşım: {exceed_ratio:.1f}x. Güven: %{confidence*100:.0f}. "
                                        f"{'CRITICAL çünkü ' + str(detector_cfg['severity_multiplier']) + 'x üstü.' if is_critical else 'WARNING seviyesinde.'}"
                                        + ml_explain_suffix,
                         ml_context=ml_ctx,
+                        confidence=confidence,
                     )
                     alerts.append(alert)
                     self._record_alert_time(cooldown_key)
@@ -711,6 +727,49 @@ class RateAlertEngine:
                 window_counts["_ml_anomaly_density_pct"] = round(window_ml_density, 2)
                 window_counts["_ml_anomaly_count"] = window_ml_count
             all_event_counts[window_name] = window_counts
+
+        # ── Cross-window escalation ──
+        # Aynı event tipi 2+ pencerede alarm veriyorsa → persistent spike
+        if alerts:
+            event_windows: Dict[str, List[str]] = {}
+            for a in alerts:
+                event_windows.setdefault(a.event_type, []).append(a.window_name)
+
+            for evt, wins in event_windows.items():
+                if len(wins) >= 2:
+                    all_event_counts["_cross_window_escalation"] = all_event_counts.get(
+                        "_cross_window_escalation", [])
+                    all_event_counts["_cross_window_escalation"].append({
+                        "event_type": evt,
+                        "windows": wins,
+                        "persistent": True,
+                    })
+                    # İlgili event'in tüm alert'lerinin severity'sini kontrol et
+                    # 2+ pencerede WARNING ise → CRITICAL'e yükselt
+                    for a in alerts:
+                        if a.event_type == evt and a.severity == "WARNING" and len(wins) >= 2:
+                            a.severity = "CRITICAL"
+                            a.explainability += (
+                                f" (Cross-window: {evt} {len(wins)} pencerede de eşik aştı → CRITICAL)"
+                            )
+
+        # ── Co-occurrence detection ──
+        # Aynı pencerede 2+ farklı event tipi spike yapıyorsa
+        if alerts:
+            window_events: Dict[str, List[str]] = {}
+            for a in alerts:
+                window_events.setdefault(a.window_name, []).append(a.event_type)
+
+            for win, evts in window_events.items():
+                unique_evts = list(set(evts))
+                if len(unique_evts) >= 2:
+                    all_event_counts["_co_occurrence"] = all_event_counts.get(
+                        "_co_occurrence", [])
+                    all_event_counts["_co_occurrence"].append({
+                        "window": win,
+                        "event_types": unique_evts,
+                        "count": len(unique_evts),
+                    })
 
         report = RateAlertReport(
             server_name=server_name,
