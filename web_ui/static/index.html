@@ -34,8 +34,8 @@
                     <input type="password" id="apiKey" placeholder="API anahtarı" value="lcw-test-2024">
                     <button id="connectBtn" class="btn btn-primary">BAĞLAN</button>
                 </div>
-                <button id="mlSidebarToggleBtn" class="ml-sidebar-toggle-btn" title="ML Model Metrikleri">📊 ML</button>
-                <button id="sidebarToggleBtn" class="sidebar-toggle-btn" title="LCWGPT Assistant">🤖 AI</button>
+                <button id="mlSidebarToggleBtn" class="ml-sidebar-toggle-btn" title="ML Model Metrikleri"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg> ML</button>
+                <button id="sidebarToggleBtn" class="sidebar-toggle-btn" title="LCWGPT Assistant"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M16 14H8a4 4 0 0 0-4 4v2h16v-2a4 4 0 0 0-4-4z"/></svg> AI</button>
             </div>
         </div>
     </header>
@@ -52,7 +52,7 @@
             <!-- ===== INLINE ANALYSIS CONFIGURATION (Figma layout) ===== -->
             <section id="analysisConfigSection" class="analysis-config-section">
                 <div class="analysis-config-header">
-                    <h2>🔍 Analiz Konfigürasyonu</h2>
+                    <h2>Analiz Konfigürasyonu</h2>
                     <span id="analysisConfigStatus" class="config-status-badge">Hazır</span>
                 </div>
                 <div class="analysis-config-body">
@@ -103,13 +103,13 @@
                         <!-- OpenSearch için -->
                         <div id="opensearchSourceInputs" style="display: none;">
                             <div style="margin-bottom: 15px;">
-                                <label style="display: block; margin-bottom: 10px;">
+                                <label class="host-mode-label">
                                     <input type="radio" name="hostSelectionMode" value="single" checked>
-                                    🖥️ Tek Sunucu Analizi
+                                    Tek Sunucu Analizi
                                 </label>
-                                <label style="display: block;">
+                                <label class="host-mode-label">
                                     <input type="radio" name="hostSelectionMode" value="cluster">
-                                    🔗 Cluster Analizi (Tüm Node'lar)
+                                    Cluster Analizi (Tum Node'lar)
                                 </label>
                             </div>
                             <div id="singleHostSelection" style="margin-bottom: 15px;">
@@ -128,8 +128,8 @@
                                     <div id="clusterHostsList" style="padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px;"></div>
                                 </div>
                             </div>
-                            <button id="refreshHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
-                                🔄 Sunucu/Cluster Listesini Yenile
+                            <button id="refreshHostsBtn" class="btn btn-secondary btn-refresh">
+                                Sunucu Listesini Yenile
                             </button>
                         </div>
 
@@ -141,8 +141,8 @@
                                     <option value="" disabled selected>MSSQL sunucu seçin...</option>
                                 </select>
                             </div>
-                            <button id="refreshMSSQLHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
-                                🔄 MSSQL Sunucu Listesini Yenile
+                            <button id="refreshMSSQLHostsBtn" class="btn btn-secondary btn-refresh">
+                                MSSQL Sunucu Listesini Yenile
                             </button>
                         </div>
 
@@ -154,8 +154,8 @@
                                     <option value="" disabled selected>ES node seçin...</option>
                                 </select>
                             </div>
-                            <button id="refreshESHostsBtn" class="btn btn-secondary" style="margin-top: 10px;">
-                                🔄 ES Node Listesini Yenile
+                            <button id="refreshESHostsBtn" class="btn btn-secondary btn-refresh">
+                                ES Node Listesini Yenile
                             </button>
                         </div>
                     </div>
@@ -185,7 +185,7 @@
                                 </label>
                                 <label class="timerange-pill">
                                     <input type="radio" name="modalTimeRange" value="custom">
-                                    <span>📅 Özel</span>
+                                    <span>Ozel</span>
                                 </label>
                             </div>
                             <!-- Custom Date Inputs -->
@@ -200,8 +200,8 @@
                                         <input type="datetime-local" id="customEndTime" class="form-input">
                                     </div>
                                 </div>
-                                <small style="color: #666; margin-top: 5px; display: block;">
-                                    ⏰ Zaman dilimi: UTC+3 (Türkiye Saati)
+                                <small class="timezone-note">
+                                    Zaman dilimi: UTC+3 (Turkiye Saati)
                                 </small>
                             </div>
                         </div>
@@ -210,38 +210,43 @@
                     <!-- Analizi Başlat butonu -->
                     <div class="config-actions">
                         <button id="startAnalysisBtn" class="btn btn-primary btn-start-analysis">
-                            🚀 ML Analizini Başlat
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5,3 19,12 5,21"/></svg>
+                            ML Analizini Baslat
                         </button>
                     </div>
                 </div>
             </section>
 
-            <!-- Hızlı İşlemler -->
+            <!-- Hizli Islemler -->
             <section class="quick-actions">
-                <button id="anomalyAnalysisBtn" class="quick-action-card quick-action-primary">
-                    <span class="qa-icon">🔍</span>
-                    <span class="qa-label">Anomali Analizi</span>
-                </button>
-                <button id="dbaAnalysisBtn" class="quick-action-card quick-action-primary">
-                    <span class="qa-icon">🕐</span>
-                    <span class="qa-label">DBA Tavsiye Sistemi</span>
-                </button>
-                <button id="predictionDashboardBtn" class="quick-action-card quick-action-primary quick-action-prediction">
-                    <span class="qa-icon">🚨</span>
-                    <span class="qa-label">Prediction Studio</span>
-                </button>
-                <button id="logUploadBtn" class="quick-action-card">
-                    <span class="qa-icon">📁</span>
-                    <span class="qa-label">Log Yükle</span>
-                </button>
-                <button id="toggleMLPanelBtn" class="quick-action-card">
-                    <span class="qa-icon">📊</span>
-                    <span class="qa-label">ML Metrikleri</span>
-                </button>
-                <button id="systemResetBtn" class="quick-action-card">
-                    <span class="qa-icon">🔄</span>
-                    <span class="qa-label">Sistem Reset</span>
-                </button>
+                <div class="qa-group qa-group-primary">
+                    <button id="anomalyAnalysisBtn" class="quick-action-card quick-action-primary">
+                        <span class="qa-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+                        <span class="qa-label">Anomali Analizi</span>
+                    </button>
+                    <button id="dbaAnalysisBtn" class="quick-action-card quick-action-primary">
+                        <span class="qa-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+                        <span class="qa-label">DBA Tavsiye Sistemi</span>
+                    </button>
+                    <button id="predictionDashboardBtn" class="quick-action-card quick-action-primary quick-action-prediction">
+                        <span class="qa-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+                        <span class="qa-label">Prediction Studio</span>
+                    </button>
+                </div>
+                <div class="qa-group qa-group-secondary">
+                    <button id="logUploadBtn" class="quick-action-card">
+                        <span class="qa-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
+                        <span class="qa-label">Log Yukle</span>
+                    </button>
+                    <button id="toggleMLPanelBtn" class="quick-action-card">
+                        <span class="qa-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg></span>
+                        <span class="qa-label">ML Metrikleri</span>
+                    </button>
+                    <button id="systemResetBtn" class="quick-action-card">
+                        <span class="qa-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+                        <span class="qa-label">Sistem Reset</span>
+                    </button>
+                </div>
             </section>
 
             <!-- ===== SYSTEM RESET MODAL ===== -->
@@ -251,7 +256,7 @@
                     <div class="sr-modal-header">
                         <div class="sr-header-left">
                             <div class="sr-header-icon">
-                                <span>🔄</span>
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                             </div>
                             <div class="sr-header-text">
                                 <h2>Sistem Reset Konfigurasyonu</h2>
@@ -266,8 +271,7 @@
                         <!-- Select All Toggle -->
                         <div class="sr-select-all-bar">
                             <div class="sr-select-all-left">
-                                <span class="sr-select-all-icon">☑</span>
-                                <span class="sr-select-all-label">Tumunu Sec (--all)</span>
+                                <span class="sr-select-all-label">Tumunu Sec</span>
                             </div>
                             <label class="sr-toggle">
                                 <input type="checkbox" id="srSelectAll">
@@ -333,7 +337,7 @@
 
                         <!-- Info Banner -->
                         <div class="sr-info-banner">
-                            <span class="sr-info-icon">ℹ</span>
+                            <span class="sr-info-icon">i</span>
                             <div>
                                 <span class="sr-info-title">Bilgilendirme</span>
                                 Config dosyalari ve kaynak kodlari bu islemden etkilenmez ve korunur.
@@ -344,12 +348,10 @@
                     <!-- Footer -->
                     <div class="sr-modal-footer">
                         <button id="srDryRunBtn" class="sr-btn sr-btn-secondary">
-                            <span>🔬</span>
-                            <span>DRY RUN (SIMULASYON)</span>
+                            Simulasyon (Dry Run)
                         </button>
                         <button id="srFullResetBtn" class="sr-btn sr-btn-danger">
-                            <span>⚠</span>
-                            <span>SISTEMI SIFIRLA</span>
+                            Sistemi Sifirla
                         </button>
                     </div>
 
@@ -368,9 +370,9 @@
             <div id="loader" class="processing-overlay" style="display: none;">
                 <div class="processing-modal">
                     <div class="processing-header">
-                        <span class="processing-icon">🧠</span>
-                        <h3>Anomali Analizi İşleniyor</h3>
-                        <p class="processing-subtitle">Log verileri taranıyor ve anomaliler tespit ediliyor...</p>
+                        <div class="processing-icon-spinner"></div>
+                        <h3>Anomali Analizi Isleniyor</h3>
+                        <p class="processing-subtitle">Log verileri taraniyor ve anomaliler tespit ediliyor...</p>
                     </div>
                     <div id="processingSteps" class="processing-steps">
                         <div class="processing-step completed" data-step="validation">
@@ -446,10 +448,10 @@
             <!-- YENİ: Konuşma Geçmişi & Anomali Geçmişi -->
             <section class="history-section">
                 <div class="history-header">
-                    <h3>📋 Konuşma Geçmişi & Anomali Geçmişi</h3>
+                    <h3>Gecmis</h3>
                     <div class="history-actions">
-                        <button id="clearHistoryBtn" class="btn btn-secondary btn-small">🗑️ Geçmişi Temizle</button>
-                        <button id="exportHistoryBtn" class="btn btn-secondary btn-small">📥 Dışa Aktar</button>
+                        <button id="clearHistoryBtn" class="btn btn-secondary btn-small">Gecmisi Temizle</button>
+                        <button id="exportHistoryBtn" class="btn btn-secondary btn-small">Disa Aktar</button>
                     </div>
                 </div>
                 
@@ -461,7 +463,7 @@
                 
                 <div id="historyContent" class="history-content">
                     <div class="history-empty">
-                        <div class="empty-icon">📋</div>
+                        <div class="empty-icon empty-icon-muted">--</div>
                         <p>Henüz sorgu geçmişi bulunmuyor.</p>
                         <small>Yaptığınız sorgular burada görüntülenecek.</small>
                     </div>
@@ -473,7 +475,7 @@
 
                 <div class="section-header">
 
-                    <h3>🎯 Anomali Analiz Sonuçları</h3>
+                    <h3>Anomali Analiz Sonuclari</h3>
 
                     <div class="header-actions">
 
@@ -489,11 +491,11 @@
 
 
 
-                <div class="dba-explorer-panel" style="margin-top: 30px; border-top: 2px solid #eee; padding-top: 20px;">
+                <div class="dba-explorer-panel">
 
-                    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div class="dba-explorer-header">
 
-                        <h4 style="margin: 0; color: #0047BA;">🛠️ DBA Log Explorer (Detaylı İnceleme)</h4>
+                        <h4>DBA Log Explorer</h4>
 
                         <span id="currentHostBadge" class="badge badge-info" style="display:none;">Host: --</span>
 
@@ -501,13 +503,13 @@
 
 
 
-                    <div class="filter-controls" style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;">
+                    <div class="filter-controls dba-filter-controls">
 
-                        <div class="filter-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        <div class="filter-grid dba-filter-grid">
 
                             <div class="form-group">
 
-                                <label style="font-size: 12px; font-weight: bold; color: #555;">Bileşen (Component):</label>
+                                <label class="dba-filter-label">Bilesen (Component):</label>
 
                                 <select id="filterComponent" class="form-select text-sm">
 
@@ -537,13 +539,13 @@
 
                             <div class="form-group">
 
-                                <label style="font-size: 12px; font-weight: bold; color: #555;">Min. Severity (0-100):</label>
+                                <label class="dba-filter-label">Min. Severity (0-100):</label>
 
-                                <div style="display: flex; align-items: center; gap: 10px;">
+                                <div class="dba-severity-slider">
 
-                                    <input type="range" id="filterSeverityRange" min="0" max="100" value="0" style="flex: 1;">
+                                    <input type="range" id="filterSeverityRange" min="0" max="100" value="0">
 
-                                    <span id="filterSeverityValue" style="font-weight: bold; width: 30px;">0</span>
+                                    <span id="filterSeverityValue" class="dba-severity-value">0</span>
 
                                 </div>
 
@@ -551,9 +553,9 @@
 
 
 
-                            <div class="form-group" style="grid-column: span 2;">
+                            <div class="form-group dba-filter-wide">
 
-                                <label style="font-size: 12px; font-weight: bold; color: #555;">Log Pattern / Mesaj İçeriği:</label>
+                                <label class="dba-filter-label">Log Pattern / Mesaj Icerigi:</label>
 
                                 <input type="text" id="filterPattern" class="form-input text-sm" placeholder="Örn: 'connection refused', 'timeout', 'duplicate key'...">
 
@@ -563,17 +565,17 @@
 
 
 
-                        <div class="filter-actions" style="margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
+                        <div class="filter-actions dba-filter-actions">
 
                             <button id="btnApplyFilter" class="btn btn-primary btn-sm">
 
-                                🔍 Filtrele & Getir
+                                Filtrele
 
                             </button>
 
                             <button id="btnResetFilter" class="btn btn-secondary btn-sm">
 
-                                🗑️ Temizle
+                                Temizle
 
                             </button>
 
@@ -583,21 +585,21 @@
 
 
 
-                    <div id="dbaResultsTableWrapper" style="margin-top: 20px; overflow-x: auto;">
+                    <div id="dbaResultsTableWrapper" class="dba-results-wrapper">
 
-                        <table class="dba-table" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <table class="dba-table">
 
                             <thead>
 
-                                <tr style="background: #f1f3f5; text-align: left;">
+                                <tr>
 
-                                    <th style="padding: 10px; border-bottom: 2px solid #ddd;">Zaman</th>
+                                    <th>Zaman</th>
 
-                                    <th style="padding: 10px; border-bottom: 2px solid #ddd;">Severity</th>
+                                    <th>Severity</th>
 
-                                    <th style="padding: 10px; border-bottom: 2px solid #ddd;">Component</th>
+                                    <th>Component</th>
 
-                                    <th style="padding: 10px; border-bottom: 2px solid #ddd;">Log Mesajı</th>
+                                    <th>Log Mesaji</th>
 
                                 </tr>
 
@@ -607,7 +609,7 @@
 
                                 <tr>
 
-                                    <td colspan="4" style="text-align: center; padding: 20px; color: #777;">
+                                    <td colspan="4" class="dba-empty-cell">
 
                                         Filtreleme yapmak için yukarıdaki butonu kullanın.
 
@@ -623,15 +625,15 @@
 
 
 
-                    <div id="dbaPagination" style="text-align: center; margin-top: 15px; display: none;">
+                    <div id="dbaPagination" class="dba-pagination" style="display: none;">
 
                         <button id="btnLoadMoreAnomalies" class="btn btn-secondary btn-sm">
 
-                            ⬇️ Daha Fazla Yükle (+50)
+                            Daha Fazla Yukle (+50)
 
                         </button>
 
-                        <p style="font-size: 11px; color: #777; margin-top: 5px;" id="dbaResultCountInfo"></p>
+                        <p class="dba-result-count" id="dbaResultCountInfo"></p>
 
                     </div>
 
@@ -645,10 +647,10 @@
                     <!-- Studio Header -->
                     <div class="pps-modal-header">
                         <div class="pps-header-left">
-                            <div class="pps-header-icon"><span>🔍</span></div>
+                            <div class="pps-header-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
                             <div class="pps-header-text">
-                                <h2>Prediction & Forecasting Studio</h2>
-                                <p>Trend &bull; Rate Alert &bull; Forecast &bull; Scheduler &bull; Alert History</p>
+                                <h2>Prediction &amp; Forecasting Studio</h2>
+                                <p>Trend &bull; Rate Alert &bull; Forecast</p>
                             </div>
                             <span class="ppd-header-badge" id="ppdConfigBadge">--</span>
                         </div>
@@ -671,15 +673,12 @@
                                 <h4 class="pps-sidebar-title">Veri Kaynagi</h4>
                                 <div class="pps-source-toggle" id="ppsSourceToggle">
                                     <button type="button" class="pps-source-btn pps-source-active" data-source="opensearch" title="MongoDB">
-                                        <span class="pps-source-icon">&#x1F4BE;</span>
-                                        <span class="pps-source-label">Mongo</span>
+                                        <span class="pps-source-label">MongoDB</span>
                                     </button>
                                     <button type="button" class="pps-source-btn" data-source="mssql_opensearch" title="MSSQL">
-                                        <span class="pps-source-icon">&#x1F5C4;</span>
                                         <span class="pps-source-label">MSSQL</span>
                                     </button>
                                     <button type="button" class="pps-source-btn" data-source="elasticsearch_opensearch" title="Elasticsearch">
-                                        <span class="pps-source-icon">&#x1F50D;</span>
                                         <span class="pps-source-label">Elastic</span>
                                     </button>
                                 </div>
@@ -720,7 +719,7 @@
                                 </div>
 
                                 <!-- Target hosts (interactive checkboxes) -->
-                                <div class="pps-sidebar-field" style="margin-top:10px;">
+                                <div class="pps-sidebar-field pps-sidebar-field-hosts">
                                     <div class="pps-sidebar-hosts-header">
                                         <label class="pps-sidebar-label">Hedef Sunucular</label>
                                         <button type="button" id="ppsHostsSelectAll" class="pps-hosts-toggle-btn">Tumu Sec</button>
@@ -754,9 +753,8 @@
                                     <h3 class="pps-chart-title">Alert Zaman Serisi</h3>
                                     <canvas id="ppsTimeseriesCanvas" height="260"></canvas>
                                     <div class="pps-chart-empty" id="ppsChartEmpty" style="display:none;">
-                                        <div class="pps-empty-icon">&#x1F4C8;</div>
-                                        <div style="margin-top:6px;font-weight:600;color:#555;">Grafik icin yeterli veri yok</div>
-                                        <div style="margin-top:4px;font-size:12px;color:#999;">Analiz calistiktan sonra zaman serisi burada goruntulenecek.</div>
+                                        <div class="pps-empty-title">Grafik icin yeterli veri yok</div>
+                                        <div class="pps-empty-desc">Analiz calistiktan sonra zaman serisi burada goruntulenecek.</div>
                                     </div>
                                 </div>
 
@@ -786,7 +784,7 @@
 
             <!-- Log Yükleme Bölümü -->
             <section class="log-upload-section">
-                <h3>📁 Manuel Log Yükleme (OpenSearch Öncesi Test)</h3>
+                <h3>Manuel Log Yukleme</h3>
                 <div class="upload-container">
                     <div class="upload-area">
                         <input type="file" id="logFileInput" accept=".log,.txt,.json,text/plain,application/json,application/octet-stream,*/*" style="display: none;">
@@ -815,7 +813,7 @@
         <div id="anomalyModal" class="modal" style="display: none;">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h3>🔍 Anomali Analizi</h3>
+                    <h3>Anomali Analizi</h3>
                     <span class="close">&times;</span>
                 </div>
                 <div class="modal-body">
@@ -826,8 +824,7 @@
 
         <!-- Footer -->
         <footer>
-            <p>&copy; 2025 LC Waikiki | MongoDB LangChain Assistant v1.0 | Test Ortamı</p>
-            <p style="font-size: 12px; margin-top: 5px;">Bu platform test amaçlıdır. Üretim ortamında kullanmayın.</p>
+            <p>&copy; 2026 LC Waikiki &mdash; Log Anomaly Detection Platform v1.0</p>
         </footer>
     </div>
 
@@ -847,7 +844,6 @@
         <!-- Sidebar Header -->
         <div class="ml-sidebar-header">
             <div class="ml-sidebar-header-left">
-                <span class="ml-sidebar-icon">🤖</span>
                 <h3 class="ml-sidebar-title">ML Model Metrikleri</h3>
             </div>
             <button id="mlSidebarCloseBtn" class="ml-sidebar-close-btn" title="Paneli Kapat">✕</button>
@@ -859,7 +855,7 @@
             <!-- Section 1: Model Performansi -->
             <div class="ml-sidebar-section">
                 <h4 class="ml-section-title">
-                    <span class="ml-section-icon ml-section-icon-green">📊</span>
+                    <span class="ml-section-dot ml-section-dot-green"></span>
                     Model Performansi
                 </h4>
                 <div class="ml-perf-grid">
@@ -908,7 +904,7 @@
             <!-- Section 2: Anomali Istatistikleri -->
             <div class="ml-sidebar-section">
                 <h4 class="ml-section-title">
-                    <span class="ml-section-icon ml-section-icon-purple">📈</span>
+                    <span class="ml-section-dot ml-section-dot-purple"></span>
                     Anomali Istatistikleri
                 </h4>
                 <div class="ml-stats-grid">
@@ -932,7 +928,7 @@
             <!-- Section 3: Analiz Edilen Featurelar -->
             <div class="ml-sidebar-section">
                 <h4 class="ml-section-title">
-                    <span class="ml-section-icon ml-section-icon-indigo">🏷️</span>
+                    <span class="ml-section-dot ml-section-dot-indigo"></span>
                     Analiz Edilen Featurelar
                 </h4>
                 <div id="mlFeaturesContainer" class="ml-features-container">
@@ -992,14 +988,13 @@
             <!-- Section 4: Model Bilgisi -->
             <div class="ml-sidebar-section">
                 <h4 class="ml-section-title">
-                    <span class="ml-section-icon ml-section-icon-blue">ℹ️</span>
+                    <span class="ml-section-dot ml-section-dot-blue"></span>
                     Model Bilgisi
                 </h4>
                 <div class="ml-model-info-card">
                     <div class="ml-info-row ml-info-row-border">
                         <span class="ml-info-label">Sunucu Adi</span>
                         <div class="ml-info-value-row">
-                            <span class="ml-info-icon">🖥️</span>
                             <span class="ml-info-value-mono" id="mlServerName">--</span>
                         </div>
                     </div>
@@ -1010,7 +1005,6 @@
                     <div class="ml-info-row ml-info-row-border ml-model-file-row">
                         <span class="ml-info-label">Model Dosyasi</span>
                         <div class="ml-model-file-path">
-                            <span class="ml-info-icon">📁</span>
                             <span class="ml-info-value-filepath" id="mlModelFilePath">--</span>
                         </div>
                     </div>
@@ -1051,7 +1045,6 @@
     <!-- Sidebar Header -->
     <div class="sidebar-header">
         <div class="sidebar-header-left">
-            <span class="sidebar-ai-icon">🤖</span>
             <span class="sidebar-title">LCWGPT Assistant</span>
         </div>
         <button id="sidebarCloseBtn" class="sidebar-close-btn" title="Sidebar'ı Kapat">✕</button>
@@ -1061,7 +1054,7 @@
     <div id="sidebarChatMessages" class="sidebar-chat-messages">
         <div class="sidebar-welcome-msg">
             <div class="sidebar-ai-bubble">
-                <span class="sidebar-ai-avatar">🤖</span>
+                <span class="sidebar-ai-avatar">AI</span>
                 <div class="sidebar-bubble-content">
                     Merhaba! Anomali analizleriniz hakkinda yardimci olabilirim. Baglanti kuruldugunda analiz yapilmis sunucular listelenecek — birini secerek baslayin.
                 </div>
@@ -1074,7 +1067,7 @@
         <div id="exampleQuestionsContainer" class="example-questions-container"></div>
         <div class="sidebar-input-wrapper">
             <input type="text" id="sidebarChatInput" placeholder="Soru sorun..." autocomplete="off">
-            <button id="sidebarSendBtn" class="sidebar-send-btn" title="Gönder">➤</button>
+            <button id="sidebarSendBtn" class="sidebar-send-btn" title="Gonder"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
         </div>
     </div>
 </aside>

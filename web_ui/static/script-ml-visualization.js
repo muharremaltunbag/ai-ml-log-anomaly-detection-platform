@@ -12,7 +12,7 @@
      */
     function renderMLModelMetrics(summary, scoreStats) {
         let html = '<div class="ml-metrics-unified">';
-        html += '<h3>🤖 ML Model Performans Metrikleri</h3>';
+        html += '<h3>ML Model Performans Metrikleri</h3>';
         html += '<div class="ml-priority-metrics">';
         
         // 1. Model Accuracy Score
@@ -27,7 +27,6 @@
                                        accuracyLevel === 'average' ? 'high' : 'critical'}">
                 <div class="ml-metric-content">
                     <div class="ml-metric-icon-wrapper">
-                        🎯
                     </div>
                     <div class="ml-metric-details">
                         <div class="ml-metric-title">Model Accuracy</div>
@@ -60,17 +59,16 @@
             <div class="ml-metric-row info">
                 <div class="ml-metric-content">
                     <div class="ml-metric-icon-wrapper">
-                        🔍
                     </div>
                     <div class="ml-metric-details">
                         <div class="ml-metric-title">Detection Statistics</div>
                         <div class="ml-metric-primary-value">${summary.n_anomalies?.toLocaleString('tr-TR') || 0}</div>
                         <div class="ml-metric-secondary-info">
                             <span class="ml-metric-badge">
-                                📊 Total Logs: ${summary.total_logs?.toLocaleString('tr-TR') || 0}
+                                Total Logs: ${summary.total_logs?.toLocaleString('tr-TR') || 0}
                             </span>
                             <span class="ml-metric-badge ${summary.anomaly_rate > 5 ? 'warning' : 'success'}">
-                                📈 Detection Rate: %${summary.anomaly_rate?.toFixed(2) || 0}
+                                Detection Rate: %${summary.anomaly_rate?.toFixed(2) || 0}
                             </span>
                         </div>
                     </div>
@@ -88,7 +86,6 @@
                 <div class="ml-metric-row normal">
                     <div class="ml-metric-content">
                         <div class="ml-metric-icon-wrapper">
-                            📊
                         </div>
                         <div class="ml-metric-details">
                             <div class="ml-metric-title">Anomaly Score Range</div>
@@ -129,7 +126,6 @@
                 <div class="ml-metric-row ${statusClass}">
                     <div class="ml-metric-content">
                         <div class="ml-metric-icon-wrapper">
-                            🔄
                         </div>
                         <div class="ml-metric-details">
                             <div class="ml-metric-title">Online Learning Status</div>
@@ -137,12 +133,12 @@
                             <div class="ml-metric-secondary-info">
                                 ${onlineStatus.buffer_size_mb !== undefined ? `
                                     <span class="ml-metric-badge ${onlineStatus.buffer_size_mb > 500 ? 'warning' : ''}">
-                                        💾 Buffer: ${onlineStatus.buffer_size_mb.toFixed(2)} MB
+                                        Buffer: ${onlineStatus.buffer_size_mb.toFixed(2)} MB
                                     </span>
                                 ` : ''}
                                 ${onlineStatus.total_samples !== undefined ? `
                                     <span class="ml-metric-badge">
-                                        📊 Samples: ${onlineStatus.total_samples.toLocaleString('tr-TR')}
+                                        Samples: ${onlineStatus.total_samples.toLocaleString('tr-TR')}
                                     </span>
                                 ` : ''}
                             </div>
@@ -163,7 +159,7 @@
         if (!onlineStatus) return '';
         
         let html = '<div class="online-learning-status-section">';
-        html += '<h3>🔄 Online Learning Status</h3>';
+        html += '<h3>Online Learning Status</h3>';
         html += '<div class="online-status-grid">';
         
         // Mode göstergesi
@@ -171,7 +167,7 @@
         const modeClass = mode === 'incremental' ? 'active' : 'inactive';
         html += `
             <div class="online-status-card ${modeClass}">
-                <div class="status-icon">🧠</div>
+                <div class="status-icon"></div>
                 <div class="status-content">
                     <div class="status-label">Learning Mode</div>
                     <div class="status-value">${mode === 'incremental' ? 'Incremental (Aktif)' : 'Standard'}</div>
@@ -185,12 +181,12 @@
                              onlineStatus.buffer_size_mb > 1000 ? 'critical' : 'normal';
             html += `
                 <div class="online-status-card ${sizeClass}">
-                    <div class="status-icon">💾</div>
+                    <div class="status-icon"></div>
                     <div class="status-content">
                         <div class="status-label">Buffer Size</div>
                         <div class="status-value">${onlineStatus.buffer_size_mb.toFixed(2)} MB</div>
                         ${onlineStatus.buffer_size_mb > 500 ? 
-                            '<div class="status-warning">⚠️ Yüksek bellek kullanımı</div>' : ''}
+                            '<div class="status-warning">Yuksek bellek kullanimi</div>' : ''}
                     </div>
                 </div>
             `;
@@ -200,7 +196,7 @@
         if (onlineStatus.total_samples !== undefined) {
             html += `
                 <div class="online-status-card">
-                    <div class="status-icon">📊</div>
+                    <div class="status-icon"></div>
                     <div class="status-content">
                         <div class="status-label">Historical Samples</div>
                         <div class="status-value">${onlineStatus.total_samples.toLocaleString('tr-TR')}</div>
@@ -219,7 +215,7 @@
             
             html += `
                 <div class="online-status-card">
-                    <div class="status-icon">⏰</div>
+                    <div class="status-icon"></div>
                     <div class="status-content">
                         <div class="status-label">Son Güncelleme</div>
                         <div class="status-value">${updateTime.toLocaleString('tr-TR')}</div>
@@ -233,7 +229,7 @@
         if (onlineStatus.model_version) {
             html += `
                 <div class="online-status-card">
-                    <div class="status-icon">🏷️</div>
+                    <div class="status-icon"></div>
                     <div class="status-content">
                         <div class="status-label">Model Version</div>
                         <div class="status-value">v${onlineStatus.model_version}</div>
@@ -247,7 +243,7 @@
             const rateClass = onlineStatus.historical_anomaly_rate > 10 ? 'warning' : 'normal';
             html += `
                 <div class="online-status-card ${rateClass}">
-                    <div class="status-icon">📈</div>
+                    <div class="status-icon"></div>
                     <div class="status-content">
                         <div class="status-label">Historical Anomaly Rate</div>
                         <div class="status-value">%${onlineStatus.historical_anomaly_rate.toFixed(2)}</div>
@@ -261,7 +257,7 @@
         // Bilgi mesajı
         if (mode === 'incremental') {
             html += `<div class="online-learning-info">
-                <p>ℹ️ <strong>Incremental Learning Aktif:</strong> Model, geçmiş pattern'ları hatırlayarak yeni verilerle güncelleniyor.</p>
+                <p><strong>Incremental Learning Aktif:</strong> Model, gecmis pattern'lari hatirlayarak yeni verilerle guncelleniyor.</p>
             </div>`;
         }
         
@@ -372,16 +368,16 @@
         let insightHtml = '<div class="feature-insight">';
         
         if (ratio === Infinity || ratio > 10) {
-            insightHtml += '<div class="insight-badge critical">⚠️ Kritik Gösterge</div>';
+            insightHtml += '<div class="insight-badge critical">Kritik Gosterge</div>';
             insightHtml += '<div class="insight-text">Bu özellik neredeyse sadece anomalilerde görülüyor!</div>';
         } else if (ratio > 5) {
-            insightHtml += '<div class="insight-badge high">📍 Yüksek Önem</div>';
+            insightHtml += '<div class="insight-badge high">Yuksek Onem</div>';
             insightHtml += '<div class="insight-text">Anomali tespitinde güçlü bir gösterge</div>';
         } else if (ratio > 2) {
-            insightHtml += '<div class="insight-badge medium">📊 Orta Önem</div>';
+            insightHtml += '<div class="insight-badge medium">Orta Onem</div>';
             insightHtml += '<div class="insight-text">Anomali göstergesi olarak değerli</div>';
         } else {
-            insightHtml += '<div class="insight-badge low">ℹ️ Düşük Önem</div>';
+            insightHtml += '<div class="insight-badge low">Dusuk Onem</div>';
             insightHtml += '<div class="insight-text">Yardımcı gösterge</div>';
         }
         
@@ -394,7 +390,7 @@
      */
     function renderFeatureImportanceChart(featureImportance) {
         let html = '<div class="feature-importance-unified">';
-        html += '<h3>📈 Feature Importance Analysis</h3>';
+        html += '<h3>Feature Importance Analysis</h3>';
         
         // Feature'ları ratio'ya göre sırala
         const sortedFeatures = Object.entries(featureImportance)
@@ -486,10 +482,10 @@
                 </p>
                 <div class="feature-action-buttons">
                     <button class="feature-action-btn" onclick="showFeatureAnalysisDetails()">
-                        📊 Detaylı Analiz Raporu
+                        Detayli Analiz Raporu
                     </button>
                     <button class="feature-action-btn" onclick="exportFeatureImportance()">
-                        📥 Feature Verilerini İndir
+                        Feature Verilerini Indir
                     </button>
                 </div>
             </div>
@@ -504,7 +500,7 @@
      */
     function renderComponentDashboard(componentAnalysis) {
         let html = '<div class="component-dashboard-unified">';
-        html += '<h3>🎛️ Component Bazlı Anomali Dağılımı</h3>';
+        html += '<h3>Component Bazli Anomali Dagilimi</h3>';
         
         // Component'leri anomali oranına göre sırala
         const sortedComponents = Object.entries(componentAnalysis)
@@ -519,17 +515,17 @@
         html += '<div class="component-summary-cards">';
         html += `
             <div class="component-summary-card">
-                <div class="summary-icon">📊</div>
+                <div class="summary-icon"></div>
                 <div class="summary-value">${totalComponents}</div>
                 <div class="summary-label">Toplam Component</div>
             </div>
             <div class="component-summary-card critical">
-                <div class="summary-icon">🚨</div>
+                <div class="summary-icon"></div>
                 <div class="summary-value">${criticalComponents}</div>
                 <div class="summary-label">Kritik Component</div>
             </div>
             <div class="component-summary-card warning">
-                <div class="summary-icon">⚠️</div>
+                <div class="summary-icon"></div>
                 <div class="summary-value">${warningComponents}</div>
                 <div class="summary-label">Dikkat Gerektiren</div>
             </div>
@@ -550,24 +546,24 @@
             // Kritiklik seviyesi belirleme
             let criticalityClass = 'normal';
             let criticalityLabel = 'Normal';
-            let criticalityIcon = '✅';
-            
+            let criticalityIcon = '';
+
             if (anomalyRate > 20) {
                 criticalityClass = 'critical';
-                criticalityLabel = 'KRİTİK';
-                criticalityIcon = '🔴';
+                criticalityLabel = 'KRITIK';
+                criticalityIcon = '';
             } else if (anomalyRate > 10) {
                 criticalityClass = 'high';
-                criticalityLabel = 'YÜKSEK';
-                criticalityIcon = '🟠';
+                criticalityLabel = 'YUKSEK';
+                criticalityIcon = '';
             } else if (anomalyRate > 5) {
                 criticalityClass = 'medium';
                 criticalityLabel = 'ORTA';
-                criticalityIcon = '🟡';
+                criticalityIcon = '';
             } else if (anomalyRate > 2) {
                 criticalityClass = 'low';
-                criticalityLabel = 'DÜŞÜK';
-                criticalityIcon = '🔵';
+                criticalityLabel = 'DUSUK';
+                criticalityIcon = '';
             }
             
             // Component icon
@@ -605,7 +601,7 @@
                     </div>
                     ${anomalyRate === 100 ? `
                         <div class="component-alert">
-                            ⚠️ Bu component'teki tüm loglar anomali olarak işaretlendi!
+                            Bu component'teki tum loglar anomali olarak isaretlendi!
                         </div>
                     ` : ''}
                 </div>
@@ -618,7 +614,7 @@
                 <div class="more-components-notice">
                     <p>... ve ${sortedComponents.length - 10} component daha</p>
                     <button class="btn btn-secondary" onclick="showAllComponents()">
-                        📋 Tüm Component'leri Göster
+                        Tum Component'leri Goster
                     </button>
                 </div>
             `;
@@ -630,10 +626,10 @@
         html += '<div class="component-actions">';
         html += `
             <button class="btn btn-primary" onclick="showAllComponents()">
-                📊 Detaylı Component Analizi
+                Detayli Component Analizi
             </button>
             <button class="btn btn-secondary" onclick="exportComponentAnalysis()">
-                📥 Component Verilerini İndir
+                Component Verilerini Indir
             </button>
         `;
         html += '</div>';
@@ -647,23 +643,23 @@
      */
     function getComponentIcon(component) {
         const iconMap = {
-            'STORAGE': '💾',
-            'NETWORK': '🌐', 
-            'QUERY': '🔍',
-            'WRITE': '✏️',
-            'INDEX': '📑',
-            'REPL': '🔄',
-            'COMMAND': '⚡',
-            'ACCESS': '🔐',
-            'CONTROL': '🎛️',
-            'SHARDING': '🔀',
-            'CONNPOOL': '🔌',
-            'ELECTION': '🗳️',
-            'RECOVERY': '🔧',
-            'ROLLBACK': '↩️',
-            'FTDC': '📊'
+            'STORAGE': '',
+            'NETWORK': '',
+            'QUERY': '',
+            'WRITE': '',
+            'INDEX': '',
+            'REPL': '',
+            'COMMAND': '',
+            'ACCESS': '',
+            'CONTROL': '',
+            'SHARDING': '',
+            'CONNPOOL': '',
+            'ELECTION': '',
+            'RECOVERY': '',
+            'ROLLBACK': '',
+            'FTDC': ''
         };
-        return iconMap[component] || '📦';
+        return iconMap[component] || '';
     }
 
     /**
@@ -671,7 +667,7 @@
      */
     function renderTemporalHeatmap(temporalAnalysis) {
         let html = '<div class="temporal-analysis-unified">';
-        html += '<h3>🗓️ Temporal Pattern Analysis</h3>';
+        html += '<h3>Temporal Pattern Analysis</h3>';
         
         const hourlyData = temporalAnalysis.hourly_distribution || {};
         const peakHours = temporalAnalysis.peak_hours || [];
@@ -686,25 +682,25 @@
         
         html += `
             <div class="temporal-summary-card">
-                <div class="temporal-card-icon">📊</div>
+                <div class="temporal-card-icon"></div>
                 <div class="temporal-card-value">${totalAnomalies.toLocaleString('tr-TR')}</div>
                 <div class="temporal-card-label">Toplam Anomali</div>
             </div>
-            
+
             <div class="temporal-summary-card">
-                <div class="temporal-card-icon">⏰</div>
+                <div class="temporal-card-icon"></div>
                 <div class="temporal-card-value">${peakHours.length}</div>
-                <div class="temporal-card-label">Yoğun Saat</div>
+                <div class="temporal-card-label">Yogun Saat</div>
             </div>
-            
+
             <div class="temporal-summary-card">
-                <div class="temporal-card-icon">📈</div>
+                <div class="temporal-card-icon"></div>
                 <div class="temporal-card-value">${maxValue}</div>
-                <div class="temporal-card-label">En Yüksek</div>
+                <div class="temporal-card-label">En Yuksek</div>
             </div>
             
             <div class="temporal-summary-card">
-                <div class="temporal-card-icon">📉</div>
+                <div class="temporal-card-icon"></div>
                 <div class="temporal-card-value">${avgPerHour.toFixed(1)}</div>
                 <div class="temporal-card-label">Saat Başı Ort.</div>
             </div>
@@ -716,7 +712,7 @@
         if (peakHours.length > 0) {
             html += '<div class="peak-hours-section">';
             html += '<div class="peak-hours-title">';
-            html += '🚨 En Yoğun Saatler';
+            html += 'En Yogun Saatler';
             html += '</div>';
             html += '<div class="peak-hours-list">';
             
@@ -808,7 +804,7 @@
         
         // Temporal pattern insights
         html += '<div class="temporal-patterns">';
-        html += '<div class="patterns-title">📊 Tespit Edilen Pattern\'ler</div>';
+        html += '<div class="patterns-title">Tespit Edilen Pattern\'ler</div>';
         html += '<div class="pattern-insights">';
         
         // Pattern analizi
@@ -847,8 +843,8 @@
         
         if (workHourPercentage > 60) {
             patterns.push({
-                icon: '💼',
-                title: 'İş Saatleri Yoğunluğu',
+                icon: '',
+                title: 'Is Saatleri Yogunlugu',
                 description: `Anomalilerin %${workHourPercentage}'i iş saatlerinde (09:00-18:00) gerçekleşiyor. Bu, yüksek kullanım veya sistem yükü ile ilişkili olabilir.`
             });
         }
@@ -860,7 +856,7 @@
         
         if (nightHourPercentage > 30) {
             patterns.push({
-                icon: '🌙',
+                icon: '',
                 title: 'Gece Aktivitesi',
                 description: `Anomalilerin %${nightHourPercentage}'i gece saatlerinde. Bakım işlemleri, batch job'lar veya anormal aktivite olabilir.`
             });
@@ -871,8 +867,8 @@
             const consecutivePeaks = findConsecutiveHours(peakHours);
             if (consecutivePeaks.length > 0) {
                 patterns.push({
-                    icon: '📈',
-                    title: 'Ardışık Yoğun Saatler',
+                    icon: '',
+                    title: 'Ardisik Yogun Saatler',
                     description: `${consecutivePeaks.map(range => `${range[0]}:00-${range[1]}:00`).join(', ')} arasında sürekli yüksek anomali. Sistemik bir sorun olabilir.`
                 });
             }
@@ -882,7 +878,7 @@
         const hourlyPattern = detectRegularPattern(hourlyData);
         if (hourlyPattern) {
             patterns.push({
-                icon: '🔄',
+                icon: '',
                 title: hourlyPattern.title,
                 description: hourlyPattern.description
             });
@@ -981,7 +977,7 @@
      */
     function renderAnomalyScoreDistribution(scoreStats, summary) {
         let html = '<div class="anomaly-score-distribution-section">';
-        html += '<h3>📊 Anomaly Score Distribution</h3>';
+        html += '<h3>Anomaly Score Distribution</h3>';
         html += '<div class="score-distribution-container">';
         
         // Score distribution visualization
@@ -1043,7 +1039,7 @@
      */
     function renderSeverityDistribution(distribution) {
         let html = '<div class="severity-distribution-compact">';
-        html += '<h3>🎯 Anomali Kritiklik Dağılımı</h3>';
+        html += '<h3>Anomali Kritiklik Dagilimi</h3>';
         html += '<div class="severity-list">';
         
         const levels = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];

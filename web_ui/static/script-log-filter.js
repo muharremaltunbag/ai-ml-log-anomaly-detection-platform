@@ -299,7 +299,7 @@ function renderLogFilterPanel() {
     let html = `
         <div id="logFilterPanel" class="log-filter-panel ${state.isOpen ? 'open' : ''}">
             <div class="filter-panel-header">
-                <h4>🔍 Log Filtreleme</h4>
+                <h4>Log Filtreleme</h4>
                 <button class="btn-close-filter" onclick="toggleLogFilterPanel()">✕</button>
             </div>
             
@@ -397,7 +397,7 @@ function renderLogFilterPanel() {
                 
                 <!-- Severity Filtreleme -->
                 <div class="filter-section">
-                    <label class="filter-label">⚠️ Severity</label>
+                    <label class="filter-label">Severity</label>
                     <div class="filter-options" id="severityFilterOptions">
                         ${renderSeverityOptions()}
                     </div>
@@ -405,7 +405,7 @@ function renderLogFilterPanel() {
                 
                 <!-- Host Filtreleme -->
                 <div class="filter-section">
-                    <label class="filter-label">🖥️ Host</label>
+                    <label class="filter-label">Host</label>
                     <div class="filter-options" id="hostFilterOptions">
                         ${renderHostOptions()}
                     </div>
@@ -436,7 +436,7 @@ function renderLogFilterPanel() {
         
         <!-- Toggle Button (Sabit, ekranın sağında) -->
         <button id="logFilterToggleBtn" class="log-filter-toggle-btn" onclick="toggleLogFilterPanel()">
-            <span class="toggle-icon">🔍</span>
+            <span class="toggle-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
             <span class="toggle-text">Filtrele</span>
             <span class="filter-badge" id="filterBadge" style="display: none;">0</span>
         </button>
@@ -494,7 +494,7 @@ function renderSeverityOptions() {
     if (severities.length === 0) {
         return `
             <div class="empty-state">
-                <div class="empty-state-icon">⚠️</div>
+                <div class="empty-state-icon">--</div>
                 <div class="empty-state-title">Severity Bilgisi Yok</div>
                 <div class="empty-state-description">
                     Bu analizde severity seviyesi hesaplanamadı.
@@ -545,7 +545,7 @@ function renderHostOptions() {
     if (hosts.length === 0) {
         return `
             <div class="empty-state">
-                <div class="empty-state-icon">🖥️</div>
+                <div class="empty-state-icon">--</div>
                 <div class="empty-state-title">Host Bilgisi Yok</div>
                 <div class="empty-state-description">
                     Bu analizde host/sunucu bilgisi bulunmuyor.
@@ -827,7 +827,7 @@ function updateFilteredAnomalyDisplay() {
                         <span class="severity-score-inline">${severityScore}/100</span>
                         ${anomaly.component ? `<span class="component-badge">${anomaly.component}</span>` : ''}
                         ${anomaly.host ? `<span class="host-badge">📍 ${anomaly.host}</span>` : ''}
-                        ${matchCount > 0 ? `<span class="match-count-badge">🎯 ${matchCount} eşleşme</span>` : ''}
+                        ${matchCount > 0 ? `<span class="match-count-badge">${matchCount} eslesme</span>` : ''}
                     </div>
                 </div>
                 <div class="anomaly-content">
@@ -893,13 +893,13 @@ function updateActiveFilterTags() {
     // Severity tags
     state.activeFilters.severities.forEach(sev => {
         hasFilters = true;
-        container.innerHTML += `<span class="filter-tag">⚠️ ${window.escapeHtml(sev)}</span>`;
+        container.innerHTML += `<span class="filter-tag">${window.escapeHtml(sev)}</span>`;
     });
     
     // Host tags
     state.activeFilters.hosts.forEach(host => {
         hasFilters = true;
-        container.innerHTML += `<span class="filter-tag">🖥️ ${window.escapeHtml(host)}</span>`;
+        container.innerHTML += `<span class="filter-tag">${window.escapeHtml(host)}</span>`;
     });
     
     // Search pattern tag

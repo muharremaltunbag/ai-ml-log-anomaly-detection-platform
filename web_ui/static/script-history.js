@@ -280,7 +280,7 @@ async function displayLastAnomalyAnalysis() {
                         window.lastAnomalyResult = {
                             durum: 'tamamlandı',
                             işlem: 'anomaly_from_storage',
-                            açıklama: `📊 Önceki anomali analizi yüklendi\n\nAnaliz ID: ${analysis.analysis_id}\nZaman: ${analysis.timestamp}`,
+                            açıklama: `Onceki anomali analizi yuklendi\n\nAnaliz ID: ${analysis.analysis_id}\nZaman: ${analysis.timestamp}`,
                             analysis_id: analysis.analysis_id,
 
                             // ✅ Frontend beklentisine uygun sonuç yapısı
@@ -413,7 +413,7 @@ function mergeHistoryWithMongoDB(mongoHistory) {
                 result: {
                     durum: 'tamamlandı',
                     işlem: 'anomaly_analysis',
-                    açıklama: `📊 ${hostName} sunucusu için anomali analizi\n\n` +
+                    açıklama: `${hostName} sunucusu icin anomali analizi\n\n` +
                               `• Toplam Log: ${totalLogs.toLocaleString('tr-TR')}\n` +
                               `• Anomali Sayısı: ${anomalyCount}\n` +
                               `• Anomali Oranı: %${anomalyRate.toFixed(2)}`,
@@ -424,7 +424,7 @@ function mergeHistoryWithMongoDB(mongoHistory) {
                 childResult: {
                     durum: 'tamamlandı',
                     işlem: 'anomaly_analysis',
-                    açıklama: `📊 ${hostName} için ${anomalyCount} anomali tespit edildi.`,
+                    açıklama: `${hostName} icin ${anomalyCount} anomali tespit edildi.`,
                     sonuç: commonSonuc
                 },
 
@@ -784,7 +784,7 @@ function updateHistoryDisplay(filter = 'all') {
             <div class="history-empty">
                 <p>Bu kategoride geçmiş bulunmuyor.</p>
                 <small>${window.isConnected ? 'MongoDB\'den veri yükleniyor...' : 'MongoDB bağlantısı bekleniyor...'}</small>
-                ${window.isConnected ? '<button class="btn-small" onclick="window.reloadAllHistory()">🔄 Yeniden Yükle</button>' : ''}
+                ${window.isConnected ? '<button class="btn-small" onclick="window.reloadAllHistory()">Yeniden Yukle</button>' : ''}
             </div>
         `;
         return;
@@ -801,11 +801,11 @@ function updateHistoryDisplay(filter = 'all') {
         html += `
             <div class="mongodb-sync-status">
                 <span class="sync-indicator ${syncPercentage == 100 ? 'synced' : 'partial'}">
-                    💾 MongoDB Sync: ${syncedCount}/${totalCount} (${syncPercentage}%)
+                    MongoDB Sync: ${syncedCount}/${totalCount} (${syncPercentage}%)
                 </span>
                 ${unsyncedCount > 0 ? `
                     <button class="btn-sync" onclick="window.syncUnsavedHistoryItems()">
-                        🔄 Sync Now
+                        Sync Now
                     </button>
                 ` : ''}
             </div>
@@ -818,9 +818,9 @@ function updateHistoryDisplay(filter = 'all') {
 
     filteredHistory.forEach(item => {
         const date = new Date(item.timestamp);
-        const typeIcon = item.subType === 'DBA' ? '🕐' :
-                        item.type === 'anomaly' ? '🔍' :
-                        item.type === 'chat-anomaly' ? '🤖' : '💬';
+        const typeIcon = item.subType === 'DBA' ? '' :
+                        item.type === 'anomaly' ? '' :
+                        item.type === 'chat-anomaly' ? '' : '';
 
         // Durum rengi (kart ust sag kosesindeki nokta)
         const dotColor = item.durum === 'tamamlandı' || item.durum === 'başarılı' ? '#28a745' :
@@ -1214,11 +1214,11 @@ function updateHistoryDisplayWithDBA(filter = 'all') {
         const date = new Date(item.timestamp);
         
         // DBA, MSSQL ve Elasticsearch için özel ikon ve renk
-        const typeIcon = item.subType === 'Elasticsearch' ? '🔎' :
-                        item.subType === 'MSSQL' ? '🗄️' :
-                        item.subType === 'DBA' ? '🕐' :
-                        item.type === 'anomaly' ? '🔍' :
-                        item.type === 'chat-anomaly' ? '🤖' : '💬';
+        const typeIcon = item.subType === 'Elasticsearch' ? '' :
+                        item.subType === 'MSSQL' ? '' :
+                        item.subType === 'DBA' ? '' :
+                        item.type === 'anomaly' ? '' :
+                        item.type === 'chat-anomaly' ? '' : '';
 
         const borderColor = item.subType === 'Elasticsearch' ? '#F0BF1A' :
                            item.subType === 'MSSQL' ? '#CC2936' :
@@ -1228,8 +1228,8 @@ function updateHistoryDisplayWithDBA(filter = 'all') {
                            item.durum === 'başarılı' ? 'success' : 
                            item.durum === 'hata' ? 'error' : 'warning';
         
-        const statusIcon = item.durum === 'tamamlandı' ? '✅' :
-                          item.durum === 'başarılı' ? '✔️' : '⚠️';
+        const statusIcon = item.durum === 'tamamlandı' ? '' :
+                          item.durum === 'başarılı' ? '' : '';
         
         html += `
             <div class="history-item ${item.subType === 'DBA' ? 'dba-item' : ''}" 
@@ -1241,30 +1241,30 @@ function updateHistoryDisplayWithDBA(filter = 'all') {
                     ${item.subType === 'MSSQL' ? '<span class="mssql-badge" style="background: #CC2936; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px;">MSSQL</span>' : ''}
                     ${item.subType === 'DBA' ? '<span class="dba-badge" style="background: #0047BA; color: white; padding: 2px 6px; border-radius: 3px; font-size: 11px;">DBA</span>' : ''}
                     <span class="history-time">${date.toLocaleString('tr-TR')}</span>
-                    ${item.fromMongoDB ? '<span class="mongodb-indicator" title="MongoDB\'den yüklendi">💾</span>' : ''}
+                    ${item.fromMongoDB ? '<span class="mongodb-indicator" title="MongoDB\'den yüklendi"></span>' : ''}
                     <span class="history-status ${statusClass}">${statusIcon} ${item.durum}</span>
                 </div>
                 <div class="history-query">${window.escapeHtml(item.query)}</div>
                 ${item.dbaData ? `
                     <div class="dba-summary" style="margin-top: 5px; font-size: 12px; color: #666;">
-                        📊 ${item.dbaData.anomaly_count} anomali | 
-                        📄 ${(item.dbaData.total_logs || 0).toLocaleString('tr-TR')} log | 
-                        📈 %${(item.dbaData.anomaly_rate || 0).toFixed(2)}
+                        ${item.dbaData.anomaly_count} anomali |
+                        ${(item.dbaData.total_logs || 0).toLocaleString('tr-TR')} log |
+                        %${(item.dbaData.anomaly_rate || 0).toFixed(2)}
                     </div>
                 ` : ''}
                 <div class="history-actions">
                     ${(item.subType === 'DBA' || item.subType === 'MSSQL' || item.subType === 'Elasticsearch') && item.storage_id ? `
                         <button class="btn-small" onclick="loadHistoricalDBAAnalysis('${item.storage_id}')">
-                            📊 Sonuçları Göster
+                            Sonuclari Goster
                         </button>
                     ` : `
                         <button class="btn-small" onclick="showHistoryDetail('${String(item.id).replace(/'/g, "\\'")}')">
-                            👁️ Detay
+                            Detay
                         </button>
                     `}
                     ${!item.fromMongoDB ? `
                         <button class="btn-small" onclick="replayQuery('${String(item.id).replace(/'/g, "\\'")}')">
-                            🔄 Tekrar
+                            Tekrar
                         </button>
                     ` : ''}
                 </div>
@@ -1386,13 +1386,13 @@ function showHistoryDetail(id) {
     }
     
     const statusBadge = item.durum === 'tamamlandı' ? 
-        '<span class="status-badge completed">✅ Tamamlandı</span>' :
+        '<span class="status-badge completed">Tamamlandi</span>' :
         item.durum === 'onay_bekliyor' ? 
-        '<span class="status-badge pending">⏳ Onay Bekliyor</span>' :
+        '<span class="status-badge pending">Onay Bekliyor</span>' :
         item.durum === 'başarılı' ?
-        '<span class="status-badge success">✔️ Başarılı</span>' :
+        '<span class="status-badge success">Basarili</span>' :
         item.durum === 'iptal' ?
-        '<span class="status-badge cancelled">❌ İptal Edildi</span>' :
+        '<span class="status-badge cancelled">Iptal Edildi</span>' :
         `<span class="status-badge">${item.durum}</span>`;
     
     content += `<p><strong>Durum:</strong> ${statusBadge}</p>`;
@@ -1451,9 +1451,9 @@ function showHistoryDetail(id) {
                 console.log('DBA item needs detail fetch, storage_id:', item.storage_id);
                 content += `
                     <div class="dba-detail-placeholder">
-                        <p>📊 DBA analiz detayları yükleniyor...</p>
+                        <p>DBA analiz detaylari yukleniyor...</p>
                         <button class="btn btn-primary" onclick="window.loadHistoricalDBAAnalysis('${item.storage_id}')">
-                            📥 Detayları Yükle
+                            Detaylari Yukle
                         </button>
                     </div>
                 `;
@@ -1468,7 +1468,7 @@ function showHistoryDetail(id) {
 
         if (hasMlData) {
             content += '<div class="ml-visualizations-inline">';
-            content += '<h4>📊 ML Analiz Sonuçları</h4>';
+            content += '<h4>ML Analiz Sonuclari</h4>';
             
             // 1. ML Model Metrikleri
             if (mlData.summary || mlData.anomaly_score_stats) {
@@ -1486,10 +1486,10 @@ function showHistoryDetail(id) {
             // Export ve diğer aksiyonlar
             content += `<div class="visualization-actions">
                 <button class="btn btn-primary" onclick="showFullVisualizationModal('${item.id}')">
-                    🖼️ Modal'da Göster
+                    Modal'da Goster
                 </button>
                 <button class="btn btn-secondary" onclick="exportAnomalyData('${item.id}')">
-                    📥 Veriyi İndir
+                    Veriyi Indir
                 </button>
             </div>`;
             
@@ -1499,7 +1499,7 @@ function showHistoryDetail(id) {
         // Özet istatistikler - her zaman göster (veri varsa)
         if (summary && (summary.total_logs || summary.n_anomalies || Object.keys(summary).length > 0)) {
             content += '<div class="anomaly-stats-summary">';
-            content += '<h5>📊 İstatistikler</h5>';
+            content += '<h5>Istatistikler</h5>';
             content += '<div class="stats-grid">';
             content += `<div class="stat-item">
                             <span class="stat-label">Toplam Log:</span>
@@ -1525,7 +1525,7 @@ function showHistoryDetail(id) {
 
         if (itemModelInfo.model_version || itemModelInfo.model_path) {
             content += '<div class="history-model-info-section">';
-            content += '<h5>🤖 Model Bilgileri</h5>';
+            content += '<h5>Model Bilgileri</h5>';
             content += '<div class="model-info-grid">';
 
             // Model Version
@@ -1565,7 +1565,7 @@ function showHistoryDetail(id) {
             content += `<div class="model-info-item">
                 <span class="info-label">Ensemble:</span>
                 <span class="info-value ${itemModelInfo.is_ensemble_mode ? 'active' : ''}">
-                    ${itemModelInfo.is_ensemble_mode ? '✅ Aktif (' + (itemModelInfo.ensemble_model_count || 0) + ' model)' : '❌ Pasif'}
+                    ${itemModelInfo.is_ensemble_mode ? 'Aktif (' + (itemModelInfo.ensemble_model_count || 0) + ' model)' : 'Pasif'}
                 </span>
             </div>`;
 
@@ -1600,7 +1600,7 @@ function showHistoryDetail(id) {
         // Critical Anomalies Listesi
         if (criticalAnomalies && criticalAnomalies.length > 0) {
             content += '<div class="history-critical-anomalies">';
-            content += '<h5>🚨 Kritik Anomaliler (İlk 10)</h5>';
+            content += '<h5>Kritik Anomaliler (Ilk 10)</h5>';
             content += '<div class="history-anomaly-list">';
             
             criticalAnomalies.slice(0, 10).forEach((anomaly, index) => {
@@ -1667,7 +1667,7 @@ function showHistoryDetail(id) {
 
                 content += `
                     <div class="loading-anomaly-data">
-                        <p>⏳ Anomali verileri yükleniyor...</p>
+                        <p>Anomali verileri yukleniyor...</p>
                         <div class="loading-spinner"></div>
                     </div>
                 `;
@@ -1686,7 +1686,7 @@ function showHistoryDetail(id) {
                 // Zaten yükleniyor
                 content += `
                     <div class="loading-anomaly-data">
-                        <p>⏳ Anomali verileri yükleniyor...</p>
+                        <p>Anomali verileri yukleniyor...</p>
                         <div class="loading-spinner"></div>
                     </div>
                 `;
@@ -1694,11 +1694,11 @@ function showHistoryDetail(id) {
                 // Yükleme denendi ama başarısız oldu
                 content += `
                     <div class="no-anomaly-data">
-                        <p>⚠️ Bu analiz için detaylı anomali verisi bulunamadı.</p>
+                        <p>Bu analiz icin detayli anomali verisi bulunamadi.</p>
                         <p>Veri MongoDB'de veya JSON dosyasında mevcut olmayabilir.</p>
                         ${loadableId ? `
                             <button class="btn btn-primary" onclick="window.loadFullAnalysisDetail('${loadableId}')">
-                                🔄 Tekrar Dene
+                                Tekrar Dene
                             </button>
                         ` : ''}
                     </div>
@@ -1710,7 +1710,7 @@ function showHistoryDetail(id) {
         const aiExplanation = item.childResult?.açıklama || item.result?.açıklama || item.aiExplanation;
         if (aiExplanation && !aiExplanation.includes('AI DESTEKLİ')) {
             content += '<div class="anomaly-text-result">';
-            content += '<h4>🔍 AI Analiz Açıklaması</h4>';
+            content += '<h4>AI Analiz Aciklamasi</h4>';
             content += '<div class="formatted-anomaly-text">';
             
             const formattedText = aiExplanation
@@ -1732,7 +1732,7 @@ function showHistoryDetail(id) {
     // Normal sorgu sonucu (chatbot)
     else if (item.result?.açıklama) {
         content += '<div class="normal-result">';
-        content += '<h5>📝 Sonuç:</h5>';
+        content += '<h5>Sonuc:</h5>';
         content += window.parseAndFormatDescription(item.result.açıklama);
         content += '</div>';
     }
@@ -1740,7 +1740,7 @@ function showHistoryDetail(id) {
     else {
         content += `
             <div class="no-data-message">
-                <p>ℹ️ Bu kayıt için görüntülenecek detay bulunmuyor.</p>
+                <p>Bu kayit icin goruntulenecek detay bulunmuyor.</p>
                 <p>Kayıt türü: ${item.type || 'bilinmiyor'}</p>
             </div>
         `;
@@ -1825,7 +1825,7 @@ function replayQuery(id) {
  * Geçmişı temizle
  */
 async function clearHistory() {
-    const warningMessage = "⚠️ DİKKAT: BU İŞLEM GERİ ALINAMAZ!\n\n" +
+    const warningMessage = "DIKKAT: BU ISLEM GERI ALINAMAZ!\n\n" +
                            "MongoDB üzerindeki TÜM kayıtlar silinecektir:\n" +
                            "1. Tüm Sohbet Geçmişi\n" +
                            "2. Tüm Anomali Analizleri\n" +
@@ -1853,7 +1853,7 @@ async function clearHistory() {
                     
                     // Bildirim göster
                     if (window.showNotification) {
-                        window.showNotification(`🧹 Tam Temizlik Başarılı: ${result.deleted_count} kayıt silindi`, 'success');
+                        window.showNotification(`Tam Temizlik Basarili: ${result.deleted_count} kayit silindi`, 'success');
                     }
                 }
             }
@@ -2172,13 +2172,13 @@ async function loadFullAnalysisDetail(analysisId) {
                     result: {
                         durum: 'tamamlandı',
                         işlem: 'anomaly_analysis',
-                        açıklama: `📊 ${analysis.host || 'Unknown'} için ${anomalyCount} anomali tespit edildi.`,
+                        açıklama: `${analysis.host || 'Unknown'} icin ${anomalyCount} anomali tespit edildi.`,
                         sonuç: commonSonuc
                     },
                     childResult: {
                         durum: 'tamamlandı',
                         işlem: 'anomaly_analysis',
-                        açıklama: `📊 ${analysis.host || 'Unknown'} için ${anomalyCount} anomali tespit edildi.`,
+                        açıklama: `${analysis.host || 'Unknown'} icin ${anomalyCount} anomali tespit edildi.`,
                         sonuç: commonSonuc
                     },
                     critical_anomalies_full: criticalAnomalies,

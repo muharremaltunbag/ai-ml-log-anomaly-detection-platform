@@ -151,7 +151,7 @@ function displayChatQueryResult(result, userQuery) {
     
     // AI yanıtı
     html += '<div class="chat-message ai-message">';
-    html += '<div class="message-header">🤖 LCWGPT Asistan</div>';
+    html += '<div class="message-header">LCWGPT Asistan</div>';
     html += '<div class="message-content">';
     
     if (result.status === 'success' && result.ai_response) {
@@ -179,12 +179,12 @@ function displayChatQueryResult(result, userQuery) {
         // Meta bilgiler - GENİŞLETİLMİŞ
         html += '<div class="response-meta enhanced">';
         html += '<div class="meta-primary">';
-        html += `<span class="meta-item">📊 <strong>${result.total_anomalies}</strong> toplam anomali</span>`;
+        html += `<span class="meta-item"><strong>${result.total_anomalies}</strong> toplam anomali</span>`;
 
         // Multi-chunk bilgisi ekle
         if (result.chunks_processed && result.chunks_processed > 1) {
-            html += `<span class="meta-item">🔄 <strong>${result.chunks_processed}</strong> chunk işlendi</span>`;
-            html += `<span class="meta-item">✅ Multi-chunk aggregation uygulandı</span>`;
+            html += `<span class="meta-item"><strong>${result.chunks_processed}</strong> chunk işlendi</span>`;
+            html += `<span class="meta-item">Multi-chunk aggregation uygulandı</span>`;
         } else if (result.chunk_info) {
             html += `<span class="meta-item">📍 ${result.chunk_info}</span>`;
         }
@@ -208,7 +208,7 @@ function displayChatQueryResult(result, userQuery) {
 
         html += '</div>';
     } else {
-        html += `<div class="error-message">❌ ${result.message || 'Yanıt alınamadı'}</div>`;
+        html += `<div class="error-message">${result.message || 'Yanıt alınamadı'}</div>`;
     }
     
     html += '</div>';
@@ -218,7 +218,7 @@ function displayChatQueryResult(result, userQuery) {
     if (result.chunk_info && result.total_chunks > 1) {
         html += '<div class="chunk-navigation-controls">';
         html += '<div class="chunk-info-display">';
-        html += `<span class="chunk-status">📊 Gösterilen: ${result.chunk_info}</span>`;
+        html += `<span class="chunk-status">Gösterilen: ${result.chunk_info}</span>`;
         html += `<span class="chunk-total">Toplam ${result.total_anomalies} anomaliden ${result.anomalies_in_chunk} tanesi</span>`;
         html += '</div>';
         html += '<div class="chunk-buttons">';
@@ -352,13 +352,6 @@ function formatAIResponse(response) {
         return '<ol class="ai-list">' + match + '</ol>';
     });
     
-    // Emoji ve özel karakterleri koru
-    formatted = formatted.replace(/📊/g, '<span class="emoji">📊</span>');
-    formatted = formatted.replace(/🔍/g, '<span class="emoji">🔍</span>');
-    formatted = formatted.replace(/⚠️/g, '<span class="emoji">⚠️</span>');
-    formatted = formatted.replace(/✅/g, '<span class="emoji">✅</span>');
-    formatted = formatted.replace(/💡/g, '<span class="emoji">💡</span>');
-    
     // Satır sonları ve paragraflar
     formatted = formatted.replace(/\n\n+/g, '</p><p class="ai-paragraph">');
     formatted = formatted.replace(/\n/g, '<br>');
@@ -397,19 +390,19 @@ function displayAnomalyAnalysisResult(result) {
     if (result.durum === 'hata' || !result.sonuç) {
         console.log('Error in anomaly analysis:', result.açıklama);
         let html = '<div class="anomaly-error">';
-        html += '<h3>❌ Analiz Hatası</h3>';
+        html += '<h3>Analiz Hatasi</h3>';
         html += `<p>${window.escapeHtml(result.açıklama || "Analiz sırasında bir hata oluştu")}</p>`;
-        
+
         // Eğer API rate limit hatası ise özel mesaj
         if (result.açıklama && result.açıklama.includes('rate_limit_exceeded')) {
-            html += '<p class="info-message">💡 <strong>Not:</strong> AI açıklama servisi token limiti aşıldığı için kullanılamadı. Anomali analizi başarıyla tamamlandı ancak AI destekli açıklamalar oluşturulamadı.</p>';
+            html += '<p class="info-message"><strong>Not:</strong> AI açıklama servisi token limiti aşıldığı için kullanılamadı. Anomali analizi başarıyla tamamlandı ancak AI destekli açıklamalar oluşturulamadı.</p>';
         }
-        
+
         html += '</div>';
         elements.resultContent.innerHTML = html;
         return;
     }
-    
+
     let html = '<div class="anomaly-analysis-result ai-enhanced">';
     
     // Durum göstergesi
@@ -419,7 +412,7 @@ function displayAnomalyAnalysisResult(result) {
                        anomalyRate > 2 ? 'warning' : 'success';
     
     html += `<div class="result-status ${statusClass}">`;
-    html += `<strong>✅ Anomali Analizi Tamamlandı</strong>`;
+    html += `<strong>Anomali Analizi Tamamlandi</strong>`;
     html += `</div>`;
     
     // AI AÇIKLAMASI - VERİ PARSE EDİLİYOR AMA UI'DA GÖSTERİLMİYOR
@@ -443,13 +436,13 @@ function displayAnomalyAnalysisResult(result) {
     // Özet Metrikler - Daha görsel hale getirilmiş
     if (summary) {
         html += '<div class="metrics-overview">';
-        html += '<h3>📊 Genel Bakış</h3>';
+        html += '<h3>Genel Bakis</h3>';
         html += '<div class="metric-cards-grid">';
         
         // Ana metrik kartı
         html += `
             <div class="metric-card primary ${statusClass}">
-                <div class="metric-icon">🎯</div>
+                <div class="metric-icon"></div>
                 <div class="metric-value">${summary.n_anomalies.toLocaleString('tr-TR')}</div>
                 <div class="metric-label">Anomali Tespit Edildi</div>
                 <div class="metric-percentage">%${summary.anomaly_rate.toFixed(1)}</div>
@@ -471,7 +464,7 @@ function displayAnomalyAnalysisResult(result) {
             const peakHours = result.sonuç.temporal_analysis.peak_hours;
             html += `
                 <div class="metric-card info">
-                    <div class="metric-icon">⏰</div>
+                    <div class="metric-icon"></div>
                     <div class="metric-value">${peakHours[0]}:00</div>
                     <div class="metric-label">En Yoğun Saat</div>
                 </div>
@@ -484,7 +477,7 @@ function displayAnomalyAnalysisResult(result) {
     // Kritik Anomaliler - Sadece ilk 20 tanesi, daha kompakt + ENHANCED with toggle
     if (result.sonuç.critical_anomalies && result.sonuç.critical_anomalies.length > 0) {
         html += '<div class="critical-section">';
-        html += '<h3>⚡ En Kritik 20 Anomali</h3>';
+        html += '<h3>En Kritik 20 Anomali</h3>';
         
         // YENİ: Toggle kontrolü ekle
         html += `
@@ -534,7 +527,7 @@ function displayAnomalyAnalysisResult(result) {
     // Component Dağılımı - Pie chart benzeri görsel
     if (result.sonuç.component_analysis) {
         html += '<div class="component-distribution">';
-        html += '<h3>📈 Component Bazlı Dağılım</h3>';
+        html += '<h3>Component Bazli Dagilim</h3>';
         html += '<div class="component-chart">';
         
         const sortedComponents = Object.entries(result.sonuç.component_analysis)
@@ -562,7 +555,7 @@ function displayAnomalyAnalysisResult(result) {
     // YENİ: Component Analiz Tablosu
     if (result.sonuç.component_analysis) {
         html += '<div class="component-analysis-table">';
-        html += '<h3>📊 Detaylı Component Analizi</h3>';
+        html += '<h3>Detayli Component Analizi</h3>';
         html += '<table class="analysis-table">';
         html += '<thead>';
         html += '<tr>';
@@ -600,7 +593,7 @@ function displayAnomalyAnalysisResult(result) {
     // YENİ: Zamansal Analiz Grafiği
     if (result.sonuç.temporal_analysis?.hourly_distribution) {
         html += '<div class="temporal-chart-section">';
-        html += '<h3>📈 Saatlik Anomali Dağılımı</h3>';
+        html += '<h3>Saatlik Anomali Dagilimi</h3>';
         html += '<div class="hourly-chart">';
         
         const hourlyData = result.sonuç.temporal_analysis.hourly_distribution;
@@ -630,13 +623,13 @@ function displayAnomalyAnalysisResult(result) {
     
     // Eylem Butonları
     html += '<div class="analysis-actions">';
-    html += '<button class="btn btn-primary" onclick="toggleDetailedAnomalyList()">📋 Detaylı Anomali Listesi</button>';
-    html += '<button class="btn btn-secondary" onclick="exportAnomalyReport()">📥 Raporu İndir</button>';
-    html += '<button class="btn btn-info" onclick="scheduleFollowUp()">📅 Takip Planla</button>';
+    html += '<button class="btn btn-primary" onclick="toggleDetailedAnomalyList()">Detayli Anomali Listesi</button>';
+    html += '<button class="btn btn-secondary" onclick="exportAnomalyReport()">Raporu Indir</button>';
+    html += '<button class="btn btn-info" onclick="scheduleFollowUp()">Takip Planla</button>';
     html += '</div>';
-    
+
     html += '</div>';
-    
+
     elements.resultContent.innerHTML = html;
     elements.resultSection.style.display = 'block';
     elements.resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -673,7 +666,7 @@ function exportAnomalyReport() {
 function scheduleFollowUp() {
     const followUpHtml = `
         <div class="follow-up-form">
-            <h4>📅 Anomali Takip Planı</h4>
+            <h4>Anomali Takip Plani</h4>
             <p>Bu anomali analizi için takip planı oluşturun:</p>
             
             <div class="form-group">
@@ -1113,12 +1106,12 @@ function displayAnomalyResults(result) {
     if (result.durum === 'hata' || !result.sonuç) {
         console.log('Error in anomaly analysis:', result.açıklama);
         let html = '<div class="anomaly-error">';
-        html += '<h3>❌ Analiz Hatası</h3>';
+        html += '<h3>Analiz Hatasi</h3>';
         html += `<p>${window.escapeHtml(result.açıklama || "Analiz sırasında bir hata oluştu")}</p>`;
 
         // Eğer API rate limit hatası ise özel mesaj
         if (result.açıklama && result.açıklama.includes('rate_limit_exceeded')) {
-            html += '<p class="info-message">💡 <strong>Not:</strong> AI açıklama servisi token limiti aşıldığı için kullanılamadı. Anomali analizi başarıyla tamamlandı ancak AI destekli açıklamalar oluşturulamadı.</p>';
+            html += '<p class="info-message"><strong>Not:</strong> AI açıklama servisi token limiti aşıldığı için kullanılamadı. Anomali analizi başarıyla tamamlandı ancak AI destekli açıklamalar oluşturulamadı.</p>';
             html += '<p>Lütfen birkaç dakika bekleyip tekrar deneyin veya daha küçük bir zaman aralığı seçin.</p>';
         }
 
@@ -1205,7 +1198,7 @@ function displayAnomalyResults(result) {
 
     // Başlık
     html += '<div class="anomaly-header">';
-    html += '<h2>🔍 Anomali Analiz Sonuçları - ML Detaylı Görünüm</h2>';
+    html += '<h2>Anomali Analiz Sonuclari — ML Detayli Gorunum</h2>';
     html += '</div>';
 
     // ✅ YENİ: Kaynak Bilgisi (Upload vs OpenSearch)
@@ -1214,20 +1207,20 @@ function displayAnomalyResults(result) {
 
     if (result.source_type === 'upload' || result.uploaded_filename) {
         // Upload Durumu
-        const fileName = result.uploaded_filename || 
-                         (result.sonuç?.server_info?.server_name || 'Dosya').replace('📁 ', '');
-        sourceBadge = '<span class="source-badge upload">📁 Kaynak: Log Upload</span>';
+        const fileName = result.uploaded_filename ||
+                         (result.sonuç?.server_info?.server_name || 'Dosya');
+        sourceBadge = '<span class="source-badge upload">Kaynak: Log Upload</span>';
         sourceInfoText = `<strong>Dosya:</strong> ${fileName}`;
     } else {
         // OpenSearch / Diğer Durumlar
         const serverName = result.server_info?.server_name || combinedModelInfo.server_name || 'Bilinmiyor';
-        sourceBadge = '<span class="source-badge opensearch">🔍 Kaynak: OpenSearch</span>';
+        sourceBadge = '<span class="source-badge opensearch">Kaynak: OpenSearch</span>';
         sourceInfoText = `<strong>Sunucu:</strong> ${serverName}`;
     }
 
     // ✅ YENİ: Model bilgisi badge (sadece version varsa göster)
     const modelVersionBadge = combinedModelInfo.model_version 
-        ? `<span class="model-badge">🤖 Model v${combinedModelInfo.model_version}</span>` 
+        ? `<span class="model-badge">Model v${combinedModelInfo.model_version}</span>`
         : '';
     
     // ✅ YENİ: Ensemble mode badge
@@ -1246,7 +1239,7 @@ function displayAnomalyResults(result) {
         </div>
         ${combinedModelInfo.model_version ? `
         <button class="btn-model-details" onclick="toggleModelDetailsPanel()" title="Model detaylarını göster/gizle">
-            ℹ️ Model Detayları
+            Model Detaylari
         </button>
         ` : ''}
     </div>`;
@@ -1256,7 +1249,7 @@ function displayAnomalyResults(result) {
         html += `
         <div id="modelDetailsPanel" class="model-details-panel" style="display: none;">
             <div class="model-details-header">
-                <h4>🤖 ML Model Bilgileri</h4>
+                <h4>ML Model Bilgileri</h4>
                 <button class="btn-close-panel" onclick="toggleModelDetailsPanel()">✕</button>
             </div>
             <div class="model-details-grid">
@@ -1281,7 +1274,7 @@ function displayAnomalyResults(result) {
                 <div class="model-detail-item">
                     <span class="detail-label">Ensemble Modu:</span>
                     <span class="detail-value ${combinedModelInfo.is_ensemble_mode ? 'active' : ''}">
-                        ${combinedModelInfo.is_ensemble_mode ? `✅ Aktif (${combinedModelInfo.ensemble_model_count} model)` : '❌ Pasif'}
+                        ${combinedModelInfo.is_ensemble_mode ? `Aktif (${combinedModelInfo.ensemble_model_count} model)` : 'Pasif'}
                     </span>
                 </div>
                 <div class="model-detail-item">
@@ -1463,12 +1456,12 @@ function displayAnomalyResults(result) {
             ? ` <span class="truncation-note" style="font-size:0.85em;color:#e67e22;">(${criticalAnomalies.length} / ${totalCriticalCount} gösteriliyor)</span>`
             : '';
         html += '<div class="critical-anomalies-section expanded-view">'; // expanded-view class'ı eklendi
-        html += `<h3>⚠️ Kritik Anomaliler (${totalCriticalCount} toplam)${truncationNote}</h3>`;
+        html += `<h3>Kritik Anomaliler (${totalCriticalCount} toplam)${truncationNote}</h3>`;
         html += `
             <div class="view-controls">
-                <button class="btn-view-mode" onclick="toggleViewMode('compact')">📱 Kompakt</button>
-                <button class="btn-view-mode active" onclick="toggleViewMode('expanded')">🖥️ Geniş</button>
-                <button class="btn-view-mode" onclick="toggleViewMode('fullscreen')">⛶ Tam Ekran</button>
+                <button class="btn-view-mode" onclick="toggleViewMode('compact')">Kompakt</button>
+                <button class="btn-view-mode active" onclick="toggleViewMode('expanded')">Genis</button>
+                <button class="btn-view-mode" onclick="toggleViewMode('fullscreen')">Tam Ekran</button>
             </div>
         `;
         html += '<div class="anomaly-list" id="criticalAnomaliesList">';
@@ -1655,7 +1648,7 @@ function displayAnomalyResults(result) {
     // Tüm anomaliler: Kritik anomali yoksa all_anomalies'i göster
     if (!criticalAnomalies.length && allAnomalies.length > 0) {
         html += '<div class="critical-anomalies-section expanded-view">';
-        html += `<h3>📊 Tespit Edilen Anomaliler (${allAnomalies.length} adet — kritik seviye yok)</h3>`;
+        html += `<h3>Tespit Edilen Anomaliler (${allAnomalies.length} adet — kritik seviye yok)</h3>`;
         html += '<p style="color: #27ae60; margin: 0 0 15px 0; font-size: 0.9em;">Kritik anomali tespit edilmedi. Aşağıda düşük/orta seviye anomaliler listelenmektedir.</p>';
         html += `
             <div class="view-controls">
@@ -1784,7 +1777,7 @@ function displayAnomalyResults(result) {
     // Component dağılımı
     if (result.component_stats && !Object.keys(componentAnalysis).length) {
         html += '<div class="component-stats-section">';
-        html += '<h3>📈 Component Dağılımı</h3>';
+        html += '<h3>Component Dagilimi</h3>';
         html += '<div class="component-grid">';
         Object.entries(result.component_stats).forEach(([component, count]) => {
             const percentage = ((count / (result.summary?.anomaly_count || 1)) * 100).toFixed(1);
@@ -1805,7 +1798,7 @@ function displayAnomalyResults(result) {
     if (result.durum === "hata") {
         console.log('Error result detected:', result.açıklama);
         html = '<div class="anomaly-error">';
-        html += '<h3>❌ Hata</h3>';
+        html += '<h3>Hata</h3>';
         html += `<p>${window.escapeHtml(result.açıklama || "Bilinmeyen hata")}</p>`;
         html += '</div>';
     }
@@ -1822,9 +1815,9 @@ function displayAnomalyResults(result) {
 
     // Eylem butonları
     html += '<div class="analysis-actions">';
-    html += '<button class="btn btn-primary" onclick="toggleDetailedAnomalyList()">📋 Detaylı Anomali Listesi</button>';
-    html += '<button class="btn btn-secondary" onclick="exportAnomalyReport()">📥 Raporu İndir</button>';
-    html += '<button class="btn btn-info" onclick="scheduleFollowUp()">📅 Takip Planla</button>';
+    html += '<button class="btn btn-primary" onclick="toggleDetailedAnomalyList()">Detayli Anomali Listesi</button>';
+    html += '<button class="btn btn-secondary" onclick="exportAnomalyReport()">Raporu Indir</button>';
+    html += '<button class="btn btn-info" onclick="scheduleFollowUp()">Takip Planla</button>';
     html += '</div>';
 
     // =======================================================================
@@ -1834,7 +1827,7 @@ function displayAnomalyResults(result) {
         <div class="dba-explorer-panel" style="margin-top: 40px; border-top: 3px solid #0047BA; padding-top: 20px; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
             <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 0 10px;">
                 <h3 style="margin: 0; color: #0047BA; display: flex; align-items: center; gap: 10px; font-size: 1.2rem;">
-                    🛠️ DBA Log Explorer 
+                    DBA Log Explorer
                     <span style="font-size: 13px; color: #666; font-weight: normal; background: #f0f2f5; padding: 2px 8px; border-radius: 10px;">Server-Side Filtering</span>
                 </h3>
                 <span id="currentHostBadge" class="badge badge-info" style="display:none; font-size: 13px; padding: 6px 12px;">Host: --</span>
@@ -1871,8 +1864,8 @@ function displayAnomalyResults(result) {
                     </div>
                 </div>
                 <div class="filter-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
-                    <button id="btnResetFilter" class="btn btn-secondary" style="padding: 8px 20px;">🗑️ Temizle</button>
-                    <button id="btnApplyFilter" class="btn btn-primary" style="padding: 8px 25px;">🔍 Filtrele & Getir</button>
+                    <button id="btnResetFilter" class="btn btn-secondary" style="padding: 8px 20px;">Temizle</button>
+                    <button id="btnApplyFilter" class="btn btn-primary" style="padding: 8px 25px;">Filtrele</button>
                 </div>
             </div>
 
@@ -1898,7 +1891,7 @@ function displayAnomalyResults(result) {
             </div>
 
             <div id="dbaPagination" style="text-align: center; margin-top: 20px; display: none; padding-bottom: 20px;">
-                <button id="btnLoadMoreAnomalies" class="btn btn-secondary" style="width: 200px;">⬇️ Daha Fazla Yükle (+50)</button>
+                <button id="btnLoadMoreAnomalies" class="btn btn-secondary" style="width: 200px;">Daha Fazla Yukle (+50)</button>
                 <p style="font-size: 12px; color: #777; margin-top: 8px;" id="dbaResultCountInfo"></p>
             </div>
         </div>
@@ -1944,7 +1937,7 @@ function displayAnomalyResults(result) {
         console.log('Analysis auto-saved with ID:', result.storage_info.analysis_id);
         setTimeout(() => {
             window.showNotification(
-                `✅ Analiz otomatik olarak kaydedildi (ID: ${result.storage_info.analysis_id.substring(0, 8)}...)`,
+                `Analiz otomatik olarak kaydedildi (ID: ${result.storage_info.analysis_id.substring(0, 8)}...)`,
                 'success'
             );
         }, 1000);
@@ -2320,7 +2313,7 @@ function toggleDetailedAnomalyList() {
         <div class="modal-content" style="max-width: 90%; max-height: ${modalMaxHeight}px; display: flex; flex-direction: column;">
             <div class="modal-header" style="flex-shrink: 0;">
                 <div style="display: flex; flex-direction: column;">
-                    <h3>📋 Detaylı Anomali Listesi</h3>
+                    <h3>Detayli Anomali Listesi</h3>
                     <small style="color: #666; font-size: 0.9em;">
                         Toplam ${totalAvailable.toLocaleString()} kayıttan ${allAnomalies.length.toLocaleString()} tanesi gösteriliyor
                     </small>
@@ -2333,7 +2326,7 @@ function toggleDetailedAnomalyList() {
             ${isTruncated ? `
                 <div class="modal-footer" style="padding: 15px; border-top: 1px solid #eee; text-align: center; background: #f9f9f9;">
                     <button id="btnLoadMorePaged" class="btn btn-primary" onclick="loadMoreDetailedAnomalies()">
-                        ⬇️ Daha Fazla Yükle (+1000)
+                        Daha Fazla Yukle (+1000)
                     </button>
                     <div id="pagedLoader" style="display:none; color: #666; margin-top: 5px;">
                         <span class="loading-spinner">⏳</span> Veriler sunucudan çekiliyor...
@@ -2468,49 +2461,49 @@ function renderDetailedAnomalyList(anomalies) {
     // Anomali tip açıklamaları - MongoDB-SPESİFİK GENİŞLETİLMİŞ VERSİYON
     const typeDescriptions = {
         // 🔒 SECURITY & AUTHENTICATION
-        'auth_failure': { icon: '🔐', name: 'Kimlik Doğrulama Hataları', color: '#e74c3c' },
-        
-        // 🗂️ INDEX & SCHEMA OPERATIONS  
-        'drop_operation': { icon: '🗑️', name: 'Drop İşlemleri (Collection/Index)', color: '#e74c3c' },
-        'index_build': { icon: '🏗️', name: 'Index Oluşturma İşlemleri', color: '#f39c12' },
-        'index_drop': { icon: '📑', name: 'Index Silme İşlemleri', color: '#e67e22' },
-        'index_build_fail': { icon: '📑', name: 'Index Oluşturma Hataları', color: '#f39c12' },
-        
-        // ⚡ PERFORMANCE CRITICAL
-        'collection_scan': { icon: '🔍', name: 'Collection Scan (COLLSCAN)', color: '#e67e22' },
-        'high_doc_scan': { icon: '📊', name: 'Yüksek Document Scan', color: '#f39c12' },
-        'slow_query': { icon: '🐌', name: 'Yavaş Sorgular', color: '#3498db' },
-        
-        // 🔄 AGGREGATION & PIPELINE
-        'aggregation_issue': { icon: '⚙️', name: 'Aggregation Pipeline Sorunları', color: '#9b59b6' },
-        
-        // 🖥️ SYSTEM & RESOURCE
-        'out_of_memory': { icon: '💾', name: 'Bellek Yetersizliği (OOM)', color: '#e74c3c' },
-        'connection_limit': { icon: '🔗', name: 'Bağlantı Limiti Aşıldı', color: '#e74c3c' },
-        'assertion_failure': { icon: '❗', name: 'Assertion Hataları', color: '#e74c3c' },
-        
-        // 🔄 REPLICATION & CLUSTER
-        'replication_issue': { icon: '🔄', name: 'Replikasyon Sorunları', color: '#9b59b6' },
-        'replica_set_issue': { icon: '👥', name: 'Replica Set Sorunları', color: '#8e44ad' },
-        
-        // 💾 STORAGE & IO
-        'storage_operation': { icon: '💿', name: 'Storage İşlemleri (Compact/Reindex)', color: '#16a085' },
-        'storage_sync': { icon: '🔄', name: 'Storage Sync İşlemleri', color: '#27ae60' },
-        
-        // 🚨 SYSTEM EVENTS
-        'shutdown': { icon: '⏹️', name: 'Kapanma Olayları', color: '#7f8c8d' },
-        'service_restart': { icon: '🔄', name: 'Servis Yeniden Başlatmaları', color: '#9b59b6' },
-        'fatal_error': { icon: '💀', name: 'Fatal Hatalar', color: '#c0392b' },
-        
-        // 🌐 NETWORK & CONNECTION
-        'connection_drop': { icon: '🔌', name: 'Bağlantı Kopmaları', color: '#e67e22' },
-        'network_issue': { icon: '🌐', name: 'Network Sorunları', color: '#3498db' },
-        
-        // 📊 GENERAL CATEGORIES
-        'error': { icon: '❌', name: 'Genel Hatalar', color: '#e74c3c' },
-        'warning': { icon: '⚠️', name: 'Uyarılar', color: '#f39c12' },
-        'query_issue': { icon: '❓', name: 'Sorgu Sorunları', color: '#e67e22' },
-        'unknown': { icon: '❔', name: 'Sınıflandırılmamış', color: '#95a5a6' }
+        'auth_failure': { icon: '', name: 'Kimlik Dogrulama Hatalari', color: '#e74c3c' },
+
+        // INDEX & SCHEMA OPERATIONS
+        'drop_operation': { icon: '', name: 'Drop Islemleri (Collection/Index)', color: '#e74c3c' },
+        'index_build': { icon: '', name: 'Index Olusturma Islemleri', color: '#f39c12' },
+        'index_drop': { icon: '', name: 'Index Silme Islemleri', color: '#e67e22' },
+        'index_build_fail': { icon: '', name: 'Index Olusturma Hatalari', color: '#f39c12' },
+
+        // PERFORMANCE CRITICAL
+        'collection_scan': { icon: '', name: 'Collection Scan (COLLSCAN)', color: '#e67e22' },
+        'high_doc_scan': { icon: '', name: 'Yuksek Document Scan', color: '#f39c12' },
+        'slow_query': { icon: '', name: 'Yavas Sorgular', color: '#3498db' },
+
+        // AGGREGATION & PIPELINE
+        'aggregation_issue': { icon: '', name: 'Aggregation Pipeline Sorunlari', color: '#9b59b6' },
+
+        // SYSTEM & RESOURCE
+        'out_of_memory': { icon: '', name: 'Bellek Yetersizligi (OOM)', color: '#e74c3c' },
+        'connection_limit': { icon: '', name: 'Baglanti Limiti Asildi', color: '#e74c3c' },
+        'assertion_failure': { icon: '', name: 'Assertion Hatalari', color: '#e74c3c' },
+
+        // REPLICATION & CLUSTER
+        'replication_issue': { icon: '', name: 'Replikasyon Sorunlari', color: '#9b59b6' },
+        'replica_set_issue': { icon: '', name: 'Replica Set Sorunlari', color: '#8e44ad' },
+
+        // STORAGE & IO
+        'storage_operation': { icon: '', name: 'Storage Islemleri (Compact/Reindex)', color: '#16a085' },
+        'storage_sync': { icon: '', name: 'Storage Sync Islemleri', color: '#27ae60' },
+
+        // SYSTEM EVENTS
+        'shutdown': { icon: '', name: 'Kapanma Olaylari', color: '#7f8c8d' },
+        'service_restart': { icon: '', name: 'Servis Yeniden Baslatmalari', color: '#9b59b6' },
+        'fatal_error': { icon: '', name: 'Fatal Hatalar', color: '#c0392b' },
+
+        // NETWORK & CONNECTION
+        'connection_drop': { icon: '', name: 'Baglanti Kopmalari', color: '#e67e22' },
+        'network_issue': { icon: '', name: 'Network Sorunlari', color: '#3498db' },
+
+        // GENERAL CATEGORIES
+        'error': { icon: '', name: 'Genel Hatalar', color: '#e74c3c' },
+        'warning': { icon: '', name: 'Uyarilar', color: '#f39c12' },
+        'query_issue': { icon: '', name: 'Sorgu Sorunlari', color: '#e67e22' },
+        'unknown': { icon: '', name: 'Siniflandirilmamis', color: '#95a5a6' }
     };
     
     let html = '<div class="anomaly-type-groups">';
@@ -2519,7 +2512,7 @@ function renderDetailedAnomalyList(anomalies) {
     console.log('[DEBUG FRONTEND] renderDetailedAnomalyList - received anomalies count:', anomalies.length);
     html += `
         <div class="anomaly-summary-stats">
-            <h4>📊 Özet Bilgiler</h4>
+            <h4>Ozet Bilgiler</h4>
             <div class="summary-grid">
                 <div class="summary-card">
                     <span class="summary-value">${anomalies.length}</span>
@@ -2588,12 +2581,12 @@ function renderDetailedAnomalyList(anomalies) {
  */
 function getAnomalyExplanation(type) {
     const explanations = {
-        'auth_failure': '<div class="anomaly-explanation">⚡ Kullanıcı kimlik doğrulama başarısız. Yanlış şifre veya yetkisiz erişim denemesi olabilir.</div>',
-        'connection_drop': '<div class="anomaly-explanation">⚡ İstemci bağlantısı beklenmedik şekilde kesildi. Network sorunları veya timeout olabilir.</div>',
-        'slow_query': '<div class="anomaly-explanation">⚡ Sorgu çok uzun sürdü. Index eksikliği veya verimsiz sorgu yapısı olabilir.</div>',
-        'out_of_memory': '<div class="anomaly-explanation">⚡ Bellek yetersizliği. Working set çok büyük veya bellek sızıntısı olabilir.</div>',
-        'collection_scan': '<div class="anomaly-explanation">⚡ Tüm koleksiyon tarandı. Uygun index oluşturulmalı.</div>',
-        'assertion_failure': '<div class="anomaly-explanation">⚡ MongoDB internal assertion hatası. Yazılım hatası veya veri tutarsızlığı olabilir.</div>',
+        'auth_failure': '<div class="anomaly-explanation">Kullanici kimlik dogrulama basarisiz. Yanlis sifre veya yetkisiz erisim denemesi olabilir.</div>',
+        'connection_drop': '<div class="anomaly-explanation">Istemci baglantisi beklenmedik sekilde kesildi. Network sorunlari veya timeout olabilir.</div>',
+        'slow_query': '<div class="anomaly-explanation">Sorgu cok uzun surdu. Index eksikligi veya verimsiz sorgu yapisi olabilir.</div>',
+        'out_of_memory': '<div class="anomaly-explanation">Bellek yetersizligi. Working set cok buyuk veya bellek sizintisi olabilir.</div>',
+        'collection_scan': '<div class="anomaly-explanation">Tum koleksiyon tarandi. Uygun index olusturulmali.</div>',
+        'assertion_failure': '<div class="anomaly-explanation">MongoDB internal assertion hatasi. Yazilim hatasi veya veri tutarsizligi olabilir.</div>',
         default: ''
     };
     
@@ -2666,7 +2659,7 @@ function showDetailedAnomalyModal(anomalies) {
     <div id="detailed-anomaly-modal" class="modal" style="display: block;">
         <div class="modal-content" style="max-width: 90%; height: 80vh;">
             <div class="modal-header">
-                <h3>📋 Detaylı Anomali Listesi</h3>
+                <h3>Detayli Anomali Listesi</h3>
                 <span class="close" onclick="document.getElementById('detailed-anomaly-modal').remove()">&times;</span>
             </div>
             <div class="modal-body" style="overflow-y: auto; max-height: calc(80vh - 120px);">
@@ -2767,7 +2760,7 @@ function renderCriticalAnomaliesTable(criticalAnomalies) {
                  </td>`;
         html += `<td class="actions">
                     <button class="btn-investigate" onclick="window.investigateAnomaly(${anomaly.index || index})">
-                        🔍 İncele
+                        Incele
                     </button>
                  </td>`;
         html += '</tr>';
@@ -2792,8 +2785,8 @@ function generateMLInsights(mlData) {
     if (summary.anomaly_rate > 5) {
         insights.push({
             type: 'critical',
-            icon: '🚨',
-            title: 'Yüksek Anomali Oranı',
+            icon: '',
+            title: 'Yuksek Anomali Orani',
             description: `Sistem %${summary.anomaly_rate.toFixed(1)} anomali oranı ile normal üstü davranış gösteriyor.`,
             recommendation: 'Sistem loglarını detaylı inceleyip, altyapı değişikliklerini kontrol edin.'
         });
@@ -2806,7 +2799,7 @@ function generateMLInsights(mlData) {
     if (criticalComponents.length > 0) {
         insights.push({
             type: 'warning',
-            icon: '⚠️',
+            icon: '',
             title: 'Kritik Component\'ler',
             description: `${criticalComponents.length} component %20\'nin üzerinde anomali oranına sahip.`,
             recommendation: 'Bu component\'lerin konfigürasyonunu ve performansını gözden geçirin.'
@@ -2818,7 +2811,7 @@ function generateMLInsights(mlData) {
         const peakHours = mlData.temporal_analysis.peak_hours;
         insights.push({
             type: 'info',
-            icon: '⏰',
+            icon: '',
             title: 'Zamansal Pattern',
             description: `Anomaliler özellikle saat ${peakHours.join(', ')} arasında yoğunlaşıyor.`,
             recommendation: 'Bu saatlerdeki planned job\'ları ve yük dağılımını kontrol edin.'
@@ -2829,8 +2822,8 @@ function generateMLInsights(mlData) {
     if (mlData.anomaly_score_stats?.mean > 0.5) {
         insights.push({
             type: 'warning',
-            icon: '📊',
-            title: 'Yüksek Ortalama Anomali Skoru',
+            icon: '',
+            title: 'Yuksek Ortalama Anomali Skoru',
             description: `Ortalama anomali skoru ${mlData.anomaly_score_stats.mean.toFixed(3)} ile yüksek seviyelerde.`,
             recommendation: 'Isolation Forest model parametrelerini gözden geçirin veya yeniden eğitin.'
         });
@@ -3238,7 +3231,7 @@ const AnomalyProgress = {
 
         const msgEl = document.getElementById('progress-detail-text');
         if (msgEl) {
-            msgEl.innerText = "✅ Analiz Tamamlandı!";
+            msgEl.innerText = "Analiz Tamamlandi";
             msgEl.style.color = "#2ecc71";
         }
 
@@ -3261,7 +3254,7 @@ const AnomalyProgress = {
             const desc = document.getElementById('progress-detail-text');
             
             if (headerTitle) {
-                headerTitle.innerHTML = '❌ İşlem Başarısız';
+                headerTitle.innerHTML = 'Islem Basarisiz';
                 headerTitle.style.color = '#e74c3c';
             }
             if (desc) {
@@ -3359,7 +3352,7 @@ async function loadMoreDetailedAnomalies() {
                 if(btn) {
                     btn.remove(); // Butonu tamamen kaldır
                     const endMsg = document.createElement('div');
-                    endMsg.innerHTML = '<p style="text-align: center; color: #27ae60; margin-top: 10px;">✅ Tüm kayıtlar yüklendi.</p>';
+                    endMsg.innerHTML = '<p style="text-align: center; color: #27ae60; margin-top: 10px;">Tum kayitlar yuklendi.</p>';
                     loader.parentElement.appendChild(endMsg);
                 }
             } else {
@@ -3710,7 +3703,7 @@ function renderPredictionInsightPanel(mlData) {
     var trendSummary = (insight.trend_summary || '').trim();
     if (trendSummary) {
         summaryRows.push({
-            icon: '\uD83D\uDCC8', // 📈
+            icon: '',
             label: 'Trend',
             text: trendSummary
         });
@@ -3719,7 +3712,7 @@ function renderPredictionInsightPanel(mlData) {
     var rateSummary = (insight.rate_summary || '').trim();
     if (rateSummary) {
         summaryRows.push({
-            icon: '\u26A1',  // ⚡
+            icon: '',
             label: 'Rate Alert',
             text: rateSummary
         });
@@ -3728,7 +3721,7 @@ function renderPredictionInsightPanel(mlData) {
     var forecastSummary = (insight.forecast_summary || '').trim();
     if (forecastSummary) {
         summaryRows.push({
-            icon: '\uD83D\uDD2E', // 🔮
+            icon: '',
             label: 'Forecast',
             text: forecastSummary
         });
@@ -3745,7 +3738,7 @@ function renderPredictionInsightPanel(mlData) {
         if (mlSignal.high_count > 0) mlDesc += ', ' + mlSignal.high_count + ' yuksek';
         mlDesc += '.';
         summaryRows.push({
-            icon: '\uD83E\uDD16', // 🤖
+            icon: '',
             label: 'ML Risk Sinyali',
             text: mlDesc
         });

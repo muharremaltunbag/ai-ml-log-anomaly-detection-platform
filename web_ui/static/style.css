@@ -17352,3 +17352,277 @@ body.pps-body-lock {
     width: 100% !important;
     max-height: 280px;
 }
+
+/* ========== UI PROFESSIONALIZATION PATCH ========== */
+
+/* -- Quick Actions: Primary / Secondary grouping -- */
+.quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.qa-group {
+    display: grid;
+    gap: 12px;
+}
+.qa-group-primary {
+    grid-template-columns: repeat(3, 1fr);
+}
+.qa-group-secondary {
+    grid-template-columns: repeat(3, 1fr);
+}
+.qa-group-secondary .quick-action-card {
+    padding: 14px 10px;
+    border-color: var(--border-color);
+    background-color: var(--card-bg);
+}
+.qa-group-secondary .qa-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 16px;
+}
+.qa-group-secondary .qa-icon svg {
+    color: var(--text-secondary);
+}
+.qa-group-secondary .qa-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.qa-icon svg {
+    color: var(--lcw-blue);
+}
+.quick-action-prediction .qa-icon svg {
+    color: #c05e00;
+}
+@media (max-width: 768px) {
+    .qa-group-primary { grid-template-columns: repeat(3, 1fr); }
+    .qa-group-secondary { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 480px) {
+    .qa-group-primary { grid-template-columns: repeat(2, 1fr); }
+    .qa-group-secondary { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* -- Host mode radio labels -- */
+.host-mode-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+.host-mode-label input[type="radio"] {
+    margin-right: 6px;
+}
+
+/* -- Refresh buttons -- */
+.btn-refresh {
+    margin-top: 10px;
+}
+
+/* -- Timezone note -- */
+.timezone-note {
+    display: block;
+    margin-top: 5px;
+    color: #666;
+    font-size: 12px;
+}
+
+/* -- Processing icon spinner (replaces emoji) -- */
+.processing-icon-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(0, 71, 186, 0.15);
+    border-top-color: var(--lcw-blue);
+    border-radius: 50%;
+    animation: proc-spin 0.8s linear infinite;
+    margin: 0 auto 8px;
+}
+@keyframes proc-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* -- Empty icon muted (replaces emoji in history) -- */
+.empty-icon-muted {
+    font-size: 28px;
+    color: #ccc;
+    font-weight: 300;
+    letter-spacing: 2px;
+}
+
+/* -- DBA Explorer Panel (replaces inline styles) -- */
+.dba-explorer-panel {
+    margin-top: 28px;
+    border-top: 1px solid #e0e4ea;
+    padding-top: 20px;
+}
+.dba-explorer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+.dba-explorer-header h4 {
+    margin: 0;
+    color: var(--lcw-blue);
+    font-size: 15px;
+    font-weight: 700;
+}
+.dba-filter-controls {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+.dba-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+.dba-filter-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+    display: block;
+    margin-bottom: 4px;
+}
+.dba-filter-wide {
+    grid-column: span 2;
+}
+.dba-severity-slider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.dba-severity-slider input[type="range"] {
+    flex: 1;
+}
+.dba-severity-value {
+    font-weight: 700;
+    width: 30px;
+    text-align: center;
+    font-size: 13px;
+}
+.dba-filter-actions {
+    margin-top: 15px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+/* -- DBA Results Table (replaces inline styles) -- */
+.dba-results-wrapper {
+    margin-top: 20px;
+    overflow-x: auto;
+}
+.dba-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.dba-table thead tr {
+    background: #f1f3f5;
+    text-align: left;
+}
+.dba-table th {
+    padding: 10px;
+    border-bottom: 2px solid #ddd;
+    font-weight: 600;
+    font-size: 12px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+.dba-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
+}
+.dba-empty-cell {
+    text-align: center;
+    padding: 20px;
+    color: #999;
+}
+
+/* -- DBA Pagination -- */
+.dba-pagination {
+    text-align: center;
+    margin-top: 15px;
+}
+.dba-result-count {
+    font-size: 11px;
+    color: #999;
+    margin-top: 5px;
+}
+
+/* -- ML Sidebar Section Dots (replaces emoji icons) -- */
+.ml-section-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+.ml-section-dot-green { background-color: #22c55e; }
+.ml-section-dot-purple { background-color: #a855f7; }
+.ml-section-dot-indigo { background-color: #6366f1; }
+.ml-section-dot-blue { background-color: #3b82f6; }
+
+/* -- PPS Chart Empty State (replaces inline + emoji) -- */
+.pps-empty-title {
+    margin-top: 6px;
+    font-weight: 600;
+    color: #555;
+    font-size: 14px;
+}
+.pps-empty-desc {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #999;
+}
+
+/* -- PPS Sidebar field hosts spacing -- */
+.pps-sidebar-field-hosts {
+    margin-top: 10px;
+}
+
+/* -- Start analysis button SVG alignment -- */
+.btn-start-analysis {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.btn-start-analysis svg {
+    flex-shrink: 0;
+}
+
+/* -- Sidebar AI avatar (replaces emoji) -- */
+.sidebar-ai-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--lcw-blue);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+/* -- Header toggle buttons SVG alignment -- */
+.ml-sidebar-toggle-btn,
+.sidebar-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.ml-sidebar-toggle-btn svg,
+.sidebar-toggle-btn svg {
+    vertical-align: middle;
+}
+
+/* ========== END UI PROFESSIONALIZATION PATCH ========== */

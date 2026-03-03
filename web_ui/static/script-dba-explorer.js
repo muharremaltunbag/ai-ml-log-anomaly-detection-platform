@@ -299,7 +299,7 @@ const DBAExplorer = {
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="4" style="text-align: center; padding: 30px; color: #e74c3c;">
-                            <strong>❌ Veri çekilirken hata oluştu</strong>
+                            <strong>Veri cekilirken hata olustu</strong>
                             <p style="font-size: 12px; margin-top: 10px;">${error.message}</p>
                             <p style="font-size: 11px; color: #888;">API endpoint: ${window.API_ENDPOINTS?.filterAnomalies || '/api/filter-anomalies'}</p>
                         </td>
@@ -316,7 +316,7 @@ const DBAExplorer = {
             if (loadMoreBtn) loadMoreBtn.disabled = false;
             if (applyBtn) {
                 applyBtn.disabled = false;
-                applyBtn.innerHTML = '🔍 Filtrele & Getir';
+                applyBtn.innerHTML = 'Filtrele';
             }
         }
     },
@@ -341,7 +341,7 @@ const DBAExplorer = {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="4" style="text-align: center; padding: 30px; color: #666;">
-                        <div style="font-size: 24px; margin-bottom: 10px;">🔍</div>
+                        <div style="font-size: 14px; margin-bottom: 10px; color: #999;">--</div>
                         <strong>Kriterlere uygun anomali bulunamadı</strong>
                         <p style="font-size: 12px; margin-top: 10px;">Farklı filtre kriterleri deneyin.</p>
                     </td>

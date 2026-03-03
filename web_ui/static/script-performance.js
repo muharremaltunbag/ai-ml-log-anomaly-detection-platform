@@ -23,7 +23,7 @@
         // Koleksiyon bilgisi
         if (result.koleksiyon) {
             html += `<div class="result-field">
-                        <strong>📁 Koleksiyon:</strong> 
+                        <strong>Koleksiyon:</strong> 
                         <span class="highlight">${window.escapeHtml(result.koleksiyon)}</span>
                      </div>`;
         }
@@ -56,7 +56,7 @@
         // Açıklama metni
         if (result.açıklama) {
             html += '<div class="result-field performance-description">';
-            html += '<h3>📋 Detaylı Analiz</h3>';
+            html += '<h3>Detayli Analiz</h3>';
             html += `<pre class="analysis-text">${window.escapeHtml(result.açıklama)}</pre>`;
             html += '</div>';
         }
@@ -76,7 +76,7 @@
         // Timestamp
         if (result.timestamp) {
             const date = new Date(result.timestamp);
-            html += `<div class="result-timestamp">🕐 İşlem zamanı: ${date.toLocaleString('tr-TR')}</div>`;
+            html += `<div class="result-timestamp">Islem zamani: ${date.toLocaleString('tr-TR')}</div>`;
         }
         
         window.elements.resultContent.innerHTML = html;
@@ -120,15 +120,15 @@
         // Detaylı skorlar
         if (scoreData.detailed_scores) {
             html += '<div class="detailed-scores">';
-            html += '<h4>📊 Detaylı Skorlar</h4>';
+            html += '<h4>Detayli Skorlar</h4>';
             html += '<div class="score-breakdown">';
             
             const scores = scoreData.detailed_scores;
             const scoreItems = [
-                { key: 'time', label: 'Zaman', max: 30, icon: '⏱️' },
-                { key: 'efficiency', label: 'Verimlilik', max: 30, icon: '📈' },
-                { key: 'index', label: 'Index Kullanımı', max: 25, icon: '🔑' },
-                { key: 'result_size', label: 'Sonuç Boyutu', max: 15, icon: '📄' }
+                { key: 'time', label: 'Zaman', max: 30, icon: '' },
+                { key: 'efficiency', label: 'Verimlilik', max: 30, icon: '' },
+                { key: 'index', label: 'Index Kullanımı', max: 25, icon: '' },
+                { key: 'result_size', label: 'Sonuç Boyutu', max: 15, icon: '' }
             ];
             
             scoreItems.forEach(item => {
@@ -155,7 +155,7 @@
         // Tespit edilen sorunlar
         if (scoreData.reasons && scoreData.reasons.length > 0) {
             html += '<div class="score-issues">';
-            html += '<h4>⚠️ Tespit Edilen Sorunlar</h4>';
+            html += '<h4>Tespit Edilen Sorunlar</h4>';
             html += '<ul>';
             scoreData.reasons.forEach(reason => {
                 html += `<li>${window.escapeHtml(reason)}</li>`;
@@ -173,31 +173,31 @@
      */
     function renderExecutionMetrics(stats) {
         let html = '<div class="execution-metrics-section">';
-        html += '<h3>📊 Execution Metrikleri</h3>';
+        html += '<h3>Execution Metrikleri</h3>';
         html += '<div class="metrics-grid">';
         
         // Metrik kartları
         const metrics = [
             {
-                icon: '⏱️',
+                icon: '',
                 label: 'Çalışma Süresi',
                 value: `${stats.execution_time_ms}ms`,
                 type: 'time'
             },
             {
-                icon: '📄',
+                icon: '',
                 label: 'Taranan Doküman',
                 value: stats.total_docs_examined.toLocaleString('tr-TR'),
                 type: 'docs'
             },
             {
-                icon: '🔑',
+                icon: '',
                 label: 'Taranan Index',
                 value: stats.total_keys_examined.toLocaleString('tr-TR'),
                 type: 'keys'
             },
             {
-                icon: '✅',
+                icon: '',
                 label: 'Dönen Doküman',
                 value: stats.docs_returned.toLocaleString('tr-TR'),
                 type: 'returned'
@@ -224,7 +224,7 @@
             
             html += `
                 <div class="metric-card efficiency">
-                    <div class="metric-icon">📈</div>
+                    <div class="metric-icon"></div>
                     <div class="metric-content">
                         <div class="metric-value" style="color: ${efficiencyColor}">
                             %${stats.efficiency_percent}
@@ -249,7 +249,7 @@
      */
     function renderExecutionTree(tree) {
         let html = '<div class="execution-tree-section">';
-        html += '<h3>🔍 Execution Plan</h3>';
+        html += '<h3>Execution Plan</h3>';
         html += '<div class="tree-container">';
         html += renderTreeNode(tree);
         html += '</div>';
@@ -338,7 +338,7 @@
         }
         
         let html = '<div class="improvement-estimate-section">';
-        html += '<h3>🚀 İyileştirme Tahmini</h3>';
+        html += '<h3>Iyilestirme Tahmini</h3>';
         
         const currentTime = estimate.current_time_ms;
         const estimatedTime = estimate.estimated_time_ms;

@@ -223,12 +223,12 @@ async function showStorageStatistics() {
         const data = await response.json();
         const stats = data.statistics || {};
         let modalContent = `<div class="storage-stats-modal">
-            <h3>📊 Storage İstatistikleri (Son 30 Gün)</h3>`;
+            <h3>Storage Istatistikleri (Son 30 Gun)</h3>`;
 
         // Analysis stats
         if (stats.analysis_stats) {
             modalContent += `<div class="stats-section">
-                <h4>📈 Analiz İstatistikleri</h4>
+                <h4>Analiz Istatistikleri</h4>
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-value">${stats.analysis_stats.total_analyses || 0}</div>
@@ -249,7 +249,7 @@ async function showStorageStatistics() {
         // Storage stats
         if (stats.storage_stats) {
             modalContent += `<div class="stats-section">
-                <h4>💾 Storage Kullanımı</h4>
+                <h4>Storage Kullanimi</h4>
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-value">${stats.storage_stats.total_size_mb || 0} MB</div>
@@ -284,7 +284,7 @@ async function showModelRegistry() {
         if (!response.ok) throw new Error('Failed to fetch model registry');
         const data = await response.json();
         let modalContent = `<div class="model-registry-modal">
-            <h3>🤖 Model Registry</h3>`;
+            <h3>Model Registry</h3>`;
 
         if (Array.isArray(data.models) && data.models.length > 0) {
             modalContent += `
@@ -352,13 +352,13 @@ function addStorageMenuButtons() {
         storageDropdown.className = 'storage-dropdown';
         storageDropdown.innerHTML = `
             <button class="btn btn-secondary dropdown-toggle" onclick="window.toggleStorageMenu()">
-                💾 STORAGE
+                STORAGE
             </button>
             <div class="storage-menu" id="storageMenu" style="display: none;">
-                <button onclick="window.showStorageStatistics()">📊 İstatistikler</button>
-                <button onclick="window.showModelRegistry()">🤖 Model Registry</button>
-                <button onclick="window.loadMongoDBHistory()">📜 Geçmiş Analizler</button>
-                <button onclick="window.performStorageCleanup()">🗑️ Temizlik</button>
+                <button onclick="window.showStorageStatistics()">Istatistikler</button>
+                <button onclick="window.showModelRegistry()">Model Registry</button>
+                <button onclick="window.loadMongoDBHistory()">Gecmis Analizler</button>
+                <button onclick="window.performStorageCleanup()">Temizlik</button>
             </div>
         `;
         quickActions.appendChild(storageDropdown);
@@ -573,7 +573,7 @@ function handleFileUpload(event) {
                 if (dropzone) {
                     dropzone.innerHTML = `
                         <div style="text-align: center; color: #27ae60; padding: 20px; animation: fadeIn 0.3s;">
-                            <div style="font-size: 40px; margin-bottom: 10px;">✅</div>
+                            <div style="font-size: 18px; margin-bottom: 10px; font-weight: 700;">OK</div>
                             <p style="font-weight: bold; margin: 5px 0;">Yükleme Başarılı!</p>
                             <p style="font-size: 0.8em; color: #555;">${window.escapeHtml(data.filename)}</p>
                         </div>
@@ -639,7 +639,7 @@ function handleFileUpload(event) {
         if (dropzone) {
             dropzone.innerHTML = `
                 <div style="text-align: center; color: #c0392b; padding: 20px;">
-                    <div style="font-size: 40px; margin-bottom: 10px;">❌</div>
+                    <div style="font-size: 18px; margin-bottom: 10px; font-weight: 700; color: #c0392b;">HATA</div>
                     <p style="font-weight: bold;">Hata!</p>
                     <p style="font-size: 0.9em;">${window.escapeHtml(msg)}</p>
                 </div>
@@ -692,7 +692,7 @@ async function updateUploadedFilesList() {
                         <span class="file-name">${log.filename}</span>
                         <span class="file-size">${log.size_mb} MB</span>
                     </label>
-                    <button class="delete-file-btn" onclick="window.deleteUploadedFile('${log.filename}')">🗑️</button>
+                    <button class="delete-file-btn" onclick="window.deleteUploadedFile('${log.filename}')" title="Sil">&times;</button>
                 `;
                 fileList.appendChild(fileItem);
             });
@@ -837,7 +837,7 @@ function updateSourceInputs(source) {
         const msg = document.createElement('div');
         msg.id = 'upload-mode-info';
         msg.style.cssText = 'background: #e3f2fd; color: #0d47a1; padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 0.95em; border-left: 5px solid #2196f3; display: flex; align-items: center; gap: 10px;';
-        msg.innerHTML = '<span style="font-size: 1.5em;">ℹ️</span> <div><strong>Tam Dosya Analizi Modu</strong><br><span style="font-size: 0.9em; opacity: 0.9;">Yüklediğiniz dosyanın tamamı analiz edilecektir.</span></div>';
+        msg.innerHTML = '<div><strong>Tam Dosya Analizi Modu</strong><br><span style="font-size: 0.9em; opacity: 0.9;">Yuklediginiz dosyanin tamami analiz edilecektir.</span></div>';
         
         if (startBtn && startBtn.parentNode) {
             startBtn.parentNode.insertBefore(msg, startBtn);
@@ -958,23 +958,23 @@ function parseAndFormatDescription(description) {
             
             // Metrik tipini belirle
             if (line.includes('CPU') || line.includes('Kullanım Yüzdesi') || line.includes('Kullanım Oranı')) {
-                html += formatMetricBox('💻', line, 'cpu-metric');
+                html += formatMetricBox('', line, 'cpu-metric');
             } else if (line.includes('Bellek') || line.includes('Memory') || line.includes('Toplam Bellek')) {
-                html += formatMetricBox('💾', line, 'memory-metric');
+                html += formatMetricBox('', line, 'memory-metric');
             } else if (line.includes('Disk')) {
-                html += formatMetricBox('💿', line, 'disk-metric');
+                html += formatMetricBox('', line, 'disk-metric');
             } else if (line.includes('Durum') || line.includes('Status')) {
-                html += formatMetricBox('🔄', line, 'status-metric');
+                html += formatMetricBox('', line, 'status-metric');
             } else if (line.includes('Port') || line.includes('IP')) {
-                html += formatMetricBox('🌐', line, 'network-metric');
+                html += formatMetricBox('', line, 'network-metric');
             } else if (line.includes('Çalışma Süresi') || line.includes('Uptime')) {
-                html += formatMetricBox('⏱️', line, 'uptime-metric');
+                html += formatMetricBox('', line, 'uptime-metric');
             } else if (line.includes('İşletim Sistemi') || line.includes('OS')) {
-                html += formatMetricBox('🖥️', line, 'status-metric');
+                html += formatMetricBox('', line, 'status-metric');
             } else if (line.includes('Hostname')) {
-                html += formatMetricBox('🏷️', line, 'network-metric');
+                html += formatMetricBox('', line, 'network-metric');
             } else {
-                html += formatMetricBox('📌', line, 'general-metric');
+                html += formatMetricBox('', line, 'general-metric');
             }
         }
         
@@ -992,7 +992,7 @@ function parseAndFormatDescription(description) {
  */
 function renderMLInsightsSummary(mlData) {
     let html = '<div class="ml-insights-summary">';
-    html += '<h3>💡 ML Model Insights</h3>';
+    html += '<h3>ML Model Insights</h3>';
     html += '<div class="insights-grid">';
     
     // Key Insights (business logic'den al)
@@ -1022,49 +1022,49 @@ function renderMLInsightsSummary(mlData) {
  */
 function renderSecurityAlertsDashboard(securityAlerts) {
     let html = '<div class="security-alerts-unified">';
-    html += '<h3>🚨 Security & Critical Alerts</h3>';
+    html += '<h3>Security &amp; Critical Alerts</h3>';
     
     // Alert type bilgileri
     const alertTypeInfo = {
-        'drop_operations': { 
-            icon: '🗑️', 
-            label: 'DROP Operations', 
+        'drop_operations': {
+            icon: '',
+            label: 'DROP Operations',
             description: 'Veritabanı veya koleksiyon silme işlemleri. Veri kaybına neden olabilir.',
             priority: 10
         },
-        'out_of_memory': { 
-            icon: '💾', 
-            label: 'Out of Memory', 
+        'out_of_memory': {
+            icon: '',
+            label: 'Out of Memory',
             description: 'Bellek yetersizliği hataları. Performans sorunlarına ve crash\'lere neden olabilir.',
             priority: 9
         },
-        'fatal_errors': { 
-            icon: '💀', 
-            label: 'Fatal Errors', 
+        'fatal_errors': {
+            icon: '',
+            label: 'Fatal Errors',
             description: 'Kritik sistem hataları. Acil müdahale gerektirir.',
             priority: 8
         },
-        'assertions': { 
-            icon: '❗', 
-            label: 'Assertion Errors', 
+        'assertions': {
+            icon: '',
+            label: 'Assertion Errors',
             description: 'MongoDB internal assertion hataları. Yazılım hatası veya veri tutarsızlığı göstergesi.',
             priority: 7
         },
-        'shutdowns': { 
-            icon: '⏹️', 
-            label: 'Shutdown Events', 
+        'shutdowns': {
+            icon: '',
+            label: 'Shutdown Events',
             description: 'MongoDB servis kapanma olayları. Planlı/plansız kontrol edilmeli.',
             priority: 6
         },
-        'restarts': { 
-            icon: '🔄', 
-            label: 'Service Restarts', 
+        'restarts': {
+            icon: '',
+            label: 'Service Restarts',
             description: 'Servis yeniden başlatma olayları. Sık tekrarlanıyorsa sorun var demektir.',
             priority: 5
         },
-        'memory_limits': { 
-            icon: '📊', 
-            label: 'Memory Limit Exceeded', 
+        'memory_limits': {
+            icon: '',
+            label: 'Memory Limit Exceeded',
             description: 'WiredTiger cache limit aşımları. Cache boyutu ayarlanmalı.',
             priority: 4
         }

@@ -451,7 +451,7 @@
 
                     resultDiv.innerHTML =
                         '<div class="validation-result-content ' + (isAnomaly ? 'anomaly' : 'normal') + '">' +
-                            '<div class="result-label">' + (isAnomaly ? '⚠️ ANOMALI TESPIT EDILDI' : '✅ NORMAL LOG') + '</div>' +
+                            '<div class="result-label">' + (isAnomaly ? 'ANOMALI TESPIT EDILDI' : 'NORMAL LOG') + '</div>' +
                             '<div class="result-score">Anomali Skoru: ' + analysis.anomaly_score.toFixed(3) + '</div>' +
                             '<div class="result-severity">Severity: ' + analysis.severity + '</div>' +
                             '<div class="result-details">' + analysis.explanation + '</div>' +
@@ -475,7 +475,7 @@
 
             resultDiv.innerHTML =
                 '<div class="validation-result-content ' + (isAnomaly2 ? 'anomaly' : 'normal') + '">' +
-                    '<div class="result-label">' + (isAnomaly2 ? '⚠️ ANOMALI TESPIT EDILDI (Offline)' : '✅ NORMAL LOG (Offline)') + '</div>' +
+                    '<div class="result-label">' + (isAnomaly2 ? 'ANOMALI TESPIT EDILDI (Offline)' : 'NORMAL LOG (Offline)') + '</div>' +
                     '<div class="result-score">Anomali Skoru: ' + anomalyScore.toFixed(3) + '</div>' +
                     '<div class="result-details">' +
                         (isAnomaly2 ?

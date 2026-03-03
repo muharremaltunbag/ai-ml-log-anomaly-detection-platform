@@ -890,11 +890,11 @@ async function handleQuery() {
 
                     // Adımlar (Önceki adımda eklemiştik, aynen koruyoruz)
                     window.AnomalyProgress.steps = [
-                        { id: 'context', text: 'Analiz bağlamı storage\'dan yükleniyor...', icon: '🗄️', duration: 1500 },
-                        { id: 'connect', text: 'LCWGPT servisi ile bağlantı kuruluyor...', icon: '🔌', duration: 2000 },
-                        { id: 'chunk',   text: 'Veri setleri parçalanıyor (Chunking)...', icon: '🧩', duration: 1500 },
-                        { id: 'analyze', text: 'Yapay zeka analizi yapılıyor (Bu işlem zaman alabilir)...', icon: '🧠', duration: 15000 },
-                        { id: 'merge',   text: 'Yanıtlar birleştiriliyor ve özetleniyor...', icon: '✨', duration: 1000 }
+                        { id: 'context', text: 'Analiz bağlamı storage\'dan yükleniyor...', icon: '', duration: 1500 },
+                        { id: 'connect', text: 'LCWGPT servisi ile bağlantı kuruluyor...', icon: '', duration: 2000 },
+                        { id: 'chunk',   text: 'Veri setleri parçalanıyor (Chunking)...', icon: '', duration: 1500 },
+                        { id: 'analyze', text: 'Yapay zeka analizi yapılıyor (Bu işlem zaman alabilir)...', icon: '', duration: 15000 },
+                        { id: 'merge',   text: 'Yanıtlar birleştiriliyor ve özetleniyor...', icon: '', duration: 1000 }
                     ];
 
                     // ✅ DEĞİŞİKLİK: requestId ile show() çağırıyoruz
@@ -907,7 +907,7 @@ async function handleQuery() {
                             const headerTitle = progressModal.querySelector('.progress-header h3');
                             const headerDesc = progressModal.querySelector('.progress-header p');
                             if (headerTitle) {
-                                headerTitle.innerHTML = '🤖 LCWGPT Asistan Devrede';
+                                headerTitle.innerHTML = 'LCWGPT Asistan Devrede';
                                 headerTitle.style.color = '#9b59b6';
                             }
                             if (headerDesc) headerDesc.textContent = 'Büyük veri setleri parçalı olarak işleniyor, lütfen bekleyin...';
@@ -953,7 +953,7 @@ async function handleQuery() {
                         } else {
                             // Hata veya boş yanıt durumunda bilgilendirme
                             window.addSidebarAIMessage(
-                                '⚠️ ' + (chatResult.message || 'Yanıt alınamadı. Lütfen tekrar deneyin.')
+                                (chatResult.message || 'Yanıt alınamadı. Lütfen tekrar deneyin.')
                             );
                         }
                     }
@@ -1020,7 +1020,7 @@ async function handleQuery() {
                     console.error('Error response:', errorText);
                     // ✅ Sidebar'a HTTP hata mesajı
                     if (typeof window.addSidebarAIMessage === 'function') {
-                        window.addSidebarAIMessage('❌ Yanıt alınamadı (HTTP ' + chatResponse.status + '). Lütfen tekrar deneyin.');
+                        window.addSidebarAIMessage('Yanit alinamadi (HTTP ' + chatResponse.status + '). Lutfen tekrar deneyin.');
                     }
                     // Hata sonrası da sunucu seçimini tekrar göster
                     window.selectedChatServer = null;
@@ -1038,7 +1038,7 @@ async function handleQuery() {
                 showNotification('Yapay zeka yanıtı alınırken hata oluştu.', 'error');
                 // ✅ Sidebar'a exception hata mesajı
                 if (typeof window.addSidebarAIMessage === 'function') {
-                    window.addSidebarAIMessage('❌ Bir hata oluştu. Lütfen tekrar deneyin.');
+                    window.addSidebarAIMessage('Bir hata olustu. Lutfen tekrar deneyin.');
                 }
                 // Hata sonrası da sunucu seçimini tekrar göster
                 window.selectedChatServer = null;
@@ -1168,7 +1168,7 @@ function displayResult(result) {
         elements.resultSection.style.display = 'block';
         elements.resultContent.innerHTML = `
             <div class="result-status info">
-                <strong>ℹ️ ${result.açıklama}</strong>
+                <strong>${result.açıklama}</strong>
             </div>
             <div class="user-guidance">
                 <p>Yeni bir sorgu girebilir veya parametreleri değiştirebilirsiniz.</p>
@@ -1238,8 +1238,8 @@ function displayResult(result) {
     const statusClass = result.durum === 'başarılı' ? 'success' :
                        result.durum === 'uyarı' ? 'warning' : 'error';
     
-    const statusIcon = result.durum === 'başarılı' ? '✅' :
-                      result.durum === 'uyarı' ? '⚠️' : '❌';
+    const statusIcon = result.durum === 'başarılı' ? '[OK]' :
+                      result.durum === 'uyarı' ? '[!]' : '[X]';
 
     let html = `<div class="result-status ${statusClass}">`;
     html += `<strong>${statusIcon} ${result.durum.toUpperCase()}</strong>`;
@@ -1263,7 +1263,7 @@ function displayResult(result) {
     // Koleksiyon
     if (result.koleksiyon) {
         html += `<div class="result-field">
-                    <strong>📁 Koleksiyon:</strong> 
+                    <strong>Koleksiyon:</strong> 
                     <span class="highlight">${escapeHtml(result.koleksiyon)}</span>
                  </div>`;
     }
@@ -1271,7 +1271,7 @@ function displayResult(result) {
     // Tahminler
     if (result.tahminler && result.tahminler.length > 0) {
         html += '<div class="result-field">';
-        html += '<strong>💡 Yapılan Tahminler:</strong>';
+        html += '<strong>Yapilan Tahminler:</strong>';
         html += '<div class="prediction-list">';
         result.tahminler.forEach(tahmin => {
             html += `<div class="prediction-item">▸ ${escapeHtml(tahmin)}</div>`;
@@ -1281,7 +1281,7 @@ function displayResult(result) {
 
     // Sonuç (JSON olarak) - Sadece gerekirse göster
     if (result.sonuç && !isSimpleMetricResult(result.sonuç)) {
-        html += '<div class="result-field"><strong>📊 Sonuç Detayları:</strong>';
+        html += '<div class="result-field"><strong>Sonuc Detaylari:</strong>';
         html += `<pre class="json-display">${formatJSON(result.sonuç)}</pre>`;
         html += '</div>';
     }
@@ -1289,7 +1289,7 @@ function displayResult(result) {
     // Öneriler
     if (result.öneriler && result.öneriler.length > 0) {
         html += '<div class="result-field">';
-        html += '<strong>💡 Öneriler:</strong>';
+        html += '<strong>Oneriler:</strong>';
         html += '<div class="suggestion-list">';
         result.öneriler.forEach(öneri => {
             html += `<div class="suggestion-item">✓ ${escapeHtml(öneri)}</div>`;
@@ -1307,7 +1307,7 @@ function displayResult(result) {
     // Timestamp
     if (result.timestamp) {
         const date = new Date(result.timestamp);
-        html += `<div class="result-timestamp">🕐 İşlem zamanı: ${date.toLocaleString('tr-TR')}</div>`;
+        html += `<div class="result-timestamp">Islem zamani: ${date.toLocaleString('tr-TR')}</div>`;
     }
 
     elements.resultContent.innerHTML = html;
@@ -2095,7 +2095,7 @@ function showDetailedAnomalyModal(anomalies) {
     <div id="detailed-anomaly-modal" class="modal" style="display: block;">
         <div class="modal-content" style="max-width: 90%; height: 80vh;">
             <div class="modal-header">
-                <h3>📋 Detaylı Anomali Listesi</h3>
+                <h3>Detayli Anomali Listesi</h3>
                 <span class="close" onclick="document.getElementById('detailed-anomaly-modal').remove()">&times;</span>
             </div>
             <div class="modal-body" style="overflow-y: auto; max-height: calc(80vh - 120px);">
@@ -2157,7 +2157,7 @@ window.showAllComponents = function() {
     }
     
     let modalContent = '<div class="all-components-modal">';
-    modalContent += '<h4>📊 Tüm Component Analizi</h4>';
+    modalContent += '<h4>Tum Component Analizi</h4>';
     modalContent += '<table class="component-table">';
     modalContent += '<thead><tr>';
     modalContent += '<th>Component</th>';
@@ -2222,7 +2222,7 @@ async function openDBAAnalysisModal() {
     // Modal içeriğini oluştur
     const modalContent = `
         <div class="dba-analysis-modal">
-            <h4>🕐 DBA Spesifik Zaman Analizi</h4>
+            <h4>DBA Spesifik Zaman Analizi</h4>
             <p>MongoDB loglarında belirli bir zaman aralığındaki anomalileri tespit edin.</p>
             
             <div class="dba-time-selection">
@@ -2246,7 +2246,7 @@ async function openDBAAnalysisModal() {
                 </div>
                 
                 <small style="color: #666; margin-top: 10px; display: block;">
-                    💡 İpucu: Spesifik olaylar için dar zaman aralıkları seçin:
+                    Ipucu: Spesifik olaylar icin dar zaman araliklari secin:
                     <ul style="margin: 5px 0; padding-left: 20px;">
                         <li>Outbox rollback: 2-3 dakika</li>
                         <li>Performance issue: 10-15 dakika</li>
@@ -2255,7 +2255,7 @@ async function openDBAAnalysisModal() {
                 </small>
                 
                 <button class="btn btn-primary" style="width: 100%; margin-top: 20px;" onclick="startDBAAnalysis()">
-                    🚀 DBA Analizini Başlat
+                    DBA Analizini Baslat
                 </button>
             </div>
         </div>
@@ -2445,7 +2445,7 @@ function displayDBAAnalysisResults(result, cluster, startTime, endTime) {
     
     let html = '<div class="dba-analysis-results">';
     html += '<div class="dba-header">';
-    html += '<h2>🕐 DBA Zaman Bazlı Anomali Analiz Sonuçları</h2>';
+    html += '<h2>DBA Zaman Bazli Anomali Analiz Sonuclari</h2>';
     html += `<p class="time-range-info">
         <strong>Cluster:</strong> ${cluster} | 
         <strong>Zaman Aralığı:</strong> ${new Date(startTime).toLocaleString('tr-TR')} - ${new Date(endTime).toLocaleString('tr-TR')}
@@ -2455,7 +2455,7 @@ function displayDBAAnalysisResults(result, cluster, startTime, endTime) {
     // Hata durumu kontrolü
     if (result.status === 'error' || result.error) {
         html += '<div class="dba-error">';
-        html += '<h3>❌ Analiz Hatası</h3>';
+        html += '<h3>Analiz Hatasi</h3>';
         html += `<p>${escapeHtml(result.error || result.message || 'Analiz sırasında bir hata oluştu')}</p>`;
         html += '</div>';
         html += '</div>';
@@ -2493,9 +2493,9 @@ function displayDBAAnalysisResults(result, cluster, startTime, endTime) {
     
     // Aksiyonlar
     html += '<div class="dba-actions">';
-    html += '<button class="btn btn-primary" onclick="saveDBAAnalysis()">💾 Analizi Kaydet</button>';
-    html += '<button class="btn btn-secondary" onclick="exportDBAResults()">📥 Rapor İndir</button>';
-    html += '<button class="btn btn-info" onclick="shareDBAResults()">📤 Paylaş</button>';
+    html += '<button class="btn btn-primary" onclick="saveDBAAnalysis()">Analizi Kaydet</button>';
+    html += '<button class="btn btn-secondary" onclick="exportDBAResults()">Rapor Indir</button>';
+    html += '<button class="btn btn-info" onclick="shareDBAResults()">Paylas</button>';
     html += '</div>';
     
     html += '</div>';
@@ -2582,7 +2582,7 @@ function displayDBAAnalysisResults(result, cluster, startTime, endTime) {
  */
 function renderDBAAnalysisSummary(summary) {
     let html = '<div class="dba-summary-section">';
-    html += '<h3>📊 Analiz Özeti</h3>';
+    html += '<h3>Analiz Ozeti</h3>';
     html += '<div class="dba-metrics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">';
     
     const totalAnomalies = summary.total_anomalies || 0;
@@ -2592,25 +2592,25 @@ function renderDBAAnalysisSummary(summary) {
     
     html += `
         <div class="dba-metric-card" style="padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #0047BA;">
-            <div class="metric-icon" style="font-size: 24px;">📄</div>
+            <div class="metric-icon" style="font-size: 24px;"></div>
             <div class="metric-value" style="font-size: 28px; font-weight: bold; color: #333;">${(summary.total_logs || 0).toLocaleString('tr-TR')}</div>
             <div class="metric-label" style="color: #666;">Toplam Log</div>
         </div>
         
         <div class="dba-metric-card ${criticalityClass}" style="padding: 15px; background: ${criticalityClass === 'critical' ? '#fff5f5' : criticalityClass === 'warning' ? '#fffaf0' : '#f0f9ff'}; border-radius: 8px; border-left: 4px solid ${criticalityClass === 'critical' ? '#e74c3c' : criticalityClass === 'warning' ? '#f39c12' : '#3498db'};">
-            <div class="metric-icon" style="font-size: 24px;">🚨</div>
+            <div class="metric-icon" style="font-size: 24px;"></div>
             <div class="metric-value" style="font-size: 28px; font-weight: bold; color: ${criticalityClass === 'critical' ? '#e74c3c' : criticalityClass === 'warning' ? '#f39c12' : '#333'};">${totalAnomalies}</div>
             <div class="metric-label" style="color: #666;">Anomali Tespit</div>
         </div>
         
         <div class="dba-metric-card" style="padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #0047BA;">
-            <div class="metric-icon" style="font-size: 24px;">📊</div>
+            <div class="metric-icon" style="font-size: 24px;"></div>
             <div class="metric-value" style="font-size: 28px; font-weight: bold; color: #333;">%${anomalyRate.toFixed(2)}</div>
             <div class="metric-label" style="color: #666;">Anomali Oranı</div>
         </div>
         
         <div class="dba-metric-card" style="padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #0047BA;">
-            <div class="metric-icon" style="font-size: 24px;">🖥️</div>
+            <div class="metric-icon" style="font-size: 24px;"></div>
             <div class="metric-value" style="font-size: 28px; font-weight: bold; color: #333;">${summary.hosts_analyzed || 0}</div>
             <div class="metric-label" style="color: #666;">Analiz Edilen Host</div>
         </div>
@@ -2621,7 +2621,7 @@ function renderDBAAnalysisSummary(summary) {
     // Eğer hiç anomali yoksa başarı mesajı
     if (totalAnomalies === 0) {
         html += '<div style="margin-top: 20px; padding: 15px; background: #d4edda; color: #155724; border-radius: 8px;">';
-        html += '✅ Bu zaman aralığında anomali tespit edilmedi. Sistem normal çalışıyor.';
+        html += 'Bu zaman araliginda anomali tespit edilmedi. Sistem normal calisiyor.';
         html += '</div>';
     }
     
@@ -2634,7 +2634,7 @@ function renderDBAAnalysisSummary(summary) {
  */
 function renderDBAHostBreakdown(hostBreakdown) {
     let html = '<div class="dba-host-breakdown">';
-    html += '<h3>🖥️ Host Bazlı Anomali Dağılımı</h3>';
+    html += '<h3>Host Bazli Anomali Dagilimi</h3>';
     html += '<div class="host-breakdown-grid" style="display: grid; gap: 10px;">';
     
     // Host'ları anomali sayısına göre sırala
@@ -2756,7 +2756,7 @@ window.changeDBAPage = function(page) {
  */
 function renderDBAExplanation(explanation) {
     let html = '<div class="dba-ai-explanation" style="margin-top: 30px; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px;">';
-    html += '<h3 style="margin-bottom: 15px;">🤖 LCWGPT Analizi</h3>';
+    html += '<h3 style="margin-bottom: 15px;">LCWGPT Analizi</h3>';
     html += '<div class="ai-explanation-content" style="background: rgba(255,255,255,0.95); color: #333; padding: 15px; border-radius: 6px;">';
     
     // formatAIResponse fonksiyonunu kullan (mevcut fonksiyon)
@@ -2799,7 +2799,7 @@ function renderMiniMLMetrics(summary, scoreStats) {
     
     html += `
         <div class="mini-metric-card ${statusClass}">
-            <div class="mini-metric-icon">🎯</div>
+            <div class="mini-metric-icon"></div>
             <div class="mini-metric-data">
                 <div class="mini-metric-value">${summary.n_anomalies}</div>
                 <div class="mini-metric-label">Anomali</div>
@@ -2823,7 +2823,7 @@ function renderMiniMLMetrics(summary, scoreStats) {
     if (scoreStats && scoreStats.min !== undefined) {
         html += `
             <div class="mini-metric-card">
-                <div class="mini-metric-icon">📊</div>
+                <div class="mini-metric-icon"></div>
                 <div class="mini-metric-data">
                     <div class="mini-metric-value">${scoreStats.min.toFixed(3)} - ${scoreStats.max.toFixed(3)}</div>
                     <div class="mini-metric-label">Score Range</div>
@@ -2877,7 +2877,7 @@ function renderMiniComponentDashboard(componentAnalysis) {
  */
 function renderMiniTemporalHeatmap(temporalAnalysis) {
     let html = '<div class="mini-temporal-heatmap">';
-    html += '<h5>⏰ Saatlik Dağılım</h5>';
+    html += '<h5>Saatlik Dagilim</h5>';
     
     const hourlyData = temporalAnalysis.hourly_distribution || {};
     const maxValue = Math.max(...Object.values(hourlyData), 1);
@@ -2928,7 +2928,7 @@ function showFullVisualizationModal(historyId) {
     
     // Modal içeriği oluştur
     let modalContent = '<div class="full-visualization-modal-content">';
-    modalContent += '<h3>📊 Detaylı ML Analiz Görselleştirmesi</h3>';
+    modalContent += '<h3>Detayli ML Analiz Gorsellestirmesi</h3>';
     
     // Tüm görselleştirmeleri ekle
     if (mlData.summary || mlData.anomaly_score_stats) {
@@ -3057,10 +3057,10 @@ window.showAlertDetails = function(alertType, alertData) {
             
             <div class="alert-actions">
                 <button class="btn btn-primary" onclick="investigateAlertType('${alertType}')">
-                    🔍 Detaylı İncele
+                    Detayli Incele
                 </button>
                 <button class="btn btn-secondary" onclick="exportAlertData('${alertType}')">
-                    📥 Veriyi İndir
+                    Veriyi Indir
                 </button>
             </div>
         </div>
@@ -3223,7 +3223,7 @@ window.showFeatureDetails = function(featureName) {
     const featureDescription = getFeatureDescription(featureName);
     
     let modalContent = '<div class="feature-detail-modal">';
-    modalContent += `<h4>📊 ${featureLabel} - Detaylı Analiz</h4>`;
+    modalContent += `<h4>${featureLabel} — Detayli Analiz</h4>`;
     
     if (featureDescription) {
         modalContent += `<p class="feature-detail-description">${featureDescription}</p>`;
@@ -3260,28 +3260,28 @@ window.showFeatureDetails = function(featureName) {
     if (featureData.ratio === Infinity || featureData.ratio > 10) {
         modalContent += `
             <div class="insight-alert critical">
-                <strong>⚠️ Kritik Gösterge!</strong>
+                <strong>Kritik Gosterge</strong>
                 <p>Bu özellik neredeyse sadece anomalilerde görülüyor. Sistem konfigürasyonunu acilen kontrol edin.</p>
             </div>
         `;
     } else if (featureData.ratio > 5) {
         modalContent += `
             <div class="insight-alert high">
-                <strong>📍 Yüksek Önem</strong>
+                <strong>Yuksek Onem</strong>
                 <p>Bu özellik anomali tespitinde güçlü bir gösterge. Yakından takip edilmeli.</p>
             </div>
         `;
     } else if (featureData.ratio > 2) {
         modalContent += `
             <div class="insight-alert medium">
-                <strong>📊 Orta Önem</strong>
+                <strong>Orta Onem</strong>
                 <p>Bu özellik anomali göstergesi olarak değerli. Diğer göstergelerle birlikte değerlendirilmeli.</p>
             </div>
         `;
     } else {
         modalContent += `
             <div class="insight-alert low">
-                <strong>ℹ️ Düşük Önem</strong>
+                <strong>Dusuk Onem</strong>
                 <p>Bu özellik yardımcı bir gösterge. Tek başına anomali belirteci değil.</p>
             </div>
         `;
@@ -3337,7 +3337,7 @@ window.showFeatureAnalysisDetails = function() {
     }
     
     let modalContent = '<div class="feature-analysis-report">';
-    modalContent += '<h3>📊 Feature Importance Detaylı Rapor</h3>';
+    modalContent += '<h3>Feature Importance Detayli Rapor</h3>';
     
     // Özet bilgiler
     modalContent += '<div class="report-summary">';
@@ -3412,7 +3412,7 @@ window.showFeatureAnalysisDetails = function() {
     
     // Aksiyon önerileri
     modalContent += '<div class="report-recommendations">';
-    modalContent += '<h4>🎯 Aksiyon Önerileri:</h4>';
+    modalContent += '<h4>Aksiyon Onerileri</h4>';
     modalContent += '<ol>';
     
     if (criticalFeatures > 0) {
