@@ -1038,6 +1038,139 @@ class MongoDBHandler:
             logger.error(f"Error getting prediction summary: {e}")
             return {"error": str(e)}
 
+    async def get_prediction_server_overview(self, source_type: str = None,
+                                              days: int = 7) -> List[Dict[str, Any]]:
+        """
+        Sunucu bazlı prediction risk özeti.
+
+        Her sunucu için:
+        - total_checks, total_alerts, alert_rate
+        - max_severity (son N gündeki en yüksek)
+        - trend/rate/forecast alert sayıları
+        - last_check timestamp
+        - risk_level hesaplama (alert rate + severity'ye göre)
+
+        Returns:
+            Sunucu bazlı risk overview listesi (risk_level DESC sıralı)
+        """
+        try:
+            collection = self.db[self.collections.get("prediction_alerts", "prediction_alerts")]
+
+            cutoff = datetime.utcnow() - timedelta(days=days)
+            match_stage: Dict[str, Any] = {"timestamp": {"$gte": cutoff}}
+            if source_type:
+                match_stage["source_type"] = source_type
+
+            pipeline = [
+                {"$match": match_stage},
+                {"$group": {
+                    "_id": {
+                        "server": "$server_name",
+                        "source": "$alert_source"
+                    },
+                    "checks": {"$sum": 1},
+                    "alerts_with": {"$sum": {"$cond": ["$has_alerts", 1, 0]}},
+                    "critical_count": {"$sum": {"$cond": [
+                        {"$eq": ["$max_severity", "CRITICAL"]}, 1, 0]}},
+                    "warning_count": {"$sum": {"$cond": [
+                        {"$eq": ["$max_severity", "WARNING"]}, 1, 0]}},
+                    "total_alert_items": {"$sum": "$alert_count"},
+                    "latest": {"$max": "$timestamp"},
+                }}
+            ]
+
+            # Sunucu bazlı aggregation
+            server_data: Dict[str, Dict[str, Any]] = {}
+            async for doc in collection.aggregate(pipeline):
+                srv = doc["_id"]["server"] or "global"
+                src = doc["_id"]["source"] or "unknown"
+
+                if srv not in server_data:
+                    server_data[srv] = {
+                        "server_name": srv,
+                        "total_checks": 0,
+                        "total_alerts": 0,
+                        "total_alert_items": 0,
+                        "critical_count": 0,
+                        "warning_count": 0,
+                        "trend_alerts": 0,
+                        "rate_alerts": 0,
+                        "forecast_alerts": 0,
+                        "last_check": None,
+                    }
+
+                sd = server_data[srv]
+                sd["total_checks"] += doc["checks"]
+                sd["total_alerts"] += doc["alerts_with"]
+                sd["total_alert_items"] += doc.get("total_alert_items", 0)
+                sd["critical_count"] += doc["critical_count"]
+                sd["warning_count"] += doc["warning_count"]
+
+                if src == "trend":
+                    sd["trend_alerts"] += doc["alerts_with"]
+                elif src == "rate":
+                    sd["rate_alerts"] += doc["alerts_with"]
+                elif src == "forecast":
+                    sd["forecast_alerts"] += doc["alerts_with"]
+
+                latest = doc.get("latest")
+                if latest:
+                    if sd["last_check"] is None or latest > sd["last_check"]:
+                        sd["last_check"] = latest
+
+            # Risk level hesapla ve formatla
+            result = []
+            _risk_order = {"CRITICAL": 3, "WARNING": 2, "INFO": 1, "OK": 0}
+            for srv, sd in server_data.items():
+                alert_rate = (sd["total_alerts"] / sd["total_checks"] * 100) if sd["total_checks"] > 0 else 0
+
+                # Risk level: CRITICAL alerts veya yüksek alert rate → CRITICAL
+                if sd["critical_count"] >= 3 or alert_rate > 50:
+                    risk_level = "CRITICAL"
+                elif sd["critical_count"] >= 1 or sd["warning_count"] >= 3 or alert_rate > 25:
+                    risk_level = "WARNING"
+                elif sd["total_alerts"] > 0:
+                    risk_level = "INFO"
+                else:
+                    risk_level = "OK"
+
+                # Max severity
+                if sd["critical_count"] > 0:
+                    max_sev = "CRITICAL"
+                elif sd["warning_count"] > 0:
+                    max_sev = "WARNING"
+                elif sd["total_alerts"] > 0:
+                    max_sev = "INFO"
+                else:
+                    max_sev = "OK"
+
+                result.append({
+                    "server_name": srv,
+                    "total_checks": sd["total_checks"],
+                    "total_alerts": sd["total_alerts"],
+                    "total_alert_items": sd["total_alert_items"],
+                    "alert_rate_pct": round(alert_rate, 2),
+                    "critical_count": sd["critical_count"],
+                    "warning_count": sd["warning_count"],
+                    "trend_alerts": sd["trend_alerts"],
+                    "rate_alerts": sd["rate_alerts"],
+                    "forecast_alerts": sd["forecast_alerts"],
+                    "max_severity": max_sev,
+                    "risk_level": risk_level,
+                    "last_check": sd["last_check"].isoformat() if sd["last_check"] else None,
+                })
+
+            # Risk level'e göre sırala (en riskli önce)
+            result.sort(key=lambda x: _risk_order.get(x["risk_level"], 0), reverse=True)
+
+            logger.debug(f"Prediction server overview: {len(result)} servers, "
+                         f"days={days}, source_type={source_type}")
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting prediction server overview: {e}")
+            return []
+
     async def get_prediction_timeseries(self, server_name: str = None,
                                         alert_source: str = None,
                                         days: int = 7,

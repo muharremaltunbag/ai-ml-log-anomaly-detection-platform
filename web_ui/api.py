@@ -5491,6 +5491,40 @@ async def get_prediction_config(api_key: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/prediction/server-overview")
+async def get_prediction_server_overview(
+    api_key: str,
+    source_type: Optional[str] = None,
+    days: int = Query(default=7, le=90)
+):
+    """
+    Sunucu bazlı prediction risk özeti.
+
+    Her sunucu için: total_checks, total_alerts, alert_rate, risk_level,
+    max_severity, trend/rate/forecast alert dağılımı, last_check.
+    risk_level'e göre sıralı (en riskli önce).
+    """
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    try:
+        storage = await get_storage_manager()
+        if not hasattr(storage, 'get_prediction_server_overview'):
+            return {"status": "error", "message": "Server overview not available"}
+
+        servers = await storage.get_prediction_server_overview(
+            source_type=source_type, days=days
+        )
+        return {
+            "status": "success",
+            "count": len(servers),
+            "servers": servers
+        }
+    except Exception as e:
+        logger.error(f"Error getting prediction server overview: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─────────────────────────────────────────────────
 # On-Demand Prediction Run Endpoint
 # ─────────────────────────────────────────────────
