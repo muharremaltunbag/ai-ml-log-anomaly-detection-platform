@@ -16591,6 +16591,16 @@ mark.text-highlight:hover {
     font-style: italic;
     padding: 6px 0;
 }
+.pps-hosts-error {
+    font-size: 12px;
+    color: #e74c3c;
+    background: rgba(231,76,60,.08);
+    border-left: 3px solid #e74c3c;
+    padding: 6px 10px;
+    border-radius: 4px;
+    margin: 4px 0;
+    line-height: 1.4;
+}
 .pps-host-item {
     display: flex;
     align-items: center;

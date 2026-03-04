@@ -122,16 +122,14 @@
             // Update toggle visual
             _syncSourceToggle();
 
-            // Refresh host list for new source
-            loadAvailableHosts();
-
-            // Also update scheduler source_type
+            // Update scheduler source_type (fire-and-forget)
             var st = _getSourceType();
             if (st) {
                 _postSchedulerConfig({ source_type: st }, 'Kaynak tipi guncellendi: ' + st);
             }
 
-            // Refresh prediction data with new source filter
+            // Refresh all data including host list for new source
+            // (refreshAll already calls loadAvailableHosts)
             refreshAll();
         });
     }
@@ -139,33 +137,54 @@
     // ============================
     // LOAD AVAILABLE HOSTS BY SOURCE
     // ============================
+    var _lastLoadedHosts = [];
+    var _hostsLoading = false;
+
     function loadAvailableHosts() {
+        if (_hostsLoading) return;  // debounce
         var st = _getSourceType() || 'mongodb';
         var url = _apiUrl('schedulerHosts', 'source_type=' + encodeURIComponent(st));
         if (!url) return;
 
         var container = _el('ppsHostsList');
         if (container) {
-            container.innerHTML = '<span class="pps-hosts-empty"><div class="ppd-loading-spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></div>Sunucular yukleniyor...</span>';
+            container.innerHTML = '<span class="pps-hosts-empty">'
+                + '<div class="ppd-loading-spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></div>'
+                + 'Sunucu listesi yukleniyor...</span>';
         }
 
+        _hostsLoading = true;
         fetch(url)
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
             .then(function (data) {
-                if (data.status !== 'success') return;
+                _hostsLoading = false;
+                if (data.status !== 'success') {
+                    _showHostsError(st, data.message || 'Beklenmeyen hata');
+                    return;
+                }
                 var hosts = data.hosts || [];
-                _renderHostCheckboxes(hosts);
                 _lastLoadedHosts = hosts;
+                _renderHostCheckboxes(hosts);
             })
             .catch(function (err) {
+                _hostsLoading = false;
                 console.warn('[PredictionDashboard] Host discovery error:', err);
-                if (container) {
-                    container.innerHTML = '<span class="pps-hosts-empty">Sunucu listesi alinamadi. Kaynak: ' + esc(st) + '</span>';
-                }
+                _showHostsError(st, String(err));
             });
     }
 
-    var _lastLoadedHosts = [];
+    function _showHostsError(sourceType, detail) {
+        var container = _el('ppsHostsList');
+        if (!container) return;
+        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+        container.innerHTML = '<span class="pps-hosts-empty pps-hosts-error">'
+            + sourceLabel + ' sunucu listesi alinamadi. '
+            + '<br><small>' + esc(detail) + '</small>'
+            + '</span>';
+    }
 
     function hideDashboard() {
         var overlay = _getOverlay();
@@ -1745,9 +1764,10 @@
         // Update readiness bar
         _renderReadinessBar(_lastTotalChecks, _lastSchedulerRunning);
 
-        // Render target hosts as interactive checkboxes in sidebar
-        var hosts = sched.target_hosts || [];
-        _renderHostCheckboxes(hosts);
+        // NOT: Host listesi renderSchedulerStatus'tan değil,
+        // loadAvailableHosts'tan yönetilir. Scheduler target_hosts
+        // genellikle boştur (runtime set edilir), API'den gelen
+        // gerçek host listesini ezmemeli.
     }
 
     // ============================
