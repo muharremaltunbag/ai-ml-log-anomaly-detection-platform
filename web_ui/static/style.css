@@ -18494,6 +18494,102 @@ body.pps-body-lock {
    END — PREDICTION STUDIO COLOR PALETTE NORMALIZATION
    ══════════════════════════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   PREDICTION STUDIO — JS INLINE STYLE REPLACEMENTS
+   Classes for elements that previously used inline style="..." in JS
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Risk dot indicators (replace emoji ✅🔴🟠🔵) ── */
+.ppd-risk-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.ppd-risk-dot-ok       { background: var(--lcw-success, #1B9E4B); }
+.ppd-risk-dot-critical { background: var(--lcw-error, #D63341); }
+.ppd-risk-dot-warning  { background: var(--lcw-warning, #D4950C); }
+.ppd-risk-dot-info     { background: var(--lcw-info, #1976D2); }
+
+/* ── Server guidance text (was inline) ── */
+.ppd-server-guidance {
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text-secondary, #545868);
+    border-top: 1px solid #edf0f4;
+    line-height: 1.5;
+}
+
+/* ── Context hint text (was inline p style) ── */
+.ppd-ctx-hint-text {
+    font-size: 13px;
+    color: var(--text-muted, #8B91A0);
+    line-height: 1.6;
+    margin-top: 4px;
+}
+
+/* ── Detail hint (was inline span color:#888) ── */
+.ppd-detail-hint {
+    color: var(--text-muted, #8B91A0);
+}
+
+/* ── Empty state small variants ── */
+.pps-empty-icon-sm {
+    font-size: inherit;
+    margin-bottom: 6px;
+    color: var(--text-muted, #8B91A0);
+}
+.pps-empty-icon svg {
+    color: var(--text-muted, #8B91A0);
+}
+.pps-empty-title-sm {
+    font-size: 14px;
+}
+
+/* ── Drill-down score summary (was inline div) ── */
+.ppd-drill-score-summary {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-secondary, #545868);
+}
+
+/* ── ML corroboration tags (was inline color spans) ── */
+.ppd-ml-tag-strong  { color: var(--lcw-success, #1B9E4B); font-weight: 700; }
+.ppd-ml-tag-supported { color: var(--lcw-warning, #D4950C); }
+.ppd-ml-tag-none    { color: var(--text-muted, #8B91A0); }
+
+/* ── Severity text colors (was inline) ── */
+.ppd-sev-text-critical { color: var(--lcw-error, #D63341); font-weight: 600; }
+.ppd-sev-text-high     { color: #e65100; font-weight: 600; }
+.ppd-sev-text-medium   { color: var(--lcw-warning, #D4950C); }
+.ppd-sev-text-low      { color: var(--text-muted, #8B91A0); }
+
+/* ── Drill severity breakdown (was inline) ── */
+.ppd-drill-sev-breakdown {
+    margin-top: 6px;
+    font-size: 13px;
+}
+
+/* ── ML confidence adjustment (was inline) ── */
+.ppd-drill-ml-adj {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--text-secondary, #545868);
+}
+
+/* ── Forecast metrics / projection grid spacing (was inline margin-top) ── */
+.ppd-forecast-metrics {
+    margin-top: 10px;
+}
+.ppd-proj-grid {
+    margin-top: 12px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   END — PREDICTION STUDIO JS INLINE STYLE REPLACEMENTS
+   ══════════════════════════════════════════════════════════════════════════════ */
+
 /* ========== UI PROFESSIONALIZATION PATCH ========== */
 
 /* -- Quick Actions: Primary / Secondary grouping -- */

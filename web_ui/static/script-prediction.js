@@ -263,7 +263,7 @@
                 + '<li>Chat panelinden bir anomaly analizi calistirin</li>'
                 + '<li>Sol panelden <strong>Scheduler</strong>\'i etkinlestirin</li>'
                 + '</ol>'
-                + '<p style="font-size:0.82em;color:#888;">Prediction, anomaly analizi sonucunda otomatik calisir. '
+                + '<p class="ppd-ctx-hint-text">Prediction, anomaly analizi sonucunda otomatik calisir. '
                 + 'Trend, Rate Alert ve Forecast modulleri gecmis analiz verisine dayanarak risk tahmini uretir.</p>'
                 + '</div>';
             return;
@@ -518,7 +518,7 @@
         // Empty state banner if no checks at all
         if (totalChecks === 0) {
             html += '<div class="pps-empty-state">'
-                + '<div class="pps-empty-icon">&#x1F4CA;</div>'
+                + '<div class="pps-empty-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div>'
                 + '<div class="pps-empty-title">Bu zaman araliginda prediction verisi bulunamadi</div>'
                 + '<div class="pps-empty-desc">'
                 + 'Prediction verileri, anomaly analizi calistirildiginda otomatik uretilir.<br>'
@@ -588,11 +588,12 @@
             var lastCheck = s.last_check || '';
             if (lastCheck && lastCheck.length > 16) lastCheck = lastCheck.substring(0, 16).replace('T', ' ');
 
-            // Risk indicator icon
-            var riskIcon = '&#x2705;'; // OK
-            if (riskLabel === 'CRITICAL') riskIcon = '&#x1F534;';
-            else if (riskLabel === 'WARNING') riskIcon = '&#x1F7E0;';
-            else if (riskLabel === 'INFO') riskIcon = '&#x1F535;';
+            // Risk indicator dot (professional CSS-based)
+            var riskDotClass = 'ppd-risk-dot-ok';
+            if (riskLabel === 'CRITICAL') riskDotClass = 'ppd-risk-dot-critical';
+            else if (riskLabel === 'WARNING') riskDotClass = 'ppd-risk-dot-warning';
+            else if (riskLabel === 'INFO') riskDotClass = 'ppd-risk-dot-info';
+            var riskIcon = '<span class="ppd-risk-dot ' + riskDotClass + '"></span>';
 
             // Alert breakdown mini-bar
             var trendW = 0, rateW = 0, forecastW = 0;
@@ -655,7 +656,7 @@
                 guidanceText = 'Bilgi amacli uyarilar mevcut — kritik olmayan anomali aktivitesi.';
             }
             if (guidanceText) {
-                html += '<div class="ppd-server-guidance" style="padding:4px 10px;font-size:0.78em;color:#666;border-top:1px solid rgba(0,0,0,0.06);">'
+                html += '<div class="ppd-server-guidance">'
                     + esc(guidanceText) + '</div>';
             }
 
@@ -718,9 +719,9 @@
                         var emptyTbody = _el('ppdTableBody');
                         if (emptyTbody) {
                             emptyTbody.innerHTML = '<tr><td colspan="7" class="pps-table-empty">'
-                                + '<div class="pps-empty-icon" style="font-size:24px;">&#x1F50D;</div>'
-                                + '<div style="margin-top:6px;font-weight:600;color:#555;">Bu zaman araliginda prediction kaydi yok</div>'
-                                + '<div style="margin-top:4px;font-size:12px;color:#999;">'
+                                + '<div class="pps-empty-icon pps-empty-icon-sm"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>'
+                                + '<div class="pps-empty-title pps-empty-title-sm">Bu zaman araliginda prediction kaydi yok</div>'
+                                + '<div class="pps-empty-desc">'
                                 + 'Prediction kayitlari anomaly analizi calistiktan sonra olusur. '
                                 + 'Farkli zaman araligi, sunucu veya kaynak filtresi deneyin.</div>'
                                 + '</td></tr>';
@@ -841,7 +842,7 @@
             parts.push('+' + (dataAlerts.length - 3) + ' daha');
         }
 
-        if (parts.length === 0) return '<span style="color:#888;">Uyari yok — detay icin tiklayin</span>';
+        if (parts.length === 0) return '<span class="ppd-detail-hint">Uyari yok — detay icin tiklayin</span>';
         return parts.join(', ');
     }
 
@@ -1111,7 +1112,7 @@
                 }
                 // Build metric detail table
                 if (metricSummaries.length > 0) {
-                    extraHtml = '<div class="ppd-forecast-metrics" style="margin-top:8px;">';
+                    extraHtml = '<div class="ppd-forecast-metrics">';
                     for (var m = 0; m < metricSummaries.length; m++) {
                         var ms = metricSummaries[m];
                         extraHtml += '<div class="ppd-metric-row ' + ms.cls + '">'
@@ -1136,7 +1137,7 @@
                     );
                 }
                 if (projHtml) {
-                    extraHtml += '<div class="ppd-proj-grid" style="margin-top:10px;">' + projHtml + '</div>';
+                    extraHtml += '<div class="ppd-proj-grid">' + projHtml + '</div>';
                 }
             } else if (src === 'trend') {
                 // Show trend summary if available
@@ -1156,7 +1157,7 @@
                         scoreParts.push('CRIT+HIGH: %' + mst.severity_critical_high_pct.toFixed(1));
                     }
                     if (scoreParts.length > 0) {
-                        extraHtml = '<div style="margin-top:6px;font-size:0.82em;color:#666;">' + esc(scoreParts.join(' | ')) + '</div>';
+                        extraHtml = '<div class="ppd-drill-score-summary">' + esc(scoreParts.join(' | ')) + '</div>';
                     }
                 }
             } else if (src === 'rate') {
@@ -1243,11 +1244,11 @@
                 var ctxParts = [];
                 // Corroboration status
                 if (ctx.ml_strong_corroboration) {
-                    ctxParts.push('<strong style="color:#2e7d32;">ML Guclu Destek</strong>');
+                    ctxParts.push('<strong class="ppd-ml-tag-strong">ML Guclu Destek</strong>');
                 } else if (ctx.ml_corroborated) {
-                    ctxParts.push('<span style="color:#ff9800;">ML Destekli</span>');
+                    ctxParts.push('<span class="ppd-ml-tag-supported">ML Destekli</span>');
                 } else {
-                    ctxParts.push('<span style="color:#999;">ML Destek Yok</span>');
+                    ctxParts.push('<span class="ppd-ml-tag-none">ML Destek Yok</span>');
                 }
                 // Density
                 if (typeof ctx.window_anomaly_density_pct === 'number') {
@@ -1269,12 +1270,12 @@
                 var sevBreak = ctx.window_severity_breakdown;
                 if (sevBreak && typeof sevBreak === 'object') {
                     var sevParts = [];
-                    if (sevBreak.CRITICAL) sevParts.push('<span style="color:#d32f2f;">' + sevBreak.CRITICAL + ' CRIT</span>');
-                    if (sevBreak.HIGH) sevParts.push('<span style="color:#e65100;">' + sevBreak.HIGH + ' HIGH</span>');
-                    if (sevBreak.MEDIUM) sevParts.push('<span style="color:#f9a825;">' + sevBreak.MEDIUM + ' MED</span>');
-                    if (sevBreak.LOW) sevParts.push('<span style="color:#999;">' + sevBreak.LOW + ' LOW</span>');
+                    if (sevBreak.CRITICAL) sevParts.push('<span class="ppd-sev-text-critical">' + sevBreak.CRITICAL + ' CRIT</span>');
+                    if (sevBreak.HIGH) sevParts.push('<span class="ppd-sev-text-high">' + sevBreak.HIGH + ' HIGH</span>');
+                    if (sevBreak.MEDIUM) sevParts.push('<span class="ppd-sev-text-medium">' + sevBreak.MEDIUM + ' MED</span>');
+                    if (sevBreak.LOW) sevParts.push('<span class="ppd-sev-text-low">' + sevBreak.LOW + ' LOW</span>');
                     if (sevParts.length > 0) {
-                        html += '<div class="ppd-drill-sev-breakdown" style="margin-top:4px;font-size:0.82em;">'
+                        html += '<div class="ppd-drill-sev-breakdown">'
                             + 'Pencere Severity: ' + sevParts.join(' / ') + '</div>';
                     }
                 }
@@ -1283,7 +1284,7 @@
 
             // ML confidence adjustment info for forecast alerts
             if (al.ml_confidence_adjustment) {
-                html += '<div class="ppd-drill-ml-adj" style="margin-top:4px;font-size:0.82em;color:#555;font-style:italic;">'
+                html += '<div class="ppd-drill-ml-adj">'
                     + esc(al.ml_confidence_adjustment) + '</div>';
             }
 
