@@ -190,7 +190,7 @@
         for (var i = 0; i < pills.length; i++) {
             var p = pills[i];
             if (p.on) allOff = false;
-            html += '<span class="ppd-config-pill ' + (p.on ? 'ppd-pill-on' : 'ppd-pill-off') + '">'
+            html += '<span class="ppd-config-pill ' + (p.on ? 'ppd-config-pill-on' : 'ppd-config-pill-off') + '">'
                 + esc(p.label) + ': ' + (p.on ? 'ON' : 'OFF') + '</span>';
         }
 
