@@ -1984,14 +1984,89 @@
 
     function triggerScheduler() {
         var serverVal = (_el('ppdServerFilter') || {}).value || '';
-        var msg = serverVal
-            ? 'Manuel analiz "' + serverVal + '" icin tetiklenecek. Devam?'
-            : 'Manuel analiz tum sunucular icin tetiklenecek. Devam?';
+        var selectedHosts = _getSelectedHosts();
+        var sourceType = _getSourceType() || 'mongodb';
+        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+
+        var targetDesc;
+        if (serverVal) {
+            targetDesc = '"' + serverVal + '"';
+        } else if (selectedHosts.length > 0) {
+            targetDesc = selectedHosts.length + ' secili sunucu';
+        } else {
+            targetDesc = 'tum hedef sunucular';
+        }
+
+        var msg = 'Manuel analiz ' + targetDesc + ' icin tetiklenecek.\n'
+            + 'Kaynak: ' + sourceLabel + '\nDevam?';
 
         _showConfirm('Manuel Calistir', msg, function () {
-            var body = { api_key: window.apiKey || '' };
-            if (serverVal) body.server_name = serverVal;
-            _postScheduler('schedulerTrigger', body, 'Scheduler triggered');
+            var body = {
+                api_key: window.apiKey || '',
+                source_type: sourceType
+            };
+            if (serverVal) {
+                body.server_name = serverVal;
+            } else if (selectedHosts.length > 0) {
+                body.target_hosts = selectedHosts;
+            }
+
+            // Show progress on trigger button
+            var triggerBtn = _el('ppdSchedTriggerBtn');
+            var origText = triggerBtn ? triggerBtn.textContent : '';
+            if (triggerBtn) {
+                triggerBtn.disabled = true;
+                triggerBtn.textContent = 'Calisiyor...';
+            }
+
+            _schedBusy = true;
+            var base = window.API_ENDPOINTS ? window.API_ENDPOINTS['schedulerTrigger'] : null;
+            if (!base) return;
+
+            fetch(base, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                _schedBusy = false;
+                var result = data.result || {};
+                var hostsAnalyzed = result.hosts_analyzed || 0;
+                var totalAnomalies = result.total_anomalies || 0;
+
+                if (triggerBtn) {
+                    if (result.status === 'completed') {
+                        triggerBtn.textContent = hostsAnalyzed + ' host, ' + totalAnomalies + ' anomali';
+                        triggerBtn.classList.add('ppd-sched-btn-success');
+                    } else if (result.status === 'skipped') {
+                        triggerBtn.textContent = 'Atlandi: ' + (result.reason || '').replace(/_/g, ' ');
+                    } else {
+                        triggerBtn.textContent = 'Tamamlandi';
+                    }
+                    setTimeout(function () {
+                        triggerBtn.textContent = origText;
+                        triggerBtn.disabled = false;
+                        triggerBtn.classList.remove('ppd-sched-btn-success');
+                    }, 3000);
+                }
+
+                if (data.scheduler) renderSchedulerStatus(data.scheduler);
+                // Refresh prediction data
+                setTimeout(function () { refreshAll(); }, 1000);
+                console.log('[PredictionDashboard] Trigger completed', data);
+            })
+            .catch(function (err) {
+                _schedBusy = false;
+                if (triggerBtn) {
+                    triggerBtn.textContent = 'Hata!';
+                    setTimeout(function () {
+                        triggerBtn.textContent = origText;
+                        triggerBtn.disabled = false;
+                    }, 2000);
+                }
+                console.error('[PredictionDashboard] Trigger error:', err);
+            });
         });
     }
 

@@ -5825,7 +5825,19 @@ async def configure_scheduler(request: Dict[str, Any]):
 
 @app.post("/api/scheduler/trigger")
 async def trigger_scheduler(request: Dict[str, Any]):
-    """Manuel tek çalıştırma tetikle. Body: {api_key, server_name?: str}"""
+    """
+    Manuel tek çalıştırma tetikle.
+
+    Body: {
+        api_key: str,
+        server_name: str (opsiyonel - tek sunucu),
+        target_hosts: [...] (opsiyonel - çoklu sunucu),
+        source_type: str (opsiyonel)
+    }
+
+    target_hosts verilmişse scheduler'ın target_hosts'unu geçici olarak set eder,
+    trigger'ı çalıştırır ve sonucu döner.
+    """
     api_key = request.get("api_key", "")
     if not await verify_api_key(api_key):
         raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
@@ -5833,9 +5845,31 @@ async def trigger_scheduler(request: Dict[str, Any]):
     if not tools.scheduler:
         raise HTTPException(status_code=400, detail="Scheduler not initialized")
 
+    # Source type override for this trigger
+    source_type = request.get("source_type")
+    if source_type:
+        if source_type not in ("mongodb", "mssql", "elasticsearch"):
+            raise HTTPException(status_code=400,
+                                detail=f"Geçersiz source_type: {source_type}")
+        tools.scheduler.set_source_type(source_type)
+
     server_name = request.get("server_name")
-    result = tools.scheduler.trigger_now(server_name)
-    return {"status": "success", "result": result}
+    target_hosts = request.get("target_hosts", [])
+
+    if target_hosts:
+        # Çoklu host trigger: geçici olarak target_hosts set et ve cycle çalıştır
+        tools.scheduler.set_target_hosts(target_hosts)
+        result = tools.scheduler.trigger_now()  # full cycle
+    elif server_name:
+        result = tools.scheduler.trigger_now(server_name)
+    else:
+        result = tools.scheduler.trigger_now()
+
+    return {
+        "status": "success",
+        "result": result,
+        "scheduler": tools.scheduler.get_status()
+    }
 
 
 @app.post("/api/system-reset")

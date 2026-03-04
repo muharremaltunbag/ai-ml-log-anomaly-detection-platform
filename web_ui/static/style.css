@@ -18058,6 +18058,11 @@ body.pps-body-lock {
 .ppd-sched-btn-trigger:hover:not(:disabled) {
     background: #bbdefb;
 }
+.ppd-sched-btn-success {
+    background: #e8f5e9 !important;
+    color: #2e7d32 !important;
+    border-color: #a5d6a7 !important;
+}
 .ppd-sched-body {
     padding: 14px 16px;
 }
