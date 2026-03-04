@@ -1188,10 +1188,33 @@ class MongoDBAnomalyDetector:
 
         # 2. Aşama: Maximum limit uygula
         if len(critical_only) > max_critical_stage1:
-            
+
             critical_only = critical_only[:max_critical_stage1]
 
-        
+        # 3. Aşama: Fingerprint-based dedup cap
+        # Aynı message_fingerprint'ten en fazla max_per_fingerprint kadar anomali tut.
+        # Bu, baskın tek bir log pattern'inin tüm listeyi domine etmesini önler.
+        max_per_fp = fp_config.get('max_per_fingerprint', 5)
+        if max_per_fp > 0 and critical_only:
+            fp_counts = {}
+            deduped = []
+            suppressed = 0
+            for a in critical_only:
+                fp = a.get('message_fingerprint', '')
+                if not fp:
+                    deduped.append(a)
+                    continue
+                fp_counts[fp] = fp_counts.get(fp, 0) + 1
+                if fp_counts[fp] <= max_per_fp:
+                    deduped.append(a)
+                else:
+                    suppressed += 1
+            if suppressed > 0:
+                logger.info(
+                    f"Fingerprint dedup: {suppressed} duplicate-pattern anomalies suppressed "
+                    f"(max {max_per_fp}/fingerprint, {len(fp_counts)} distinct patterns)"
+                )
+            critical_only = deduped
 
         # Kritik anomalileri göster
         analysis["critical_anomalies"] = critical_only
