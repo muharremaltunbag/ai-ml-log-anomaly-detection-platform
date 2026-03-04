@@ -209,6 +209,12 @@ class AnomalyDetectionTools:
             # Storage config for retention
             self._prediction_storage_config = pred_config.get('storage', {})
 
+            # History lookback: forecaster Tier 3 (EWMA) needs N>=20
+            # Use max of trend lookback and forecasting requirement
+            trend_lookback = trend_cfg.get('lookback_analyses', 10)
+            forecast_min = forecast_cfg.get('min_data_points', 5) * 4  # aim for Tier 3
+            self._prediction_history_limit = max(trend_lookback, forecast_min, 10)
+
             logger.info(f"Prediction layer initialized: "
                         f"trend={'ON' if self.trend_analyzer else 'OFF'}, "
                         f"rate={'ON' if self.rate_alert_engine else 'OFF'}, "
@@ -337,10 +343,11 @@ class AnomalyDetectionTools:
 
         # ── Single fetch: trend + forecast aynı history'yi kullanır ──
         history_records = None
+        history_limit = getattr(self, '_prediction_history_limit', 10)
         if self.trend_analyzer or self.forecaster:
             try:
                 history_records = await self._fetch_trend_history(
-                    server_name, source_type=storage_source
+                    server_name, limit=history_limit, source_type=storage_source
                 )
             except Exception as e:
                 logger.warning(f"Prediction history fetch failed (non-critical): {e}")
@@ -4373,6 +4380,25 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
                 for a in fc_alerts[:3]:
                     parts.append(f"  - [{a.get('severity')}] {a.get('title')}: "
                                  f"{a.get('explainability', '')[:200]}")
+
+        # ML Risk Insight
+        insight = prediction_results.get("insight")
+        if isinstance(insight, dict):
+            risk_dir = insight.get("risk_direction", "")
+            if risk_dir and risk_dir not in ("low", "stable"):
+                insight_parts = [f"ML RISK INSIGHT: Risk seviyesi={risk_dir}"]
+                # Dominant patterns
+                patterns = insight.get("dominant_patterns", [])
+                if patterns:
+                    top = patterns[:3]
+                    pat_strs = [f"{p.get('component','?')}:{p.get('count',0)}x" for p in top]
+                    insight_parts.append(f"  Baskin kaliplar: {', '.join(pat_strs)}")
+                # Potential risks
+                risks = insight.get("potential_risk_areas", [])
+                if risks:
+                    risk_strs = [f"{r.get('area','?')} ({r.get('severity','?')})" for r in risks[:3]]
+                    insight_parts.append(f"  Potansiyel riskler: {', '.join(risk_strs)}")
+                parts.extend(insight_parts)
 
         if not parts:
             return ""

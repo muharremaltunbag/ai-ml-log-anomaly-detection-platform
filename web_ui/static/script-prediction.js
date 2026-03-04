@@ -285,6 +285,16 @@
                 + '</div>';
         }
 
+        // Source type
+        if (ctx.source_type) {
+            var srcLabels = { mongodb: 'MongoDB', opensearch: 'MongoDB (OpenSearch)', mssql: 'MSSQL', mssql_opensearch: 'MSSQL', elasticsearch: 'Elasticsearch', elasticsearch_opensearch: 'Elasticsearch' };
+            var srcLabel = srcLabels[ctx.source_type] || ctx.source_type;
+            html += '<div class="ppd-ctx-row">'
+                + '<span class="ppd-ctx-label">Kaynak</span>'
+                + '<span class="ppd-ctx-value">' + esc(srcLabel) + '</span>'
+                + '</div>';
+        }
+
         // Module status row
         var modules = ['trend', 'rate', 'forecast'];
         html += '<div class="ppd-ctx-modules">';
@@ -632,6 +642,20 @@
                     +   '<span class="ppd-legend-item"><span class="ppd-legend-dot ppd-dot-forecast"></span>Forecast ' + s.forecast_alerts + '</span>'
                     + '</div>'
                     + '</div>';
+            }
+
+            // Actionable guidance based on risk level
+            var guidanceText = '';
+            if (riskLabel === 'CRITICAL') {
+                guidanceText = 'Acil inceleme gerekli — anomali artisi ve yuksek risk tespit edildi.';
+            } else if (riskLabel === 'WARNING') {
+                guidanceText = 'Yakin izleme oneriliyor — trend veya oran artisi tespit edildi.';
+            } else if (riskLabel === 'INFO') {
+                guidanceText = 'Bilgi amacli uyarilar mevcut — kritik olmayan anomali aktivitesi.';
+            }
+            if (guidanceText) {
+                html += '<div class="ppd-server-guidance" style="padding:4px 10px;font-size:0.78em;color:#666;border-top:1px solid rgba(0,0,0,0.06);">'
+                    + esc(guidanceText) + '</div>';
             }
 
             html += '<div class="ppd-server-footer">'
@@ -1034,9 +1058,17 @@
                     if (fc.status === 'insufficient_data') {
                         insuffCount++;
                         if (fc.data_points > maxDp) maxDp = fc.data_points;
+                        var insuffStatus = 'Yetersiz veri (' + (fc.data_points || 0) + '/' + (fc.min_required || 2) + ')';
+                        // Show tier guidance per metric
+                        if (fc.guidance && fc.guidance.next) {
+                            var gNeeded = fc.guidance.analyses_needed || 0;
+                            if (gNeeded > 0) {
+                                insuffStatus += ' — ' + gNeeded + ' analiz → ' + fc.guidance.next;
+                            }
+                        }
                         metricSummaries.push({
                             name: fc.label || fKey,
-                            status: 'Yetersiz veri (' + (fc.data_points || 0) + '/' + (fc.min_required || 2) + ')',
+                            status: insuffStatus,
                             cls: 'ppd-metric-insuff'
                         });
                     } else if (fc.direction) {
@@ -1061,6 +1093,18 @@
                 if (insuffCount > 0) {
                     msg = insuffCount + ' metrik icin yeterli veri yok (maks. ' + maxDp + ' nokta). '
                         + 'Daha fazla analiz calistirarak tahmin dogrulugunu artirabilirsiniz.';
+                    // Show tier guidance from forecaster
+                    var guidanceShown = false;
+                    for (var gk = 0; gk < fKeys.length && !guidanceShown; gk++) {
+                        var gfc = forecasts[fKeys[gk]];
+                        if (gfc && gfc.guidance && gfc.guidance.next) {
+                            var needed = gfc.guidance.analyses_needed || 0;
+                            if (needed > 0) {
+                                msg += ' ' + needed + ' analiz daha yapin → ' + esc(gfc.guidance.next) + '.';
+                                guidanceShown = true;
+                            }
+                        }
+                    }
                 } else {
                     msg = 'Tahmin modeli risk artisi tespit etmedi. Tum metrikler normal seyrediyor.';
                 }
@@ -1825,7 +1869,13 @@
                     var rate = (summary.anomaly_rate || 0).toFixed(1);
 
                     // Build rich result text
-                    var resultParts = [anomalies + ' anomali (%' + rate + ')'];
+                    var resultParts = [];
+                    // Show server and source context
+                    var resServer = data.server_name || serverVal;
+                    if (resServer && resServer !== 'global') {
+                        resultParts.push(resServer);
+                    }
+                    resultParts.push(anomalies + ' anomali (%' + rate + ')');
 
                     // Show prediction insight risk level if available
                     var insight = data.prediction_insight || {};

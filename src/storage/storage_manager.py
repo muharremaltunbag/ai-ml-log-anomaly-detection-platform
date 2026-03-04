@@ -1213,32 +1213,42 @@ class StorageManager:
     async def save_prediction_alert(self, alert_data: Dict[str, Any],
                                     alert_source: str = "trend",
                                     server_name: str = None,
-                                    retention_days: int = 90) -> Optional[str]:
+                                    retention_days: int = 90,
+                                    source_type: str = None) -> Optional[str]:
         """Delegate to MongoDBHandler"""
         return await self.mongodb.save_prediction_alert(
-            alert_data, alert_source, server_name, retention_days
+            alert_data, alert_source, server_name, retention_days,
+            source_type=source_type
         )
 
     async def get_prediction_alerts(self, server_name: str = None,
                                     alert_source: str = None,
                                     only_with_alerts: bool = False,
                                     limit: int = 50,
-                                    days: int = 7) -> List[Dict[str, Any]]:
+                                    days: int = 7,
+                                    source_type: str = None) -> List[Dict[str, Any]]:
         """Delegate to MongoDBHandler"""
         return await self.mongodb.get_prediction_alerts(
-            server_name, alert_source, only_with_alerts, limit, days
+            server_name, alert_source, only_with_alerts, limit, days,
+            source_type=source_type
         )
 
     async def get_prediction_summary(self, server_name: str = None,
-                                     days: int = 7) -> Dict[str, Any]:
+                                     days: int = 7,
+                                     source_type: str = None) -> Dict[str, Any]:
         """Delegate to MongoDBHandler"""
-        return await self.mongodb.get_prediction_summary(server_name, days)
+        return await self.mongodb.get_prediction_summary(
+            server_name, days, source_type=source_type
+        )
 
     async def get_prediction_timeseries(self, server_name: str = None,
                                         alert_source: str = None,
-                                        days: int = 7) -> Dict[str, Any]:
+                                        days: int = 7,
+                                        source_type: str = None) -> Dict[str, Any]:
         """Delegate to MongoDBHandler"""
-        return await self.mongodb.get_prediction_timeseries(server_name, alert_source, days)
+        return await self.mongodb.get_prediction_timeseries(
+            server_name, alert_source, days, source_type=source_type
+        )
 
     async def get_prediction_server_overview(self, source_type: str = None,
                                               days: int = 7) -> List[Dict[str, Any]]:

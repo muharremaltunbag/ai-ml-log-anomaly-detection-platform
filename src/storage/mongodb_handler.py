@@ -1325,7 +1325,7 @@ class MongoDBHandler:
             risk_signals = []
             _sev_order = {"CRITICAL": 4, "WARNING": 3, "HIGH": 2, "MEDIUM": 1, "OK": 0}
 
-            for src in ["trend", "rate", "forecast"]:
+            for src in ["trend", "rate", "forecast", "insight"]:
                 rec = result[src]
                 if not rec:
                     continue
@@ -1335,8 +1335,8 @@ class MongoDBHandler:
 
                 alerts_list = rec.get("data", {}).get("alerts", [])
                 if isinstance(alerts_list, list):
-                    for alert in alerts_list[:3]:
-                        title = alert.get("title", alert.get("event_type", ""))
+                    for alert in alerts_list[:5]:
+                        title = alert.get("title") or alert.get("event_type") or alert.get("alert_type") or alert.get("area", "")
                         severity = alert.get("severity", rec["max_severity"])
                         if title:
                             risk_signals.append({
@@ -1344,6 +1344,19 @@ class MongoDBHandler:
                                 "title": title,
                                 "severity": severity
                             })
+
+                # Insight source: extract risk signals from potential_risk_areas
+                if src == "insight" and not alerts_list:
+                    risk_areas = rec.get("data", {}).get("potential_risk_areas", [])
+                    if isinstance(risk_areas, list):
+                        for ra in risk_areas[:3]:
+                            area_title = ra.get("area", "")
+                            if area_title:
+                                risk_signals.append({
+                                    "source": "insight",
+                                    "title": area_title,
+                                    "severity": ra.get("severity", "WARNING")
+                                })
 
             result["risk_summary"] = {
                 "total_alerts": total_alerts,
