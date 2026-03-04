@@ -1296,11 +1296,12 @@ class MongoDBHandler:
                 "trend": None,
                 "rate": None,
                 "forecast": None,
+                "insight": None,
             }
 
             latest_ts = None
 
-            for src in ["trend", "rate", "forecast"]:
+            for src in ["trend", "rate", "forecast", "insight"]:
                 query = {**base_query, "alert_source": src}
                 doc = await collection.find_one(query, sort=[("timestamp", DESCENDING)])
                 if doc:

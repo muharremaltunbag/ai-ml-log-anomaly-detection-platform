@@ -414,7 +414,156 @@ class AnomalyDetectionTools:
                 logger.error(f"Forecasting failed (non-critical): {e}")
                 prediction_results["forecast"] = {"error": str(e)}
 
+        # 4. ML-Derived Risk Insight
+        # Anomaly analysis sonuçlarından gelecek risk tahmini üret
+        try:
+            insight = self._extract_ml_risk_insight(analysis, source_type)
+            if insight:
+                prediction_results["insight"] = insight
+                # Insight'ı da storage'a kaydet
+                await self._save_prediction_result(
+                    {"insight": insight, "has_alerts": False, "alerts": []},
+                    "insight", server_name,
+                    source_type=source_type
+                )
+        except Exception as e:
+            logger.warning(f"ML risk insight extraction failed (non-critical): {e}")
+
         return prediction_results
+
+    def _extract_ml_risk_insight(self, analysis: Dict[str, Any],
+                                  source_type: str = "mongodb") -> Optional[Dict[str, Any]]:
+        """
+        Anomaly analysis sonuçlarından ML-derived risk insight üret.
+
+        Çıktı:
+        - severity_distribution: anomaly severity dağılımı
+        - dominant_patterns: en sık tekrar eden anomaly pattern'leri
+        - component_hotspots: yüksek anomaly yoğunluklu component'ler
+        - risk_direction: risk artıyor mu azalıyor mu
+        - potential_risk_areas: gelecekte potansiyel risk alanları
+        - confidence_note: bu tahminin güvenilirliği
+        """
+        summary = analysis.get("summary", {})
+        total_logs = summary.get("total_logs", 0)
+        n_anomalies = summary.get("n_anomalies", 0)
+        anomaly_rate = summary.get("anomaly_rate", 0)
+
+        if total_logs == 0:
+            return None
+
+        # Severity distribution
+        sev_dist = analysis.get("severity_distribution", {})
+
+        # Component analysis → hotspots
+        comp_analysis = analysis.get("component_analysis", {})
+        hotspots = []
+        for comp, stats in sorted(
+            comp_analysis.items(),
+            key=lambda x: x[1].get("anomaly_count", 0),
+            reverse=True
+        )[:5]:
+            anom_count = stats.get("anomaly_count", 0)
+            anom_rate = stats.get("anomaly_rate", 0)
+            if anom_count > 0:
+                hotspots.append({
+                    "component": comp,
+                    "anomaly_count": anom_count,
+                    "anomaly_rate": round(anom_rate, 2)
+                })
+
+        # Dominant patterns from critical anomalies
+        critical = analysis.get("critical_anomalies", [])
+        fp_counts: Dict[str, Dict[str, Any]] = {}
+        for a in critical:
+            fp = a.get("message_fingerprint", "")
+            if not fp:
+                continue
+            if fp not in fp_counts:
+                fp_counts[fp] = {
+                    "count": 0,
+                    "sample_message": (a.get("message", ""))[:200],
+                    "component": a.get("component", ""),
+                    "max_severity": a.get("severity_level", "LOW"),
+                    "severity_score_sum": 0
+                }
+            fp_counts[fp]["count"] += 1
+            fp_counts[fp]["severity_score_sum"] += a.get("severity_score", 0)
+
+        dominant_patterns = []
+        for fp, info in sorted(fp_counts.items(), key=lambda x: x[1]["count"], reverse=True)[:7]:
+            dominant_patterns.append({
+                "fingerprint_preview": fp[:120],
+                "count": info["count"],
+                "component": info["component"],
+                "max_severity": info["max_severity"],
+                "avg_severity_score": round(info["severity_score_sum"] / max(info["count"], 1), 1),
+                "sample_message": info["sample_message"]
+            })
+
+        # Potential risk areas — derive from high-severity patterns
+        potential_risks = []
+        crit_high = sev_dist.get("CRITICAL", 0) + sev_dist.get("HIGH", 0)
+        if crit_high > 0 and n_anomalies > 0:
+            crit_pct = (crit_high / n_anomalies) * 100
+            if crit_pct > 30:
+                potential_risks.append({
+                    "area": "Yuksek severity yogunlugu",
+                    "detail": f"Anomalilerin %{crit_pct:.0f}'i CRITICAL/HIGH seviyesinde",
+                    "severity": "HIGH"
+                })
+
+        # Component-based risks
+        for hs in hotspots[:3]:
+            if hs["anomaly_rate"] > 50:
+                comp_risk_map = {
+                    "REPL": "Replikasyon saglik sorunu",
+                    "STORAGE": "Disk/Storage performans riski",
+                    "NETWORK": "Baglanti / network anomalisi",
+                    "ACCESS": "Kimlik dogrulama / erisim sorunu",
+                    "COMMAND": "Komut islem anomalisi",
+                }
+                risk_label = comp_risk_map.get(hs["component"], f"{hs['component']} anomali yogunlugu")
+                potential_risks.append({
+                    "area": risk_label,
+                    "detail": f"{hs['component']}: {hs['anomaly_count']} anomali (%{hs['anomaly_rate']})",
+                    "severity": "WARNING"
+                })
+
+        # Auth failure specific risk
+        auth_failures = sum(1 for a in critical if a.get("component") == "ACCESS")
+        if auth_failures > 5:
+            potential_risks.append({
+                "area": "Kimlik dogrulama basarisizliklari",
+                "detail": f"{auth_failures} auth-related anomali tespit edildi",
+                "severity": "HIGH"
+            })
+
+        # Risk direction estimate from anomaly rate
+        risk_direction = "stable"
+        if anomaly_rate > 10:
+            risk_direction = "elevated"
+        elif anomaly_rate > 5:
+            risk_direction = "moderate"
+        elif anomaly_rate < 2:
+            risk_direction = "low"
+
+        return {
+            "generated_at": datetime.now().isoformat(),
+            "source_type": source_type,
+            "total_logs": total_logs,
+            "anomaly_count": n_anomalies,
+            "anomaly_rate": round(anomaly_rate, 2),
+            "severity_distribution": sev_dist,
+            "component_hotspots": hotspots,
+            "dominant_patterns": dominant_patterns,
+            "potential_risk_areas": potential_risks[:8],
+            "risk_direction": risk_direction,
+            "confidence_note": (
+                "Bu insight, son anomaly analizinin ML ciktilarina dayanir. "
+                "Tekrar eden analizlerle guvenilirlik artar."
+            )
+        }
 
     def set_storage_manager(self, storage_manager) -> None:
         """

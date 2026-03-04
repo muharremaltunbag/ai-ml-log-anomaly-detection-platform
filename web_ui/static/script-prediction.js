@@ -327,6 +327,125 @@
             html += '<div class="ppd-ctx-ok-msg">Aktif risk sinyali tespit edilmedi. Sistem normal.</div>';
         }
 
+        // ML-Derived Risk Insight
+        var insight = ctx.insight;
+        if (insight) {
+            html += '<div class="ppd-insight-section">';
+            html += '<div class="ppd-insight-header">ML Risk Insight</div>';
+
+            // Risk direction indicator
+            var dirMap = {
+                'elevated': { label: 'Yuksek', cls: 'critical' },
+                'moderate': { label: 'Orta', cls: 'warning' },
+                'low': { label: 'Dusuk', cls: 'ok' },
+                'stable': { label: 'Stabil', cls: 'ok' }
+            };
+            var dir = dirMap[insight.risk_direction] || { label: insight.risk_direction || '-', cls: 'ok' };
+            html += '<div class="ppd-insight-direction ppd-insight-dir-' + dir.cls + '">'
+                + '<span class="ppd-insight-dir-label">Risk Seviyesi</span>'
+                + '<span class="ppd-insight-dir-value">' + dir.label + '</span>'
+                + '<span class="ppd-insight-dir-detail">'
+                + (insight.anomaly_count || 0) + ' anomali / ' + (insight.total_logs || 0) + ' log'
+                + ' (%' + (insight.anomaly_rate || 0) + ')'
+                + '</span>'
+                + '</div>';
+
+            // Severity distribution bar
+            var sevDist = insight.severity_distribution;
+            if (sevDist) {
+                var sevKeys = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+                var sevColors = { CRITICAL: '#ef4444', HIGH: '#f59e0b', MEDIUM: '#3b82f6', LOW: '#6b7280' };
+                var sevTotal = 0;
+                for (var si = 0; si < sevKeys.length; si++) {
+                    sevTotal += (sevDist[sevKeys[si]] || 0);
+                }
+                if (sevTotal > 0) {
+                    html += '<div class="ppd-insight-sev">'
+                        + '<span class="ppd-insight-sev-title">Severity Dagilimi</span>'
+                        + '<div class="ppd-insight-sev-bar">';
+                    for (var sk = 0; sk < sevKeys.length; sk++) {
+                        var sVal = sevDist[sevKeys[sk]] || 0;
+                        if (sVal > 0) {
+                            var pct = ((sVal / sevTotal) * 100).toFixed(1);
+                            html += '<div class="ppd-insight-sev-seg" style="width:' + pct + '%;background:' + sevColors[sevKeys[sk]] + '"'
+                                + ' title="' + sevKeys[sk] + ': ' + sVal + ' (' + pct + '%)">'
+                                + '</div>';
+                        }
+                    }
+                    html += '</div><div class="ppd-insight-sev-legend">';
+                    for (var sl = 0; sl < sevKeys.length; sl++) {
+                        var sv = sevDist[sevKeys[sl]] || 0;
+                        if (sv > 0) {
+                            html += '<span class="ppd-insight-sev-leg-item">'
+                                + '<span class="ppd-insight-sev-dot" style="background:' + sevColors[sevKeys[sl]] + '"></span>'
+                                + sevKeys[sl] + ': ' + sv
+                                + '</span>';
+                        }
+                    }
+                    html += '</div></div>';
+                }
+            }
+
+            // Dominant patterns
+            var patterns = insight.dominant_patterns;
+            if (patterns && patterns.length > 0) {
+                html += '<div class="ppd-insight-block">'
+                    + '<span class="ppd-insight-block-title">Baskin Anomali Kaliplari</span>';
+                var maxShow = Math.min(patterns.length, 5);
+                for (var pi = 0; pi < maxShow; pi++) {
+                    var p = patterns[pi];
+                    var pSevCls = (p.max_severity || 'LOW').toLowerCase();
+                    html += '<div class="ppd-insight-pattern">'
+                        + '<span class="ppd-insight-pat-badge ppd-insight-pat-' + pSevCls + '">'
+                        + esc(p.component || '?') + '</span>'
+                        + '<span class="ppd-insight-pat-count">' + p.count + 'x</span> '
+                        + '<span class="ppd-insight-pat-msg">' + esc(p.sample_message || p.fingerprint_preview || '') + '</span>'
+                        + '</div>';
+                }
+                html += '</div>';
+            }
+
+            // Component hotspots
+            var hotspots = insight.component_hotspots;
+            if (hotspots && hotspots.length > 0) {
+                html += '<div class="ppd-insight-block">'
+                    + '<span class="ppd-insight-block-title">Component Hotspot\'lar</span>';
+                for (var hi = 0; hi < hotspots.length; hi++) {
+                    var h = hotspots[hi];
+                    html += '<div class="ppd-insight-hotspot">'
+                        + '<span class="ppd-insight-hs-name">' + esc(h.component) + '</span>'
+                        + '<span class="ppd-insight-hs-bar"><span class="ppd-insight-hs-fill" style="width:'
+                        + Math.min(h.anomaly_rate, 100) + '%"></span></span>'
+                        + '<span class="ppd-insight-hs-val">' + h.anomaly_count + ' (%' + h.anomaly_rate + ')</span>'
+                        + '</div>';
+                }
+                html += '</div>';
+            }
+
+            // Potential risk areas
+            var risks = insight.potential_risk_areas;
+            if (risks && risks.length > 0) {
+                html += '<div class="ppd-insight-block">'
+                    + '<span class="ppd-insight-block-title">Potansiyel Risk Alanlari</span>';
+                for (var ri = 0; ri < risks.length; ri++) {
+                    var rsk = risks[ri];
+                    var rCls = (rsk.severity || 'warning').toLowerCase();
+                    html += '<div class="ppd-insight-risk ppd-insight-risk-' + rCls + '">'
+                        + '<span class="ppd-insight-risk-area">' + esc(rsk.area) + '</span>'
+                        + '<span class="ppd-insight-risk-detail">' + esc(rsk.detail) + '</span>'
+                        + '</div>';
+                }
+                html += '</div>';
+            }
+
+            // Confidence note
+            if (insight.confidence_note) {
+                html += '<div class="ppd-insight-conf">' + esc(insight.confidence_note) + '</div>';
+            }
+
+            html += '</div>';
+        }
+
         body.innerHTML = html;
     }
 
