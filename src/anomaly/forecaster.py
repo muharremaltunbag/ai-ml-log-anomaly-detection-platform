@@ -975,20 +975,120 @@ def _build_explanation(metric_cfg: Dict, tier_result: Dict,
 
 
 # ═══════════════════════════════════════════════════════════
+# ML-Adjusted Confidence — statistical × ML convergence
+# ═══════════════════════════════════════════════════════════
+
+def _adjust_confidence_with_ml(
+    statistical_confidence: float,
+    direction: str,
+    ml_risk_ctx: Optional[Dict[str, Any]],
+) -> Tuple[float, str]:
+    """
+    İstatistiksel forecast confidence'ını ML risk context ile modüle et.
+
+    Mantık:
+    - Forecast rising + ML risk yüksek → convergence → confidence boost
+    - Forecast rising + ML risk düşük → divergence → confidence dampen
+    - Forecast falling/stable → ML context'ten bağımsız, minimal etki
+    - ML context yoksa → orijinal confidence aynen döner
+
+    Returns:
+        (adjusted_confidence, adjustment_reason)
+    """
+    if ml_risk_ctx is None:
+        return statistical_confidence, ""
+
+    ml_risk = ml_risk_ctx.get("ml_risk_level", "OK")
+    score_worsening = ml_risk_ctx.get("score_worsening", False)
+    density_ratio = ml_risk_ctx.get("anomaly_density_ratio", 1.0)
+    score_slope = ml_risk_ctx.get("score_trajectory_slope", 0.0)
+
+    # Yön bilgisi: sadece rising/accelerating yönlerde ML etkisi güçlü
+    is_rising = direction in ("rising", "accelerating")
+
+    # Sinyal puanı hesapla (-2 .. +4 arası)
+    signal_score = 0.0
+    reasons = []
+
+    if ml_risk == "CRITICAL":
+        signal_score += 2.0
+        reasons.append("ML risk: CRITICAL")
+    elif ml_risk == "WARNING":
+        signal_score += 1.0
+        reasons.append("ML risk: WARNING")
+    elif ml_risk == "OK":
+        signal_score -= 0.5
+        reasons.append("ML risk: OK")
+
+    if score_worsening:
+        signal_score += 1.0
+        reasons.append("ML skor kötüleşiyor")
+
+    if density_ratio > 2.0:
+        signal_score += 0.5
+        reasons.append(f"anomali yoğunluğu x{density_ratio:.1f}")
+    elif density_ratio < 0.5:
+        signal_score -= 0.5
+        reasons.append(f"anomali yoğunluğu düşük x{density_ratio:.1f}")
+
+    if score_slope > 0.02:
+        signal_score += 0.5
+        reasons.append("ML skor trendi yükseliyor")
+
+    # Adjustment hesapla
+    if is_rising:
+        # Rising forecast + pozitif ML sinyalleri → convergence boost
+        if signal_score >= 2.0:
+            # Güçlü convergence: confidence'ı %10-20 boost
+            boost = min(0.20, signal_score * 0.05)
+            adjusted = min(0.95, statistical_confidence + boost)
+            reason = f"ML convergence boost (+{boost:.2f}): {', '.join(reasons)}"
+        elif signal_score >= 1.0:
+            # Orta convergence: hafif boost
+            boost = min(0.10, signal_score * 0.04)
+            adjusted = min(0.90, statistical_confidence + boost)
+            reason = f"ML hafif convergence (+{boost:.2f}): {', '.join(reasons)}"
+        elif signal_score <= -0.5:
+            # Divergence: forecast rising ama ML sakin → dampen
+            dampen = min(0.15, abs(signal_score) * 0.06)
+            adjusted = max(0.05, statistical_confidence - dampen)
+            reason = f"ML divergence (−{dampen:.2f}): {', '.join(reasons)}"
+        else:
+            adjusted = statistical_confidence
+            reason = ""
+    else:
+        # Falling/stable forecast → ML etkisi minimal
+        if signal_score >= 2.0:
+            # ML kötüleşiyor ama forecast düşüyor → uyarı notu, confidence'a az etki
+            boost = min(0.05, signal_score * 0.02)
+            adjusted = min(0.90, statistical_confidence + boost)
+            reason = f"ML risk yüksek (forecast {direction}): {', '.join(reasons)}"
+        else:
+            adjusted = statistical_confidence
+            reason = ""
+
+    return round(adjusted, 4), reason
+
+
+# ═══════════════════════════════════════════════════════════
 # Alert Decision — baseline-relative
 # ═══════════════════════════════════════════════════════════
 
 def _evaluate_alert(metric_name: str, metric_cfg: Dict, tier_result: Dict,
                      values: List[float], horizon_hours: int,
                      server_name: Optional[str],
-                     ml_risk_ctx: Optional[Dict[str, Any]] = None) -> Optional[ForecastAlert]:
+                     ml_risk_ctx: Optional[Dict[str, Any]] = None,
+                     adjusted_confidence: Optional[float] = None) -> Optional[ForecastAlert]:
     """Baseline'a göre yüzdesel karşılaştırma ile alert kararı.
 
     ml_risk_ctx verilirse: ML risk seviyesi yüksekse ve forecast da artış
     gösteriyorsa, severity boost edilebilir (WARNING → CRITICAL).
+
+    adjusted_confidence verilirse: ML-adjusted confidence kullanılır
+    (tier_result'taki statistical confidence yerine).
     """
     fv = tier_result.get("forecast_value")
-    confidence = tier_result.get("confidence", 0)
+    confidence = adjusted_confidence if adjusted_confidence is not None else tier_result.get("confidence", 0)
     direction = tier_result.get("direction", "stable")
 
     if fv is None or confidence < 0.15:
@@ -1234,15 +1334,27 @@ class AnomalyForecaster:
             if not tier_used or "tier3" in method:
                 tier_used = method
 
+            # ML-adjusted confidence: istatistiksel confidence'ı ML risk ile modüle et
+            stat_confidence = tier_result.get("confidence", 0)
+            direction = tier_result.get("direction", "unknown")
+            ml_adj_conf = stat_confidence
+            ml_conf_reason = ""
+            if ml_risk_ctx and metric_name != "mean_anomaly_score":
+                ml_adj_conf, ml_conf_reason = _adjust_confidence_with_ml(
+                    stat_confidence, direction, ml_risk_ctx)
+
             forecast_data: Dict[str, Any] = {
                 "metric": metric_name, "label": metric_cfg["label"],
                 "unit": metric_cfg["unit"], "current_value": round(values[-1], 4),
                 "data_points": len(values), "method": method,
-                "direction": tier_result.get("direction", "unknown"),
-                "confidence": round(tier_result.get("confidence", 0), 4),
+                "direction": direction,
+                "confidence": round(ml_adj_conf, 4),
+                "statistical_confidence": round(stat_confidence, 4),
                 "volatility": round(tier_result.get("volatility", 0), 4),
                 "history_values": [round(v, 4) for v in values[-15:]],
             }
+            if ml_conf_reason:
+                forecast_data["ml_confidence_adjustment"] = ml_conf_reason
 
             fv = tier_result.get("forecast_value")
             if fv is not None:
@@ -1283,7 +1395,8 @@ class AnomalyForecaster:
             alert = _evaluate_alert(
                 metric_name, metric_cfg, tier_result, values,
                 self.forecast_horizon_hours, server_name,
-                ml_risk_ctx=ml_risk_ctx)
+                ml_risk_ctx=ml_risk_ctx,
+                adjusted_confidence=ml_adj_conf)
             if alert:
                 alerts.append(alert)
 
