@@ -122,10 +122,50 @@
             // Update toggle visual
             _syncSourceToggle();
 
+            // Refresh host list for new source
+            loadAvailableHosts();
+
+            // Also update scheduler source_type
+            var st = _getSourceType();
+            if (st) {
+                _postSchedulerConfig({ source_type: st }, 'Kaynak tipi guncellendi: ' + st);
+            }
+
             // Refresh prediction data with new source filter
             refreshAll();
         });
     }
+
+    // ============================
+    // LOAD AVAILABLE HOSTS BY SOURCE
+    // ============================
+    function loadAvailableHosts() {
+        var st = _getSourceType() || 'mongodb';
+        var url = _apiUrl('schedulerHosts', 'source_type=' + encodeURIComponent(st));
+        if (!url) return;
+
+        var container = _el('ppsHostsList');
+        if (container) {
+            container.innerHTML = '<span class="pps-hosts-empty"><div class="ppd-loading-spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></div>Sunucular yukleniyor...</span>';
+        }
+
+        fetch(url)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.status !== 'success') return;
+                var hosts = data.hosts || [];
+                _renderHostCheckboxes(hosts);
+                _lastLoadedHosts = hosts;
+            })
+            .catch(function (err) {
+                console.warn('[PredictionDashboard] Host discovery error:', err);
+                if (container) {
+                    container.innerHTML = '<span class="pps-hosts-empty">Sunucu listesi alinamadi. Kaynak: ' + esc(st) + '</span>';
+                }
+            });
+    }
+
+    var _lastLoadedHosts = [];
 
     function hideDashboard() {
         var overlay = _getOverlay();
@@ -149,6 +189,7 @@
         loadAlerts(serverVal, daysVal);
         loadTimeseries(serverVal, daysVal);
         loadSchedulerStatus();
+        loadAvailableHosts();
     }
 
     // ============================
@@ -1688,11 +1729,12 @@
         if (!container) return;
 
         if (hosts.length === 0) {
+            var st = _getSourceType() || 'mongodb';
+            var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[st] || st;
             container.innerHTML = '<span class="pps-hosts-empty">'
-                + 'Hedef sunucu tanimlanmamis. '
-                + '<code>anomaly_config.json</code> dosyasinda '
-                + '<code>prediction &gt; scheduler &gt; target_hosts</code> '
-                + 'alanina sunucu ekleyin.</span>';
+                + sourceLabel + ' icin aktif sunucu bulunamadi. '
+                + 'Son 24 saatte log gonderimsi olan sunucular burada listelenir. '
+                + 'Farkli bir veri kaynagi secmeyi deneyin.</span>';
             return;
         }
 

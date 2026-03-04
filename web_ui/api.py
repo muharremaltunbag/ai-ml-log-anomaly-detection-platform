@@ -5652,6 +5652,52 @@ def _get_scheduler_tools():
     return _scheduler_tools_instance
 
 
+@app.get("/api/scheduler/hosts")
+async def get_scheduler_available_hosts(
+    api_key: str = Query(...),
+    source_type: str = Query(default="mongodb")
+):
+    """
+    Veri kaynağına göre mevcut sunucu listesini döndür.
+
+    Prediction Studio sidebar'dan kaynak seçildiğinde bu endpoint çağrılır.
+    OpenSearch/ElasticSearch üzerinden son 24 saatteki aktif sunucuları getirir.
+
+    Args:
+        source_type: "mongodb" | "mssql" | "elasticsearch"
+    """
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    hosts = []
+    try:
+        if source_type == "mongodb":
+            from src.anomaly.log_reader import get_available_mongodb_hosts
+            hosts = get_available_mongodb_hosts(last_hours=24)
+        elif source_type == "mssql":
+            from src.anomaly.mssql_log_reader import get_available_mssql_hosts
+            hosts = get_available_mssql_hosts(last_hours=24)
+        elif source_type == "elasticsearch":
+            from src.anomaly.elasticsearch_log_reader import get_available_es_hosts
+            hosts = get_available_es_hosts(last_hours=24)
+        else:
+            raise HTTPException(status_code=400,
+                                detail=f"Geçersiz source_type: {source_type}")
+    except ImportError as e:
+        logger.warning(f"Host discovery module not available for {source_type}: {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Host discovery failed for {source_type}: {e}")
+
+    return {
+        "status": "success",
+        "source_type": source_type,
+        "hosts": sorted(hosts),
+        "count": len(hosts)
+    }
+
+
 @app.get("/api/scheduler/status")
 async def get_scheduler_status(api_key: str = Query(...)):
     """Scheduler durumunu döndür."""
