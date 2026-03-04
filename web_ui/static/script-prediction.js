@@ -819,14 +819,29 @@
             });
     }
 
+    var _sevOrder = { 'CRITICAL': 0, 'WARNING': 1, 'INFO': 2, 'OK': 3 };
+
     function renderAlerts(alerts) {
         var wrapper = _el('ppdTableWrapper');
         var tbody = _el('ppdTableBody');
         if (!tbody || !wrapper) return;
 
+        // Sort: severity DESC (CRITICAL first), then timestamp DESC within same severity
+        var sorted = alerts.slice().sort(function (a, b) {
+            var sa = _sevOrder[a.max_severity || 'INFO'];
+            var sb = _sevOrder[b.max_severity || 'INFO'];
+            if (sa === undefined) sa = 9;
+            if (sb === undefined) sb = 9;
+            if (sa !== sb) return sa - sb;
+            // Same severity — newest first
+            var ta = a.timestamp || '';
+            var tb = b.timestamp || '';
+            return ta > tb ? -1 : ta < tb ? 1 : 0;
+        });
+
         var html = '';
-        for (var i = 0; i < alerts.length; i++) {
-            var a = alerts[i];
+        for (var i = 0; i < sorted.length; i++) {
+            var a = sorted[i];
             var ts = a.timestamp || '';
             if (ts && ts.length > 19) ts = ts.substring(0, 19).replace('T', ' ');
             var source = a.alert_source || '-';
@@ -1741,6 +1756,8 @@
                 + 'Yukaridaki toggle ile etkinlestirin. '
                 + 'Scheduler kapaliyken prediction yalnizca manuel analizlerden veri alir — '
                 + 'bu tahmin kalitesini onemli olcude dusurur.'
+                + '<br><em>Production onerisi: Scheduler\'i surekli aktif tutun. '
+                + '30 dk aralikla calismasi tahmin kalitesini Tier 3\'e tasir (EWMA, en guclu tahmin).</em>'
                 + '</div>';
         } else if (!running) {
             html += '<div class="ppd-sched-guidance">'
@@ -1748,6 +1765,7 @@
                 + '"Baslat" butonuyla baslatabilirsiniz. '
                 + 'Her ' + interval + ' dakikada '
                 + maxConcurrent + ' sunucu ' + sourceLabel + ' analizi calistirilacak.'
+                + '<br><em>CPU korumali: Host basi cooldown, batch arasi bekleme ve max ' + maxConcurrent + ' esanli analiz.</em>'
                 + '</div>';
         }
 
@@ -2623,9 +2641,31 @@
             ? '<span title="Scheduler calisiyor" style="color:#4caf50;margin-left:6px;">&#x25CF; Scheduler aktif</span>'
             : '<span title="Scheduler kapali" style="color:#ff9800;margin-left:6px;">&#x25CB; Scheduler kapali</span>';
 
+        // Tier milestone markers
+        var milestones = '<div class="ppd-readiness-milestones">'
+            + '<span class="ppd-readiness-ms' + (historyCount >= 5 ? ' ppd-readiness-ms-done' : '') + '">T1:5</span>'
+            + '<span class="ppd-readiness-ms' + (historyCount >= 10 ? ' ppd-readiness-ms-done' : '') + '">T2:10</span>'
+            + '<span class="ppd-readiness-ms' + (historyCount >= 20 ? ' ppd-readiness-ms-done' : '') + '">T3:20</span>'
+            + '</div>';
+
+        // Scheduling guidance when not running and not at full power
+        var guidance = '';
+        if (!schedulerRunning && historyCount < 20) {
+            var interval30 = 30;
+            var remaining = 20 - historyCount;
+            var hoursToTier3 = Math.ceil(remaining * interval30 / 60);
+            guidance = '<div class="ppd-readiness-guidance">'
+                + 'Onerilen: Scheduler\'i aktif edin. '
+                + '30 dk aralikla ~' + hoursToTier3 + ' saatte Tier 3\'e ulasilir. '
+                + 'Surekli calisma tahmin kalitesini onemli olcude arttirir.'
+                + '</div>';
+        }
+
         container.innerHTML = '<span class="ppd-readiness-label">Tahmin Kalitesi: ' + esc(tier) + '</span>'
             + '<div class="ppd-readiness-track"><div class="ppd-readiness-fill ' + fillCls + '" style="width:' + pct.toFixed(0) + '%"></div></div>'
-            + '<span class="ppd-readiness-text">' + esc(text) + schedIcon + '</span>';
+            + milestones
+            + '<span class="ppd-readiness-text">' + esc(text) + schedIcon + '</span>'
+            + guidance;
     }
 
     // Auto-init when DOM ready
