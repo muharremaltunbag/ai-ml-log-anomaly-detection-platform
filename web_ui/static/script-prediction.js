@@ -1669,13 +1669,19 @@
         else if (running) { statusLabel = 'CALISIYOR'; statusClass = 'ppd-sched-status-running'; }
         else { statusLabel = 'HAZIR'; statusClass = 'ppd-sched-status-stopped'; }
 
+        // Source type label
+        var sourceType = sched.source_type || 'mongodb';
+        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+        var maxConcurrent = sched.max_concurrent || 3;
+
         var stats = [
             { label: 'Durum', value: statusLabel, cls: statusClass },
-            { label: 'Calisma Sayisi', value: String(runCount), cls: '' },
+            { label: 'Kaynak', value: sourceLabel, cls: '' },
+            { label: 'Calisma', value: String(runCount), cls: '' },
             { label: 'Son Calisma', value: lastRunStr, cls: '' }
         ];
         if (running) {
-            stats.push({ label: 'Sonraki Calisma', value: nextRunStr, cls: '' });
+            stats.push({ label: 'Sonraki', value: nextRunStr, cls: '' });
         }
 
         var html = '';
@@ -1685,6 +1691,28 @@
                 + '<div class="ppd-sched-stat-label">' + esc(s.label) + '</div>'
                 + '<div class="ppd-sched-stat-value ' + s.cls + '">' + esc(s.value) + '</div>'
                 + '</div>';
+        }
+
+        // Last results summary (if any)
+        var lastResults = sched.last_results_summary || {};
+        var resultKeys = Object.keys(lastResults);
+        if (resultKeys.length > 0) {
+            html += '<div class="ppd-sched-results">'
+                + '<div class="ppd-sched-results-title">Son Cycle Sonuclari</div>';
+            for (var ri = 0; ri < resultKeys.length; ri++) {
+                var rHost = resultKeys[ri];
+                var rData = lastResults[rHost] || {};
+                var rStatus = rData.status || 'unknown';
+                var rAnomalies = rData.anomaly_count || 0;
+                var rCls = rStatus === 'completed' ? (rAnomalies > 0 ? 'ppd-sched-result-warn' : 'ppd-sched-result-ok') : 'ppd-sched-result-err';
+                html += '<div class="ppd-sched-result-row ' + rCls + '">'
+                    + '<span class="ppd-sched-result-host">' + esc(rHost) + '</span>'
+                    + '<span class="ppd-sched-result-badge">'
+                    + (rStatus === 'completed' ? rAnomalies + ' anomali' : 'hata')
+                    + '</span>'
+                    + '</div>';
+            }
+            html += '</div>';
         }
 
         // Guidance messages
@@ -1699,7 +1727,8 @@
             html += '<div class="ppd-sched-guidance">'
                 + '<strong>Scheduler aktif ama henuz baslatilmadi.</strong> '
                 + '"Baslat" butonuyla baslatabilirsiniz. '
-                + 'Her ' + interval + ' dakikada otomatik analiz calistirilacak.'
+                + 'Her ' + interval + ' dakikada '
+                + maxConcurrent + ' sunucu ' + sourceLabel + ' analizi calistirilacak.'
                 + '</div>';
         }
 

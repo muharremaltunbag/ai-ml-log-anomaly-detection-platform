@@ -18063,6 +18063,59 @@ body.pps-body-lock {
     color: #2e7d32 !important;
     border-color: #a5d6a7 !important;
 }
+
+/* Scheduler last results panel */
+.ppd-sched-results {
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: #fafafa;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+}
+.ppd-sched-results-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: #78909c;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+.ppd-sched-result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    font-size: 11.5px;
+    border-bottom: 1px solid #f0f0f0;
+}
+.ppd-sched-result-row:last-child { border-bottom: none; }
+.ppd-sched-result-host {
+    color: #455a64;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 140px;
+}
+.ppd-sched-result-badge {
+    font-size: 10.5px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.ppd-sched-result-ok .ppd-sched-result-badge {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+.ppd-sched-result-warn .ppd-sched-result-badge {
+    background: #fff3e0;
+    color: #e65100;
+}
+.ppd-sched-result-err .ppd-sched-result-badge {
+    background: #ffebee;
+    color: #c62828;
+}
 .ppd-sched-body {
     padding: 14px 16px;
 }
