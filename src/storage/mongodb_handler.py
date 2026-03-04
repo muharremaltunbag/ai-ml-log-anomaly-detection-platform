@@ -1323,7 +1323,7 @@ class MongoDBHandler:
             total_alerts = 0
             max_sev = "OK"
             risk_signals = []
-            _sev_order = {"CRITICAL": 4, "WARNING": 3, "HIGH": 2, "MEDIUM": 1, "OK": 0}
+            _sev_order = {"CRITICAL": 5, "HIGH": 4, "WARNING": 3, "MEDIUM": 2, "INFO": 1, "OK": 0}
 
             for src in ["trend", "rate", "forecast", "insight"]:
                 rec = result[src]

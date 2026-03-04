@@ -247,7 +247,8 @@
         if (badge) {
             var badgeCls = 'ppd-ctx-badge-ok';
             if (maxSev === 'CRITICAL') badgeCls = 'ppd-ctx-badge-critical';
-            else if (maxSev === 'WARNING' || maxSev === 'HIGH') badgeCls = 'ppd-ctx-badge-warn';
+            else if (maxSev === 'HIGH' || maxSev === 'WARNING') badgeCls = 'ppd-ctx-badge-warn';
+            else if (maxSev === 'MEDIUM' || maxSev === 'INFO') badgeCls = 'ppd-ctx-badge-info';
             badge.textContent = maxSev;
             badge.className = 'ppd-context-badge ' + badgeCls;
         }
@@ -337,8 +338,8 @@
             html += '<div class="ppd-ctx-ok-msg">Aktif risk sinyali tespit edilmedi. Sistem normal.</div>';
         }
 
-        // ML-Derived Risk Insight
-        var insight = ctx.insight;
+        // ML-Derived Risk Insight (data is nested under ctx.insight.data)
+        var insight = (ctx.insight && ctx.insight.data) ? ctx.insight.data : null;
         if (insight) {
             html += '<div class="ppd-insight-section">';
             html += '<div class="ppd-insight-header">ML Risk Insight</div>';
@@ -1683,7 +1684,7 @@
             allSelected = !allSelected;
             var container = _el('ppsHostsList');
             if (!container) return;
-            btn.textContent = allSelected ? 'Tumu Sec' : 'Temizle';
+            btn.textContent = allSelected ? 'Temizle' : 'Tumu Sec';
             container.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
                 cb.checked = allSelected;
                 var label = cb.closest('.pps-host-item');
@@ -1858,9 +1859,23 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             })
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + r.statusText);
+                return r.json();
+            })
             .then(function (data) {
                 btn.classList.remove('pps-run-busy');
+
+                if (data.status === 'error') {
+                    btn.classList.add('pps-run-error');
+                    btn.innerHTML = '<span class="pps-run-icon">&#x26A0;</span> ' + esc(data.message || 'Hata');
+                    setTimeout(function () {
+                        btn.disabled = false;
+                        btn.innerHTML = origText;
+                        btn.classList.remove('pps-run-error');
+                    }, 3000);
+                    return;
+                }
 
                 if (data.status === 'success') {
                     btn.classList.add('pps-run-success');

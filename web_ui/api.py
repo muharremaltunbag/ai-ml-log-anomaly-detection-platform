@@ -5596,8 +5596,19 @@ async def run_prediction_on_demand(request: Dict[str, Any]):
         # Sonuçtan prediction ve summary bilgilerini çıkar
         result_data = {}
         if isinstance(raw_result, dict):
+            # Error check: callback may return {"status": "error", ...}
+            if raw_result.get("status") == "error":
+                return {
+                    "status": "error",
+                    "message": raw_result.get("error", "Analiz hatası"),
+                    "server_name": server_name or "global",
+                    "source_type": source_type,
+                }
+
+            # _format_result() builds: {"durum": "başarılı", "sonuç": result.get("data", result)}
+            # So "sonuç" IS the data dict — do not look for a nested "data" key
             sonuc = raw_result.get("sonuç", raw_result)
-            data = sonuc.get("data", {}) if isinstance(sonuc, dict) else {}
+            data = sonuc if isinstance(sonuc, dict) else {}
 
             result_data = {
                 "status": "success",
