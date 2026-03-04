@@ -18864,6 +18864,125 @@ body.pps-body-lock {
    END — CONFIG PILLS FIX + RESPONSIVE + ML BADGES
    ══════════════════════════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   PREDICTION STUDIO — SEVERITY BARS + INSIGHT POLISH + FINAL TOUCHES
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Severity bar segment colors (replaces inline background) ── */
+.ppd-sev-bar-critical { background: var(--lcw-error, #D63341); }
+.ppd-sev-bar-high     { background: var(--lcw-warning, #D4950C); }
+.ppd-sev-bar-medium   { background: var(--lcw-info, #1976D2); }
+.ppd-sev-bar-low      { background: var(--gray-400, #8B91A0); }
+
+/* ── Severity bar — taller for readability ── */
+.pps-main .ppd-insight-sev-bar {
+    height: 10px;
+    border-radius: 5px;
+}
+.pps-main .ppd-insight-sev-legend {
+    margin-top: 6px;
+    gap: 12px;
+}
+.pps-main .ppd-insight-sev-dot {
+    width: 10px;
+    height: 10px;
+}
+
+/* ── Context Panel modules — bigger, more distinct ── */
+.pps-main .ppd-ctx-modules {
+    gap: 10px;
+    margin: 14px 0;
+}
+.pps-main .ppd-ctx-mod {
+    padding: 12px 14px;
+    border-radius: 10px;
+    text-align: center;
+}
+
+/* ── Insight risk direction — more prominent ── */
+.pps-main .ppd-insight-direction {
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+/* ── Insight patterns / hotspots — clearer rows ── */
+.pps-main .ppd-insight-pattern {
+    padding: 5px 0;
+    border-bottom: 1px solid #f0f2f5;
+    gap: 8px;
+}
+.pps-main .ppd-insight-hotspot {
+    padding: 5px 0;
+    gap: 8px;
+}
+.pps-main .ppd-insight-hs-bar {
+    height: 8px;
+    border-radius: 4px;
+}
+.pps-main .ppd-insight-hs-fill {
+    border-radius: 4px;
+    background: var(--lcw-error, #D63341);
+}
+
+/* ── Insight risk cards — more space ── */
+.pps-main .ppd-insight-risk {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-radius: 6px;
+}
+.pps-main .ppd-insight-block {
+    margin-bottom: 12px;
+}
+
+/* ── Chart canvas — taller for better visibility ── */
+.pps-chart-wrapper canvas {
+    max-height: 320px;
+}
+
+/* ── Alert table — row alignment ── */
+.pps-main .ppd-detail-cell {
+    max-width: 340px;
+}
+
+/* ── Projection charts — taller canvas ── */
+.pps-main .ppd-proj-canvas {
+    height: 140px;
+}
+.pps-main .ppd-proj-container {
+    max-width: 380px;
+}
+
+/* ── Context panel OK message — icon + style ── */
+.pps-main .ppd-ctx-ok-msg {
+    font-size: 14px;
+    color: var(--lcw-success, #1B9E4B);
+    padding: 12px 0;
+    font-weight: 600;
+}
+
+/* ── Context panel risk signals — more emphasis ── */
+.pps-main .ppd-ctx-signals {
+    margin-top: 12px;
+}
+.pps-main .ppd-ctx-signal {
+    border-left-width: 3px;
+    margin-bottom: 6px;
+}
+
+/* ── Overall modal polish ── */
+.pps-modal {
+    border: 1px solid #d1d5db;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.pps-modal-header {
+    background: linear-gradient(180deg, #f9fafb 0%, #f3f5f8 100%);
+    border-bottom: 1px solid #dce1e8;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   END — SEVERITY BARS + INSIGHT POLISH + FINAL TOUCHES
+   ══════════════════════════════════════════════════════════════════════════════ */
+
 /* ========== UI PROFESSIONALIZATION PATCH ========== */
 
 /* -- Quick Actions: Primary / Secondary grouping -- */

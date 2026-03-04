@@ -365,7 +365,7 @@
             var sevDist = insight.severity_distribution;
             if (sevDist) {
                 var sevKeys = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-                var sevColors = { CRITICAL: '#ef4444', HIGH: '#f59e0b', MEDIUM: '#3b82f6', LOW: '#6b7280' };
+                var sevClsMap = { CRITICAL: 'ppd-sev-bar-critical', HIGH: 'ppd-sev-bar-high', MEDIUM: 'ppd-sev-bar-medium', LOW: 'ppd-sev-bar-low' };
                 var sevTotal = 0;
                 for (var si = 0; si < sevKeys.length; si++) {
                     sevTotal += (sevDist[sevKeys[si]] || 0);
@@ -378,7 +378,7 @@
                         var sVal = sevDist[sevKeys[sk]] || 0;
                         if (sVal > 0) {
                             var pct = ((sVal / sevTotal) * 100).toFixed(1);
-                            html += '<div class="ppd-insight-sev-seg" style="width:' + pct + '%;background:' + sevColors[sevKeys[sk]] + '"'
+                            html += '<div class="ppd-insight-sev-seg ' + sevClsMap[sevKeys[sk]] + '" style="width:' + pct + '%"'
                                 + ' title="' + sevKeys[sk] + ': ' + sVal + ' (' + pct + '%)">'
                                 + '</div>';
                         }
@@ -388,7 +388,7 @@
                         var sv = sevDist[sevKeys[sl]] || 0;
                         if (sv > 0) {
                             html += '<span class="ppd-insight-sev-leg-item">'
-                                + '<span class="ppd-insight-sev-dot" style="background:' + sevColors[sevKeys[sl]] + '"></span>'
+                                + '<span class="ppd-insight-sev-dot ' + sevClsMap[sevKeys[sl]] + '"></span>'
                                 + sevKeys[sl] + ': ' + sv
                                 + '</span>';
                         }
