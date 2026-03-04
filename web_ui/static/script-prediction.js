@@ -1921,6 +1921,86 @@
     }
 
     // ============================
+    // SCHEDULER FEEDBACK BANNER
+    // ============================
+    var _feedbackTimer = null;
+
+    function _showSchedFeedback(type, html, autoDismiss) {
+        var el = _el('ppsSchedFeedback');
+        if (!el) return;
+        if (_feedbackTimer) { clearTimeout(_feedbackTimer); _feedbackTimer = null; }
+        el.className = 'pps-sched-feedback pps-sched-feedback-' + type;
+        el.innerHTML = html;
+        el.style.display = '';
+        if (autoDismiss !== false) {
+            var ms = (typeof autoDismiss === 'number') ? autoDismiss : 6000;
+            _feedbackTimer = setTimeout(function () {
+                el.style.display = 'none';
+                _feedbackTimer = null;
+            }, ms);
+        }
+    }
+
+    function _hideSchedFeedback() {
+        var el = _el('ppsSchedFeedback');
+        if (el) el.style.display = 'none';
+        if (_feedbackTimer) { clearTimeout(_feedbackTimer); _feedbackTimer = null; }
+    }
+
+    // ============================
+    // PROGRESS STEPPER
+    // ============================
+    var _progressSteps = [
+        { key: 'connect', label: 'Baglanti', icon: '&#9679;' },
+        { key: 'analyze', label: 'Analiz', icon: '&#9679;' },
+        { key: 'predict', label: 'Tahmin', icon: '&#9679;' },
+        { key: 'done',    label: 'Tamam', icon: '&#10003;' }
+    ];
+
+    function _showProgress(activeKey) {
+        var wrap = _el('ppsSchedProgress');
+        var fill = _el('ppsSchedProgressFill');
+        var stepsEl = _el('ppsSchedProgressSteps');
+        if (!wrap || !fill || !stepsEl) return;
+
+        var activeIdx = -1;
+        for (var i = 0; i < _progressSteps.length; i++) {
+            if (_progressSteps[i].key === activeKey) { activeIdx = i; break; }
+        }
+
+        // Progress bar percentage
+        var pct = activeIdx >= 0 ? Math.round(((activeIdx + 1) / _progressSteps.length) * 100) : 0;
+        if (activeKey === 'done') pct = 100;
+        fill.style.width = pct + '%';
+
+        // Pulse effect if not done
+        if (activeKey !== 'done' && activeKey !== 'error') {
+            fill.classList.add('pps-progress-pulse');
+        } else {
+            fill.classList.remove('pps-progress-pulse');
+        }
+
+        // Render steps
+        var html = '';
+        for (var j = 0; j < _progressSteps.length; j++) {
+            var s = _progressSteps[j];
+            var cls = 'pps-sched-step';
+            if (j < activeIdx) cls += ' pps-step-done';
+            else if (j === activeIdx) cls += ' pps-step-active';
+            html += '<div class="' + cls + '">'
+                + '<span class="pps-sched-step-icon">' + s.icon + '</span>'
+                + s.label + '</div>';
+        }
+        stepsEl.innerHTML = html;
+        wrap.style.display = '';
+    }
+
+    function _hideProgress() {
+        var wrap = _el('ppsSchedProgress');
+        if (wrap) wrap.style.display = 'none';
+    }
+
+    // ============================
     // SCHEDULER ACTIONS (with confirmation)
     // ============================
     function _showConfirm(title, message, onYes) {
@@ -2007,21 +2087,65 @@
         var intervalSel = _el('ppsSchedIntervalSelect');
         var interval = intervalSel ? parseInt(intervalSel.value, 10) : 30;
         var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+        var hostDesc = selectedHosts.length > 0 ? selectedHosts.length + ' sunucu' : 'Tum sunucular';
 
         var msg = 'Periyodik anomaly analizi baslatilacak.\n'
             + 'Kaynak: ' + sourceLabel + '\n'
             + 'Aralik: ' + interval + ' dk\n'
-            + 'Hedef: ' + (selectedHosts.length > 0 ? selectedHosts.length + ' sunucu' : 'Tum sunucular')
+            + 'Hedef: ' + hostDesc
             + '\nDevam etmek istiyor musunuz?';
 
         _showConfirm('Scheduler Baslat', msg, function () {
+            _showSchedFeedback('info',
+                '<strong>Scheduler baslatiliyor...</strong>'
+                + '<div class="pps-sched-feedback-detail">'
+                + sourceLabel + ' &middot; ' + interval + ' dk &middot; ' + hostDesc
+                + '</div>', false);
+
             var body = {
                 api_key: window.apiKey || '',
                 source_type: sourceType,
                 interval_minutes: interval
             };
             if (selectedHosts.length > 0) body.target_hosts = selectedHosts;
-            _postScheduler('schedulerStart', body, 'Scheduler started');
+
+            var base = window.API_ENDPOINTS ? window.API_ENDPOINTS['schedulerStart'] : null;
+            if (!base) return;
+
+            _schedBusy = true;
+            _updateSchedButtons();
+
+            fetch(base, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                _schedBusy = false;
+                if (data.scheduler) renderSchedulerStatus(data.scheduler);
+
+                if (data.status === 'success') {
+                    _showSchedFeedback('success',
+                        '<strong>Scheduler baslatildi</strong>'
+                        + '<div class="pps-sched-feedback-detail">'
+                        + sourceLabel + ' &middot; Her ' + interval + ' dk &middot; ' + hostDesc
+                        + '</div>', 8000);
+                } else {
+                    _showSchedFeedback('warning',
+                        '<strong>Scheduler zaten calisiyor veya devre disi</strong>'
+                        + '<div class="pps-sched-feedback-detail">Durumu kontrol edin.</div>');
+                }
+                loadSchedulerStatus();
+                setTimeout(function () { refreshAll(); }, 1500);
+            })
+            .catch(function (err) {
+                _schedBusy = false;
+                _updateSchedButtons();
+                _showSchedFeedback('error',
+                    '<strong>Baslatilamadi</strong>'
+                    + '<div class="pps-sched-feedback-detail">' + esc(String(err)) + '</div>');
+            });
         });
     }
 
@@ -2030,9 +2154,33 @@
             'Scheduler Durdur',
             'Periyodik analiz durdurulacak. Devam etmek istiyor musunuz?',
             function () {
-                _postScheduler('schedulerStop',
-                    { api_key: window.apiKey || '' },
-                    'Scheduler stopped');
+                _showSchedFeedback('info', '<strong>Scheduler durduruluyor...</strong>', false);
+
+                var base = window.API_ENDPOINTS ? window.API_ENDPOINTS['schedulerStop'] : null;
+                if (!base) return;
+
+                _schedBusy = true;
+                _updateSchedButtons();
+
+                fetch(base, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: window.apiKey || '' })
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    _schedBusy = false;
+                    if (data.scheduler) renderSchedulerStatus(data.scheduler);
+                    _showSchedFeedback('success', '<strong>Scheduler durduruldu</strong>');
+                    loadSchedulerStatus();
+                })
+                .catch(function (err) {
+                    _schedBusy = false;
+                    _updateSchedButtons();
+                    _showSchedFeedback('error',
+                        '<strong>Durdurulamadi</strong>'
+                        + '<div class="pps-sched-feedback-detail">' + esc(String(err)) + '</div>');
+                });
             }
         );
     }
@@ -2066,7 +2214,13 @@
                 body.target_hosts = selectedHosts;
             }
 
-            // Show progress on trigger button
+            // Show progress stepper + feedback
+            _showProgress('connect');
+            _showSchedFeedback('info',
+                '<strong>Manuel analiz baslatiliyor...</strong>'
+                + '<div class="pps-sched-feedback-detail">'
+                + sourceLabel + ' &middot; ' + targetDesc + '</div>', false);
+
             var triggerBtn = _el('ppdSchedTriggerBtn');
             var origText = triggerBtn ? triggerBtn.textContent : '';
             if (triggerBtn) {
@@ -2078,24 +2232,48 @@
             var base = window.API_ENDPOINTS ? window.API_ENDPOINTS['schedulerTrigger'] : null;
             if (!base) return;
 
+            // Step 2: Analyzing
+            setTimeout(function () { _showProgress('analyze'); }, 800);
+
             fetch(base, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             })
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+                // Step 3: Prediction phase
+                _showProgress('predict');
+                return r.json();
+            })
             .then(function (data) {
                 _schedBusy = false;
                 var result = data.result || {};
                 var hostsAnalyzed = result.hosts_analyzed || 0;
                 var totalAnomalies = result.total_anomalies || 0;
 
+                // Step 4: Done
+                _showProgress('done');
+
+                if (result.status === 'completed') {
+                    _showSchedFeedback('success',
+                        '<strong>Analiz tamamlandi</strong>'
+                        + '<div class="pps-sched-feedback-detail">'
+                        + hostsAnalyzed + ' host analiz edildi &middot; '
+                        + totalAnomalies + ' anomali bulundu'
+                        + '</div>', 10000);
+                } else if (result.status === 'skipped') {
+                    var reason = (result.reason || '').replace(/_/g, ' ');
+                    _showSchedFeedback('warning',
+                        '<strong>Analiz atlandi</strong>'
+                        + '<div class="pps-sched-feedback-detail">' + esc(reason) + '</div>');
+                } else {
+                    _showSchedFeedback('success', '<strong>Islem tamamlandi</strong>');
+                }
+
                 if (triggerBtn) {
                     if (result.status === 'completed') {
                         triggerBtn.textContent = hostsAnalyzed + ' host, ' + totalAnomalies + ' anomali';
                         triggerBtn.classList.add('ppd-sched-btn-success');
-                    } else if (result.status === 'skipped') {
-                        triggerBtn.textContent = 'Atlandi: ' + (result.reason || '').replace(/_/g, ' ');
                     } else {
                         triggerBtn.textContent = 'Tamamlandi';
                     }
@@ -2103,22 +2281,29 @@
                         triggerBtn.textContent = origText;
                         triggerBtn.disabled = false;
                         triggerBtn.classList.remove('ppd-sched-btn-success');
-                    }, 3000);
+                    }, 4000);
                 }
 
+                // Hide progress after a delay
+                setTimeout(function () { _hideProgress(); }, 8000);
+
                 if (data.scheduler) renderSchedulerStatus(data.scheduler);
-                // Refresh prediction data
                 setTimeout(function () { refreshAll(); }, 1000);
                 console.log('[PredictionDashboard] Trigger completed', data);
             })
             .catch(function (err) {
                 _schedBusy = false;
+                _hideProgress();
+                _showSchedFeedback('error',
+                    '<strong>Manuel analiz hatasi</strong>'
+                    + '<div class="pps-sched-feedback-detail">' + esc(String(err)) + '</div>');
+
                 if (triggerBtn) {
                     triggerBtn.textContent = 'Hata!';
                     setTimeout(function () {
                         triggerBtn.textContent = origText;
                         triggerBtn.disabled = false;
-                    }, 2000);
+                    }, 3000);
                 }
                 console.error('[PredictionDashboard] Trigger error:', err);
             });
@@ -2145,6 +2330,14 @@
             btn.innerHTML = '<span class="pps-run-icon pps-run-spinning">&#x21bb;</span> Calisiyor...';
             btn.classList.add('pps-run-busy');
 
+            // Show progress stepper
+            _showProgress('connect');
+            _showSchedFeedback('info',
+                '<strong>Analiz baslatiliyor...</strong>'
+                + '<div class="pps-sched-feedback-detail">'
+                + sourceLabel + (serverVal ? ' &middot; ' + esc(serverVal) : '')
+                + '</div>', false);
+
             var body = {
                 api_key: window.apiKey || '',
                 source_type: sourceType
@@ -2161,8 +2354,13 @@
                 btn.disabled = false;
                 btn.innerHTML = origText;
                 btn.classList.remove('pps-run-busy');
+                _hideProgress();
+                _hideSchedFeedback();
                 return;
             }
+
+            // Step 2: Analyzing
+            setTimeout(function () { _showProgress('analyze'); }, 600);
 
             fetch(base, {
                 method: 'POST',
@@ -2170,19 +2368,25 @@
                 body: JSON.stringify(body)
             })
             .then(function (r) {
+                _showProgress('predict');
                 if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + r.statusText);
                 return r.json();
             })
             .then(function (data) {
+                _showProgress('done');
                 btn.classList.remove('pps-run-busy');
 
                 if (data.status === 'error') {
                     btn.classList.add('pps-run-error');
                     btn.innerHTML = '<span class="pps-run-icon">&#x26A0;</span> ' + esc(data.message || 'Hata');
+                    _showSchedFeedback('error',
+                        '<strong>Analiz hatasi</strong>'
+                        + '<div class="pps-sched-feedback-detail">' + esc(data.message || 'Bilinmeyen hata') + '</div>');
                     setTimeout(function () {
                         btn.disabled = false;
                         btn.innerHTML = origText;
                         btn.classList.remove('pps-run-error');
+                        _hideProgress();
                     }, 3000);
                     return;
                 }
@@ -2214,10 +2418,18 @@
 
                     btn.innerHTML = '<span class="pps-run-icon">&#x2714;</span> ' +
                         resultParts.join(' | ');
+
+                    _showSchedFeedback('success',
+                        '<strong>Analiz tamamlandi</strong>'
+                        + '<div class="pps-sched-feedback-detail">'
+                        + anomalies + ' anomali (%' + rate + ')'
+                        + (insight.risk_level && insight.risk_level !== 'OK' ? ' &middot; Risk: ' + esc(insight.risk_level) : '')
+                        + '</div>', 10000);
                     console.log('[PredictionDashboard] Analysis completed', data);
                 } else {
                     btn.classList.add('pps-run-success');
                     btn.innerHTML = '<span class="pps-run-icon">&#x2714;</span> Tamamlandi';
+                    _showSchedFeedback('success', '<strong>Islem tamamlandi</strong>');
                     console.log('[PredictionDashboard] Analysis triggered', data);
                 }
 
@@ -2228,12 +2440,17 @@
                     btn.disabled = false;
                     btn.innerHTML = origText;
                     btn.classList.remove('pps-run-success');
-                }, 3000);
+                    _hideProgress();
+                }, 4000);
             })
             .catch(function (err) {
                 btn.classList.remove('pps-run-busy');
                 btn.classList.add('pps-run-error');
                 btn.innerHTML = '<span class="pps-run-icon">&#x26A0;</span> Hata';
+                _hideProgress();
+                _showSchedFeedback('error',
+                    '<strong>Analiz hatasi</strong>'
+                    + '<div class="pps-sched-feedback-detail">' + esc(String(err)) + '</div>');
                 console.error('[PredictionDashboard] Analysis trigger error:', err);
                 setTimeout(function () {
                     btn.disabled = false;

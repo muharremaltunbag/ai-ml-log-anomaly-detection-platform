@@ -766,6 +766,17 @@
                                     <button type="button" id="ppdSchedStopBtn" class="ppd-sched-btn ppd-sched-btn-stop" disabled>Durdur</button>
                                     <button type="button" id="ppdSchedTriggerBtn" class="ppd-sched-btn ppd-sched-btn-trigger" disabled>Manuel Calistir</button>
                                 </div>
+
+                                <!-- Scheduler feedback banner -->
+                                <div id="ppsSchedFeedback" class="pps-sched-feedback" style="display:none;"></div>
+
+                                <!-- Progress stepper for active operations -->
+                                <div id="ppsSchedProgress" class="pps-sched-progress" style="display:none;">
+                                    <div class="pps-sched-progress-bar">
+                                        <div class="pps-sched-progress-fill" id="ppsSchedProgressFill"></div>
+                                    </div>
+                                    <div class="pps-sched-progress-steps" id="ppsSchedProgressSteps"></div>
+                                </div>
                             </div>
                         </aside>
 
