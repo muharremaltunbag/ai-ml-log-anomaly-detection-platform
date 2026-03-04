@@ -18343,6 +18343,157 @@ body.pps-body-lock {
    END — PREDICTION STUDIO SECTION SEPARATION & VISUAL HIERARCHY
    ══════════════════════════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   PREDICTION STUDIO — COLOR PALETTE NORMALIZATION
+   Problem: Mixed Material Indigo (#1a237e), Tailwind slate (#2d3748/#4a5568),
+            Material Blue Grey (#37474f/#263238) — inconsistent with main app
+   Fix: Normalize to --text-primary (#1A1D23), --text-secondary (#545868),
+        --text-muted (#8B91A0), --lcw-blue (#0047BA)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Card & Header values: #1a237e (Material Indigo) → brand blue ── */
+.pps-main .ppd-summary-card-value {
+    color: var(--lcw-blue, #0047BA);
+}
+.pps-main .ppd-card-value {
+    color: var(--lcw-blue, #0047BA);
+}
+.pps-main .pps-chart-title {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-header h3 {
+    color: var(--text-primary, #1A1D23);
+}
+
+/* ── Context Panel: Tailwind slate → app variables ── */
+.pps-main .ppd-context-title {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-ctx-empty {
+    color: var(--text-secondary, #545868);
+}
+.pps-main .ppd-ctx-label {
+    color: var(--text-muted, #8B91A0);
+}
+.pps-main .ppd-ctx-value {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-ctx-mod-label {
+    color: var(--text-secondary, #545868);
+}
+.pps-main .ppd-ctx-signals-title {
+    color: var(--text-secondary, #545868);
+}
+.pps-main .ppd-ctx-signal {
+    color: var(--text-secondary, #545868);
+}
+
+/* ── ML Insight: Tailwind slate → app variables ── */
+.pps-main .ppd-insight-header {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-insight-sev-title {
+    color: var(--text-secondary, #545868);
+}
+.pps-main .ppd-insight-sev-leg-item {
+    color: var(--text-secondary, #545868);
+}
+.pps-main .ppd-insight-block-title {
+    color: var(--text-secondary, #545868);
+}
+.pps-main .ppd-insight-pat-count {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-insight-pat-msg {
+    color: var(--text-muted, #8B91A0);
+}
+.pps-main .ppd-insight-hs-name {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-insight-hs-val {
+    color: var(--text-muted, #8B91A0);
+}
+.pps-main .ppd-insight-risk-area {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-insight-risk-detail {
+    color: var(--text-muted, #8B91A0);
+}
+.pps-main .ppd-insight-dir-detail {
+    color: var(--text-muted, #8B91A0);
+}
+.pps-main .ppd-insight-conf {
+    color: var(--text-muted, #8B91A0);
+    font-style: normal;
+}
+
+/* ── Server Cards: Material Blue Grey → app variables ── */
+.pps-main .ppd-section-title {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-server-name {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-stat-label {
+    color: var(--text-muted, #8B91A0);
+}
+.pps-main .ppd-stat-value {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-server-footer {
+    color: var(--text-muted, #8B91A0);
+}
+.pps-main .ppd-breakdown-legend {
+    color: var(--text-muted, #8B91A0);
+}
+
+/* ── Forecast Metrics: Material Blue Grey → app variables ── */
+.pps-main .ppd-metric-name {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-metric-status {
+    color: var(--text-secondary, #545868);
+}
+.pps-main .ppd-proj-label {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-proj-dir {
+    color: var(--text-secondary, #545868);
+}
+
+/* ── Scheduler Panel: #1a237e → brand ── */
+.pps-sidebar .ppd-sched-header h4 {
+    color: var(--text-primary, #1A1D23);
+}
+
+/* ── Header badge: #1a237e → brand blue ── */
+.pps-modal-header .ppd-header-badge {
+    background: rgba(0, 71, 186, 0.08);
+    color: var(--lcw-blue, #0047BA);
+}
+
+/* ── Table header: more professional ── */
+.pps-main .ppd-table th {
+    background: #f4f6f9;
+    color: var(--text-secondary, #545868);
+    border-bottom-color: #dce1e8;
+}
+.pps-main .ppd-table tr:hover td {
+    background: #f8f9fc;
+}
+
+/* ── Card title / subtitle: unified ── */
+.pps-main .ppd-card-title {
+    color: var(--text-muted, #8B91A0);
+}
+.pps-main .ppd-card-sub {
+    color: var(--text-muted, #8B91A0);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   END — PREDICTION STUDIO COLOR PALETTE NORMALIZATION
+   ══════════════════════════════════════════════════════════════════════════════ */
+
 /* ========== UI PROFESSIONALIZATION PATCH ========== */
 
 /* -- Quick Actions: Primary / Secondary grouping -- */
