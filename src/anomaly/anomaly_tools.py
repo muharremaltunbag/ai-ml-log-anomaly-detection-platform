@@ -1493,20 +1493,21 @@ class AnomalyDetectionTools:
                             limited_analysis, server_name=server_for_model,
                             prediction_context=_prediction_prompt_ctx)
 
-                    
+
+                    # Zaman açıklamasını düzenle (her iki branch için de gerekli)
+                    if start_time and end_time:
+                        time_desc = f"{start_time} - {end_time} arasındaki"
+                    else:
+                        time_desc = f"son {last_hours} saatteki"
+
                     # Açıklama ve öneriler
                     if ai_explanation:
                         if is_cluster_analysis:
                             server_desc = f" (CLUSTER: {', '.join([h.split('.')[0] for h in cluster_hosts])})"
                         else:
                             server_desc = f" ({server_for_model} sunucusu)" if server_for_model else ""
-                            
+
                         model_desc = " ✅ Mevcut model güncellendi" if model_loaded else " 🆕 Yeni model eğitildi"
-                        # Zaman açıklamasını düzenle
-                        if start_time and end_time:
-                            time_desc = f"{start_time} - {end_time} arasındaki"
-                        else:
-                            time_desc = f"son {last_hours} saatteki"
 
                         description = f"OpenSearch'ten {time_desc} {len(df)} log analiz edildi{server_desc}.{model_desc}\n\n" + \
                                      self._create_enriched_description(analysis, time_range, ai_explanation)[len("🤖 **AI DESTEKLİ ANOMALİ ANALİZİ**\n\n"):]
@@ -3052,6 +3053,8 @@ class AnomalyDetectionTools:
                 formatted_anomalies.append(formatted)
 
             suggestions = self._create_es_suggestions(analysis, es_specific)
+
+            time_desc = f"son {last_hours} saat" if not (start_time and end_time) else f"{start_time} - {end_time}"
 
             result = {
                 "description": description,
