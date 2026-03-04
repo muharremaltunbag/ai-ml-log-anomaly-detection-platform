@@ -188,15 +188,19 @@ class TrendAnalyzer:
         ml_alerts = self._check_ml_score_trend(history_records, current_analysis, server_name)
         alerts.extend(ml_alerts)
 
-        # 7. Rate acceleration (2. türev — artış hızlanıyor mu?)
+        # 7. ML score distribution monitoring (std dev genişleme + severity shift)
+        dist_alerts = self._check_ml_score_distribution(history_records, current_analysis, server_name)
+        alerts.extend(dist_alerts)
+
+        # 8. Rate acceleration (2. türev — artış hızlanıyor mu?)
         accel_alerts = self._check_rate_acceleration(history_records, current_analysis, server_name)
         alerts.extend(accel_alerts)
 
-        # 8. Volatility indicator (gürültü seviyesi)
+        # 9. Volatility indicator (gürültü seviyesi)
         vol_alerts = self._check_volatility(history_records, current_analysis, server_name)
         alerts.extend(vol_alerts)
 
-        # 9. Improvement detection (iyileşme tespiti)
+        # 10. Improvement detection (iyileşme tespiti)
         imp_alerts = self._check_improvement(history_records, current_analysis, server_name)
         alerts.extend(imp_alerts)
 
@@ -712,6 +716,161 @@ class TrendAnalyzer:
         return alerts
 
     # ──────────────────────────────────────────────
+    # Check: ML Score Distribution Monitoring
+    # ──────────────────────────────────────────────
+
+    def _check_ml_score_distribution(self, history: List[Dict], current: Dict,
+                                     server_name: Optional[str]) -> List[TrendAlert]:
+        """
+        ML anomaly score dağılımındaki değişimleri izle.
+
+        Mean score stabil olsa bile:
+        - Std dev genişliyorsa → extreme anomaly'ler artıyor
+        - Severity distribution kayıyorsa → CRITICAL/HIGH oranı artıyor
+        - Score min (en kötü) kötüleşiyorsa → tail risk artıyor
+
+        Bu kontroller mean-based check'in yakalayamadığı erken uyarıları verir.
+        """
+        alerts = []
+
+        # ── 1. Score spread (std dev) trend ──
+        past_stds = []
+        past_mins = []
+        for record in history:
+            sr = record.get('score_range') or record.get('summary', {}).get('score_range') or {}
+            std_val = sr.get('std')
+            min_val = sr.get('min')
+            if std_val is not None and isinstance(std_val, (int, float)):
+                past_stds.append(abs(float(std_val)))
+            if min_val is not None and isinstance(min_val, (int, float)):
+                past_mins.append(abs(float(min_val)))
+
+        current_sr = current.get('summary', {}).get('score_range', {})
+        current_std = current_sr.get('std')
+        current_min = current_sr.get('min')
+
+        # Std dev genişleme kontrolü
+        if past_stds and len(past_stds) >= 2 and current_std is not None:
+            current_std_abs = abs(float(current_std))
+            baseline_std = sum(past_stds) / len(past_stds)
+
+            if baseline_std > 0:
+                std_change_pct = ((current_std_abs - baseline_std) / baseline_std) * 100
+
+                # %50+ std dev artışı → anomaly dağılımı genişliyor
+                if std_change_pct > 50.0:
+                    severity = "CRITICAL" if std_change_pct > 100.0 else "WARNING"
+                    alerts.append(TrendAlert(
+                        alert_type="ml_score_spread_widening",
+                        severity=severity,
+                        title="ML anomaly skor dağılımı genişliyor",
+                        description=(
+                            f"IsolationForest anomaly skorlarının standart sapması "
+                            f"%{std_change_pct:.1f} arttı. "
+                            f"Baseline std: {baseline_std:.4f} → Güncel: {current_std_abs:.4f}. "
+                            f"Ortalama stabil olsa bile extreme anomaly'ler artıyor olabilir."
+                        ),
+                        metric_name="ml_score_std_dev",
+                        baseline_value=round(baseline_std, 4),
+                        current_value=round(current_std_abs, 4),
+                        change_pct=round(std_change_pct, 2),
+                        window_size=len(past_stds),
+                        server_name=server_name,
+                        explainability=(
+                            f"Anomaly score std dev'i {baseline_std:.4f}'den {current_std_abs:.4f}'e yükseldi "
+                            f"(%{std_change_pct:.1f}). Bu, bireysel log'ların anomaly skorlarının "
+                            f"daha geniş bir aralığa yayıldığını gösterir. Ortalama skor değişmemiş "
+                            f"olsa bile, bazı log'lar çok daha anomalous hale gelmiş olabilir."
+                        )
+                    ))
+
+        # ── 2. Tail risk: min score (en anomalous) kötüleşme ──
+        if past_mins and len(past_mins) >= 2 and current_min is not None:
+            current_min_abs = abs(float(current_min))
+            baseline_min = sum(past_mins) / len(past_mins)
+
+            if baseline_min > 0:
+                min_change_pct = ((current_min_abs - baseline_min) / baseline_min) * 100
+
+                # En anomalous skorun %40+ kötüleşmesi → tail risk
+                if min_change_pct > 40.0:
+                    severity = "WARNING"
+                    alerts.append(TrendAlert(
+                        alert_type="ml_tail_risk_increase",
+                        severity=severity,
+                        title="ML en kötü anomaly skoru kötüleşiyor",
+                        description=(
+                            f"En anomalous log'ların IsolationForest skoru "
+                            f"%{min_change_pct:.1f} kötüleşti. "
+                            f"Baseline |min|: {baseline_min:.4f} → Güncel: {current_min_abs:.4f}. "
+                            f"Extreme anomaly'ler şiddetleniyor."
+                        ),
+                        metric_name="ml_score_min",
+                        baseline_value=round(baseline_min, 4),
+                        current_value=round(current_min_abs, 4),
+                        change_pct=round(min_change_pct, 2),
+                        window_size=len(past_mins),
+                        server_name=server_name,
+                        explainability=(
+                            f"IsolationForest min score (en anomalous)'un abs değeri "
+                            f"{baseline_min:.4f}'den {current_min_abs:.4f}'e yükseldi. "
+                            f"Bu, en kötü anomaly'lerin daha da kötüleştiğini gösterir — "
+                            f"tail risk artıyor."
+                        )
+                    ))
+
+        # ── 3. Severity distribution shift ──
+        current_sev = current.get('severity_distribution') or {}
+        if current_sev:
+            current_total = sum(int(v) for v in current_sev.values() if isinstance(v, (int, float)))
+            current_critical = int(current_sev.get('CRITICAL', 0)) + int(current_sev.get('HIGH', 0))
+
+            if current_total > 0:
+                current_critical_pct = (current_critical / current_total) * 100
+
+                # Geçmiş severity dağılımlarını topla
+                past_critical_pcts = []
+                for record in history:
+                    hist_sev = record.get('severity_distribution') or record.get('summary', {}).get('severity_distribution') or {}
+                    if hist_sev:
+                        h_total = sum(int(v) for v in hist_sev.values() if isinstance(v, (int, float)))
+                        h_crit = int(hist_sev.get('CRITICAL', 0)) + int(hist_sev.get('HIGH', 0))
+                        if h_total > 0:
+                            past_critical_pcts.append((h_crit / h_total) * 100)
+
+                if past_critical_pcts and len(past_critical_pcts) >= 2:
+                    baseline_critical_pct = sum(past_critical_pcts) / len(past_critical_pcts)
+
+                    # Absolute shift: CRITICAL+HIGH oranı %15+ artarsa
+                    shift = current_critical_pct - baseline_critical_pct
+                    if shift > 15.0:
+                        severity = "CRITICAL" if shift > 30.0 else "WARNING"
+                        alerts.append(TrendAlert(
+                            alert_type="severity_distribution_shift",
+                            severity=severity,
+                            title="Anomaly ciddiyet dağılımı kötüleşiyor",
+                            description=(
+                                f"CRITICAL+HIGH anomaly oranı %{baseline_critical_pct:.1f}'den "
+                                f"%{current_critical_pct:.1f}'e yükseldi (+{shift:.1f}pp). "
+                                f"Anomali sayısı artmasa bile ciddiyeti artıyor."
+                            ),
+                            metric_name="severity_critical_high_pct",
+                            baseline_value=round(baseline_critical_pct, 2),
+                            current_value=round(current_critical_pct, 2),
+                            change_pct=round(shift, 2),
+                            window_size=len(past_critical_pcts),
+                            server_name=server_name,
+                            explainability=(
+                                f"Son {len(past_critical_pcts)} analizde ortalama CRITICAL+HIGH oranı "
+                                f"%{baseline_critical_pct:.1f} idi, şimdi %{current_critical_pct:.1f}. "
+                                f"Bu, anomali sayısı aynı kalsa bile tespit edilen sorunların "
+                                f"daha ciddi hale geldiğini gösterir."
+                            )
+                        ))
+
+        return alerts
+
+    # ──────────────────────────────────────────────
     # Check: Rate Acceleration (2. türev)
     # ──────────────────────────────────────────────
 
@@ -987,6 +1146,27 @@ class TrendAnalyzer:
                     "stable"
                 ),
             }
+
+        # ML score distribution summary
+        current_std_raw = current_score_range.get('std')
+        current_min_raw = current_score_range.get('min')
+        if current_std_raw is not None:
+            ml_score_summary["current_std"] = round(abs(float(current_std_raw)), 4)
+        if current_min_raw is not None:
+            ml_score_summary["current_min_abs"] = round(abs(float(current_min_raw)), 4)
+
+        # Severity distribution summary
+        current_sev = current.get('severity_distribution') or {}
+        if current_sev:
+            sev_total = sum(int(v) for v in current_sev.values() if isinstance(v, (int, float)))
+            if sev_total > 0:
+                crit_high = int(current_sev.get('CRITICAL', 0)) + int(current_sev.get('HIGH', 0))
+                ml_score_summary["severity_critical_high_pct"] = round(
+                    (crit_high / sev_total) * 100, 2)
+                ml_score_summary["severity_distribution"] = {
+                    k: int(v) for k, v in current_sev.items()
+                    if isinstance(v, (int, float))
+                }
 
         # Volatility (coefficient of variation)
         baseline_rate = sum(past_rates) / len(past_rates) if past_rates else 0
