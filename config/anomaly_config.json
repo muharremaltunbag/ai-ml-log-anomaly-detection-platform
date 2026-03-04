@@ -385,10 +385,13 @@
         "alert_cooldown_minutes": 30
       },
       "scheduler": {
-        "enabled": false,
+        "enabled": true,
         "interval_minutes": 30,
         "auto_analyze_hosts": true,
-        "max_concurrent_analyses": 3
+        "max_concurrent_analyses": 3,
+        "batch_cooldown_seconds": 5,
+        "per_host_cooldown_minutes": 10,
+        "startup_delay_seconds": 15
       },
       "forecasting": {
         "enabled": true,

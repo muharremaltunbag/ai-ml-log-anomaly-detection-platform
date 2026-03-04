@@ -5357,6 +5357,32 @@ async def startup_event():
         import traceback
         traceback.print_exc()
 
+    # ── Scheduler Auto-Start ──
+    # Config'de enabled=true ise scheduler'ı sistem başlangıcında otomatik başlat.
+    # Host discovery ve ilk cycle startup_delay_seconds sonra çalışır.
+    try:
+        tools = _get_scheduler_tools()
+        if tools.scheduler and tools.scheduler.enabled and not tools.scheduler.is_running():
+            # Host discovery — arka planda, başarısız olursa scheduler yine başlar
+            try:
+                from src.anomaly.log_reader import get_available_mongodb_hosts
+                hosts = get_available_mongodb_hosts(last_hours=24)
+                if hosts:
+                    tools.scheduler.set_target_hosts(hosts)
+                    logger.info(f"Scheduler auto-start: discovered {len(hosts)} MongoDB hosts")
+                else:
+                    logger.info("Scheduler auto-start: no hosts discovered yet, will retry on first cycle")
+            except Exception as hd_err:
+                logger.warning(f"Scheduler auto-start host discovery failed (non-critical): {hd_err}")
+
+            started = tools.scheduler.start()
+            if started:
+                logger.info("✅ Scheduler auto-started (config enabled=true)")
+            else:
+                logger.info("Scheduler auto-start skipped (start returned false)")
+    except Exception as sched_err:
+        logger.warning(f"Scheduler auto-start failed (non-critical): {sched_err}")
+
 
 # ============= SYSTEM RESET ENDPOINT =============
 # ──────────────────────────────────────────────
@@ -6075,6 +6101,12 @@ async def shutdown_event():
         agent.shutdown()
         agent = None
     
+    # Scheduler cleanup
+    global _scheduler_tools_instance
+    if _scheduler_tools_instance and _scheduler_tools_instance.scheduler:
+        logger.info("Scheduler durduruluyor...")
+        _scheduler_tools_instance.scheduler.stop()
+
     # YENİ: StorageManager cleanup
     if storage_manager:
         logger.info("StorageManager kapatılıyor...")

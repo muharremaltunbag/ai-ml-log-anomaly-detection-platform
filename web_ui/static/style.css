@@ -16964,6 +16964,12 @@ mark.text-highlight:hover {
     line-height: 1.6;
 }
 .ppd-sched-guidance strong { color: #bf360c; }
+.ppd-sched-guidance-ok {
+    background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+    border-color: #c8e6c9;
+    color: #2e7d32;
+}
+.ppd-sched-guidance-ok strong { color: #1b5e20; }
 
 /* Prediction readiness indicator */
 .ppd-readiness-bar {
@@ -17273,6 +17279,78 @@ mark.text-highlight:hover {
     font-style: italic;
     margin-top: 6px;
     padding-top: 6px;
+    border-top: 1px dashed #e2e8f0;
+}
+
+/* ── Forecast Outlook Section ── */
+.ppd-outlook-section {
+    margin-top: 14px;
+    padding: 12px;
+    background: linear-gradient(135deg, #f8fafc 0%, #edf2f7 100%);
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+.ppd-outlook-header {
+    font-size: 0.82em;
+    font-weight: 600;
+    color: #2d3748;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ppd-outlook-header::before {
+    content: '\1F52E';
+    font-size: 1.1em;
+}
+.ppd-outlook-group {
+    margin-bottom: 8px;
+}
+.ppd-outlook-group-title {
+    font-size: 0.75em;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 4px;
+}
+.ppd-outlook-rising .ppd-outlook-group-title { color: #c53030; }
+.ppd-outlook-falling .ppd-outlook-group-title { color: #2f855a; }
+.ppd-outlook-metric {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    margin: 2px 0;
+    border-radius: 4px;
+    font-size: 0.75em;
+}
+.ppd-outlook-metric-rising {
+    background: #fff5f5;
+    border-left: 3px solid #fc8181;
+}
+.ppd-outlook-metric-falling {
+    background: #f0fff4;
+    border-left: 3px solid #68d391;
+}
+.ppd-outlook-metric-name {
+    font-weight: 500;
+    color: #2d3748;
+    min-width: 100px;
+}
+.ppd-outlook-metric-arrow {
+    font-size: 1.1em;
+}
+.ppd-outlook-metric-rising .ppd-outlook-metric-arrow { color: #e53e3e; }
+.ppd-outlook-metric-falling .ppd-outlook-metric-arrow { color: #38a169; }
+.ppd-outlook-metric-vals {
+    color: #4a5568;
+    font-family: 'SF Mono', 'Cascadia Mono', 'Consolas', monospace;
+    font-size: 0.92em;
+}
+.ppd-outlook-summary {
+    font-size: 0.72em;
+    color: #718096;
+    margin-top: 6px;
+    padding-top: 4px;
     border-top: 1px dashed #e2e8f0;
 }
 
@@ -18844,6 +18922,33 @@ body.pps-body-lock {
 .pps-main .ppd-insight-conf {
     color: var(--text-muted, #8B91A0);
     font-style: normal;
+}
+
+/* ── Forecast Outlook: app variable overrides ── */
+.pps-main .ppd-outlook-section {
+    background: var(--card-bg, #f8fafc);
+    border-color: var(--border-color, #e2e8f0);
+}
+.pps-main .ppd-outlook-header {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-outlook-metric-name {
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .ppd-outlook-metric-vals {
+    color: var(--text-secondary, #545868);
+}
+.pps-main .ppd-outlook-summary {
+    color: var(--text-muted, #8B91A0);
+    border-color: var(--border-color, #e2e8f0);
+}
+.pps-main .ppd-outlook-metric-rising {
+    background: var(--danger-bg, #fff5f5);
+    border-left-color: var(--danger-color, #fc8181);
+}
+.pps-main .ppd-outlook-metric-falling {
+    background: var(--success-bg, #f0fff4);
+    border-left-color: var(--success-color, #68d391);
 }
 
 /* ── Server Cards: Material Blue Grey → app variables ── */

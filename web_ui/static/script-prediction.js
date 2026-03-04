@@ -411,6 +411,91 @@
             html += '<div class="ppd-ctx-ok-msg">Aktif risk sinyali tespit edilmedi. Sistem normal.</div>';
         }
 
+        // Forecast Outlook — rising/falling metric summary from latest forecast
+        var fcData = (ctx.forecast && ctx.forecast.data && ctx.forecast.data.forecasts) ? ctx.forecast.data.forecasts : null;
+        if (fcData) {
+            var fcKeys = Object.keys(fcData);
+            var risingMetrics = [];
+            var fallingMetrics = [];
+            var stableCount = 0;
+            var insuffCount = 0;
+            for (var fi = 0; fi < fcKeys.length; fi++) {
+                var fm = fcData[fcKeys[fi]];
+                if (!fm || typeof fm !== 'object') continue;
+                if (fm.status === 'insufficient_data') { insuffCount++; continue; }
+                if (!fm.direction) continue;
+                var fcItem = {
+                    name: fm.label || fcKeys[fi],
+                    direction: fm.direction,
+                    current: fm.current_value,
+                    forecast: fm.forecast_value,
+                    confidence: fm.confidence,
+                    method: fm.method || '',
+                    unit: fm.unit || ''
+                };
+                if (fm.direction === 'rising') risingMetrics.push(fcItem);
+                else if (fm.direction === 'falling') fallingMetrics.push(fcItem);
+                else stableCount++;
+            }
+
+            if (risingMetrics.length > 0 || fallingMetrics.length > 0 || stableCount > 0) {
+                html += '<div class="ppd-outlook-section">';
+                html += '<div class="ppd-outlook-header">Gelecek Tahmin Ozeti</div>';
+
+                // Rising metrics — these are the risks
+                if (risingMetrics.length > 0) {
+                    html += '<div class="ppd-outlook-group ppd-outlook-rising">';
+                    html += '<span class="ppd-outlook-group-title">&#x2197; Yukselis Trendinde (' + risingMetrics.length + ' metrik)</span>';
+                    for (var ri2 = 0; ri2 < Math.min(risingMetrics.length, 5); ri2++) {
+                        var rm = risingMetrics[ri2];
+                        var rmConf = typeof rm.confidence === 'number' ? Math.round(rm.confidence * 100) : 0;
+                        var rmConfCls = rmConf >= 60 ? 'ppd-conf-high' : (rmConf >= 30 ? 'ppd-conf-med' : 'ppd-conf-low');
+                        html += '<div class="ppd-outlook-metric ppd-outlook-metric-rising">'
+                            + '<span class="ppd-outlook-metric-name">' + esc(rm.name) + '</span>'
+                            + '<span class="ppd-outlook-metric-arrow">&#x2197;</span>';
+                        if (rm.current != null && rm.forecast != null) {
+                            html += '<span class="ppd-outlook-metric-vals">'
+                                + parseFloat(rm.current).toFixed(2) + ' → ' + parseFloat(rm.forecast).toFixed(2)
+                                + (rm.unit ? ' ' + esc(rm.unit) : '')
+                                + '</span>';
+                        }
+                        html += '<span class="ppd-conf-badge ' + rmConfCls + '">%' + rmConf + '</span>'
+                            + '</div>';
+                    }
+                    html += '</div>';
+                }
+
+                // Falling metrics — good news
+                if (fallingMetrics.length > 0) {
+                    html += '<div class="ppd-outlook-group ppd-outlook-falling">';
+                    html += '<span class="ppd-outlook-group-title">&#x2198; Dusus Trendinde (' + fallingMetrics.length + ' metrik)</span>';
+                    for (var fi2 = 0; fi2 < Math.min(fallingMetrics.length, 3); fi2++) {
+                        var fmi = fallingMetrics[fi2];
+                        html += '<div class="ppd-outlook-metric ppd-outlook-metric-falling">'
+                            + '<span class="ppd-outlook-metric-name">' + esc(fmi.name) + '</span>'
+                            + '<span class="ppd-outlook-metric-arrow">&#x2198;</span>';
+                        if (fmi.current != null && fmi.forecast != null) {
+                            html += '<span class="ppd-outlook-metric-vals">'
+                                + parseFloat(fmi.current).toFixed(2) + ' → ' + parseFloat(fmi.forecast).toFixed(2)
+                                + '</span>';
+                        }
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                }
+
+                // Stable + insufficient summary line
+                var summaryParts = [];
+                if (stableCount > 0) summaryParts.push(stableCount + ' metrik stabil');
+                if (insuffCount > 0) summaryParts.push(insuffCount + ' metrik icin yeterli veri yok');
+                if (summaryParts.length > 0) {
+                    html += '<div class="ppd-outlook-summary">' + summaryParts.join(' · ') + '</div>';
+                }
+
+                html += '</div>';
+            }
+        }
+
         // ML-Derived Risk Insight (data is nested under ctx.insight.data)
         var insight = (ctx.insight && ctx.insight.data) ? ctx.insight.data : null;
         if (insight) {
@@ -1697,9 +1782,13 @@
             nextRunStr = 'Beklemede...';
         }
 
+        // Cycle in progress flag
+        var cycleActive = !!sched.cycle_in_progress;
+
         // Status label
         var statusLabel, statusClass;
         if (!enabled) { statusLabel = 'DEVRE DISI'; statusClass = 'ppd-sched-status-disabled'; }
+        else if (running && cycleActive) { statusLabel = 'ANALIZ DEVAM EDIYOR'; statusClass = 'ppd-sched-status-running'; }
         else if (running) { statusLabel = 'CALISIYOR'; statusClass = 'ppd-sched-status-running'; }
         else { statusLabel = 'HAZIR'; statusClass = 'ppd-sched-status-stopped'; }
 
@@ -1752,12 +1841,20 @@
         // Guidance messages
         if (!enabled) {
             html += '<div class="ppd-sched-guidance">'
-                + '<strong>Scheduler devre disi.</strong> '
-                + 'Yukaridaki toggle ile etkinlestirin. '
+                + '<strong>Scheduler devre disi birakildi.</strong> '
+                + 'Yukaridaki toggle ile tekrar etkinlestirebilirsiniz. '
                 + 'Scheduler kapaliyken prediction yalnizca manuel analizlerden veri alir — '
                 + 'bu tahmin kalitesini onemli olcude dusurur.'
                 + '<br><em>Production onerisi: Scheduler\'i surekli aktif tutun. '
-                + '30 dk aralikla calismasi tahmin kalitesini Tier 3\'e tasir (EWMA, en guclu tahmin).</em>'
+                + 'Varsayilan ayar aktif olarak gelmektedir.</em>'
+                + '</div>';
+        } else if (running && runCount > 0) {
+            html += '<div class="ppd-sched-guidance ppd-sched-guidance-ok">'
+                + '<strong>Scheduler calisiyor.</strong> '
+                + 'Her ' + interval + ' dakikada '
+                + maxConcurrent + ' sunucu ' + sourceLabel + ' analizi calistirilacak. '
+                + 'Otomatik veri biriktirme aktif.'
+                + '<br><em>CPU korumali: Host basi cooldown, batch arasi bekleme ve max ' + maxConcurrent + ' esanli analiz.</em>'
                 + '</div>';
         } else if (!running) {
             html += '<div class="ppd-sched-guidance">'
@@ -1777,7 +1874,7 @@
         var triggerBtn = _el('ppdSchedTriggerBtn');
         if (startBtn) startBtn.disabled = !enabled || running || _schedBusy;
         if (stopBtn) stopBtn.disabled = !running || _schedBusy;
-        if (triggerBtn) triggerBtn.disabled = _schedBusy;
+        if (triggerBtn) triggerBtn.disabled = _schedBusy || cycleActive;
 
         // Update readiness bar
         _renderReadinessBar(_lastTotalChecks, _lastSchedulerRunning);

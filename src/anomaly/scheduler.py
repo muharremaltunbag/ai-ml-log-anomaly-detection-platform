@@ -50,6 +50,10 @@ class AnomalyScheduler:
         self.batch_cooldown_seconds = config.get('batch_cooldown_seconds', 5)
         # Per-host cooldown: aynı host'u tekrar analiz etmeden önce minimum bekleme
         self.per_host_cooldown_minutes = config.get('per_host_cooldown_minutes', 10)
+        # Startup delay: sistem açılışında ilk cycle'dan önce bekleme (saniye)
+        self._startup_delay_seconds = config.get('startup_delay_seconds', 15)
+        # Minimum interval guard: runtime'da interval'ın 5 dk altına düşmesini engelle
+        self._min_interval_minutes = 5
 
         self._timer: Optional[threading.Timer] = None
         self._running = False
@@ -103,7 +107,15 @@ class AnomalyScheduler:
                 logger.info("Scheduler runtime-enabled via UI/API")
 
         logger.info(f"Scheduler started: will run every {self.interval_minutes} minutes")
-        self._schedule_next()
+        # Startup delay: ilk cycle'ı hemen koşturmak yerine kısa bir süre bekle
+        # Böylece sistem (OpenSearch bağlantıları, storage, host discovery) hazır olur
+        if not force and self._startup_delay_seconds > 0 and self._run_count == 0:
+            logger.info(f"Scheduler startup delay: {self._startup_delay_seconds}s before first cycle")
+            self._timer = threading.Timer(self._startup_delay_seconds, self._on_timer)
+            self._timer.daemon = True
+            self._timer.start()
+        else:
+            self._schedule_next()
         return True
 
     def stop(self) -> None:
@@ -135,8 +147,8 @@ class AnomalyScheduler:
 
     def set_interval(self, minutes: int) -> None:
         """Runtime interval değişikliği. Mevcut timer'ı yeniden planlar."""
-        if minutes < 1:
-            logger.warning("Interval must be >= 1 minute, ignoring")
+        if minutes < self._min_interval_minutes:
+            logger.warning(f"Interval must be >= {self._min_interval_minutes} minutes, ignoring (got {minutes})")
             return
         with self._lock:
             self.interval_minutes = minutes
@@ -165,6 +177,7 @@ class AnomalyScheduler:
         return {
             "enabled": self.enabled,
             "running": self._running,
+            "cycle_in_progress": self._cycle_in_progress,
             "interval_minutes": self.interval_minutes,
             "max_concurrent": self.max_concurrent,
             "source_type": getattr(self, '_source_type', 'mongodb'),
@@ -182,7 +195,13 @@ class AnomalyScheduler:
         }
 
     def trigger_now(self, server_name: Optional[str] = None) -> Dict[str, Any]:
-        """Manuel tetikleme (scheduler çalışmıyorken de kullanılabilir)"""
+        """Manuel tetikleme (scheduler çalışmıyorken de kullanılabilir).
+
+        Overlap guard aktif: otomatik cycle sırasında bile çakışmayı engeller.
+        """
+        if self._cycle_in_progress:
+            logger.warning("Manual trigger rejected: a cycle is already in progress")
+            return {"status": "rejected", "reason": "cycle_in_progress"}
         if server_name:
             return self._run_analysis(server_name)
         else:
