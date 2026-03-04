@@ -1202,6 +1202,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var sourceType = s.source_type || 'mongodb';
             var targetHosts = s.target_hosts || [];
             var runCount = s.run_count || 0;
+            var hostStates = s.host_states || {};
 
             // Hide if disabled
             if (!enabled) { strip.style.display = 'none'; return; }
@@ -1256,6 +1257,31 @@ document.addEventListener('DOMContentLoaded', function() {
                     runEl.textContent = runCount + '. calisma';
                 } else {
                     runEl.textContent = '';
+                }
+            }
+
+            // Host status chips
+            var hostStatusEl = document.getElementById('sasHostStatus');
+            if (hostStatusEl) {
+                var hKeys = Object.keys(hostStates);
+                if (hKeys.length > 0) {
+                    var stOrder = { processing: 0, queued: 1, completed: 2, cooldown: 3, idle: 4, error: 5 };
+                    hKeys.sort(function (a, b) {
+                        return (stOrder[hostStates[a].state] || 9) - (stOrder[hostStates[b].state] || 9);
+                    });
+                    var chipsHtml = '';
+                    for (var ci = 0; ci < hKeys.length; ci++) {
+                        var hn = hKeys[ci];
+                        var hs = (hostStates[hn] || {}).state || 'idle';
+                        var shortN = hn.length > 18 ? hn.substring(0, 16) + '..' : hn;
+                        chipsHtml += '<span class="sas-host-chip sas-host-chip-' + hs + '">'
+                            + '<span class="sas-chip-dot"></span>'
+                            + escH(shortN)
+                            + '</span>';
+                    }
+                    hostStatusEl.innerHTML = chipsHtml;
+                } else {
+                    hostStatusEl.innerHTML = '';
                 }
             }
         }

@@ -20199,3 +20199,188 @@ input, select, textarea, button {
 .pps-main .ppd-hls-extra {
     color: var(--text-muted, #90a4ae);
 }
+
+/* ═══════════════════════════════════════════════════════
+   PPS ACTIVITY STRIP — Modal üst durum şeridi
+   ═══════════════════════════════════════════════════════ */
+.pps-activity-strip {
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
+    background: #f8fafc;
+    flex-shrink: 0;
+    padding: 0;
+    overflow: hidden;
+}
+.pps-activity-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 32px;
+    font-size: 12.5px;
+    color: #4a5568;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+}
+.pps-activity-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #a0aec0;
+}
+.pps-activity-dot.pps-dot-active {
+    background: #48bb78;
+    box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.25);
+    animation: sasPulse 1.5s ease-in-out infinite;
+}
+.pps-activity-dot.pps-dot-running {
+    background: #48bb78;
+    box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.15);
+}
+.pps-activity-dot.pps-dot-idle {
+    background: #cbd5e0;
+}
+.pps-activity-label {
+    font-weight: 600;
+    color: #2d3748;
+    white-space: nowrap;
+    font-size: 12.5px;
+}
+.pps-activity-source {
+    background: #edf2f7;
+    color: #4a5568;
+    padding: 2px 9px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid #e2e8f0;
+    white-space: nowrap;
+}
+.pps-activity-hosts-count {
+    color: #718096;
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+.pps-activity-divider {
+    width: 1px;
+    height: 16px;
+    background: #e2e8f0;
+    flex-shrink: 0;
+}
+.pps-activity-hosts {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    flex: 1;
+    min-width: 0;
+}
+.pps-activity-host {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    flex-shrink: 0;
+}
+.pps-activity-host-processing {
+    background: #ebf8ff;
+    border-color: #bee3f8;
+    color: #2b6cb0;
+    font-weight: 600;
+}
+.pps-activity-host-queued {
+    background: #fffff0;
+    border-color: #fefcbf;
+    color: #975a16;
+}
+.pps-activity-host-completed {
+    background: #f0fff4;
+    border-color: #c6f6d5;
+    color: #276749;
+}
+.pps-activity-host-error {
+    background: #fff5f5;
+    border-color: #fed7d7;
+    color: #c53030;
+}
+.pps-activity-host-cooldown {
+    background: #fafafa;
+    border-color: #e2e8f0;
+    color: #a0aec0;
+}
+.pps-activity-host-idle {
+    background: transparent;
+    border-color: #edf2f7;
+    color: #a0aec0;
+}
+.pps-activity-host-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.pps-activity-host-processing .pps-activity-host-dot { background: #4299e1; }
+.pps-activity-host-queued .pps-activity-host-dot { background: #ecc94b; }
+.pps-activity-host-completed .pps-activity-host-dot { background: #48bb78; }
+.pps-activity-host-error .pps-activity-host-dot { background: #fc8181; }
+.pps-activity-host-cooldown .pps-activity-host-dot { background: #cbd5e0; }
+.pps-activity-host-idle .pps-activity-host-dot { background: #e2e8f0; }
+
+/* ═══════════════════════════════════════════════════════
+   SAS STRIP ENHANCEMENTS — Ana sayfa host status chips
+   ═══════════════════════════════════════════════════════ */
+.sas-host-status {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+}
+.sas-host-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    border: 1px solid transparent;
+}
+.sas-host-chip-processing {
+    background: #ebf8ff;
+    border-color: #bee3f8;
+    color: #2b6cb0;
+    font-weight: 600;
+}
+.sas-host-chip-queued {
+    background: #fffff0;
+    border-color: #fefcbf;
+    color: #975a16;
+}
+.sas-host-chip-completed {
+    background: #f0fff4;
+    border-color: #c6f6d5;
+    color: #276749;
+}
+.sas-host-chip-error {
+    background: #fff5f5;
+    border-color: #fed7d7;
+    color: #c53030;
+}
+.sas-chip-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.sas-host-chip-processing .sas-chip-dot { background: #4299e1; }
+.sas-host-chip-queued .sas-chip-dot { background: #ecc94b; }
+.sas-host-chip-completed .sas-chip-dot { background: #48bb78; }
+.sas-host-chip-error .sas-chip-dot { background: #fc8181; }

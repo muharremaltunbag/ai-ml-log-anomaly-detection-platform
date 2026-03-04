@@ -1927,6 +1927,9 @@
 
         grid.innerHTML = html;
 
+        // ── Render top activity strip ──
+        _renderActivityStrip(sched);
+
         // Update button states — start available when enabled but not running
         var startBtn = _el('ppdSchedStartBtn');
         var stopBtn = _el('ppdSchedStopBtn');
@@ -1942,6 +1945,97 @@
         // loadAvailableHosts'tan yönetilir. Scheduler target_hosts
         // genellikle boştur (runtime set edilir), API'den gelen
         // gerçek host listesini ezmemeli.
+    }
+
+    // ============================
+    // ACTIVITY STRIP (Modal Top Bar)
+    // ============================
+    function _renderActivityStrip(sched) {
+        var strip = _el('ppsActivityStrip');
+        if (!strip) return;
+
+        var enabled = !!sched.enabled;
+        var running = !!sched.running;
+        var cycleActive = !!sched.cycle_in_progress;
+        var currentHost = sched.current_host || null;
+        var sourceType = sched.source_type || 'mongodb';
+        var targetHosts = sched.target_hosts || [];
+        var hostStates = sched.host_states || {};
+        var hostKeys = Object.keys(hostStates);
+        var runCount = sched.run_count || 0;
+
+        if (!enabled) { strip.style.display = 'none'; return; }
+        strip.style.display = '';
+
+        // Dot
+        var dot = _el('ppsActivityDot');
+        if (dot) {
+            dot.className = 'pps-activity-dot';
+            if (cycleActive) dot.classList.add('pps-dot-active');
+            else if (running) dot.classList.add('pps-dot-running');
+            else dot.classList.add('pps-dot-idle');
+        }
+
+        // Label
+        var label = _el('ppsActivityLabel');
+        if (label) {
+            if (cycleActive) label.textContent = 'Analiz devam ediyor';
+            else if (running) label.textContent = 'Scheduler aktif';
+            else label.textContent = 'Scheduler hazir';
+        }
+
+        // Source
+        var srcEl = _el('ppsActivitySource');
+        if (srcEl) {
+            var srcLabels = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' };
+            srcEl.textContent = srcLabels[sourceType] || sourceType;
+        }
+
+        // Host count
+        var countEl = _el('ppsActivityHostsCount');
+        if (countEl) {
+            var hCount = targetHosts.length || hostKeys.length;
+            countEl.textContent = hCount > 0 ? hCount + ' sunucu' : '';
+        }
+
+        // Host chips
+        var hostsContainer = _el('ppsActivityHosts');
+        if (!hostsContainer) return;
+
+        if (hostKeys.length === 0) {
+            hostsContainer.innerHTML = '';
+            return;
+        }
+
+        var stateOrder = { processing: 0, queued: 1, completed: 2, cooldown: 3, idle: 4, error: 5 };
+        hostKeys.sort(function (a, b) {
+            var sa = stateOrder[hostStates[a].state] || 9;
+            var sb = stateOrder[hostStates[b].state] || 9;
+            return sa - sb;
+        });
+
+        var stateIcons = {
+            processing: '\u25B6',
+            queued: '\u23F3',
+            completed: '\u2713',
+            cooldown: '\u23F8',
+            idle: '\u25CB',
+            error: '\u2717'
+        };
+
+        var chipHtml = '';
+        for (var i = 0; i < hostKeys.length; i++) {
+            var hName = hostKeys[i];
+            var hState = (hostStates[hName] || {}).state || 'idle';
+            var icon = stateIcons[hState] || '';
+            var shortName = hName.length > 20 ? hName.substring(0, 18) + '..' : hName;
+
+            chipHtml += '<span class="pps-activity-host pps-activity-host-' + hState + '">'
+                + '<span class="pps-activity-host-dot"></span>'
+                + esc(shortName)
+                + '</span>';
+        }
+        hostsContainer.innerHTML = chipHtml;
     }
 
     // ============================

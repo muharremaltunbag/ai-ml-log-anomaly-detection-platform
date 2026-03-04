@@ -61,6 +61,7 @@
                     <span class="sas-hosts" id="sasHosts"></span>
                     <span class="sas-current" id="sasCurrent"></span>
                     <span class="sas-run" id="sasRun"></span>
+                    <span class="sas-host-status" id="sasHostStatus"></span>
                     <a href="#" class="sas-link" id="sasDetailLink" onclick="if(window.PredictionDashboard)window.PredictionDashboard.show();return false;">Detay &rarr;</a>
                 </div>
             </div>
@@ -676,6 +677,18 @@
                             </button>
                             <button id="ppdRefreshBtn" type="button" class="pps-header-btn" title="Yenile">&#x21bb;</button>
                             <button id="ppsCloseBtn" type="button" class="pps-header-btn pps-close-btn" title="Kapat">&times;</button>
+                        </div>
+                    </div>
+
+                    <!-- Activity Strip — modal üst durum şeridi -->
+                    <div id="ppsActivityStrip" class="pps-activity-strip" style="display:none;">
+                        <div class="pps-activity-inner" id="ppsActivityInner">
+                            <span class="pps-activity-dot" id="ppsActivityDot"></span>
+                            <span class="pps-activity-label" id="ppsActivityLabel">Scheduler</span>
+                            <span class="pps-activity-source" id="ppsActivitySource"></span>
+                            <span class="pps-activity-hosts-count" id="ppsActivityHostsCount"></span>
+                            <span class="pps-activity-divider"></span>
+                            <span class="pps-activity-hosts" id="ppsActivityHosts"></span>
                         </div>
                     </div>
 
