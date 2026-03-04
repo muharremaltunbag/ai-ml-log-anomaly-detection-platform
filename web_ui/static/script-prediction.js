@@ -1296,11 +1296,11 @@
                 if (typeof rc.current_mean_score === 'number') {
                     rcParts.push('Skor: ' + rc.current_mean_score.toFixed(4));
                 }
-                if (rc.score_worsening) rcParts.push('<span style="color:#d32f2f;">Skor Kotulesme</span>');
+                if (rc.score_worsening) rcParts.push('<span class="ppd-sev-text-critical">Skor Kotulesme</span>');
                 if (typeof rc.anomaly_density_ratio === 'number' && rc.anomaly_density_ratio > 1.0) {
                     rcParts.push('Yogunluk: x' + rc.anomaly_density_ratio.toFixed(1));
                 }
-                html += '<div class="ppd-drill-ml-ctx" style="margin-top:4px;">' + rcParts.join(' | ') + '</div>';
+                html += '<div class="ppd-drill-ml-ctx ppd-drill-ml-ctx-inline">' + rcParts.join(' | ') + '</div>';
             }
 
             // Explainability — kısa özet her zaman görünür, uzun metin expandable
@@ -1331,10 +1331,10 @@
 
             // Forecast method badge (shown in drill-down for visibility)
             if (al.forecast_method) {
-                html += '<div class="ppd-drill-method" style="margin-top:4px;">'
+                html += '<div class="ppd-drill-method">'
                     + '<span class="ppd-method-badge">' + esc(_tierLabel(al.forecast_method)) + '</span>';
                 if (typeof al.data_points_used === 'number') {
-                    html += ' <span style="font-size:0.78em;color:#888;">(' + al.data_points_used + ' veri noktasi)</span>';
+                    html += ' <span class="ppd-drill-datapoints">(' + al.data_points_used + ' veri noktasi)</span>';
                 }
                 html += '</div>';
             }

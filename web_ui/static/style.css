@@ -18590,6 +18590,142 @@ body.pps-body-lock {
    END — PREDICTION STUDIO JS INLINE STYLE REPLACEMENTS
    ══════════════════════════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   PREDICTION STUDIO — REMAINING INLINE STYLES + SIDEBAR & ACTION POLISH
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Remaining JS inline replacements ── */
+.ppd-drill-ml-ctx-inline {
+    margin-top: 6px;
+}
+.ppd-drill-method {
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ppd-drill-datapoints {
+    font-size: 12.5px;
+    color: var(--text-muted, #8B91A0);
+}
+
+/* ── Sidebar — refined professional look ── */
+.pps-sidebar {
+    background: linear-gradient(180deg, #f8fafc 0%, #f3f5f8 100%);
+    width: 290px;
+    min-width: 290px;
+}
+
+/* Sidebar section titles — cleaner uppercase labels */
+.pps-sidebar .pps-sidebar-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.1px;
+    color: var(--text-muted, #8B91A0);
+    margin-bottom: 8px;
+}
+
+/* Source toggle — more balanced */
+.pps-sidebar .pps-source-toggle {
+    border-radius: 10px;
+    overflow: hidden;
+}
+.pps-sidebar .pps-source-btn {
+    padding: 12px 6px;
+    gap: 4px;
+}
+.pps-sidebar .pps-source-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+}
+
+/* Filter selects — tighter match to main app */
+.pps-sidebar .pps-sidebar-select {
+    border-radius: 10px;
+    border-color: #d1d5db;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.pps-sidebar .pps-sidebar-select:focus {
+    box-shadow: 0 0 0 3px rgba(0, 71, 186, 0.08);
+}
+
+/* Scheduler panel inside sidebar — unified card style */
+.pps-sidebar-sched.ppd-sched-panel {
+    border-radius: 10px;
+    border-color: #dce1e8;
+    background: #fff;
+}
+.pps-sidebar .ppd-sched-body {
+    padding: 12px;
+}
+
+/* Host items — bigger, friendlier touch targets */
+.pps-sidebar .pps-host-item {
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    gap: 10px;
+}
+.pps-sidebar .pps-host-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+}
+
+/* Scheduler action buttons — unified look */
+.pps-sidebar .pps-sidebar-sched-actions {
+    gap: 8px;
+    margin-top: 12px;
+}
+.pps-sidebar .pps-sidebar-sched-actions .ppd-sched-btn {
+    font-size: 13px;
+    padding: 8px 8px;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+/* ── Run Analysis Button — primary action prominence ── */
+.pps-run-analysis-btn {
+    padding: 10px 22px;
+    font-size: 14px;
+    font-weight: 700;
+    border-radius: 10px;
+    background: var(--lcw-blue, #0047BA);
+    border-color: var(--lcw-blue, #0047BA);
+    gap: 8px;
+    letter-spacing: 0.01em;
+    box-shadow: 0 1px 3px rgba(0, 71, 186, 0.2);
+    transition: all 0.2s ease;
+}
+.pps-run-analysis-btn:hover:not(:disabled) {
+    background: var(--lcw-internet-blue, #003399);
+    border-color: var(--lcw-internet-blue, #003399);
+    box-shadow: 0 2px 8px rgba(0, 71, 186, 0.3);
+}
+.pps-run-analysis-btn:disabled {
+    opacity: 0.5;
+    box-shadow: none;
+}
+
+/* ── Header action buttons — consistent sizing ── */
+.pps-header-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    font-size: 20px;
+}
+
+/* ── Divider — subtle but clear ── */
+.pps-sidebar .pps-sidebar-divider {
+    background: linear-gradient(90deg, transparent 0%, #d6dbe3 50%, transparent 100%);
+    height: 1px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   END — REMAINING INLINE STYLES + SIDEBAR & ACTION POLISH
+   ══════════════════════════════════════════════════════════════════════════════ */
+
 /* ========== UI PROFESSIONALIZATION PATCH ========== */
 
 /* -- Quick Actions: Primary / Secondary grouping -- */
