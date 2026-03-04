@@ -664,6 +664,44 @@ class RateAlertEngine:
                     is_critical = exceed_ratio >= detector_cfg['severity_multiplier']
                     severity = "CRITICAL" if is_critical else "WARNING"
 
+                    # Baseline rate-of-change: pencere dışı kalan DataFrame'den
+                    # aynı event tipinin "normal" oranını hesapla
+                    baseline_rate_info = ""
+                    baseline_rate_per_min = 0.0
+                    window_rate_per_min = count / max(window_minutes, 1)
+                    df_outside = df[~window_mask]
+                    if len(df_outside) >= 10:
+                        outside_count, _ = detector_cfg['func'](df_outside)
+                        # Pencere dışı süre (dakika)
+                        outside_minutes = max(
+                            (ts_max - ts_min).total_seconds() / 60 - window_minutes, 1)
+                        baseline_rate_per_min = outside_count / outside_minutes
+                        if baseline_rate_per_min > 0:
+                            rate_change_ratio = window_rate_per_min / baseline_rate_per_min
+                            if rate_change_ratio < 1.2:
+                                # Pencere oranı baseline'dan çok farklı değil
+                                # → Bu "normal" düzey olabilir, severity düşür
+                                if severity == "CRITICAL":
+                                    severity = "WARNING"
+                                baseline_rate_info = (
+                                    f" Pencere oranı ({window_rate_per_min:.2f}/dk) baseline "
+                                    f"({baseline_rate_per_min:.2f}/dk) ile benzer "
+                                    f"(x{rate_change_ratio:.1f}). Normal düzey olabilir."
+                                )
+                            elif rate_change_ratio >= 3.0:
+                                # 3x+ artış → kesinlikle spike
+                                baseline_rate_info = (
+                                    f" Pencere oranı baseline'ın {rate_change_ratio:.1f}x üstünde "
+                                    f"({window_rate_per_min:.2f}/dk vs {baseline_rate_per_min:.2f}/dk). "
+                                    f"Belirgin spike."
+                                )
+                            else:
+                                baseline_rate_info = (
+                                    f" Baseline: {baseline_rate_per_min:.2f}/dk → "
+                                    f"Pencere: {window_rate_per_min:.2f}/dk "
+                                    f"(x{rate_change_ratio:.1f} artış)."
+                                )
+
                     # Cooldown kontrolü
                     cooldown_key = f"{source_type}_{server_name}_{event_name}_{window_name}"
                     if self._is_in_cooldown(cooldown_key):
@@ -702,6 +740,8 @@ class RateAlertEngine:
                             "global_severity_distribution": ml_severity_dist.copy(),
                             "ml_corroborated": ml_corroborated,
                             "ml_strong_corroboration": ml_strong_corroboration,
+                            "baseline_rate_per_min": round(baseline_rate_per_min, 4),
+                            "window_rate_per_min": round(window_rate_per_min, 4),
                         }
                         if ml_strong_corroboration:
                             ml_explain_suffix = (
@@ -759,6 +799,7 @@ class RateAlertEngine:
                                        f"Config eşiği: {threshold}. "
                                        f"Aşım: {exceed_ratio:.1f}x. Güven: %{confidence*100:.0f}. "
                                        f"{'CRITICAL çünkü ' + str(detector_cfg['severity_multiplier']) + 'x üstü.' if is_critical else 'WARNING seviyesinde.'}"
+                                       + baseline_rate_info
                                        + ml_explain_suffix,
                         ml_context=ml_ctx,
                         confidence=confidence,
