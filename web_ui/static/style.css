@@ -17892,6 +17892,330 @@ body.pps-body-lock {
     max-height: 280px;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   PREDICTION STUDIO — TYPOGRAPHY & READABILITY OVERRIDES
+   Scope: .pps-main, .pps-sidebar — does NOT touch base ppd-* defaults
+   Purpose: Bring font scale, spacing, and hierarchy in line with main app
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Global base for studio main area ── */
+.pps-main {
+    font-size: 15px;
+    line-height: 1.6;
+}
+
+/* ── Modal Header — more authoritative ── */
+.pps-modal-header {
+    padding: 18px 32px;
+}
+.pps-header-text h2 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+}
+.pps-header-text p {
+    font-size: 13px;
+    margin-top: 4px;
+    letter-spacing: 0.3px;
+}
+.pps-run-analysis-btn {
+    font-size: 14px;
+    padding: 9px 20px;
+}
+
+/* ── Config pills — more readable ── */
+.pps-main .ppd-config-pill {
+    font-size: 13px;
+    padding: 6px 14px;
+    gap: 6px;
+    letter-spacing: 0.01em;
+}
+
+/* ── Context Panel — better hierarchy ── */
+.pps-main .ppd-context-header {
+    padding: 12px 18px;
+}
+.pps-main .ppd-context-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+}
+.pps-main .ppd-context-badge {
+    font-size: 11px;
+    padding: 3px 12px;
+}
+.pps-main .ppd-context-body {
+    padding: 16px 18px;
+}
+.pps-main .ppd-ctx-empty {
+    font-size: 14px;
+    line-height: 1.7;
+}
+.pps-main .ppd-ctx-row {
+    font-size: 13.5px;
+    padding: 6px 0;
+}
+.pps-main .ppd-ctx-label {
+    font-size: 13px;
+}
+.pps-main .ppd-ctx-value {
+    font-size: 13.5px;
+}
+.pps-main .ppd-ctx-mod {
+    font-size: 13px;
+    padding: 10px 12px;
+}
+.pps-main .ppd-ctx-mod-label {
+    font-size: 12px;
+    margin-bottom: 3px;
+}
+.pps-main .ppd-ctx-mod-status {
+    font-size: 13px;
+}
+.pps-main .ppd-ctx-signals-title {
+    font-size: 12.5px;
+}
+.pps-main .ppd-ctx-signal {
+    font-size: 13px;
+    padding: 6px 10px;
+    margin-bottom: 5px;
+}
+.pps-main .ppd-ctx-ok-msg {
+    font-size: 13.5px;
+    padding: 10px 0;
+}
+
+/* ── Summary Cards — prominent values ── */
+.pps-main .ppd-summary-card {
+    padding: 20px;
+}
+.pps-main .ppd-summary-card-value {
+    font-size: 2.1em;
+    letter-spacing: -0.02em;
+}
+.pps-main .ppd-summary-card-label {
+    font-size: 13px;
+    margin-top: 8px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+}
+
+/* ── Section Titles — stronger hierarchy ── */
+.pps-main .ppd-section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary, #1A1D23);
+    margin-bottom: 14px;
+    letter-spacing: -0.01em;
+}
+
+/* ── Server Risk Cards — readable stats ── */
+.pps-main .ppd-server-card {
+    padding: 18px;
+}
+.pps-main .ppd-server-name {
+    font-size: 15px;
+    font-weight: 700;
+}
+.pps-main .ppd-server-risk-badge {
+    font-size: 11px;
+    padding: 3px 10px;
+}
+.pps-main .ppd-stat-label {
+    font-size: 11px;
+}
+.pps-main .ppd-stat-value {
+    font-size: 16px;
+}
+.pps-main .ppd-server-stats {
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.pps-main .ppd-breakdown-legend {
+    font-size: 11.5px;
+    margin-top: 6px;
+}
+.pps-main .ppd-server-footer {
+    font-size: 12px;
+    color: var(--text-muted, #8B91A0);
+}
+
+/* ── Forecast Metric Rows — clearer ── */
+.pps-main .ppd-metric-row {
+    font-size: 13.5px;
+    padding: 6px 10px;
+    margin-bottom: 3px;
+}
+.pps-main .ppd-metric-name {
+    font-size: 13.5px;
+}
+
+/* ── ML Insight Section — readable ── */
+.pps-main .ppd-insight-header {
+    font-size: 14px;
+    font-weight: 700;
+}
+.pps-main .ppd-insight-direction {
+    font-size: 13.5px;
+    padding: 8px 12px;
+}
+.pps-main .ppd-insight-sev-title {
+    font-size: 12.5px;
+}
+.pps-main .ppd-insight-sev-leg-item {
+    font-size: 12px;
+}
+.pps-main .ppd-insight-block-title {
+    font-size: 12.5px;
+}
+.pps-main .ppd-insight-pattern {
+    font-size: 13px;
+    padding: 4px 0;
+}
+.pps-main .ppd-insight-pat-badge {
+    font-size: 11px;
+    padding: 2px 7px;
+}
+.pps-main .ppd-insight-hotspot {
+    font-size: 13px;
+}
+.pps-main .ppd-insight-risk {
+    font-size: 13px;
+    padding: 6px 10px;
+}
+.pps-main .ppd-insight-conf {
+    font-size: 12px;
+}
+
+/* ── Alert Table — more readable ── */
+.pps-main .ppd-table {
+    font-size: 13.5px;
+}
+.pps-main .ppd-table th {
+    padding: 12px 16px;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+}
+.pps-main .ppd-table td {
+    padding: 11px 16px;
+    line-height: 1.5;
+}
+.pps-main .ppd-severity-tag {
+    font-size: 11.5px;
+    padding: 3px 10px;
+}
+.pps-main .ppd-conf-badge {
+    font-size: 12px;
+    padding: 3px 9px;
+}
+
+/* ── Drill-down Panel — readable detail ── */
+.pps-main .ppd-drill-panel {
+    padding: 16px 20px;
+}
+.pps-main .ppd-drill-title {
+    font-size: 14px;
+}
+.pps-main .ppd-drill-desc {
+    font-size: 13.5px;
+    line-height: 1.55;
+}
+.pps-main .ppd-drill-forecast {
+    font-size: 13px;
+}
+.pps-main .ppd-drill-explain summary {
+    font-size: 13px;
+}
+.pps-main .ppd-drill-explain-text {
+    font-size: 13px;
+    padding: 10px 12px;
+    line-height: 1.6;
+}
+.pps-main .ppd-drill-ml-ctx {
+    font-size: 13px;
+    padding: 8px 12px;
+}
+.pps-main .ppd-drill-explain-visible {
+    font-size: 13.5px;
+    padding: 8px 12px;
+}
+.pps-main .ppd-srctype-badge {
+    font-size: 12px;
+}
+
+/* ── Forecast Projections — readable labels ── */
+.pps-main .ppd-proj-label {
+    font-size: 13px;
+}
+.pps-main .ppd-proj-dir {
+    font-size: 11.5px;
+    padding: 2px 8px;
+}
+
+/* ── Chart Section ── */
+.pps-main .pps-chart-title {
+    font-size: 16px;
+    color: var(--text-primary, #1A1D23);
+}
+.pps-main .pps-empty-title {
+    font-size: 16px;
+}
+.pps-main .pps-empty-desc {
+    font-size: 13.5px;
+    line-height: 1.6;
+}
+
+/* ── Sidebar — proportional readability lift ── */
+.pps-sidebar {
+    padding: 24px 22px;
+}
+.pps-sidebar .pps-sidebar-title {
+    font-size: 12px;
+    letter-spacing: 0.9px;
+}
+.pps-sidebar .pps-sidebar-label {
+    font-size: 13px;
+}
+.pps-sidebar .pps-sidebar-select {
+    font-size: 14px;
+    padding: 10px 12px;
+}
+.pps-sidebar .pps-source-label {
+    font-size: 11px;
+}
+.pps-sidebar .pps-host-item {
+    font-size: 13px;
+    padding: 8px 10px;
+}
+.pps-sidebar .pps-hosts-empty {
+    font-size: 13px;
+}
+.pps-sidebar .ppd-sched-grid {
+    font-size: 13px;
+}
+.pps-sidebar .ppd-sched-stat-label {
+    font-size: 12px;
+}
+.pps-sidebar .ppd-sched-stat-value {
+    font-size: 14px;
+}
+.pps-sidebar .ppd-sched-btn {
+    font-size: 12.5px;
+    padding: 6px 12px;
+}
+
+/* ── Hints & Empty States ── */
+.pps-main .pps-config-hint,
+.pps-main .pps-sched-hint {
+    font-size: 13.5px;
+    line-height: 1.6;
+    padding: 12px 14px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   END — PREDICTION STUDIO TYPOGRAPHY OVERRIDES
+   ══════════════════════════════════════════════════════════════════════════════ */
+
 /* ========== UI PROFESSIONALIZATION PATCH ========== */
 
 /* -- Quick Actions: Primary / Secondary grouping -- */
