@@ -18213,7 +18213,134 @@ body.pps-body-lock {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   END — PREDICTION STUDIO TYPOGRAPHY OVERRIDES
+   PREDICTION STUDIO — SECTION SEPARATION & VISUAL HIERARCHY
+   Purpose: Clear visual breaks between major dashboard sections,
+            more breathing room in grids, stronger section identity
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Main content vertical rhythm ── */
+.pps-main .ppd-config-grid {
+    margin-bottom: 24px;
+    padding-bottom: 4px;
+}
+
+/* ── Context Panel — visual prominence ── */
+.pps-main .ppd-context-panel {
+    margin-bottom: 28px;
+    border-radius: 12px;
+    border: 1px solid #dce1e8;
+}
+.pps-main .ppd-context-header {
+    background: linear-gradient(135deg, #f0f4f8 0%, #e8ecf2 100%);
+    border-radius: 12px 12px 0 0;
+}
+
+/* ── Summary Grid — wider cards, more gap ── */
+.pps-main .ppd-summary-grid {
+    gap: 18px;
+    margin-bottom: 32px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.pps-main .ppd-summary-card {
+    border: 1px solid #dce1e8;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.pps-main .ppd-summary-card:hover {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    border-color: #c5ccd6;
+}
+
+/* ── Server Overview — section divider + wider grid ── */
+.pps-main .ppd-server-overview {
+    margin-bottom: 32px;
+    padding-top: 28px;
+    border-top: 1px solid var(--border-color, #e2e5eb);
+}
+.pps-main .ppd-section-title {
+    padding-bottom: 12px;
+    margin-bottom: 18px;
+    border-bottom: 2px solid #eaecf0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.pps-main .ppd-section-title svg {
+    flex-shrink: 0;
+}
+.pps-main .ppd-server-grid {
+    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.pps-main .ppd-server-card {
+    border-radius: 12px;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+.pps-main .ppd-server-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+}
+.pps-main .ppd-server-header {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #f0f2f5;
+}
+
+/* ── Chart Section — section divider ── */
+.pps-main .pps-chart-wrapper {
+    margin-top: 4px;
+    margin-bottom: 28px;
+    padding: 24px 28px;
+    border-radius: 12px;
+    border: 1px solid #dce1e8;
+}
+.pps-main .pps-chart-title {
+    padding-bottom: 12px;
+    margin-bottom: 18px;
+    border-bottom: 2px solid #eaecf0;
+}
+
+/* ── Alert Table — section divider ── */
+.pps-main .ppd-table-wrapper {
+    border-radius: 12px;
+    border: 1px solid #dce1e8;
+    margin-top: 4px;
+}
+
+/* ── Drill-down panels — more spacious ── */
+.pps-main .ppd-drill-alert {
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+}
+
+/* ── Forecast projection grid — more room ── */
+.pps-main .ppd-proj-grid {
+    gap: 14px;
+}
+.pps-main .ppd-proj-container {
+    border-radius: 10px;
+    padding: 12px 14px;
+}
+
+/* ── Empty states — cohesive ── */
+.pps-main .pps-empty-state {
+    padding: 36px 24px;
+    border-radius: 12px;
+}
+
+/* ── Sidebar section spacing ── */
+.pps-sidebar .pps-sidebar-section {
+    gap: 14px;
+}
+.pps-sidebar .pps-sidebar-divider {
+    margin: 20px 0;
+}
+.pps-sidebar .pps-sidebar-field {
+    gap: 6px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   END — PREDICTION STUDIO SECTION SEPARATION & VISUAL HIERARCHY
    ══════════════════════════════════════════════════════════════════════════════ */
 
 /* ========== UI PROFESSIONALIZATION PATCH ========== */
