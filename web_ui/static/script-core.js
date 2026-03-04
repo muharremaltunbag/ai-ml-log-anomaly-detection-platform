@@ -1167,5 +1167,105 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     console.log('✅ LCWGPT Sidebar + ML Sidebar event listeners initialized');
+
+    // ── Scheduler Activity Strip — lightweight polling ──
+    (function initSchedulerStrip() {
+        var strip = document.getElementById('schedulerActivityStrip');
+        if (!strip) return;
+
+        var _sasTimer = null;
+        var _sasInterval = 15000; // 15 saniye
+
+        function escH(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+        function updateStrip() {
+            var url = window.API_ENDPOINTS ? window.API_ENDPOINTS.schedulerStatus : null;
+            if (!url || !window.apiKey) return;
+
+            fetch(url + '?api_key=' + encodeURIComponent(window.apiKey))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.status !== 'success' || !data.scheduler) {
+                        strip.style.display = 'none';
+                        return;
+                    }
+                    renderStrip(data.scheduler);
+                })
+                .catch(function () { /* silent */ });
+        }
+
+        function renderStrip(s) {
+            var enabled = !!s.enabled;
+            var running = !!s.running;
+            var cycleActive = !!s.cycle_in_progress;
+            var currentHost = s.current_host || null;
+            var sourceType = s.source_type || 'mongodb';
+            var targetHosts = s.target_hosts || [];
+            var runCount = s.run_count || 0;
+
+            // Hide if disabled
+            if (!enabled) { strip.style.display = 'none'; return; }
+            strip.style.display = '';
+
+            // Dot
+            var dot = document.getElementById('sasDot');
+            if (dot) {
+                dot.className = 'sas-dot';
+                if (cycleActive) dot.classList.add('sas-dot-active');
+                else if (running) dot.classList.add('sas-dot-running');
+                else dot.classList.add('sas-dot-idle');
+            }
+
+            // Label
+            var label = document.getElementById('sasLabel');
+            if (label) {
+                if (cycleActive) label.textContent = 'Scheduler: Analiz devam ediyor';
+                else if (running) label.textContent = 'Scheduler: Aktif';
+                else label.textContent = 'Scheduler: Hazir';
+            }
+
+            // Source
+            var srcEl = document.getElementById('sasSource');
+            if (srcEl) {
+                var srcLabels = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'ES' };
+                srcEl.textContent = srcLabels[sourceType] || sourceType;
+            }
+
+            // Host count
+            var hostsEl = document.getElementById('sasHosts');
+            if (hostsEl) {
+                hostsEl.textContent = targetHosts.length > 0 ? targetHosts.length + ' sunucu' : '';
+            }
+
+            // Current host
+            var curEl = document.getElementById('sasCurrent');
+            if (curEl) {
+                if (currentHost && cycleActive) {
+                    curEl.textContent = currentHost;
+                    curEl.style.display = '';
+                } else {
+                    curEl.textContent = '';
+                    curEl.style.display = 'none';
+                }
+            }
+
+            // Run info
+            var runEl = document.getElementById('sasRun');
+            if (runEl) {
+                if (runCount > 0) {
+                    runEl.textContent = runCount + '. calisma';
+                } else {
+                    runEl.textContent = '';
+                }
+            }
+        }
+
+        // Initial fetch + interval
+        setTimeout(updateStrip, 2000);
+        _sasTimer = setInterval(updateStrip, _sasInterval);
+
+        // Expose for manual refresh
+        window._refreshSchedulerStrip = updateStrip;
+    })();
 });
 

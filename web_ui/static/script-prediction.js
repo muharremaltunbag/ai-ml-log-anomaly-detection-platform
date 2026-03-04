@@ -1816,26 +1816,85 @@
                 + '</div>';
         }
 
-        // Last results summary (if any)
-        var lastResults = sched.last_results_summary || {};
-        var resultKeys = Object.keys(lastResults);
-        if (resultKeys.length > 0) {
-            html += '<div class="ppd-sched-results">'
-                + '<div class="ppd-sched-results-title">Son Cycle Sonuclari</div>';
-            for (var ri = 0; ri < resultKeys.length; ri++) {
-                var rHost = resultKeys[ri];
-                var rData = lastResults[rHost] || {};
-                var rStatus = rData.status || 'unknown';
-                var rAnomalies = rData.anomaly_count || 0;
-                var rCls = rStatus === 'completed' ? (rAnomalies > 0 ? 'ppd-sched-result-warn' : 'ppd-sched-result-ok') : 'ppd-sched-result-err';
-                html += '<div class="ppd-sched-result-row ' + rCls + '">'
-                    + '<span class="ppd-sched-result-host">' + esc(rHost) + '</span>'
-                    + '<span class="ppd-sched-result-badge">'
-                    + (rStatus === 'completed' ? rAnomalies + ' anomali' : 'hata')
-                    + '</span>'
-                    + '</div>';
+        // ── Host-Level Live Status Panel ──
+        var hostStates = sched.host_states || {};
+        var hostKeys = Object.keys(hostStates);
+        var currentHost = sched.current_host || null;
+
+        if (hostKeys.length > 0) {
+            var panelTitle = cycleActive ? 'Aktif Cycle — Sunucu Durumu' : 'Sunucu Durumu';
+            html += '<div class="ppd-host-live-panel">'
+                + '<div class="ppd-host-live-title">' + esc(panelTitle);
+            if (cycleActive) {
+                html += ' <span class="ppd-host-live-pulse"></span>';
             }
             html += '</div>';
+
+            // Sort: processing first, then queued, completed, cooldown, idle, error
+            var stateOrder = { processing: 0, queued: 1, completed: 2, cooldown: 3, idle: 4, error: 5 };
+            hostKeys.sort(function (a, b) {
+                var sa = stateOrder[hostStates[a].state] || 9;
+                var sb = stateOrder[hostStates[b].state] || 9;
+                return sa - sb;
+            });
+
+            for (var hi = 0; hi < hostKeys.length; hi++) {
+                var hName = hostKeys[hi];
+                var hState = hostStates[hName] || {};
+                var hStateName = hState.state || 'idle';
+                var hCls = 'ppd-hls-' + hStateName;
+                var isCurrent = (hName === currentHost && hStateName === 'processing');
+
+                // State label & icon
+                var stateLabels = {
+                    processing: '&#x25B6; Analiz ediliyor',
+                    queued: '&#x23F3; Sirada',
+                    completed: '&#x2713; Tamamlandi',
+                    cooldown: '&#x23F8; Cooldown',
+                    idle: '&#x25CB; Bekliyor',
+                    error: '&#x2717; Hata'
+                };
+                var stateLabel = stateLabels[hStateName] || hStateName;
+
+                // Extra info
+                var extra = '';
+                if (hStateName === 'completed' && typeof hState.anomaly_count === 'number') {
+                    extra = hState.anomaly_count + ' anomali';
+                } else if (hStateName === 'error' && hState.error) {
+                    extra = String(hState.error).substring(0, 60);
+                }
+
+                html += '<div class="ppd-host-live-row ' + hCls + (isCurrent ? ' ppd-hls-active' : '') + '">'
+                    + '<span class="ppd-hls-name">' + esc(hName) + '</span>'
+                    + '<span class="ppd-hls-state">' + stateLabel + '</span>';
+                if (extra) {
+                    html += '<span class="ppd-hls-extra">' + esc(extra) + '</span>';
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+        } else {
+            // Fallback: last results summary (if any, backward compat)
+            var lastResults = sched.last_results_summary || {};
+            var resultKeys = Object.keys(lastResults);
+            if (resultKeys.length > 0) {
+                html += '<div class="ppd-sched-results">'
+                    + '<div class="ppd-sched-results-title">Son Cycle Sonuclari</div>';
+                for (var ri = 0; ri < resultKeys.length; ri++) {
+                    var rHost = resultKeys[ri];
+                    var rData = lastResults[rHost] || {};
+                    var rStatus = rData.status || 'unknown';
+                    var rAnomalies = rData.anomaly_count || 0;
+                    var rCls = rStatus === 'completed' ? (rAnomalies > 0 ? 'ppd-sched-result-warn' : 'ppd-sched-result-ok') : 'ppd-sched-result-err';
+                    html += '<div class="ppd-sched-result-row ' + rCls + '">'
+                        + '<span class="ppd-sched-result-host">' + esc(rHost) + '</span>'
+                        + '<span class="ppd-sched-result-badge">'
+                        + (rStatus === 'completed' ? rAnomalies + ' anomali' : 'hata')
+                        + '</span>'
+                        + '</div>';
+                }
+                html += '</div>';
+            }
         }
 
         // Guidance messages

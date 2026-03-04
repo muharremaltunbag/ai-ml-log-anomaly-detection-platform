@@ -64,6 +64,15 @@ class AnomalyScheduler:
         self._host_last_analyzed: Dict[str, datetime] = {}  # per-host cooldown tracking
         self._cycle_in_progress = False  # prevent overlapping cycles
 
+        # ── Host-level live state (UI live status feed) ──
+        # Updated during each cycle for realtime visibility
+        self._current_host: Optional[str] = None       # şu an analiz edilen host
+        self._cycle_host_states: Dict[str, Dict[str, Any]] = {}  # host → {state, ...}
+        # States: "queued", "processing", "completed", "error", "cooldown"
+        self._cycle_started_at: Optional[datetime] = None
+        self._cycle_batch: List[str] = []               # bu cycle'daki batch
+        self._cycle_queue: List[str] = []                # henüz işlenmemiş host'lar
+
         # Analiz edilecek sunucu listesi (runtime'da set edilir)
         self._target_hosts: List[str] = []
         # Aktif veri kaynağı — UI'dan değiştirilebilir
@@ -174,10 +183,37 @@ class AnomalyScheduler:
             # İlk cycle henüz çalışmadı, timer bekliyor
             next_run = "pending"
 
+        # Host-level live state for UI
+        live_hosts: Dict[str, Any] = {}
+        if self._cycle_in_progress and self._cycle_host_states:
+            live_hosts = dict(self._cycle_host_states)
+        elif self._last_results:
+            # Cycle bitti — son sonuçları göster
+            for host, r in self._last_results.items():
+                live_hosts[host] = {
+                    "state": r.get("status", "unknown"),
+                    "anomaly_count": r.get("anomaly_count", 0),
+                    "completed_at": r.get("timestamp")
+                }
+            # Cooldown'daki host'ları da göster
+            now = datetime.utcnow()
+            cooldown_td = timedelta(minutes=self.per_host_cooldown_minutes)
+            for host in self._target_hosts:
+                if host not in live_hosts:
+                    last = self._host_last_analyzed.get(host)
+                    if last and (now - last) < cooldown_td:
+                        live_hosts[host] = {
+                            "state": "cooldown",
+                            "cooldown_until": (last + cooldown_td).isoformat()
+                        }
+                    else:
+                        live_hosts[host] = {"state": "idle"}
+
         return {
             "enabled": self.enabled,
             "running": self._running,
             "cycle_in_progress": self._cycle_in_progress,
+            "current_host": self._current_host,
             "interval_minutes": self.interval_minutes,
             "max_concurrent": self.max_concurrent,
             "source_type": getattr(self, '_source_type', 'mongodb'),
@@ -185,6 +221,9 @@ class AnomalyScheduler:
             "last_run": self._last_run.isoformat() if self._last_run else None,
             "next_run": next_run,
             "target_hosts": self._target_hosts,
+            "host_states": live_hosts,
+            "cycle_batch": self._cycle_batch if self._cycle_in_progress else [],
+            "cycle_queue": self._cycle_queue if self._cycle_in_progress else [],
             "last_results_summary": {
                 host: {
                     "status": r.get("status", "unknown"),
@@ -250,6 +289,11 @@ class AnomalyScheduler:
             return {"status": "skipped", "reason": "previous_cycle_in_progress"}
 
         self._cycle_in_progress = True
+        self._cycle_started_at = datetime.utcnow()
+        self._cycle_host_states = {}
+        self._current_host = None
+        self._cycle_batch = []
+        self._cycle_queue = []
         try:
             self._run_count += 1
             self._last_run = datetime.utcnow()
@@ -269,6 +313,10 @@ class AnomalyScheduler:
                 last = self._host_last_analyzed.get(host)
                 if last and (now - last) < cooldown_td:
                     skipped_cooldown.append(host)
+                    self._cycle_host_states[host] = {
+                        "state": "cooldown",
+                        "cooldown_until": (last + cooldown_td).isoformat()
+                    }
                 else:
                     eligible_hosts.append(host)
 
@@ -277,6 +325,12 @@ class AnomalyScheduler:
 
             # Batch: take up to max_concurrent from eligible
             batch = eligible_hosts[:self.max_concurrent]
+            self._cycle_batch = list(batch)
+            self._cycle_queue = list(batch)
+
+            # Mark queued hosts
+            for h in batch:
+                self._cycle_host_states[h] = {"state": "queued"}
 
             if not batch:
                 logger.info(f"No eligible hosts (all in cooldown). "
@@ -294,18 +348,37 @@ class AnomalyScheduler:
                     logger.info("Scheduler stopped mid-cycle, aborting remaining hosts")
                     break
 
+                # Update live state
+                self._current_host = host
+                self._cycle_host_states[host] = {
+                    "state": "processing",
+                    "started_at": datetime.utcnow().isoformat()
+                }
+                if host in self._cycle_queue:
+                    self._cycle_queue.remove(host)
+
                 try:
                     result = self._run_analysis(host)
                     cycle_results[host] = result
                     self._host_last_analyzed[host] = datetime.utcnow()
+                    self._cycle_host_states[host] = {
+                        "state": "completed",
+                        "anomaly_count": result.get("anomaly_count", 0),
+                        "completed_at": datetime.utcnow().isoformat()
+                    }
                 except Exception as e:
                     logger.error(f"Analysis failed for {host}: {e}")
                     cycle_results[host] = {"status": "error", "error": str(e)}
+                    self._cycle_host_states[host] = {
+                        "state": "error",
+                        "error": str(e)
+                    }
 
                 # CPU throttle: batch arası bekleme (son host hariç)
                 if i < len(batch) - 1 and self.batch_cooldown_seconds > 0:
                     time.sleep(self.batch_cooldown_seconds)
 
+            self._current_host = None
             self._last_results = cycle_results
 
             total_anomalies = sum(
@@ -325,6 +398,7 @@ class AnomalyScheduler:
             }
         finally:
             self._cycle_in_progress = False
+            self._current_host = None
 
     def _run_analysis(self, server_name: str) -> Dict[str, Any]:
         """Tek bir sunucu için analiz çalıştır"""

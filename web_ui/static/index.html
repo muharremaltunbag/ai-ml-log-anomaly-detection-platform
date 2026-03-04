@@ -52,6 +52,19 @@
         <!-- Ana İçerik -->
         <main id="mainContent" style="display: none;">
 
+            <!-- Scheduler Activity Strip — ince üst durum şeridi -->
+            <div id="schedulerActivityStrip" class="sas-strip" style="display:none;">
+                <div class="sas-inner">
+                    <span class="sas-dot" id="sasDot"></span>
+                    <span class="sas-label" id="sasLabel">Scheduler</span>
+                    <span class="sas-source" id="sasSource"></span>
+                    <span class="sas-hosts" id="sasHosts"></span>
+                    <span class="sas-current" id="sasCurrent"></span>
+                    <span class="sas-run" id="sasRun"></span>
+                    <a href="#" class="sas-link" id="sasDetailLink" onclick="if(window.PredictionDashboard)window.PredictionDashboard.show();return false;">Detay &rarr;</a>
+                </div>
+            </div>
+
             <!-- ===== INLINE ANALYSIS CONFIGURATION (Figma layout) ===== -->
             <section id="analysisConfigSection" class="analysis-config-section">
                 <div class="analysis-config-header">
