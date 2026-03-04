@@ -76,6 +76,7 @@ window.API_ENDPOINTS = {
     predictionConfig: '/api/prediction/config',
     predictionRun: '/api/prediction/run',
     predictionServerOverview: '/api/prediction/server-overview',
+    predictionLatestContext: '/api/prediction/latest-context',
     // SCHEDULER
     schedulerStatus: '/api/scheduler/status',
     schedulerStart: '/api/scheduler/start',

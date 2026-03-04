@@ -5525,6 +5525,28 @@ async def get_prediction_server_overview(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/prediction/latest-context")
+async def get_prediction_latest_context(
+    api_key: str,
+    server_name: Optional[str] = None,
+    source_type: Optional[str] = None,
+):
+    """Son prediction bağlamını döndür (trend/rate/forecast en son kayıtları + risk summary)"""
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+
+    try:
+        storage = await get_storage_manager()
+        ctx = await storage.get_prediction_latest_context(
+            server_name=server_name,
+            source_type=source_type
+        )
+        return {"status": "success", "context": ctx}
+    except Exception as e:
+        logger.error(f"Error getting prediction latest context: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─────────────────────────────────────────────────
 # On-Demand Prediction Run Endpoint
 # ─────────────────────────────────────────────────

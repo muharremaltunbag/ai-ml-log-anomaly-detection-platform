@@ -140,6 +140,7 @@
         var serverVal = (_el('ppdServerFilter') || {}).value || '';
         var daysVal = (_el('ppdDaysFilter') || {}).value || '7';
         loadConfig();
+        loadLatestContext(serverVal);
         loadSummary(serverVal, daysVal);
         loadServerOverview(daysVal);
         loadAlerts(serverVal, daysVal);
@@ -203,6 +204,130 @@
         }
 
         grid.innerHTML = html;
+    }
+
+    // ============================
+    // LATEST CONTEXT PANEL
+    // ============================
+    function loadLatestContext(server) {
+        var extra = '';
+        if (server) extra += 'server_name=' + encodeURIComponent(server);
+        var st = _getSourceType();
+        if (st) extra += (extra ? '&' : '') + 'source_type=' + encodeURIComponent(st);
+        var url = _apiUrl('predictionLatestContext', extra);
+        if (!url) return;
+
+        fetch(url)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.status !== 'success' || !data.context) return;
+                renderLatestContext(data.context);
+            })
+            .catch(function (err) {
+                console.warn('[PredictionDashboard] Latest context fetch error:', err);
+            });
+    }
+
+    function renderLatestContext(ctx) {
+        var panel = _el('ppdContextPanel');
+        var body = _el('ppdContextBody');
+        var badge = _el('ppdContextBadge');
+        if (!panel || !body) return;
+
+        var rs = ctx.risk_summary || {};
+        var maxSev = rs.max_severity || 'OK';
+        var totalAlerts = rs.total_alerts || 0;
+        var lastCheck = ctx.last_check;
+        var signals = rs.risk_signals || [];
+
+        // Show panel
+        panel.style.display = 'block';
+
+        // Badge
+        if (badge) {
+            var badgeCls = 'ppd-ctx-badge-ok';
+            if (maxSev === 'CRITICAL') badgeCls = 'ppd-ctx-badge-critical';
+            else if (maxSev === 'WARNING' || maxSev === 'HIGH') badgeCls = 'ppd-ctx-badge-warn';
+            badge.textContent = maxSev;
+            badge.className = 'ppd-context-badge ' + badgeCls;
+        }
+
+        // No data state
+        if (!lastCheck) {
+            body.innerHTML = '<div class="ppd-ctx-empty">'
+                + '<p><strong>Henuz prediction verisi yok.</strong></p>'
+                + '<p>Asagidaki yollardan biriyle baslayabilirsiniz:</p>'
+                + '<ol>'
+                + '<li>Ustteki <strong>"Analiz ve Tahmin Calistir"</strong> butonuna basin</li>'
+                + '<li>Chat panelinden bir anomaly analizi calistirin</li>'
+                + '<li>Sol panelden <strong>Scheduler</strong>\'i etkinlestirin</li>'
+                + '</ol>'
+                + '<p style="font-size:0.82em;color:#888;">Prediction, anomaly analizi sonucunda otomatik calisir. '
+                + 'Trend, Rate Alert ve Forecast modulleri gecmis analiz verisine dayanarak risk tahmini uretir.</p>'
+                + '</div>';
+            return;
+        }
+
+        var html = '';
+
+        // Last check info
+        var checkTime = lastCheck ? lastCheck.replace('T', ' ').substring(0, 19) : '-';
+        html += '<div class="ppd-ctx-row">'
+            + '<span class="ppd-ctx-label">Son Analiz</span>'
+            + '<span class="ppd-ctx-value">' + esc(checkTime) + '</span>'
+            + '</div>';
+
+        // Server
+        if (ctx.server_name) {
+            html += '<div class="ppd-ctx-row">'
+                + '<span class="ppd-ctx-label">Sunucu</span>'
+                + '<span class="ppd-ctx-value">' + esc(ctx.server_name) + '</span>'
+                + '</div>';
+        }
+
+        // Module status row
+        var modules = ['trend', 'rate', 'forecast'];
+        html += '<div class="ppd-ctx-modules">';
+        for (var i = 0; i < modules.length; i++) {
+            var m = modules[i];
+            var rec = ctx[m];
+            var mLabel = m === 'trend' ? 'Trend' : (m === 'rate' ? 'Rate Alert' : 'Forecast');
+            var mStatus, mCls;
+            if (!rec) {
+                mStatus = 'Veri yok';
+                mCls = 'ppd-ctx-mod-none';
+            } else if (rec.has_alerts) {
+                mStatus = rec.alert_count + ' uyari (' + rec.max_severity + ')';
+                mCls = 'ppd-ctx-mod-alert';
+            } else {
+                mStatus = 'Normal';
+                mCls = 'ppd-ctx-mod-ok';
+            }
+            html += '<div class="ppd-ctx-mod ' + mCls + '">'
+                + '<span class="ppd-ctx-mod-label">' + mLabel + '</span>'
+                + '<span class="ppd-ctx-mod-status">' + mStatus + '</span>'
+                + '</div>';
+        }
+        html += '</div>';
+
+        // Risk signals
+        if (signals.length > 0) {
+            html += '<div class="ppd-ctx-signals">'
+                + '<span class="ppd-ctx-signals-title">Aktif Risk Sinyalleri</span>';
+            for (var j = 0; j < signals.length; j++) {
+                var sig = signals[j];
+                var sigSev = (sig.severity || 'OK').toLowerCase();
+                html += '<div class="ppd-ctx-signal ppd-ctx-sig-' + sigSev + '">'
+                    + '<span class="ppd-ctx-sig-src">' + esc(sig.source) + '</span> '
+                    + esc(sig.title)
+                    + '</div>';
+            }
+            html += '</div>';
+        } else if (totalAlerts === 0) {
+            html += '<div class="ppd-ctx-ok-msg">Aktif risk sinyali tespit edilmedi. Sistem normal.</div>';
+        }
+
+        body.innerHTML = html;
     }
 
     // ============================

@@ -1244,3 +1244,8 @@ class StorageManager:
                                               days: int = 7) -> List[Dict[str, Any]]:
         """Delegate to MongoDBHandler — sunucu bazlı prediction risk özeti"""
         return await self.mongodb.get_prediction_server_overview(source_type, days)
+
+    async def get_prediction_latest_context(self, server_name: str = None,
+                                             source_type: str = None) -> Dict[str, Any]:
+        """Delegate to MongoDBHandler — son prediction bağlamı"""
+        return await self.mongodb.get_prediction_latest_context(server_name, source_type)

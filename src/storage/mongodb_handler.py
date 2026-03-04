@@ -1271,3 +1271,87 @@ class MongoDBHandler:
         except Exception as e:
             logger.error(f"Error getting prediction timeseries: {e}")
             return {"error": str(e)}
+
+    async def get_prediction_latest_context(self, server_name: str = None,
+                                             source_type: str = None) -> Dict[str, Any]:
+        """
+        Seçili sunucu için son prediction bağlamını döndür.
+
+        Her alert_source (trend/rate/forecast) için en son kaydı getirir.
+        Prediction Studio'da "son analiz durumu" panelini besler.
+        """
+        try:
+            collection = self.db[self.collections.get("prediction_alerts", "prediction_alerts")]
+
+            base_query: Dict[str, Any] = {}
+            if server_name:
+                base_query["server_name"] = server_name
+            if source_type:
+                base_query["source_type"] = source_type
+
+            result: Dict[str, Any] = {
+                "server_name": server_name,
+                "source_type": source_type,
+                "last_check": None,
+                "trend": None,
+                "rate": None,
+                "forecast": None,
+            }
+
+            latest_ts = None
+
+            for src in ["trend", "rate", "forecast"]:
+                query = {**base_query, "alert_source": src}
+                doc = await collection.find_one(query, sort=[("timestamp", DESCENDING)])
+                if doc:
+                    doc["_id"] = str(doc["_id"])
+                    result[src] = {
+                        "timestamp": doc["timestamp"].isoformat() if doc.get("timestamp") else None,
+                        "has_alerts": doc.get("has_alerts", False),
+                        "max_severity": doc.get("max_severity", "OK"),
+                        "alert_count": doc.get("alert_count", 0),
+                        "data": doc.get("data", {}),
+                    }
+                    if doc.get("timestamp"):
+                        if latest_ts is None or doc["timestamp"] > latest_ts:
+                            latest_ts = doc["timestamp"]
+
+            result["last_check"] = latest_ts.isoformat() if latest_ts else None
+
+            # Risk summary
+            total_alerts = 0
+            max_sev = "OK"
+            risk_signals = []
+            _sev_order = {"CRITICAL": 4, "WARNING": 3, "HIGH": 2, "MEDIUM": 1, "OK": 0}
+
+            for src in ["trend", "rate", "forecast"]:
+                rec = result[src]
+                if not rec:
+                    continue
+                total_alerts += rec["alert_count"]
+                if _sev_order.get(rec["max_severity"], 0) > _sev_order.get(max_sev, 0):
+                    max_sev = rec["max_severity"]
+
+                alerts_list = rec.get("data", {}).get("alerts", [])
+                if isinstance(alerts_list, list):
+                    for alert in alerts_list[:3]:
+                        title = alert.get("title", alert.get("event_type", ""))
+                        severity = alert.get("severity", rec["max_severity"])
+                        if title:
+                            risk_signals.append({
+                                "source": src,
+                                "title": title,
+                                "severity": severity
+                            })
+
+            result["risk_summary"] = {
+                "total_alerts": total_alerts,
+                "max_severity": max_sev,
+                "risk_signals": risk_signals[:10]
+            }
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting prediction latest context: {e}")
+            return {"error": str(e)}
