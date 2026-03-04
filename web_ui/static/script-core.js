@@ -81,7 +81,8 @@ window.API_ENDPOINTS = {
     schedulerStatus: '/api/scheduler/status',
     schedulerStart: '/api/scheduler/start',
     schedulerStop: '/api/scheduler/stop',
-    schedulerTrigger: '/api/scheduler/trigger'
+    schedulerTrigger: '/api/scheduler/trigger',
+    schedulerConfigure: '/api/scheduler/configure'
 };
 
 // ============================================

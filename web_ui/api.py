@@ -5697,6 +5697,64 @@ async def stop_scheduler(request: Dict[str, Any]):
     return {"status": "success", "scheduler": tools.scheduler.get_status() if tools.scheduler else {}}
 
 
+@app.post("/api/scheduler/configure")
+async def configure_scheduler(request: Dict[str, Any]):
+    """
+    Scheduler runtime ayarlarını güncelle (config dosyasına yazmaz).
+
+    Body: {
+        api_key: str,
+        enabled: bool (optional),
+        interval_minutes: int (optional, >=5),
+        source_type: str (optional, "mongodb"|"mssql"|"elasticsearch"),
+        max_concurrent: int (optional, 1-10)
+    }
+    """
+    api_key = request.get("api_key", "")
+    if not await verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
+    tools = _get_scheduler_tools()
+    if not tools.scheduler:
+        raise HTTPException(status_code=400, detail="Scheduler not initialized")
+
+    changed = []
+
+    if "enabled" in request:
+        tools.scheduler.set_enabled(bool(request["enabled"]))
+        changed.append(f"enabled={request['enabled']}")
+
+    if "interval_minutes" in request:
+        val = int(request["interval_minutes"])
+        if val < 5:
+            raise HTTPException(status_code=400,
+                                detail="interval_minutes minimum 5 olmalıdır")
+        tools.scheduler.set_interval(val)
+        changed.append(f"interval={val}")
+
+    if "source_type" in request:
+        st = request["source_type"]
+        if st not in ("mongodb", "mssql", "elasticsearch"):
+            raise HTTPException(status_code=400,
+                                detail=f"Geçersiz source_type: {st}")
+        tools.scheduler.set_source_type(st)
+        changed.append(f"source_type={st}")
+
+    if "max_concurrent" in request:
+        mc = int(request["max_concurrent"])
+        if mc < 1 or mc > 10:
+            raise HTTPException(status_code=400,
+                                detail="max_concurrent 1-10 arası olmalıdır")
+        tools.scheduler.max_concurrent = mc
+        changed.append(f"max_concurrent={mc}")
+
+    logger.info(f"Scheduler configured via API: {', '.join(changed)}")
+    return {
+        "status": "success",
+        "changed": changed,
+        "scheduler": tools.scheduler.get_status()
+    }
+
+
 @app.post("/api/scheduler/trigger")
 async def trigger_scheduler(request: Dict[str, Any]):
     """Manuel tek çalıştırma tetikle. Body: {api_key, server_name?: str}"""

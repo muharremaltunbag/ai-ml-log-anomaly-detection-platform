@@ -16660,6 +16660,86 @@ mark.text-highlight:hover {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   PREDICTION STUDIO — SCHEDULER TOGGLE + INTERVAL
+   ═══════════════════════════════════════════════════════════ */
+.pps-sched-enable-row {
+    padding: 8px 0;
+    margin-bottom: 6px;
+}
+.pps-sched-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+}
+.pps-sched-toggle-input {
+    display: none;
+}
+.pps-sched-toggle-slider {
+    position: relative;
+    width: 38px;
+    height: 20px;
+    background: #cfd8dc;
+    border-radius: 10px;
+    transition: background 0.25s;
+    flex-shrink: 0;
+}
+.pps-sched-toggle-slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.25s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.pps-sched-toggle-input:checked + .pps-sched-toggle-slider {
+    background: #4caf50;
+}
+.pps-sched-toggle-input:checked + .pps-sched-toggle-slider::after {
+    transform: translateX(18px);
+}
+.pps-sched-toggle-text {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #546e7a;
+}
+.pps-sched-toggle-input:checked ~ .pps-sched-toggle-text {
+    color: #2e7d32;
+}
+
+/* Interval row */
+.pps-sched-interval-row {
+    margin-bottom: 8px;
+}
+.pps-sched-interval-select {
+    width: 100%;
+    font-size: 12px;
+}
+
+/* Host search */
+.pps-hosts-search-wrap {
+    margin-bottom: 6px;
+}
+.pps-hosts-search {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: 11.5px;
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    outline: none;
+    box-sizing: border-box;
+}
+.pps-hosts-search:focus {
+    border-color: #5c6bc0;
+    box-shadow: 0 0 0 2px rgba(92, 107, 192, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════
    PREDICTION STUDIO — ONBOARDING GUIDE PANEL
    ═══════════════════════════════════════════════════════════ */
 .ppd-guide-panel {

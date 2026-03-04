@@ -54,6 +54,8 @@ class AnomalyScheduler:
 
         # Analiz edilecek sunucu listesi (runtime'da set edilir)
         self._target_hosts: List[str] = []
+        # Aktif veri kaynağı — UI'dan değiştirilebilir
+        self._source_type: str = config.get('source_type', 'mongodb')
 
         logger.info(f"AnomalyScheduler initialized (enabled={self.enabled}, "
                      f"interval={self.interval_minutes}min, "
@@ -109,14 +111,58 @@ class AnomalyScheduler:
     def is_running(self) -> bool:
         return self._running
 
+    def set_enabled(self, enabled: bool) -> None:
+        """Runtime enable/disable — UI'dan çağrılır, config dosyasını değiştirmez."""
+        with self._lock:
+            prev = self.enabled
+            self.enabled = enabled
+            if not enabled and self._running:
+                # Disable edilirken çalışıyorsa durdur
+                self._running = False
+                if self._timer:
+                    self._timer.cancel()
+                    self._timer = None
+                logger.info("Scheduler disabled and stopped via runtime toggle")
+            logger.info(f"Scheduler enabled state changed: {prev} -> {enabled}")
+
+    def set_interval(self, minutes: int) -> None:
+        """Runtime interval değişikliği. Mevcut timer'ı yeniden planlar."""
+        if minutes < 1:
+            logger.warning("Interval must be >= 1 minute, ignoring")
+            return
+        with self._lock:
+            self.interval_minutes = minutes
+            logger.info(f"Scheduler interval changed to {minutes} min")
+            # Çalışıyorsa sonraki cycle yeni interval ile planlanır
+            # (mevcut timer dokunulmaz, bir sonrakinde geçerli olur)
+
+    def set_source_type(self, source_type: str) -> None:
+        """Scheduler'ın hangi veri kaynağına analiz yapacağını belirle."""
+        with self._lock:
+            self._source_type = source_type
+            logger.info(f"Scheduler source_type set to: {source_type}")
+
     def get_status(self) -> Dict[str, Any]:
         """Scheduler durumunu döndür"""
+        # Next run hesaplama
+        next_run = None
+        if self._running and self._last_run:
+            from datetime import timedelta
+            next_dt = self._last_run + timedelta(minutes=self.interval_minutes)
+            next_run = next_dt.isoformat()
+        elif self._running and not self._last_run:
+            # İlk cycle henüz çalışmadı, timer bekliyor
+            next_run = "pending"
+
         return {
             "enabled": self.enabled,
             "running": self._running,
             "interval_minutes": self.interval_minutes,
+            "max_concurrent": self.max_concurrent,
+            "source_type": getattr(self, '_source_type', 'mongodb'),
             "run_count": self._run_count,
             "last_run": self._last_run.isoformat() if self._last_run else None,
+            "next_run": next_run,
             "target_hosts": self._target_hosts,
             "last_results_summary": {
                 host: {
@@ -200,8 +246,9 @@ class AnomalyScheduler:
             return {"status": "error", "error": "no_callback"}
 
         try:
-            logger.info(f"Running scheduled analysis for: {server_name}")
-            result = self.analysis_callback(server_name)
+            source = getattr(self, '_source_type', 'mongodb')
+            logger.info(f"Running scheduled analysis for: {server_name} (source={source})")
+            result = self.analysis_callback(server_name, source)
 
             # Callback sonucundan anomaly count çıkar
             anomaly_count = 0

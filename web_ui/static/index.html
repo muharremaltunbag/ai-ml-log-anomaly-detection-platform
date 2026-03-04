@@ -713,6 +713,32 @@
                             <!-- Scheduler section -->
                             <div class="pps-sidebar-section">
                                 <h4 class="pps-sidebar-title" title="Scheduler, duzenli otomatik analiz calistirarak prediction verisinin birikmesini saglar. Guvenilir tahmin icin acik olmasi onerilir.">Scheduler Yonetimi</h4>
+
+                                <!-- Enable/Disable Toggle -->
+                                <div class="pps-sched-enable-row" id="ppsSchedEnableRow">
+                                    <label class="pps-sched-toggle-label">
+                                        <input type="checkbox" id="ppsSchedEnableCheck" class="pps-sched-toggle-input">
+                                        <span class="pps-sched-toggle-slider"></span>
+                                        <span class="pps-sched-toggle-text" id="ppsSchedEnableText">Scheduler Kapali</span>
+                                    </label>
+                                </div>
+
+                                <!-- Interval setting -->
+                                <div class="pps-sidebar-field pps-sched-interval-row" id="ppsSchedIntervalRow">
+                                    <label class="pps-sidebar-label">Analiz Araligi</label>
+                                    <div class="pps-sched-interval-input-wrap">
+                                        <select id="ppsSchedIntervalSelect" class="pps-sidebar-select pps-sched-interval-select" title="Scheduler calisma araligi">
+                                            <option value="5">5 dk</option>
+                                            <option value="10">10 dk</option>
+                                            <option value="15">15 dk</option>
+                                            <option value="30" selected>30 dk</option>
+                                            <option value="60">1 saat</option>
+                                            <option value="120">2 saat</option>
+                                            <option value="360">6 saat</option>
+                                        </select>
+                                    </div>
+                                </div>
+
                                 <div class="ppd-sched-panel pps-sidebar-sched" id="ppdSchedPanel">
                                     <div class="ppd-sched-body">
                                         <div class="ppd-sched-grid" id="ppdSchedGrid">
@@ -725,7 +751,10 @@
                                 <div class="pps-sidebar-field pps-sidebar-field-hosts">
                                     <div class="pps-sidebar-hosts-header">
                                         <label class="pps-sidebar-label">Hedef Sunucular</label>
-                                        <button type="button" id="ppsHostsSelectAll" class="pps-hosts-toggle-btn">Tumu Sec</button>
+                                        <button type="button" id="ppsHostsSelectAll" class="pps-hosts-toggle-btn">Temizle</button>
+                                    </div>
+                                    <div class="pps-hosts-search-wrap" id="ppsHostsSearchWrap">
+                                        <input type="text" id="ppsHostsSearch" class="pps-hosts-search" placeholder="Sunucu ara..." autocomplete="off">
                                     </div>
                                     <div class="pps-hosts-list" id="ppsHostsList">
                                         <span class="pps-hosts-empty">Scheduler verisi bekleniyor...</span>

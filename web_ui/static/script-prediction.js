@@ -1591,9 +1591,20 @@
         var enabled = !!sched.enabled;
         var running = !!sched.running;
         _lastSchedulerRunning = running;
-        var interval = sched.interval_minutes || '-';
+        var interval = sched.interval_minutes || 30;
         var runCount = sched.run_count || 0;
         var lastRun = sched.last_run || null;
+        var nextRun = sched.next_run || null;
+
+        // Sync enable toggle
+        var enableCheck = _el('ppsSchedEnableCheck');
+        var enableText = _el('ppsSchedEnableText');
+        if (enableCheck) enableCheck.checked = enabled;
+        if (enableText) enableText.textContent = enabled ? 'Scheduler Aktif' : 'Scheduler Kapali';
+
+        // Sync interval select
+        var intervalSel = _el('ppsSchedIntervalSelect');
+        if (intervalSel) intervalSel.value = String(interval);
 
         // Format last run time
         var lastRunStr = '-';
@@ -1602,18 +1613,29 @@
             if (lastRunStr.length > 19) lastRunStr = lastRunStr.substring(0, 19).replace('T', ' ');
         }
 
+        // Format next run
+        var nextRunStr = '-';
+        if (nextRun && nextRun !== 'pending') {
+            nextRunStr = String(nextRun);
+            if (nextRunStr.length > 19) nextRunStr = nextRunStr.substring(0, 19).replace('T', ' ');
+        } else if (nextRun === 'pending') {
+            nextRunStr = 'Beklemede...';
+        }
+
         // Status label
         var statusLabel, statusClass;
         if (!enabled) { statusLabel = 'DEVRE DISI'; statusClass = 'ppd-sched-status-disabled'; }
         else if (running) { statusLabel = 'CALISIYOR'; statusClass = 'ppd-sched-status-running'; }
-        else { statusLabel = 'DURDU'; statusClass = 'ppd-sched-status-stopped'; }
+        else { statusLabel = 'HAZIR'; statusClass = 'ppd-sched-status-stopped'; }
 
         var stats = [
             { label: 'Durum', value: statusLabel, cls: statusClass },
-            { label: 'Aralik', value: interval + ' dk', cls: '' },
             { label: 'Calisma Sayisi', value: String(runCount), cls: '' },
             { label: 'Son Calisma', value: lastRunStr, cls: '' }
         ];
+        if (running) {
+            stats.push({ label: 'Sonraki Calisma', value: nextRunStr, cls: '' });
+        }
 
         var html = '';
         for (var i = 0; i < stats.length; i++) {
@@ -1623,36 +1645,35 @@
                 + '<div class="ppd-sched-stat-value ' + s.cls + '">' + esc(s.value) + '</div>'
                 + '</div>';
         }
-        // Disabled hint — enhanced with impact explanation
+
+        // Guidance messages
         if (!enabled) {
             html += '<div class="ppd-sched-guidance">'
                 + '<strong>Scheduler devre disi.</strong> '
-                + 'Scheduler kapaliyken prediction verileri yalnizca manuel analiz calistirildiginda olusur. '
-                + 'Bu, tahmin kalitesini onemli olcude dusurur cunku:<br>'
-                + '&bull; Forecasting modulu duzenli veri akisi gerektirir (Tier 3 icin 20+ analiz)<br>'
-                + '&bull; Trend analizi gecmis verilerin duzensiz aralikli olmasinda dogru calismaz<br>'
-                + '&bull; Rate alert baseline hesaplamasi yetersiz kalir<br><br>'
-                + '<strong>Onerimiz:</strong> <code>anomaly_config.json &gt; prediction &gt; scheduler &gt; enabled: true</code> '
-                + 'ayarini yapin veya bu panelden "Baslat" butonunu kullanin.'
+                + 'Yukaridaki toggle ile etkinlestirin. '
+                + 'Scheduler kapaliyken prediction yalnizca manuel analizlerden veri alir — '
+                + 'bu tahmin kalitesini onemli olcude dusurur.'
                 + '</div>';
         } else if (!running) {
             html += '<div class="ppd-sched-guidance">'
-                + '<strong>Scheduler config\'de aktif ama su an calismakta degil.</strong> '
-                + 'Asagidaki "Baslat" butonuyla baslatabilirsiniz. '
-                + 'Her ' + interval + ' dakikada otomatik analiz calistirilacak ve prediction verileri birikecek.'
+                + '<strong>Scheduler aktif ama henuz baslatilmadi.</strong> '
+                + '"Baslat" butonuyla baslatabilirsiniz. '
+                + 'Her ' + interval + ' dakikada otomatik analiz calistirilacak.'
                 + '</div>';
         }
 
         grid.innerHTML = html;
 
-        // Update button states
+        // Update button states — start available when enabled but not running
         var startBtn = _el('ppdSchedStartBtn');
         var stopBtn = _el('ppdSchedStopBtn');
         var triggerBtn = _el('ppdSchedTriggerBtn');
         if (startBtn) startBtn.disabled = !enabled || running || _schedBusy;
         if (stopBtn) stopBtn.disabled = !running || _schedBusy;
-        // Trigger is independent of scheduler enabled state — trigger_now works standalone
         if (triggerBtn) triggerBtn.disabled = _schedBusy;
+
+        // Update readiness bar
+        _renderReadinessBar(_lastTotalChecks, _lastSchedulerRunning);
 
         // Render target hosts as interactive checkboxes in sidebar
         var hosts = sched.target_hosts || [];
@@ -1725,6 +1746,80 @@
                     else label.classList.remove('pps-host-checked');
                 }
             });
+        });
+    }
+
+    // ============================
+    // SCHEDULER ENABLE/DISABLE TOGGLE
+    // ============================
+    function _initSchedEnableToggle() {
+        var check = _el('ppsSchedEnableCheck');
+        if (!check) return;
+        check.addEventListener('change', function () {
+            var newEnabled = check.checked;
+            _postSchedulerConfig({ enabled: newEnabled },
+                newEnabled ? 'Scheduler etkinlestirildi' : 'Scheduler devre disi birakildi');
+        });
+    }
+
+    // ============================
+    // SCHEDULER INTERVAL CHANGE
+    // ============================
+    function _initSchedIntervalChange() {
+        var sel = _el('ppsSchedIntervalSelect');
+        if (!sel) return;
+        sel.addEventListener('change', function () {
+            var minutes = parseInt(sel.value, 10);
+            if (!minutes || minutes < 5) return;
+            _postSchedulerConfig({ interval_minutes: minutes },
+                'Scheduler araligi ' + minutes + ' dk olarak ayarlandi');
+        });
+    }
+
+    // ============================
+    // HOST SEARCH FILTER
+    // ============================
+    function _initHostSearch() {
+        var input = _el('ppsHostsSearch');
+        if (!input) return;
+        input.addEventListener('input', function () {
+            var query = input.value.toLowerCase().trim();
+            var container = _el('ppsHostsList');
+            if (!container) return;
+            var items = container.querySelectorAll('.pps-host-item');
+            for (var i = 0; i < items.length; i++) {
+                var label = items[i].querySelector('.pps-host-item-label');
+                var text = label ? label.textContent.toLowerCase() : '';
+                items[i].style.display = (!query || text.indexOf(query) !== -1) ? '' : 'none';
+            }
+        });
+    }
+
+    function _postSchedulerConfig(body, successMsg) {
+        var base = window.API_ENDPOINTS ? window.API_ENDPOINTS['schedulerConfigure'] : null;
+        if (!base) return;
+
+        body.api_key = window.apiKey || '';
+        _schedBusy = true;
+        _updateSchedButtons();
+
+        fetch(base, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            _schedBusy = false;
+            if (data.scheduler) {
+                renderSchedulerStatus(data.scheduler);
+            }
+            console.log('[PredictionDashboard] ' + successMsg, data);
+        })
+        .catch(function (err) {
+            _schedBusy = false;
+            _updateSchedButtons();
+            console.error('[PredictionDashboard] Scheduler config error:', err);
         });
     }
 
@@ -2039,6 +2134,13 @@
         if (runAnalysisBtn) {
             runAnalysisBtn.addEventListener('click', function () { runAnalysis(); });
         }
+
+        // Scheduler enable toggle
+        _initSchedEnableToggle();
+        // Scheduler interval change
+        _initSchedIntervalChange();
+        // Host search filter
+        _initHostSearch();
 
         // Source toggle + host select all
         _initSourceToggle();
