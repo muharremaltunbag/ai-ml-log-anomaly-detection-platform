@@ -1777,20 +1777,26 @@
         var container = _el('ppsHostsList');
         if (!container) return;
 
+        // Update count badge
+        var countBadge = _el('ppsHostsCount');
+
         if (hosts.length === 0) {
+            if (countBadge) countBadge.textContent = '0';
             var st = _getSourceType() || 'mongodb';
             var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[st] || st;
             container.innerHTML = '<span class="pps-hosts-empty">'
                 + sourceLabel + ' icin aktif sunucu bulunamadi. '
-                + 'Son 24 saatte log gonderimsi olan sunucular burada listelenir. '
+                + 'Son 24 saatte log gonderimi olan sunucular burada listelenir. '
                 + 'Farkli bir veri kaynagi secmeyi deneyin.</span>';
             return;
         }
 
+        if (countBadge) countBadge.textContent = hosts.length;
+
         var html = '';
         for (var i = 0; i < hosts.length; i++) {
             var id = 'ppsHost_' + i;
-            html += '<label class="pps-host-item pps-host-checked" for="' + id + '">'
+            html += '<label class="pps-host-item pps-host-checked" for="' + id + '" title="' + esc(hosts[i]) + '">'
                 + '<input type="checkbox" id="' + id + '" value="' + esc(hosts[i]) + '" checked>'
                 + '<span class="pps-host-item-label">' + esc(hosts[i]) + '</span>'
                 + '</label>';
