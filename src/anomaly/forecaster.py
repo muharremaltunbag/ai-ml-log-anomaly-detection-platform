@@ -1106,12 +1106,27 @@ def _adjust_confidence_with_ml(
             adjusted = statistical_confidence
             reason = ""
     else:
-        # Falling/stable forecast → ML etkisi minimal
+        # Falling/stable forecast → ML divergence analizi
         if signal_score >= 2.0:
-            # ML kötüleşiyor ama forecast düşüyor → uyarı notu, confidence'a az etki
-            boost = min(0.05, signal_score * 0.02)
-            adjusted = min(0.90, statistical_confidence + boost)
-            reason = f"ML risk yüksek (forecast {direction}): {', '.join(reasons)}"
+            # ML ciddi kötüleşme sinyali veriyor ama forecast stabil/düşen diyor
+            # → Forecast'ın "stabil" dediğine daha az güven (confidence'ı düşür)
+            # Bu, ML'in yakaladığı ama istatistiksel forecaster'ın henüz görmediği
+            # bir erken bozulma olabilir.
+            dampen = min(0.12, signal_score * 0.04)
+            adjusted = max(0.05, statistical_confidence - dampen)
+            reason = (
+                f"ML divergence uyarısı (−{dampen:.2f}): forecast {direction} "
+                f"ama ML ciddi risk tespit ediyor ({', '.join(reasons)}). "
+                f"Forecast güvenilirliği düşürüldü."
+            )
+        elif signal_score >= 1.0:
+            # ML orta düzey kötüleşme — hafif uyarı notu
+            dampen = min(0.06, signal_score * 0.03)
+            adjusted = max(0.05, statistical_confidence - dampen)
+            reason = (
+                f"ML hafif divergence (−{dampen:.2f}): forecast {direction} "
+                f"ama ML risk sinyalleri yükseliyor ({', '.join(reasons)})."
+            )
         else:
             adjusted = statistical_confidence
             reason = ""
