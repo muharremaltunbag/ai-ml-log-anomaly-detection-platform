@@ -611,6 +611,160 @@
     }
 
     // ============================
+    // FORECAST PROJECTION MINI-CHART
+    // ============================
+    var _projCanvasId = 0;
+
+    /**
+     * Renders an inline forecast projection chart using Canvas.
+     * @param {number[]} historyValues - historical metric values (up to 15)
+     * @param {number|null} forecastValue - projected value
+     * @param {number|null} upperBound - upper confidence bound
+     * @param {number|null} lowerBound - lower confidence bound
+     * @param {string} label - metric label
+     * @param {string} direction - rising/falling/stable
+     * @returns {string} HTML string with canvas element + initialization script ID
+     */
+    function _buildProjectionChart(historyValues, forecastValue, upperBound, lowerBound, label, direction) {
+        if (!historyValues || historyValues.length < 2) return '';
+        var canvasId = 'ppdProjCanvas_' + (++_projCanvasId);
+        var hasForecast = forecastValue != null && !isNaN(forecastValue);
+
+        // Build data arrays
+        var hist = historyValues.slice();
+        var n = hist.length;
+
+        // Calculate y-axis range
+        var allVals = hist.slice();
+        if (hasForecast) {
+            allVals.push(forecastValue);
+            if (upperBound != null) allVals.push(upperBound);
+            if (lowerBound != null) allVals.push(lowerBound);
+        }
+        var yMin = Math.min.apply(null, allVals);
+        var yMax = Math.max.apply(null, allVals);
+        var yPad = (yMax - yMin) * 0.15 || 1;
+        yMin = yMin - yPad;
+        yMax = yMax + yPad;
+
+        var dirLabel = direction === 'rising' ? 'Yukari' : (direction === 'falling' ? 'Asagi' : 'Stabil');
+        var dirCls = direction === 'rising' ? 'ppd-proj-rising' : (direction === 'falling' ? 'ppd-proj-falling' : 'ppd-proj-stable');
+
+        var html = '<div class="ppd-proj-container ' + dirCls + '">'
+            + '<div class="ppd-proj-header">'
+            + '<span class="ppd-proj-label">' + esc(label) + '</span>'
+            + '<span class="ppd-proj-dir">' + dirLabel + '</span>'
+            + '</div>'
+            + '<canvas id="' + canvasId + '" class="ppd-proj-canvas" width="320" height="120"></canvas>'
+            + '</div>';
+
+        // Defer drawing so canvas is in DOM
+        setTimeout(function () {
+            var canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            var ctx = canvas.getContext('2d');
+            var W = canvas.width;
+            var H = canvas.height;
+            var padL = 6, padR = 6, padT = 8, padB = 16;
+            var plotW = W - padL - padR;
+            var plotH = H - padT - padB;
+
+            var totalPts = hasForecast ? n + 1 : n;
+            function xPos(i) { return padL + (i / (totalPts - 1)) * plotW; }
+            function yPos(v) { return padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH; }
+
+            // Draw confidence band (shaded region from last history point to forecast)
+            if (hasForecast && upperBound != null && lowerBound != null) {
+                ctx.fillStyle = 'rgba(33, 150, 243, 0.10)';
+                ctx.beginPath();
+                ctx.moveTo(xPos(n - 1), yPos(hist[n - 1]));
+                ctx.lineTo(xPos(n), yPos(upperBound));
+                ctx.lineTo(xPos(n), yPos(lowerBound));
+                ctx.closePath();
+                ctx.fill();
+
+                // Upper/lower bound dashed lines
+                ctx.strokeStyle = 'rgba(33, 150, 243, 0.35)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(xPos(n - 1), yPos(hist[n - 1]));
+                ctx.lineTo(xPos(n), yPos(upperBound));
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(xPos(n - 1), yPos(hist[n - 1]));
+                ctx.lineTo(xPos(n), yPos(lowerBound));
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Draw history line
+            ctx.strokeStyle = '#546e7a';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            for (var i = 0; i < n; i++) {
+                var x = xPos(i);
+                var y = yPos(hist[i]);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Draw history points
+            ctx.fillStyle = '#546e7a';
+            for (var j = 0; j < n; j++) {
+                ctx.beginPath();
+                ctx.arc(xPos(j), yPos(hist[j]), 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw forecast projection line + point
+            if (hasForecast) {
+                var fcColor = direction === 'rising' ? '#d32f2f' : (direction === 'falling' ? '#2e7d32' : '#1565c0');
+                ctx.strokeStyle = fcColor;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 3]);
+                ctx.beginPath();
+                ctx.moveTo(xPos(n - 1), yPos(hist[n - 1]));
+                ctx.lineTo(xPos(n), yPos(forecastValue));
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Forecast point (larger, filled)
+                ctx.fillStyle = fcColor;
+                ctx.beginPath();
+                ctx.arc(xPos(n), yPos(forecastValue), 4, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // Value label at forecast point
+                ctx.fillStyle = fcColor;
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(forecastValue.toFixed(1), xPos(n), yPos(forecastValue) - 7);
+            }
+
+            // Current value label
+            ctx.fillStyle = '#546e7a';
+            ctx.font = '9px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(hist[n - 1].toFixed(1), xPos(n - 1), yPos(hist[n - 1]) - 6);
+
+            // X-axis labels
+            ctx.fillStyle = '#999';
+            ctx.font = '8px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Gecmis', padL + plotW * 0.3, H - 2);
+            if (hasForecast) {
+                ctx.fillText('Tahmin', xPos(n), H - 2);
+            }
+        }, 30);
+
+        return html;
+    }
+
+    // ============================
     // DRILL-DOWN PANEL
     // ============================
     function _buildDrillDownPanel(alertDoc, dataAlerts) {
@@ -673,6 +827,23 @@
                             + '</div>';
                     }
                     extraHtml += '</div>';
+                }
+                // Forecast projection mini-charts for metrics with history
+                var projHtml = '';
+                for (var p = 0; p < fKeys.length; p++) {
+                    var pfc = forecasts[fKeys[p]];
+                    if (!pfc || !pfc.history_values || pfc.history_values.length < 2) continue;
+                    projHtml += _buildProjectionChart(
+                        pfc.history_values,
+                        pfc.forecast_value != null ? parseFloat(pfc.forecast_value) : null,
+                        pfc.upper_bound != null ? parseFloat(pfc.upper_bound) : null,
+                        pfc.lower_bound != null ? parseFloat(pfc.lower_bound) : null,
+                        pfc.label || fKeys[p],
+                        pfc.direction || 'stable'
+                    );
+                }
+                if (projHtml) {
+                    extraHtml += '<div class="ppd-proj-grid" style="margin-top:10px;">' + projHtml + '</div>';
                 }
             } else if (src === 'trend') {
                 // Show trend summary if available
@@ -742,7 +913,7 @@
                 html += '<div class="ppd-drill-desc">' + esc(al.description) + '</div>';
             }
 
-            // Forecast bounds
+            // Forecast bounds + projection chart
             if (typeof al.forecast_value === 'number') {
                 var lb = typeof al.lower_bound === 'number' ? al.lower_bound.toFixed(2) : '?';
                 var ub = typeof al.upper_bound === 'number' ? al.upper_bound.toFixed(2) : '?';
@@ -750,6 +921,26 @@
                     + 'Tahmin: ' + al.forecast_value.toFixed(2)
                     + ' [' + lb + ' \u2013 ' + ub + ']'
                     + '</div>';
+
+                // Try to get history_values from parent forecast data
+                var alertForecasts = (alertDoc.data && alertDoc.data.forecasts) || {};
+                var metricKey = al.metric_name || '';
+                var fcData = alertForecasts[metricKey];
+                var histVals = (fcData && fcData.history_values) || null;
+                if (!histVals && typeof al.current_value === 'number') {
+                    // Fallback: 2-point chart with current → forecast
+                    histVals = [al.current_value];
+                }
+                if (histVals && histVals.length >= 1) {
+                    html += _buildProjectionChart(
+                        histVals.length >= 2 ? histVals : [histVals[0], histVals[0]],
+                        al.forecast_value,
+                        typeof al.upper_bound === 'number' ? al.upper_bound : null,
+                        typeof al.lower_bound === 'number' ? al.lower_bound : null,
+                        al.title || metricKey,
+                        al.direction || 'rising'
+                    );
+                }
             }
 
             // ML context detail for rate alerts (enriched with severity-weighted data)

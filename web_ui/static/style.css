@@ -17376,6 +17376,63 @@ body.pps-body-lock {
     margin-right: 2px;
 }
 
+/* ── Forecast projection mini-chart ── */
+.ppd-proj-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.ppd-proj-container {
+    flex: 1 1 300px;
+    max-width: 340px;
+    background: #fafbfc;
+    border: 1px solid #e0e6ed;
+    border-radius: 8px;
+    padding: 8px 10px;
+    transition: border-color 0.2s;
+}
+.ppd-proj-container.ppd-proj-rising {
+    border-left: 3px solid #d32f2f;
+}
+.ppd-proj-container.ppd-proj-falling {
+    border-left: 3px solid #2e7d32;
+}
+.ppd-proj-container.ppd-proj-stable {
+    border-left: 3px solid #1565c0;
+}
+.ppd-proj-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+.ppd-proj-label {
+    font-size: 0.78em;
+    font-weight: 600;
+    color: #37474f;
+}
+.ppd-proj-dir {
+    font-size: 0.72em;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: #f5f5f5;
+    color: #666;
+}
+.ppd-proj-rising .ppd-proj-dir {
+    background: #ffebee;
+    color: #c62828;
+}
+.ppd-proj-falling .ppd-proj-dir {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+.ppd-proj-canvas {
+    display: block;
+    width: 100%;
+    height: 120px;
+}
+
 /* ── Scheduler Panel ── */
 .ppd-sched-panel {
     margin-top: 20px;
