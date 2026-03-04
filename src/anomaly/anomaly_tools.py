@@ -245,7 +245,7 @@ class AnomalyDetectionTools:
             else:
                 result_str = self.analyze_mongodb_logs({
                     "source_type": "opensearch",
-                    "server_name": server_name,
+                    "host_filter": server_name,
                     "time_range": "last_hour"
                 })
 
