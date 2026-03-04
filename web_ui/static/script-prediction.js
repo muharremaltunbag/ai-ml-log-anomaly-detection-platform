@@ -389,9 +389,11 @@
         if (totalChecks === 0) {
             html += '<div class="pps-empty-state">'
                 + '<div class="pps-empty-icon">&#x1F4CA;</div>'
-                + '<div class="pps-empty-title">Henuz prediction verisi yok</div>'
-                + '<div class="pps-empty-desc">Bu zaman araliginda hic analiz yapilmamis. '
-                + 'Anomali analizi calistirarak veya Scheduler\'i baslat butonuyla otomatik analiz etkinlestirerek baslayabilirsiniz.</div>'
+                + '<div class="pps-empty-title">Bu zaman araliginda prediction verisi bulunamadi</div>'
+                + '<div class="pps-empty-desc">'
+                + 'Prediction verileri, anomaly analizi calistirildiginda otomatik uretilir.<br>'
+                + '<strong>Baslangic icin:</strong> Ustteki "Analiz ve Tahmin Calistir" butonunu kullanin '
+                + 'veya farkli bir zaman araligi secin.</div>'
                 + '</div>';
         }
 
@@ -573,8 +575,10 @@
                         if (emptyTbody) {
                             emptyTbody.innerHTML = '<tr><td colspan="7" class="pps-table-empty">'
                                 + '<div class="pps-empty-icon" style="font-size:24px;">&#x1F50D;</div>'
-                                + '<div style="margin-top:6px;font-weight:600;color:#555;">Bu zaman araliginda alert kaydi bulunamadi</div>'
-                                + '<div style="margin-top:4px;font-size:12px;color:#999;">Farkli bir zaman araligi veya sunucu filtresi deneyin.</div>'
+                                + '<div style="margin-top:6px;font-weight:600;color:#555;">Bu zaman araliginda prediction kaydi yok</div>'
+                                + '<div style="margin-top:4px;font-size:12px;color:#999;">'
+                                + 'Prediction kayitlari anomaly analizi calistiktan sonra olusur. '
+                                + 'Farkli zaman araligi, sunucu veya kaynak filtresi deneyin.</div>'
                                 + '</td></tr>';
                         }
                     }
@@ -1435,9 +1439,11 @@
         // Disabled hint
         if (!enabled) {
             html += '<div class="pps-sched-hint">'
-                + 'Scheduler devre disi. Etkinlestirmek icin '
-                + '<code>anomaly_config.json &gt; prediction &gt; scheduler &gt; enabled: true</code> '
-                + 'yapilandiriniz.'
+                + '<strong>Scheduler devre disi.</strong> '
+                + 'Otomatik periyodik analiz icin: '
+                + '<code>anomaly_config.json &gt; prediction &gt; scheduler &gt; enabled: true</code><br>'
+                + '<em>Not: Scheduler olmadan da "Analiz ve Tahmin Calistir" butonu ve '
+                + 'Chat uzerinden analiz calistirarak prediction verisi uretebilirsiniz.</em>'
                 + '</div>';
         }
 
@@ -1465,7 +1471,11 @@
         if (!container) return;
 
         if (hosts.length === 0) {
-            container.innerHTML = '<span class="pps-hosts-empty">Hedef sunucu bulunamadi</span>';
+            container.innerHTML = '<span class="pps-hosts-empty">'
+                + 'Hedef sunucu tanimlanmamis. '
+                + '<code>anomaly_config.json</code> dosyasinda '
+                + '<code>prediction &gt; scheduler &gt; target_hosts</code> '
+                + 'alanina sunucu ekleyin.</span>';
             return;
         }
 
