@@ -587,9 +587,12 @@ class RateAlertEngine:
             return RateAlertReport(server_name=server_name, windows_checked=0)
 
         # ML anomaly timestamp'larını hazırla (per-window density için)
-        ml_anomaly_timestamps = []
+        # Severity-weighted: her anomaly'nin severity level'ını da taşı
+        _SEVERITY_WEIGHT = {"CRITICAL": 3.0, "HIGH": 2.0, "MEDIUM": 1.0, "LOW": 0.5}
+        ml_anomaly_entries = []  # [(parsed_ts, severity_level, anomaly_score)]
         ml_global_rate = 0.0
         ml_global_mean_score = 0.0
+        ml_severity_dist = {}  # Genel severity dağılımı
         if analysis_data:
             try:
                 ml_global_rate = float(
@@ -602,11 +605,16 @@ class RateAlertEngine:
                     if ts_val:
                         parsed = pd.to_datetime(ts_val, errors='coerce')
                         if not pd.isna(parsed):
-                            ml_anomaly_timestamps.append(parsed)
+                            sev_level = anom.get('severity_level', 'MEDIUM')
+                            a_score = abs(float(anom.get('anomaly_score', 0)))
+                            ml_anomaly_entries.append((parsed, sev_level, a_score))
+                            ml_severity_dist[sev_level] = ml_severity_dist.get(sev_level, 0) + 1
             except Exception as e:
                 logger.debug(f"RateAlertEngine: ML timestamp parsing skipped: {e}")
 
-        ml_anomaly_timestamps.sort()
+        ml_anomaly_entries.sort(key=lambda x: x[0])
+        # Backward compat: flat timestamp list
+        ml_anomaly_timestamps = [e[0] for e in ml_anomaly_entries]
 
         windows_checked = 0
 
@@ -625,15 +633,23 @@ class RateAlertEngine:
             windows_checked += 1
             window_counts = {}
 
-            # Per-window ML anomaly density
+            # Per-window ML anomaly density (severity-weighted)
             window_ml_count = 0
+            window_ml_weighted_sum = 0.0
+            window_ml_severity_counts = {}
             window_ml_density = 0.0
-            if ml_anomaly_timestamps:
-                for ml_ts in ml_anomaly_timestamps:
+            window_ml_weighted_density = 0.0
+            if ml_anomaly_entries:
+                for ml_ts, sev_lvl, _a_score in ml_anomaly_entries:
                     if window_start <= ml_ts <= ts_max:
                         window_ml_count += 1
+                        window_ml_weighted_sum += _SEVERITY_WEIGHT.get(sev_lvl, 1.0)
+                        window_ml_severity_counts[sev_lvl] = window_ml_severity_counts.get(sev_lvl, 0) + 1
                 window_total = len(df_window)
-                window_ml_density = (window_ml_count / window_total * 100) if window_total > 0 else 0.0
+                if window_total > 0:
+                    window_ml_density = (window_ml_count / window_total * 100)
+                    # Weighted density: CRITICAL anomaly'ler 3x, HIGH 2x ağırlıklı
+                    window_ml_weighted_density = (window_ml_weighted_sum / window_total * 100)
 
             for event_name, detector_cfg in detectors.items():
                 threshold = window_cfg.get(detector_cfg['threshold_key'], None)
@@ -659,23 +675,44 @@ class RateAlertEngine:
                         count=count, window=window_label
                     )
 
-                    # ML context: pencere içi anomaly density
+                    # ML context: pencere içi anomaly density (severity-weighted)
                     ml_ctx = None
                     ml_explain_suffix = ""
                     ml_corroborated = False
+                    ml_strong_corroboration = False
                     if analysis_data and window_ml_density > 0:
+                        # Temel corroboration: unweighted density > 5%
                         ml_corroborated = window_ml_density > 5.0
+                        # Güçlü corroboration: weighted density > 8% VEYA
+                        # pencerede CRITICAL+HIGH anomaly varsa
+                        window_crit_high = (
+                            window_ml_severity_counts.get('CRITICAL', 0) +
+                            window_ml_severity_counts.get('HIGH', 0))
+                        ml_strong_corroboration = (
+                            window_ml_weighted_density > 8.0 or
+                            (ml_corroborated and window_crit_high >= 2))
                         ml_ctx = {
                             "window_anomaly_count": window_ml_count,
                             "window_anomaly_density_pct": round(window_ml_density, 2),
+                            "window_weighted_density_pct": round(window_ml_weighted_density, 2),
+                            "window_severity_breakdown": window_ml_severity_counts.copy(),
+                            "window_critical_high_count": window_crit_high,
                             "global_anomaly_rate": round(ml_global_rate, 2),
                             "global_mean_score": round(ml_global_mean_score, 4),
+                            "global_severity_distribution": ml_severity_dist.copy(),
                             "ml_corroborated": ml_corroborated,
+                            "ml_strong_corroboration": ml_strong_corroboration,
                         }
-                        if ml_corroborated:
+                        if ml_strong_corroboration:
                             ml_explain_suffix = (
-                                f" ML modeli de bu pencerede yüksek anomaly yoğunluğu tespit etti "
-                                f"(%{window_ml_density:.1f} anomaly density). Spike ML-destekli."
+                                f" ML modeli bu pencerede güçlü anomaly yoğunluğu tespit etti "
+                                f"(%{window_ml_weighted_density:.1f} weighted density, "
+                                f"{window_crit_high} CRITICAL/HIGH). Spike ML-güçlü destekli."
+                            )
+                        elif ml_corroborated:
+                            ml_explain_suffix = (
+                                f" ML modeli de bu pencerede anomaly yoğunluğu tespit etti "
+                                f"(%{window_ml_density:.1f} density). Spike ML-destekli."
                             )
                         else:
                             ml_explain_suffix = (
@@ -685,15 +722,21 @@ class RateAlertEngine:
 
                     # ML severity boost: ML corroborate ediyorsa ve henüz
                     # CRITICAL değilse, severity'yi yükselt
-                    if ml_corroborated and severity == "WARNING":
+                    # Güçlü corroboration → doğrudan CRITICAL
+                    # Temel corroboration → WARNING ise CRITICAL'e yükselt
+                    if ml_strong_corroboration and severity == "WARNING":
+                        severity = "CRITICAL"
+                        ml_explain_suffix += " (ML güçlü destek → CRITICAL'e yükseltildi)"
+                    elif ml_corroborated and severity == "WARNING":
                         severity = "CRITICAL"
                         ml_explain_suffix += " (ML destekli → CRITICAL'e yükseltildi)"
 
                     # Confidence score (0-1):
                     # - Base: exceed_ratio'ya göre (1x=0.5, 2x=0.75, 3x+=0.85)
-                    # - Boost: ML corroboration varsa +0.1 (max 0.99)
+                    # - Boost: ML corroboration varsa +0.1, güçlü ise +0.15 (max 0.99)
                     base_conf = min(0.5 + (exceed_ratio - 1) * 0.15, 0.85)
-                    ml_boost = 0.1 if ml_corroborated else 0.0
+                    ml_boost = (0.15 if ml_strong_corroboration
+                                else 0.1 if ml_corroborated else 0.0)
                     confidence = min(round(base_conf + ml_boost, 3), 0.99)
 
                     alert = RateAlert(
@@ -725,7 +768,10 @@ class RateAlertEngine:
 
             if window_ml_density > 0:
                 window_counts["_ml_anomaly_density_pct"] = round(window_ml_density, 2)
+                window_counts["_ml_weighted_density_pct"] = round(window_ml_weighted_density, 2)
                 window_counts["_ml_anomaly_count"] = window_ml_count
+                if window_ml_severity_counts:
+                    window_counts["_ml_severity_breakdown"] = window_ml_severity_counts.copy()
             all_event_counts[window_name] = window_counts
 
         # ── Cross-window escalation ──
