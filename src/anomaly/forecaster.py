@@ -219,6 +219,55 @@ def _coefficient_of_variation(values: List[float]) -> float:
     return _std_dev(values) / abs(mean)
 
 
+def _robust_baseline(values: List[float]) -> Tuple[float, float]:
+    """
+    Outlier-resistant baseline: median + IQR-based bounds.
+
+    Spike'lara dirençli bir baseline hesaplar. Simple mean yerine:
+    1. Median kullanır (outlier'a dayanıklı)
+    2. IQR ile extreme değerleri filtreleyerek "temiz ortalama" hesaplar
+
+    Returns:
+        (baseline, spread) — baseline: temiz merkezi değer, spread: IQR/2
+    """
+    if not values:
+        return 0.0, 0.0
+    if len(values) == 1:
+        return values[0], 0.0
+
+    sorted_v = sorted(values)
+    n = len(sorted_v)
+
+    # Median
+    if n % 2 == 0:
+        median = (sorted_v[n // 2 - 1] + sorted_v[n // 2]) / 2
+    else:
+        median = sorted_v[n // 2]
+
+    if n < 4:
+        # Çok az veri varsa sadece median döndür
+        return median, _std_dev(values) if n >= 2 else 0.0
+
+    # Q1, Q3 (quartiles)
+    q1_idx = n // 4
+    q3_idx = (3 * n) // 4
+    q1 = sorted_v[q1_idx]
+    q3 = sorted_v[q3_idx]
+    iqr = q3 - q1
+
+    # IQR-filtered mean: sadece Q1 - 1.5*IQR … Q3 + 1.5*IQR aralığındaki değerler
+    lower_fence = q1 - 1.5 * iqr
+    upper_fence = q3 + 1.5 * iqr
+    filtered = [v for v in values if lower_fence <= v <= upper_fence]
+
+    if filtered:
+        baseline = sum(filtered) / len(filtered)
+    else:
+        baseline = median
+
+    return baseline, iqr / 2 if iqr > 0 else _std_dev(values)
+
+
 def _hourly_seasonality_adjustment(records_asc: List[Dict[str, Any]],
                                     values: List[float],
                                     forecast_hour: Optional[int] = None) -> float:
@@ -1095,8 +1144,14 @@ def _evaluate_alert(metric_name: str, metric_cfg: Dict, tier_result: Dict,
         return None
 
     current = values[-1] if values else 0
+
+    # Outlier-resistant baseline: median + IQR filtreleme
+    # Son değer hariç (current), geçmiş değerlerden baseline hesapla
     baseline_window = values[:-1] if len(values) > 3 else values
-    baseline = sum(baseline_window) / len(baseline_window) if baseline_window else current
+    baseline, baseline_spread = _robust_baseline(baseline_window)
+    if baseline <= 0 and baseline_window:
+        # Fallback: tüm değerlerin ortalaması
+        baseline = sum(baseline_window) / len(baseline_window)
 
     min_abs = metric_cfg.get("min_absolute_for_alert", 0)
     warning_pct = metric_cfg.get("warning_pct_above_baseline", 50.0)
@@ -1106,6 +1161,16 @@ def _evaluate_alert(metric_name: str, metric_cfg: Dict, tier_result: Dict,
         pct_above = 100.0 if fv > min_abs else 0.0
     else:
         pct_above = ((fv - baseline) / baseline) * 100
+
+    # Volatility-aware threshold adjustment: yüksek spread → threshold yükselt
+    # Böylece doğal olarak volatile metrikler daha zor alarm verir
+    if baseline_spread > 0 and baseline > 0:
+        spread_ratio = baseline_spread / baseline
+        if spread_ratio > 0.3:
+            # Yüksek spread: threshold'u %20-50 artır (false positive azaltmak için)
+            threshold_boost = min(0.5, spread_ratio * 0.8)
+            warning_pct *= (1 + threshold_boost)
+            critical_pct *= (1 + threshold_boost)
 
     if pct_above < warning_pct or fv < min_abs:
         return None
