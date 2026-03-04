@@ -17,7 +17,8 @@ Kullanım:
 
 import logging
 import threading
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from typing import Dict, Any, Callable, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -45,12 +46,19 @@ class AnomalyScheduler:
         self.max_concurrent = config.get('max_concurrent_analyses', 3)
         self.analysis_callback = analysis_callback
 
+        # CPU guard: batch arası bekleme (saniye)
+        self.batch_cooldown_seconds = config.get('batch_cooldown_seconds', 5)
+        # Per-host cooldown: aynı host'u tekrar analiz etmeden önce minimum bekleme
+        self.per_host_cooldown_minutes = config.get('per_host_cooldown_minutes', 10)
+
         self._timer: Optional[threading.Timer] = None
         self._running = False
         self._lock = threading.Lock()
         self._run_count = 0
         self._last_run: Optional[datetime] = None
         self._last_results: Dict[str, Any] = {}
+        self._host_last_analyzed: Dict[str, datetime] = {}  # per-host cooldown tracking
+        self._cycle_in_progress = False  # prevent overlapping cycles
 
         # Analiz edilecek sunucu listesi (runtime'da set edilir)
         self._target_hosts: List[str] = []
@@ -178,7 +186,7 @@ class AnomalyScheduler:
         if server_name:
             return self._run_analysis(server_name)
         else:
-            return self._run_cycle()
+            return self._run_cycle(manual=True)
 
     def _schedule_next(self) -> None:
         """Sonraki çalışmayı zamanlayıcıya ekle"""
@@ -204,41 +212,100 @@ class AnomalyScheduler:
             # Sonraki çalışmayı zamanlayıcıya ekle
             self._schedule_next()
 
-    def _run_cycle(self) -> Dict[str, Any]:
-        """Tek bir scheduler döngüsü — tüm hedef sunucuları analiz et"""
-        self._run_count += 1
-        self._last_run = datetime.utcnow()
-        cycle_results = {}
+    def _run_cycle(self, manual: bool = False) -> Dict[str, Any]:
+        """
+        Tek bir scheduler döngüsü — tüm hedef sunucuları analiz et.
 
-        if not self._target_hosts:
-            logger.info("No target hosts configured, skipping cycle")
-            return {"status": "skipped", "reason": "no_target_hosts"}
+        Args:
+            manual: True ise trigger_now'dan çağrılmış — _running kontrolü yapılmaz
 
-        # Sıralı çalıştır (max_concurrent için thread pool eklenebilir ama şimdilik basit)
-        for host in self._target_hosts[:self.max_concurrent]:
-            try:
-                result = self._run_analysis(host)
-                cycle_results[host] = result
-            except Exception as e:
-                logger.error(f"Analysis failed for {host}: {e}")
-                cycle_results[host] = {"status": "error", "error": str(e)}
+        CPU korumaları:
+        - max_concurrent: Tek cycle'da en fazla N host analiz edilir
+        - per_host_cooldown: Aynı host cooldown süresi dolmadan tekrar analiz edilmez
+        - batch_cooldown: Her host analizi arasında kısa bekleme (CPU throttle)
+        - overlap guard: Önceki cycle bitmeden yeni cycle başlamaz
+        """
+        # Overlap guard
+        if self._cycle_in_progress:
+            logger.warning("Previous cycle still in progress, skipping this trigger")
+            return {"status": "skipped", "reason": "previous_cycle_in_progress"}
 
-        self._last_results = cycle_results
+        self._cycle_in_progress = True
+        try:
+            self._run_count += 1
+            self._last_run = datetime.utcnow()
+            cycle_results = {}
 
-        total_anomalies = sum(
-            r.get("anomaly_count", 0) for r in cycle_results.values()
-        )
-        logger.info(f"Scheduler cycle #{self._run_count} completed: "
-                     f"{len(cycle_results)} hosts analyzed, "
-                     f"{total_anomalies} total anomalies")
+            if not self._target_hosts:
+                logger.info("No target hosts configured, skipping cycle")
+                return {"status": "skipped", "reason": "no_target_hosts"}
 
-        return {
-            "status": "completed",
-            "cycle": self._run_count,
-            "hosts_analyzed": len(cycle_results),
-            "total_anomalies": total_anomalies,
-            "results": cycle_results
-        }
+            now = datetime.utcnow()
+            cooldown_td = timedelta(minutes=self.per_host_cooldown_minutes)
+
+            # Filter hosts by per-host cooldown
+            eligible_hosts = []
+            skipped_cooldown = []
+            for host in self._target_hosts:
+                last = self._host_last_analyzed.get(host)
+                if last and (now - last) < cooldown_td:
+                    skipped_cooldown.append(host)
+                else:
+                    eligible_hosts.append(host)
+
+            if skipped_cooldown:
+                logger.debug(f"Hosts skipped (cooldown): {skipped_cooldown}")
+
+            # Batch: take up to max_concurrent from eligible
+            batch = eligible_hosts[:self.max_concurrent]
+
+            if not batch:
+                logger.info(f"No eligible hosts (all in cooldown). "
+                            f"Total: {len(self._target_hosts)}, cooldown: {len(skipped_cooldown)}")
+                return {
+                    "status": "skipped",
+                    "reason": "all_hosts_in_cooldown",
+                    "cooldown_hosts": skipped_cooldown
+                }
+
+            logger.info(f"Scheduler cycle #{self._run_count}: analyzing {len(batch)}/{len(self._target_hosts)} hosts")
+
+            for i, host in enumerate(batch):
+                if not manual and not self._running:
+                    logger.info("Scheduler stopped mid-cycle, aborting remaining hosts")
+                    break
+
+                try:
+                    result = self._run_analysis(host)
+                    cycle_results[host] = result
+                    self._host_last_analyzed[host] = datetime.utcnow()
+                except Exception as e:
+                    logger.error(f"Analysis failed for {host}: {e}")
+                    cycle_results[host] = {"status": "error", "error": str(e)}
+
+                # CPU throttle: batch arası bekleme (son host hariç)
+                if i < len(batch) - 1 and self.batch_cooldown_seconds > 0:
+                    time.sleep(self.batch_cooldown_seconds)
+
+            self._last_results = cycle_results
+
+            total_anomalies = sum(
+                r.get("anomaly_count", 0) for r in cycle_results.values()
+            )
+            logger.info(f"Scheduler cycle #{self._run_count} completed: "
+                         f"{len(cycle_results)} hosts analyzed, "
+                         f"{total_anomalies} total anomalies")
+
+            return {
+                "status": "completed",
+                "cycle": self._run_count,
+                "hosts_analyzed": len(cycle_results),
+                "total_anomalies": total_anomalies,
+                "skipped_cooldown": len(skipped_cooldown),
+                "results": cycle_results
+            }
+        finally:
+            self._cycle_in_progress = False
 
     def _run_analysis(self, server_name: str) -> Dict[str, Any]:
         """Tek bir sunucu için analiz çalıştır"""

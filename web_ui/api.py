@@ -5711,7 +5711,16 @@ async def get_scheduler_status(api_key: str = Query(...)):
 
 @app.post("/api/scheduler/start")
 async def start_scheduler(request: Dict[str, Any]):
-    """Scheduler'ı başlat. Body: {api_key, target_hosts: [...]}"""
+    """
+    Scheduler'ı başlat.
+
+    Body: {
+        api_key: str,
+        target_hosts: [...] (optional),
+        source_type: str (optional, "mongodb"|"mssql"|"elasticsearch"),
+        interval_minutes: int (optional, >=5)
+    }
+    """
     api_key = request.get("api_key", "")
     if not await verify_api_key(api_key):
         raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
@@ -5722,6 +5731,19 @@ async def start_scheduler(request: Dict[str, Any]):
     target_hosts = request.get("target_hosts", [])
     if target_hosts:
         tools.scheduler.set_target_hosts(target_hosts)
+
+    source_type = request.get("source_type")
+    if source_type:
+        if source_type not in ("mongodb", "mssql", "elasticsearch"):
+            raise HTTPException(status_code=400,
+                                detail=f"Geçersiz source_type: {source_type}")
+        tools.scheduler.set_source_type(source_type)
+
+    interval = request.get("interval_minutes")
+    if interval:
+        interval = int(interval)
+        if interval >= 5:
+            tools.scheduler.set_interval(interval)
 
     # force=True: UI'dan başlatıldığında config disabled olsa bile çalıştır
     started = tools.scheduler.start(force=True)

@@ -1947,16 +1947,27 @@
     }
 
     function startScheduler() {
-        _showConfirm(
-            'Scheduler Baslat',
-            'Periyodik anomaly analizi baslatilacak. Devam etmek istiyor musunuz?',
-            function () {
-                var body = { api_key: window.apiKey || '' };
-                var selectedHosts = _getSelectedHosts();
-                if (selectedHosts.length > 0) body.target_hosts = selectedHosts;
-                _postScheduler('schedulerStart', body, 'Scheduler started');
-            }
-        );
+        var selectedHosts = _getSelectedHosts();
+        var sourceType = _getSourceType() || 'mongodb';
+        var intervalSel = _el('ppsSchedIntervalSelect');
+        var interval = intervalSel ? parseInt(intervalSel.value, 10) : 30;
+        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+
+        var msg = 'Periyodik anomaly analizi baslatilacak.\n'
+            + 'Kaynak: ' + sourceLabel + '\n'
+            + 'Aralik: ' + interval + ' dk\n'
+            + 'Hedef: ' + (selectedHosts.length > 0 ? selectedHosts.length + ' sunucu' : 'Tum sunucular')
+            + '\nDevam etmek istiyor musunuz?';
+
+        _showConfirm('Scheduler Baslat', msg, function () {
+            var body = {
+                api_key: window.apiKey || '',
+                source_type: sourceType,
+                interval_minutes: interval
+            };
+            if (selectedHosts.length > 0) body.target_hosts = selectedHosts;
+            _postScheduler('schedulerStart', body, 'Scheduler started');
+        });
     }
 
     function stopScheduler() {
