@@ -2014,25 +2014,36 @@
             return sa - sb;
         });
 
-        var stateIcons = {
-            processing: '\u25B6',
-            queued: '\u23F3',
-            completed: '\u2713',
-            cooldown: '\u23F8',
-            idle: '\u25CB',
-            error: '\u2717'
+        var stateLabels = {
+            processing: 'Analiz ediliyor',
+            queued: 'Sirada',
+            completed: 'Tamamlandi',
+            cooldown: 'Bekleniyor',
+            idle: 'Bekliyor',
+            error: 'Hata'
         };
 
         var chipHtml = '';
         for (var i = 0; i < hostKeys.length; i++) {
             var hName = hostKeys[i];
-            var hState = (hostStates[hName] || {}).state || 'idle';
-            var icon = stateIcons[hState] || '';
-            var shortName = hName.length > 20 ? hName.substring(0, 18) + '..' : hName;
+            var hInfo = hostStates[hName] || {};
+            var hState = hInfo.state || 'idle';
+            var sLabel = stateLabels[hState] || hState;
+            var shortName = hName.length > 22 ? hName.substring(0, 20) + '..' : hName;
+
+            // Extra info for completed
+            var extraHtml = '';
+            if (hState === 'completed' && typeof hInfo.anomaly_count === 'number') {
+                extraHtml = ' <span class="pps-activity-host-extra">' + hInfo.anomaly_count + ' anomali</span>';
+            } else if (hState === 'error' && hInfo.error) {
+                extraHtml = ' <span class="pps-activity-host-extra">' + esc(String(hInfo.error).substring(0, 40)) + '</span>';
+            }
 
             chipHtml += '<span class="pps-activity-host pps-activity-host-' + hState + '">'
                 + '<span class="pps-activity-host-dot"></span>'
-                + esc(shortName)
+                + '<strong>' + esc(shortName) + '</strong>'
+                + ' <span class="pps-activity-host-state">' + esc(sLabel) + '</span>'
+                + extraHtml
                 + '</span>';
         }
         hostsContainer.innerHTML = chipHtml;

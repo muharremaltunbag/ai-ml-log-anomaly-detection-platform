@@ -1269,14 +1269,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     hKeys.sort(function (a, b) {
                         return (stOrder[hostStates[a].state] || 9) - (stOrder[hostStates[b].state] || 9);
                     });
+                    var sasStateLabels = {
+                        processing: 'Analiz ediliyor', queued: 'Sirada',
+                        completed: 'Tamamlandi', cooldown: 'Bekleniyor',
+                        idle: 'Bekliyor', error: 'Hata'
+                    };
                     var chipsHtml = '';
                     for (var ci = 0; ci < hKeys.length; ci++) {
                         var hn = hKeys[ci];
-                        var hs = (hostStates[hn] || {}).state || 'idle';
+                        var hInf = hostStates[hn] || {};
+                        var hs = hInf.state || 'idle';
                         var shortN = hn.length > 18 ? hn.substring(0, 16) + '..' : hn;
+                        var sLbl = sasStateLabels[hs] || hs;
                         chipsHtml += '<span class="sas-host-chip sas-host-chip-' + hs + '">'
                             + '<span class="sas-chip-dot"></span>'
                             + escH(shortN)
+                            + ' <span class="sas-chip-state">' + escH(sLbl) + '</span>'
                             + '</span>';
                     }
                     hostStatusEl.innerHTML = chipsHtml;
