@@ -141,6 +141,7 @@
         var daysVal = (_el('ppdDaysFilter') || {}).value || '7';
         loadConfig();
         loadSummary(serverVal, daysVal);
+        loadServerOverview(daysVal);
         loadAlerts(serverVal, daysVal);
         loadTimeseries(serverVal, daysVal);
         loadSchedulerStatus();
@@ -286,6 +287,139 @@
                 + '</div>';
         }
         grid.innerHTML = html;
+    }
+
+    // ============================
+    // SERVER RISK OVERVIEW
+    // ============================
+    function loadServerOverview(days) {
+        var extra = 'days=' + encodeURIComponent(days);
+        var st = _getSourceType();
+        if (st) extra += '&source_type=' + encodeURIComponent(st);
+        var url = _apiUrl('predictionServerOverview', extra);
+        if (!url) return;
+
+        var grid = _el('ppdServerGrid');
+        if (!grid) return;
+        grid.innerHTML = '<div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>';
+
+        fetch(url)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.status !== 'success' || !data.servers || data.servers.length === 0) {
+                    grid.innerHTML = '<div class="ppd-server-empty">Sunucu verisi bulunamadi. Analiz calistirildiginda sunucu risk durumu burada gorunecek.</div>';
+                    return;
+                }
+                renderServerOverview(data.servers);
+            })
+            .catch(function (err) {
+                console.warn('[PredictionDashboard] Server overview fetch error:', err);
+                grid.innerHTML = '';
+            });
+    }
+
+    function renderServerOverview(servers) {
+        var grid = _el('ppdServerGrid');
+        if (!grid) return;
+
+        var html = '';
+        for (var i = 0; i < servers.length; i++) {
+            var s = servers[i];
+            var riskClass = 'ppd-risk-' + (s.risk_level || 'ok').toLowerCase();
+            var riskLabel = s.risk_level || 'OK';
+            var alertRate = s.alert_rate_pct || 0;
+            var lastCheck = s.last_check || '';
+            if (lastCheck && lastCheck.length > 16) lastCheck = lastCheck.substring(0, 16).replace('T', ' ');
+
+            // Risk indicator icon
+            var riskIcon = '&#x2705;'; // OK
+            if (riskLabel === 'CRITICAL') riskIcon = '&#x1F534;';
+            else if (riskLabel === 'WARNING') riskIcon = '&#x1F7E0;';
+            else if (riskLabel === 'INFO') riskIcon = '&#x1F535;';
+
+            // Alert breakdown mini-bar
+            var trendW = 0, rateW = 0, forecastW = 0;
+            var totalA = s.total_alerts || 0;
+            if (totalA > 0) {
+                trendW = Math.round((s.trend_alerts / totalA) * 100);
+                rateW = Math.round((s.rate_alerts / totalA) * 100);
+                forecastW = 100 - trendW - rateW;
+                if (forecastW < 0) forecastW = 0;
+            }
+
+            html += '<div class="ppd-server-card ' + riskClass + '" data-server="' + esc(s.server_name) + '">'
+                + '<div class="ppd-server-header">'
+                +   '<span class="ppd-server-risk-icon">' + riskIcon + '</span>'
+                +   '<span class="ppd-server-name">' + esc(s.server_name) + '</span>'
+                +   '<span class="ppd-server-risk-badge ' + riskClass + '">' + esc(riskLabel) + '</span>'
+                + '</div>'
+                + '<div class="ppd-server-stats">'
+                +   '<div class="ppd-server-stat">'
+                +     '<span class="ppd-stat-label">Kontrol</span>'
+                +     '<span class="ppd-stat-value">' + s.total_checks + '</span>'
+                +   '</div>'
+                +   '<div class="ppd-server-stat">'
+                +     '<span class="ppd-stat-label">Uyari</span>'
+                +     '<span class="ppd-stat-value ppd-stat-alert">' + s.total_alerts + '</span>'
+                +   '</div>'
+                +   '<div class="ppd-server-stat">'
+                +     '<span class="ppd-stat-label">Alert %</span>'
+                +     '<span class="ppd-stat-value">' + alertRate.toFixed(1) + '%</span>'
+                +   '</div>'
+                +   '<div class="ppd-server-stat">'
+                +     '<span class="ppd-stat-label">CRIT/WARN</span>'
+                +     '<span class="ppd-stat-value">' + (s.critical_count || 0) + '/' + (s.warning_count || 0) + '</span>'
+                +   '</div>'
+                + '</div>';
+
+            // Alert type breakdown bar
+            if (totalA > 0) {
+                html += '<div class="ppd-server-breakdown">'
+                    + '<div class="ppd-breakdown-bar">'
+                    +   '<div class="ppd-bar-trend" style="width:' + trendW + '%" title="Trend: ' + s.trend_alerts + '"></div>'
+                    +   '<div class="ppd-bar-rate" style="width:' + rateW + '%" title="Rate: ' + s.rate_alerts + '"></div>'
+                    +   '<div class="ppd-bar-forecast" style="width:' + forecastW + '%" title="Forecast: ' + s.forecast_alerts + '"></div>'
+                    + '</div>'
+                    + '<div class="ppd-breakdown-legend">'
+                    +   '<span class="ppd-legend-item"><span class="ppd-legend-dot ppd-dot-trend"></span>Trend ' + s.trend_alerts + '</span>'
+                    +   '<span class="ppd-legend-item"><span class="ppd-legend-dot ppd-dot-rate"></span>Rate ' + s.rate_alerts + '</span>'
+                    +   '<span class="ppd-legend-item"><span class="ppd-legend-dot ppd-dot-forecast"></span>Forecast ' + s.forecast_alerts + '</span>'
+                    + '</div>'
+                    + '</div>';
+            }
+
+            html += '<div class="ppd-server-footer">'
+                + '<span class="ppd-server-lastcheck">Son: ' + esc(lastCheck || '-') + '</span>'
+                + '</div>'
+                + '</div>';
+        }
+        grid.innerHTML = html;
+
+        // Click handler: server card'a tıklayınca o sunucuyu filtrele
+        grid.querySelectorAll('.ppd-server-card').forEach(function (card) {
+            card.addEventListener('click', function () {
+                var serverName = card.getAttribute('data-server');
+                var filterEl = _el('ppdServerFilter');
+                if (filterEl && serverName) {
+                    // Eğer option yoksa ekle
+                    var optionExists = false;
+                    for (var j = 0; j < filterEl.options.length; j++) {
+                        if (filterEl.options[j].value === serverName) {
+                            optionExists = true;
+                            break;
+                        }
+                    }
+                    if (!optionExists) {
+                        var opt = document.createElement('option');
+                        opt.value = serverName;
+                        opt.textContent = serverName;
+                        filterEl.appendChild(opt);
+                    }
+                    filterEl.value = serverName;
+                    refreshAll();
+                }
+            });
+        });
     }
 
     // ============================
@@ -466,16 +600,42 @@
             // Contextual message based on source
             var src = alertDoc.alert_source || '';
             var msg = 'Bu kontrol sirasinda uyari tespit edilmedi.';
+            var extraHtml = '';
             if (src === 'forecast') {
                 var forecasts = (alertDoc.data && alertDoc.data.forecasts) || {};
                 var insuffCount = 0;
                 var maxDp = 0;
+                var metricSummaries = [];
                 var fKeys = Object.keys(forecasts);
                 for (var k = 0; k < fKeys.length; k++) {
-                    var fc = forecasts[fKeys[k]];
-                    if (fc && fc.status === 'insufficient_data') {
+                    var fKey = fKeys[k];
+                    var fc = forecasts[fKey];
+                    if (!fc || typeof fc !== 'object') continue;
+                    if (fc.status === 'insufficient_data') {
                         insuffCount++;
                         if (fc.data_points > maxDp) maxDp = fc.data_points;
+                        metricSummaries.push({
+                            name: fc.label || fKey,
+                            status: 'Yetersiz veri (' + (fc.data_points || 0) + '/' + (fc.min_required || 2) + ')',
+                            cls: 'ppd-metric-insuff'
+                        });
+                    } else if (fc.direction) {
+                        var dirIcon = fc.direction === 'rising' ? '&#x2197;' :
+                                      fc.direction === 'falling' ? '&#x2198;' : '&#x2192;';
+                        var confPct = typeof fc.confidence === 'number' ? Math.round(fc.confidence * 100) + '%' : '-';
+                        var statConf = typeof fc.statistical_confidence === 'number' ? Math.round(fc.statistical_confidence * 100) + '%' : '';
+                        var confLabel = confPct;
+                        if (statConf && statConf !== confPct) {
+                            confLabel = confPct + ' (istat: ' + statConf + ')';
+                        }
+                        metricSummaries.push({
+                            name: fc.label || fKey,
+                            status: dirIcon + ' ' + fc.direction + ' | Guven: ' + confLabel
+                                + (fc.current_value != null ? ' | Guncel: ' + parseFloat(fc.current_value).toFixed(2) : '')
+                                + (fc.forecast_value != null ? ' → Tahmin: ' + parseFloat(fc.forecast_value).toFixed(2) : ''),
+                            cls: fc.direction === 'rising' ? 'ppd-metric-rising' :
+                                 fc.direction === 'falling' ? 'ppd-metric-falling' : 'ppd-metric-stable'
+                        });
                     }
                 }
                 if (insuffCount > 0) {
@@ -484,12 +644,43 @@
                 } else {
                     msg = 'Tahmin modeli risk artisi tespit etmedi. Tum metrikler normal seyrediyor.';
                 }
+                // Build metric detail table
+                if (metricSummaries.length > 0) {
+                    extraHtml = '<div class="ppd-forecast-metrics" style="margin-top:8px;">';
+                    for (var m = 0; m < metricSummaries.length; m++) {
+                        var ms = metricSummaries[m];
+                        extraHtml += '<div class="ppd-metric-row ' + ms.cls + '">'
+                            + '<span class="ppd-metric-name">' + esc(ms.name) + '</span>'
+                            + '<span class="ppd-metric-status">' + ms.status + '</span>'
+                            + '</div>';
+                    }
+                    extraHtml += '</div>';
+                }
             } else if (src === 'trend') {
+                // Show trend summary if available
+                var trendSummary = (alertDoc.data && alertDoc.data.summary) || {};
                 msg = 'Trend analizi anomali degisimi tespit etmedi. Mevcut seyir stabil.';
+                if (trendSummary.ml_score_trend) {
+                    var mst = trendSummary.ml_score_trend;
+                    var scoreParts = [];
+                    if (typeof mst.current_mean_score === 'number') {
+                        scoreParts.push('ML Skor: ' + mst.current_mean_score.toFixed(4));
+                    }
+                    if (mst.ml_score_direction) {
+                        var dirMap = {worsening: 'Kotulesme', improving: 'Iyilesme', stable: 'Stabil'};
+                        scoreParts.push('Yonelim: ' + (dirMap[mst.ml_score_direction] || mst.ml_score_direction));
+                    }
+                    if (typeof mst.severity_critical_high_pct === 'number') {
+                        scoreParts.push('CRIT+HIGH: %' + mst.severity_critical_high_pct.toFixed(1));
+                    }
+                    if (scoreParts.length > 0) {
+                        extraHtml = '<div style="margin-top:6px;font-size:0.82em;color:#666;">' + esc(scoreParts.join(' | ')) + '</div>';
+                    }
+                }
             } else if (src === 'rate') {
                 msg = 'Rate alert modulu esik asimi tespit etmedi. Anomali oranlari normal araliklarda.';
             }
-            return '<div class="ppd-drill-empty">' + esc(msg) + '</div>';
+            return '<div class="ppd-drill-empty">' + esc(msg) + extraHtml + '</div>';
         }
 
         var html = '<div class="ppd-drill-panel">';
@@ -543,17 +734,70 @@
                     + '</div>';
             }
 
-            // ML context detail for rate alerts
+            // ML context detail for rate alerts (enriched with severity-weighted data)
             if (al.ml_context && typeof al.ml_context === 'object') {
                 var ctx = al.ml_context;
+                html += '<div class="ppd-drill-ml-ctx">';
                 var ctxParts = [];
-                if (ctx.ml_corroborated) ctxParts.push('ML Destekli');
-                if (typeof ctx.ml_mean_score === 'number') ctxParts.push('ML Skor: ' + ctx.ml_mean_score.toFixed(4));
-                if (typeof ctx.ml_anomaly_rate === 'number') ctxParts.push('ML Anomali: %' + ctx.ml_anomaly_rate.toFixed(1));
-                if (ctx.isolation_forest_severity) ctxParts.push('IF Severity: ' + ctx.isolation_forest_severity);
-                if (ctxParts.length > 0) {
-                    html += '<div class="ppd-drill-ml-ctx">' + esc(ctxParts.join(' | ')) + '</div>';
+                // Corroboration status
+                if (ctx.ml_strong_corroboration) {
+                    ctxParts.push('<strong style="color:#2e7d32;">ML Guclu Destek</strong>');
+                } else if (ctx.ml_corroborated) {
+                    ctxParts.push('<span style="color:#ff9800;">ML Destekli</span>');
+                } else {
+                    ctxParts.push('<span style="color:#999;">ML Destek Yok</span>');
                 }
+                // Density
+                if (typeof ctx.window_anomaly_density_pct === 'number') {
+                    ctxParts.push('Density: %' + ctx.window_anomaly_density_pct.toFixed(1));
+                }
+                if (typeof ctx.window_weighted_density_pct === 'number') {
+                    ctxParts.push('Agirlikli: %' + ctx.window_weighted_density_pct.toFixed(1));
+                }
+                // Global
+                if (typeof ctx.global_mean_score === 'number') {
+                    ctxParts.push('ML Skor: ' + ctx.global_mean_score.toFixed(4));
+                }
+                if (typeof ctx.global_anomaly_rate === 'number') {
+                    ctxParts.push('Anomali: %' + ctx.global_anomaly_rate.toFixed(1));
+                }
+                html += ctxParts.join(' | ');
+
+                // Severity breakdown mini-bar (if available)
+                var sevBreak = ctx.window_severity_breakdown;
+                if (sevBreak && typeof sevBreak === 'object') {
+                    var sevParts = [];
+                    if (sevBreak.CRITICAL) sevParts.push('<span style="color:#d32f2f;">' + sevBreak.CRITICAL + ' CRIT</span>');
+                    if (sevBreak.HIGH) sevParts.push('<span style="color:#e65100;">' + sevBreak.HIGH + ' HIGH</span>');
+                    if (sevBreak.MEDIUM) sevParts.push('<span style="color:#f9a825;">' + sevBreak.MEDIUM + ' MED</span>');
+                    if (sevBreak.LOW) sevParts.push('<span style="color:#999;">' + sevBreak.LOW + ' LOW</span>');
+                    if (sevParts.length > 0) {
+                        html += '<div class="ppd-drill-sev-breakdown" style="margin-top:4px;font-size:0.82em;">'
+                            + 'Pencere Severity: ' + sevParts.join(' / ') + '</div>';
+                    }
+                }
+                html += '</div>';
+            }
+
+            // ML confidence adjustment info for forecast alerts
+            if (al.ml_confidence_adjustment) {
+                html += '<div class="ppd-drill-ml-adj" style="margin-top:4px;font-size:0.82em;color:#555;font-style:italic;">'
+                    + esc(al.ml_confidence_adjustment) + '</div>';
+            }
+
+            // ML risk context for forecast alerts
+            if (al.ml_risk_context && typeof al.ml_risk_context === 'object') {
+                var rc = al.ml_risk_context;
+                var rcParts = [];
+                rcParts.push('ML Risk: <strong>' + esc(rc.ml_risk_level || 'OK') + '</strong>');
+                if (typeof rc.current_mean_score === 'number') {
+                    rcParts.push('Skor: ' + rc.current_mean_score.toFixed(4));
+                }
+                if (rc.score_worsening) rcParts.push('<span style="color:#d32f2f;">Skor Kotulesme</span>');
+                if (typeof rc.anomaly_density_ratio === 'number' && rc.anomaly_density_ratio > 1.0) {
+                    rcParts.push('Yogunluk: x' + rc.anomaly_density_ratio.toFixed(1));
+                }
+                html += '<div class="ppd-drill-ml-ctx" style="margin-top:4px;">' + rcParts.join(' | ') + '</div>';
             }
 
             // Explainability (collapsible)
