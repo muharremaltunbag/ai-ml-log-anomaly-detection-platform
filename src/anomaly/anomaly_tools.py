@@ -1194,7 +1194,9 @@ class AnomalyDetectionTools:
                         "logs_analyzed": len(df),
                         "filtered_logs": len(df_filtered),
                         "summary": analysis["summary"],
-                        "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),
+                        "critical_anomalies": self._enhance_critical_anomalies_with_messages(
+                            self._select_diverse_anomalies(analysis["critical_anomalies"], limit=500)
+                        ),
                         "all_anomalies": self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100),
                         "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),
                         "unfiltered_count": unfiltered_anomaly_count,
@@ -1555,7 +1557,9 @@ class AnomalyDetectionTools:
                             "logs_analyzed": len(df),
                             "filtered_logs": len(df_filtered),  # YENİ
                             "summary": analysis["summary"],
-                            "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),
+                            "critical_anomalies": self._enhance_critical_anomalies_with_messages(
+                                self._select_diverse_anomalies(analysis["critical_anomalies"], limit=500)
+                            ),
                             "all_anomalies": self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100),
                             "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),  # TÜM anomaliler
                             "unfiltered_count": unfiltered_anomaly_count,  # Filtrelenmemiş sayı
@@ -1754,10 +1758,14 @@ class AnomalyDetectionTools:
             }
             if "critical_anomalies" in analysis:
                 logger.debug(f"MAIN FUNCTION: Original analysis has {len(analysis['critical_anomalies'])} critical anomalies")
-                enhanced_analysis["critical_anomalies"] = self._enhance_critical_anomalies_with_messages(
-                    analysis["critical_anomalies"]
+                # Diversity enforcement: critical_anomalies'e de diverse sampling uygula
+                diverse_critical = self._select_diverse_anomalies(
+                    analysis["critical_anomalies"], limit=500
                 )
-                logger.debug(f"MAIN FUNCTION: After enhancement, we have {len(enhanced_analysis['critical_anomalies'])} critical anomalies")
+                enhanced_analysis["critical_anomalies"] = self._enhance_critical_anomalies_with_messages(
+                    diverse_critical
+                )
+                logger.debug(f"MAIN FUNCTION: After diversity+enhancement, we have {len(enhanced_analysis['critical_anomalies'])} critical anomalies")
             if "all_anomalies" in analysis:
                 enhanced_analysis["all_anomalies"] = self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100)
             # Unfiltered anomalies (FP filter öncesi orijinal veriler)
@@ -1920,7 +1928,9 @@ class AnomalyDetectionTools:
                         "connection_string": connection_string[:30] + "..." if len(connection_string) > 30 else connection_string
                     },
                     "summary": analysis["summary"],
-                    "critical_anomalies": self._enhance_critical_anomalies_with_messages(analysis["critical_anomalies"]),  # Tüm kritik anomaliler - Enhanced
+                    "critical_anomalies": self._enhance_critical_anomalies_with_messages(
+                        self._select_diverse_anomalies(analysis["critical_anomalies"], limit=500)
+                    ),
                     "all_anomalies": self._select_diverse_anomalies(analysis.get("all_anomalies", []), limit=100),
                     "unfiltered_anomalies": unfiltered_analysis.get('critical_anomalies', []),
                     "unfiltered_count": unfiltered_anomaly_count,
@@ -2401,6 +2411,40 @@ class AnomalyDetectionTools:
                 # Severity score'a göre sırala ve ilk max_filtered kadarını al
                 filtered_anomalies.sort(key=lambda x: x.get('severity_score', 0), reverse=True)
                 filtered_anomalies = filtered_anomalies[:max_filtered]
+
+            # 5. Dominant-pattern suppression
+            # Tek bir fingerprint toplam listenin %max_pct'sinden fazlasını oluşturmasın.
+            # Baskın pattern'in en yüksek severity örnekleri tutulur, fazlası budanır.
+            max_fp_pct = fpc.get('max_fingerprint_pct', 15)  # %15
+            if filtered_anomalies and max_fp_pct > 0:
+                fp_groups = {}
+                for a in filtered_anomalies:
+                    fp = a.get('message_fingerprint', '')
+                    if fp:
+                        fp_groups.setdefault(fp, []).append(a)
+
+                total_count = len(filtered_anomalies)
+                max_per_fp_abs = max(3, int(total_count * max_fp_pct / 100))
+                suppressed_total = 0
+
+                for fp, items in fp_groups.items():
+                    if len(items) > max_per_fp_abs:
+                        # Severity'ye göre sırala, en yüksekleri tut
+                        items.sort(key=lambda x: x.get('severity_score', 0), reverse=True)
+                        excess = len(items) - max_per_fp_abs
+                        suppressed_total += excess
+                        # Fazlaları çıkar
+                        excess_set = set(id(a) for a in items[max_per_fp_abs:])
+                        filtered_anomalies = [
+                            a for a in filtered_anomalies
+                            if id(a) not in excess_set
+                        ]
+
+                if suppressed_total > 0:
+                    logger.info(
+                        f"Dominant-pattern suppression: {suppressed_total} anomalies removed "
+                        f"(cap: {max_fp_pct}% = max {max_per_fp_abs} per fingerprint)"
+                    )
 
             # Analizi güncelle
             analysis['critical_anomalies'] = filtered_anomalies
