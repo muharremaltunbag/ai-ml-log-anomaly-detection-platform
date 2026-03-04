@@ -354,9 +354,12 @@ class MongoDBFeatureEngineer:
             # ERROR severity (JSON formatı için)
             df['is_error'] = ((df['s'] == 'E') | df['msg'].str.contains('"s":"E"', na=False)).astype(int)
             
-            # Replication issues
+            # Replication issues — spesifik pattern'ler (genel 'REPL' kaldırıldı,
+            # çünkü component bazlı REPL zaten is_replication_component'te yakalanıyor)
             df['is_replication_issue'] = df['msg'].str.contains(
-                'Cannot select sync source|ReplCoordExtern|REPL', 
+                'Cannot select sync source|ReplCoordExtern|replication lag|'
+                'rollback|too stale to catch up|oplog overflow|'
+                'sync source.*not ahead|replSet.*member.*not reachable',
                 case=False, na=False
             ).astype(int)
 
@@ -648,11 +651,43 @@ class MongoDBFeatureEngineer:
                 df['is_unknown_component'] * 1         # Unknown dikkat çeker
             )
 
+            # ========== Dominant Component & Message Frequency ==========
+
+            # Component frequency ratio: bu log'un component'i tüm logların yüzde kaçı?
+            # Baskın component'ten gelen loglar yüksek ratio alır → model bu bilgiyi
+            # "sık ama normal" vs "nadir ve potansiyel anomali" ayrımı için kullanabilir.
+            total_logs = len(df)
+            comp_freq = df['c'].value_counts()
+            df['component_frequency_ratio'] = df['c'].map(
+                lambda c: comp_freq.get(c, 0) / total_logs if total_logs > 0 else 0
+            )
+
+            # Is dominant component: tek bir component toplam logların %50+'sini oluşturuyorsa
+            dominant_threshold = 0.50
+            dominant_components = comp_freq[comp_freq / total_logs > dominant_threshold].index
+            df['is_dominant_component'] = df['c'].isin(dominant_components).astype(int)
+
+            # Message fingerprint frequency ratio: aynı fingerprint kaç kez tekrar ediyor?
+            if 'message_fingerprint' in df.columns:
+                fp_freq = df['message_fingerprint'].value_counts()
+                df['fingerprint_frequency_ratio'] = df['message_fingerprint'].map(
+                    lambda fp: fp_freq.get(fp, 0) / total_logs if total_logs > 0 else 0
+                )
+                # Is dominant message: aynı mesaj %20+'yı oluşturuyorsa
+                dominant_fp = fp_freq[fp_freq / total_logs > 0.20].index
+                df['is_dominant_message'] = df['message_fingerprint'].isin(dominant_fp).astype(int)
+            else:
+                df['fingerprint_frequency_ratio'] = 0.0
+                df['is_dominant_message'] = 0
+
             # ========== Loglama ==========
 
             logger.info(f"[OK] Component features extracted")
             logger.info(f"   Unique components: {df['c'].nunique()}")
             logger.info(f"   Rare components: {len(rare_components)}")
+            if len(dominant_components) > 0:
+                logger.info(f"   Dominant components (>{dominant_threshold*100:.0f}%): {list(dominant_components)}")
+            logger.info(f"   Distinct fingerprints: {df['message_fingerprint'].nunique() if 'message_fingerprint' in df.columns else 'N/A'}")
 
             # MongoDB 8.0 component istatistikleri
             logger.info(f"   WiredTiger Recovery events: {df['is_wiredtiger_recovery'].sum()}")
