@@ -17335,6 +17335,47 @@ body.pps-body-lock {
     line-height: 1.45;
 }
 
+/* ── Source type badge (MongoDB / MSSQL / ES) ── */
+.ppd-srctype-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 0.75em;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+.ppd-srctype-mongo {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+.ppd-srctype-mssql {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+.ppd-srctype-es {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+/* ── Explainability visible summary ── */
+.ppd-drill-explain-visible {
+    margin-top: 6px;
+    padding: 6px 10px;
+    background: #fffde7;
+    border-radius: 6px;
+    font-size: 0.82em;
+    color: #5d4037;
+    line-height: 1.5;
+    border-left: 3px solid #fbc02d;
+}
+.ppd-explain-icon {
+    font-size: 1em;
+    vertical-align: middle;
+    margin-right: 2px;
+}
+
 /* ── Scheduler Panel ── */
 .ppd-sched-panel {
     margin-top: 20px;

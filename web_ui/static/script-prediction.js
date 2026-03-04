@@ -489,6 +489,24 @@
 
             var sevClass = 'ppd-sev-' + severity.toLowerCase();
 
+            // Source type badge (MongoDB / MSSQL / Elasticsearch)
+            var sourceType = a.source_type || '';
+            var sourceTypeLabel = '';
+            var sourceTypeCls = 'ppd-srctype-default';
+            if (sourceType.indexOf('mssql') >= 0) {
+                sourceTypeLabel = 'MSSQL';
+                sourceTypeCls = 'ppd-srctype-mssql';
+            } else if (sourceType.indexOf('elasticsearch') >= 0) {
+                sourceTypeLabel = 'ES';
+                sourceTypeCls = 'ppd-srctype-es';
+            } else if (sourceType.indexOf('opensearch') >= 0 || sourceType.indexOf('mongodb') >= 0) {
+                sourceTypeLabel = 'Mongo';
+                sourceTypeCls = 'ppd-srctype-mongo';
+            }
+            var sourceTypeBadge = sourceTypeLabel
+                ? '<span class="ppd-srctype-badge ' + sourceTypeCls + '">' + sourceTypeLabel + '</span> '
+                : '';
+
             // Confidence cell
             var confidenceHtml = _buildConfidenceCell(dataAlerts);
 
@@ -497,7 +515,7 @@
 
             html += '<tr class="ppd-alert-row" data-row-idx="' + i + '">'
                 + '<td>' + esc(ts) + '</td>'
-                + '<td>' + esc(source) + '</td>'
+                + '<td>' + sourceTypeBadge + esc(source) + '</td>'
                 + '<td>' + esc(server) + '</td>'
                 + '<td><span class="ppd-severity-tag ' + sevClass + '">' + esc(severity) + '</span></td>'
                 + '<td>' + confidenceHtml + '</td>'
@@ -800,12 +818,40 @@
                 html += '<div class="ppd-drill-ml-ctx" style="margin-top:4px;">' + rcParts.join(' | ') + '</div>';
             }
 
-            // Explainability (collapsible)
+            // Explainability — kısa özet her zaman görünür, uzun metin expandable
             if (al.explainability) {
-                html += '<details class="ppd-drill-explain">'
-                    + '<summary>Aciklama ve Analiz Detayi</summary>'
-                    + '<div class="ppd-drill-explain-text">' + esc(al.explainability) + '</div>'
-                    + '</details>';
+                var explainText = String(al.explainability);
+                // İlk cümle veya ilk 150 karakter
+                var shortExplain = explainText;
+                var needsExpand = false;
+                var dotIdx = explainText.indexOf('. ');
+                if (dotIdx > 0 && dotIdx < 160) {
+                    shortExplain = explainText.substring(0, dotIdx + 1);
+                    needsExpand = explainText.length > dotIdx + 2;
+                } else if (explainText.length > 150) {
+                    shortExplain = explainText.substring(0, 150) + '...';
+                    needsExpand = true;
+                }
+                html += '<div class="ppd-drill-explain-visible">'
+                    + '<span class="ppd-explain-icon">&#x1F4A1;</span> '
+                    + esc(shortExplain)
+                    + '</div>';
+                if (needsExpand) {
+                    html += '<details class="ppd-drill-explain">'
+                        + '<summary>Detayli Aciklama</summary>'
+                        + '<div class="ppd-drill-explain-text">' + esc(explainText) + '</div>'
+                        + '</details>';
+                }
+            }
+
+            // Forecast method badge (shown in drill-down for visibility)
+            if (al.forecast_method) {
+                html += '<div class="ppd-drill-method" style="margin-top:4px;">'
+                    + '<span class="ppd-method-badge">' + esc(_tierLabel(al.forecast_method)) + '</span>';
+                if (typeof al.data_points_used === 'number') {
+                    html += ' <span style="font-size:0.78em;color:#888;">(' + al.data_points_used + ' veri noktasi)</span>';
+                }
+                html += '</div>';
             }
 
             html += '</div>'; // end ppd-drill-alert
