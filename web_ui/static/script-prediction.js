@@ -47,6 +47,9 @@
     // ── state ──
     var _visible = false;
     var _loading = false;
+    var _guideCollapsed = false;  // onboarding guide state
+    var _lastTotalChecks = 0;     // for readiness bar
+    var _lastSchedulerRunning = false;  // for readiness bar
 
     // ── DOM references (lazy) ──
     function _el(id) { return document.getElementById(id); }
@@ -179,10 +182,14 @@
         if (!grid) return;
 
         var pills = [
-            { label: 'Trend Detection', on: !!(cfg.trend_detection && cfg.trend_detection.enabled) },
-            { label: 'Rate Alerting', on: !!(cfg.rate_alerting && cfg.rate_alerting.enabled) },
-            { label: 'Forecasting', on: !!(cfg.forecasting && cfg.forecasting.enabled) },
-            { label: 'Scheduler', on: !!(cfg.scheduler && cfg.scheduler.enabled) }
+            { label: 'Trend Detection', on: !!(cfg.trend_detection && cfg.trend_detection.enabled),
+              tip: 'Gecmis analizleri karsilastirarak anomali trend degisimini tespit eder' },
+            { label: 'Rate Alerting', on: !!(cfg.rate_alerting && cfg.rate_alerting.enabled),
+              tip: 'Zaman pencerelerinde event esik asimlarini anlik kontrol eder' },
+            { label: 'Forecasting', on: !!(cfg.forecasting && cfg.forecasting.enabled),
+              tip: 'Istatistiksel modeller ile gelecekteki anomali oranini tahmin eder' },
+            { label: 'Scheduler', on: !!(cfg.scheduler && cfg.scheduler.enabled),
+              tip: 'Duzenli otomatik analiz calistirarak prediction verisini biriktirir' }
         ];
 
         var html = '';
@@ -190,7 +197,8 @@
         for (var i = 0; i < pills.length; i++) {
             var p = pills[i];
             if (p.on) allOff = false;
-            html += '<span class="ppd-config-pill ' + (p.on ? 'ppd-config-pill-on' : 'ppd-config-pill-off') + '">'
+            html += '<span class="ppd-config-pill ' + (p.on ? 'ppd-config-pill-on' : 'ppd-config-pill-off') + '"'
+                + ' title="' + esc(p.tip) + '">'
                 + esc(p.label) + ': ' + (p.on ? 'ON' : 'OFF') + '</span>';
         }
 
@@ -222,6 +230,11 @@
             .then(function (data) {
                 if (data.status !== 'success' || !data.context) return;
                 renderLatestContext(data.context);
+                // Update readiness bar with actual forecast history depth
+                if (typeof data.context.forecast_history_count === 'number') {
+                    _lastTotalChecks = data.context.forecast_history_count;
+                    _renderReadinessBar(_lastTotalChecks, _lastSchedulerRunning);
+                }
             })
             .catch(function (err) {
                 console.warn('[PredictionDashboard] Latest context fetch error:', err);
@@ -257,14 +270,14 @@
         if (!lastCheck) {
             body.innerHTML = '<div class="ppd-ctx-empty">'
                 + '<p><strong>Henuz prediction verisi yok.</strong></p>'
-                + '<p>Asagidaki yollardan biriyle baslayabilirsiniz:</p>'
+                + '<p>Prediction verileri anomaly analizi calistirildiktan sonra otomatik olarak olusur. Baslangic icin:</p>'
                 + '<ol>'
-                + '<li>Ustteki <strong>"Analiz ve Tahmin Calistir"</strong> butonuna basin</li>'
-                + '<li>Chat panelinden bir anomaly analizi calistirin</li>'
-                + '<li>Sol panelden <strong>Scheduler</strong>\'i etkinlestirin</li>'
+                + '<li>Ustteki <strong>"Analiz ve Tahmin Calistir"</strong> butonuna basin — ilk analiz ve prediction verisi olusur</li>'
+                + '<li>Ardından <strong>scheduler\'i etkinlestirin</strong> (sol panel) — duzenli veri birikimi baslar</li>'
+                + '<li><strong>En az 5 analiz</strong> biriktikten sonra Forecasting aktif olur, 20+ ile en iyi kaliteye ulasilir</li>'
                 + '</ol>'
-                + '<p class="ppd-ctx-hint-text">Prediction, anomaly analizi sonucunda otomatik calisir. '
-                + 'Trend, Rate Alert ve Forecast modulleri gecmis analiz verisine dayanarak risk tahmini uretir.</p>'
+                + '<p class="ppd-ctx-hint-text">Her analiz calistirmaniz prediction icin bir veri noktasi olusturur. '
+                + 'Scheduler acikken bu islem otomatik tekrarlanir ve tahminler surekli iyilesir.</p>'
                 + '</div>';
             return;
         }
@@ -481,7 +494,11 @@
                     if (grid) grid.innerHTML = '<div class="ppd-empty">Veri alinamadi</div>';
                     return;
                 }
-                renderSummary(data.summary || {});
+                var summary = data.summary || {};
+                renderSummary(summary);
+                // Feed readiness bar with total checks (proxy for history depth)
+                _lastTotalChecks = summary.total_checks || 0;
+                _renderReadinessBar(_lastTotalChecks, _lastSchedulerRunning);
             })
             .catch(function (err) {
                 console.warn('[PredictionDashboard] Summary fetch error:', err);
@@ -521,9 +538,13 @@
                 + '<div class="pps-empty-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div>'
                 + '<div class="pps-empty-title">Bu zaman araliginda prediction verisi bulunamadi</div>'
                 + '<div class="pps-empty-desc">'
-                + 'Prediction verileri, anomaly analizi calistirildiginda otomatik uretilir.<br>'
-                + '<strong>Baslangic icin:</strong> Ustteki "Analiz ve Tahmin Calistir" butonunu kullanin '
-                + 'veya farkli bir zaman araligi secin.</div>'
+                + 'Prediction verileri, her anomaly analizi sonrasinda otomatik uretilir.<br>'
+                + '<strong>Hizli baslangic:</strong><br>'
+                + '1. Ustteki <strong>"Analiz ve Tahmin Calistir"</strong> butonuna basin<br>'
+                + '2. Farkli bir zaman araligi secin (sol panel)<br>'
+                + '3. Duzenli veri biriktirmek icin <strong>Scheduler\'i etkinlestirin</strong><br><br>'
+                + '<strong>Not:</strong> Forecasting icin en az 5 analiz, guclu tahminler icin 20+ analiz gerekir. '
+                + 'Her analiz bir veri noktasi ekler.</div>'
                 + '</div>';
         }
 
@@ -1569,6 +1590,7 @@
 
         var enabled = !!sched.enabled;
         var running = !!sched.running;
+        _lastSchedulerRunning = running;
         var interval = sched.interval_minutes || '-';
         var runCount = sched.run_count || 0;
         var lastRun = sched.last_run || null;
@@ -1601,14 +1623,23 @@
                 + '<div class="ppd-sched-stat-value ' + s.cls + '">' + esc(s.value) + '</div>'
                 + '</div>';
         }
-        // Disabled hint
+        // Disabled hint — enhanced with impact explanation
         if (!enabled) {
-            html += '<div class="pps-sched-hint">'
+            html += '<div class="ppd-sched-guidance">'
                 + '<strong>Scheduler devre disi.</strong> '
-                + 'Otomatik periyodik analiz icin: '
-                + '<code>anomaly_config.json &gt; prediction &gt; scheduler &gt; enabled: true</code><br>'
-                + '<em>Not: Scheduler olmadan da "Analiz ve Tahmin Calistir" butonu ve '
-                + 'Chat uzerinden analiz calistirarak prediction verisi uretebilirsiniz.</em>'
+                + 'Scheduler kapaliyken prediction verileri yalnizca manuel analiz calistirildiginda olusur. '
+                + 'Bu, tahmin kalitesini onemli olcude dusurur cunku:<br>'
+                + '&bull; Forecasting modulu duzenli veri akisi gerektirir (Tier 3 icin 20+ analiz)<br>'
+                + '&bull; Trend analizi gecmis verilerin duzensiz aralikli olmasinda dogru calismaz<br>'
+                + '&bull; Rate alert baseline hesaplamasi yetersiz kalir<br><br>'
+                + '<strong>Onerimiz:</strong> <code>anomaly_config.json &gt; prediction &gt; scheduler &gt; enabled: true</code> '
+                + 'ayarini yapin veya bu panelden "Baslat" butonunu kullanin.'
+                + '</div>';
+        } else if (!running) {
+            html += '<div class="ppd-sched-guidance">'
+                + '<strong>Scheduler config\'de aktif ama su an calismakta degil.</strong> '
+                + 'Asagidaki "Baslat" butonuyla baslatabilirsiniz. '
+                + 'Her ' + interval + ' dakikada otomatik analiz calistirilacak ve prediction verileri birikecek.'
                 + '</div>';
         }
 
@@ -2013,8 +2044,86 @@
         _initSourceToggle();
         _initHostSelectAll();
 
+        // Guide panel toggle
+        _initGuidePanel();
+
         // Overlay starts hidden (via inline style="display:none")
         console.log('Prediction Studio initialized (modal overlay mode)');
+    }
+
+    // ============================
+    // GUIDE PANEL TOGGLE
+    // ============================
+    function _initGuidePanel() {
+        var toggle = _el('ppdGuideToggle');
+        if (!toggle) return;
+        // Restore collapsed state from localStorage
+        try {
+            _guideCollapsed = localStorage.getItem('ppd_guide_collapsed') === '1';
+        } catch (e) { /* ignore */ }
+        _applyGuideState();
+
+        toggle.addEventListener('click', function () {
+            _guideCollapsed = !_guideCollapsed;
+            _applyGuideState();
+            try { localStorage.setItem('ppd_guide_collapsed', _guideCollapsed ? '1' : '0'); } catch (e) { /* */ }
+        });
+    }
+
+    function _applyGuideState() {
+        var panel = _el('ppdGuidePanel');
+        if (!panel) return;
+        if (_guideCollapsed) {
+            panel.classList.add('ppd-guide-collapsed');
+        } else {
+            panel.classList.remove('ppd-guide-collapsed');
+        }
+    }
+
+    // ============================
+    // PREDICTION READINESS INDICATOR
+    // ============================
+    function _renderReadinessBar(historyCount, schedulerRunning) {
+        var container = _el('ppdReadinessBar');
+        if (!container) return;
+
+        // Calculate readiness: 0-100
+        // Tier thresholds: 5 = Tier1, 10 = Tier2, 20 = Tier3
+        var tier = 'Tier 0';
+        var pct = 0;
+        var text = '';
+        if (historyCount >= 20) {
+            tier = 'Tier 3 — EWMA';
+            pct = 100;
+            text = historyCount + ' analiz — en guclu tahmin kalitesi';
+        } else if (historyCount >= 10) {
+            tier = 'Tier 2 — Linear Regression';
+            pct = 60 + ((historyCount - 10) / 10) * 40;
+            text = historyCount + '/20 analiz — ' + (20 - historyCount) + ' analiz daha → Tier 3';
+        } else if (historyCount >= 5) {
+            tier = 'Tier 1 — WMA';
+            pct = 30 + ((historyCount - 5) / 5) * 30;
+            text = historyCount + '/20 analiz — ' + (20 - historyCount) + ' analiz daha → Tier 3';
+        } else if (historyCount >= 1) {
+            tier = 'Tier 0 — Yon Gostergesi';
+            pct = (historyCount / 5) * 30;
+            text = historyCount + '/5 analiz — ' + (5 - historyCount) + ' analiz daha → Tier 1';
+        } else {
+            text = 'Hic analiz verisi yok — baslatin';
+            pct = 0;
+        }
+
+        var fillCls = 'ppd-readiness-fill-low';
+        if (pct >= 60) fillCls = 'ppd-readiness-fill-high';
+        else if (pct >= 30) fillCls = 'ppd-readiness-fill-medium';
+
+        var schedIcon = schedulerRunning
+            ? '<span title="Scheduler calisiyor" style="color:#4caf50;margin-left:6px;">&#x25CF; Scheduler aktif</span>'
+            : '<span title="Scheduler kapali" style="color:#ff9800;margin-left:6px;">&#x25CB; Scheduler kapali</span>';
+
+        container.innerHTML = '<span class="ppd-readiness-label">Tahmin Kalitesi: ' + esc(tier) + '</span>'
+            + '<div class="ppd-readiness-track"><div class="ppd-readiness-fill ' + fillCls + '" style="width:' + pct.toFixed(0) + '%"></div></div>'
+            + '<span class="ppd-readiness-text">' + esc(text) + schedIcon + '</span>';
     }
 
     // Auto-init when DOM ready
@@ -2039,7 +2148,8 @@
         loadSchedulerStatus: loadSchedulerStatus,
         startScheduler: startScheduler,
         stopScheduler: stopScheduler,
-        triggerScheduler: triggerScheduler
+        triggerScheduler: triggerScheduler,
+        renderReadiness: _renderReadinessBar
     };
 
     // Backward compat globals

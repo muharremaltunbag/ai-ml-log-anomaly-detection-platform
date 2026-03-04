@@ -653,7 +653,7 @@
                             <div class="pps-header-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
                             <div class="pps-header-text">
                                 <h2>Prediction &amp; Forecasting Studio</h2>
-                                <p>Trend &bull; Rate Alert &bull; Forecast</p>
+                                <p>Anomali Trend Analizi &bull; Anlik Rate Alert &bull; Gelecek Tahmini</p>
                             </div>
                             <span class="ppd-header-badge" id="ppdConfigBadge">--</span>
                         </div>
@@ -712,7 +712,7 @@
 
                             <!-- Scheduler section -->
                             <div class="pps-sidebar-section">
-                                <h4 class="pps-sidebar-title">Scheduler Yonetimi</h4>
+                                <h4 class="pps-sidebar-title" title="Scheduler, duzenli otomatik analiz calistirarak prediction verisinin birikmesini saglar. Guvenilir tahmin icin acik olmasi onerilir.">Scheduler Yonetimi</h4>
                                 <div class="ppd-sched-panel pps-sidebar-sched" id="ppdSchedPanel">
                                     <div class="ppd-sched-body">
                                         <div class="ppd-sched-grid" id="ppdSchedGrid">
@@ -743,8 +743,157 @@
                         <!-- ── Right Main Content ── -->
                         <div class="pps-main">
                             <section id="predictionDashboardSection" class="ppd-section pps-content">
+
+                                <!-- ═══ ONBOARDING GUIDE PANEL ═══ -->
+                                <div class="ppd-guide-panel" id="ppdGuidePanel">
+                                    <div class="ppd-guide-header" id="ppdGuideToggle">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                        Bu Ekran Ne Ise Yariyor?
+                                        <span class="ppd-guide-toggle-icon" id="ppdGuideArrow">&#x25BC;</span>
+                                    </div>
+                                    <div class="ppd-guide-body" id="ppdGuideBody">
+
+                                        <div class="ppd-guide-intro">
+                                            <strong>Prediction Studio</strong>, anomaly analizi sonuclarindan yola cikarak
+                                            veritabani ortaminizin gelecekteki risk durumunu tahmin eder.
+                                            Uc bagimsiz modul birlikte calisir:
+                                        </div>
+
+                                        <div class="ppd-guide-modules">
+                                            <div class="ppd-guide-mod ppd-guide-mod-trend">
+                                                <div class="ppd-guide-mod-icon">
+                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                                                </div>
+                                                <div class="ppd-guide-mod-content">
+                                                    <div class="ppd-guide-mod-title">Trend Analysis <span class="ppd-guide-tag ppd-guide-tag-past">Gecmise Bakis</span></div>
+                                                    <div class="ppd-guide-mod-desc">
+                                                        Son N analiz sonucunu karsilastirarak anomali oraninin artip artmadigini,
+                                                        belirli component'lerde yogunlasma olup olmadigini ve severity
+                                                        (ciddiyet) artisi olup olmadigini tespit eder.
+                                                    </div>
+                                                    <div class="ppd-guide-mod-example">
+                                                        <strong>Ornek:</strong> "Son 5 analizde anomali orani %3'ten %8'e yukseldi"
+                                                        veya "STORAGE component'inde anomali yogunlasmasi tespit edildi."
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="ppd-guide-mod ppd-guide-mod-rate">
+                                                <div class="ppd-guide-mod-icon">
+                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                                </div>
+                                                <div class="ppd-guide-mod-content">
+                                                    <div class="ppd-guide-mod-title">Rate Alert <span class="ppd-guide-tag ppd-guide-tag-now">Anlik Tespit</span></div>
+                                                    <div class="ppd-guide-mod-desc">
+                                                        Mevcut analiz verisindeki zaman pencerelerinde (15dk / 1saat / 6saat)
+                                                        belirli event turlerinin (auth failure, error burst, slow query, OOM vb.)
+                                                        esik degerlerini asip asmadigini kontrol eder. ML modeli de destekliyorsa
+                                                        severity otomatik yukseltilir.
+                                                    </div>
+                                                    <div class="ppd-guide-mod-example">
+                                                        <strong>Ornek:</strong> "Son 15 dakikada 85 auth failure — esik: 50, asim: 1.7x."
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="ppd-guide-mod ppd-guide-mod-forecast">
+                                                <div class="ppd-guide-mod-icon">
+                                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                                </div>
+                                                <div class="ppd-guide-mod-content">
+                                                    <div class="ppd-guide-mod-title">Forecasting <span class="ppd-guide-tag ppd-guide-tag-future">Gelecege Bakis</span></div>
+                                                    <div class="ppd-guide-mod-desc">
+                                                        Gecmis analiz sonuclarindan istatistiksel modeller (WMA / Linear Regression / EWMA)
+                                                        kullanarak onumuzdeki 6 saatte anomali oraninin, kritik anomali sayisinin
+                                                        ve hata oraninin nasil seyredecegini tahmin eder. Yeterli veri arttikca
+                                                        tahmin kalitesi otomatik yukselen katmanli (Tier 0→3) bir sistem kullanir.
+                                                    </div>
+                                                    <div class="ppd-guide-mod-example">
+                                                        <strong>Tier Sistemi:</strong>
+                                                        &lt;5 analiz = sadece yon gostergesi &bull;
+                                                        5-9 = Weighted Moving Average &bull;
+                                                        10-19 = Linear Regression &bull;
+                                                        20+ = EWMA Trend Decomposition (en guclu)
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="ppd-guide-faq">
+                                            <div class="ppd-guide-faq-title">Sik Sorulan Sorular</div>
+
+                                            <details class="ppd-guide-faq-item">
+                                                <summary>Prediction verisi nasil olusur?</summary>
+                                                <p>Her anomaly analizi calistirildiginda (manuel veya scheduler ile) prediction modulleri otomatik devreye girer.
+                                                Analiz sonucu + gecmis analiz kayitlari birlestirilir ve trend/rate/forecast sonuclari uretilir.
+                                                Yani <strong>prediction, anomaly analizinin dogal bir uzantisidir</strong> — ayri bir islem baslatmaniz gerekmez.</p>
+                                            </details>
+
+                                            <details class="ppd-guide-faq-item">
+                                                <summary>Prediction neden bos veya zayif gorunuyor?</summary>
+                                                <p><strong>Yeterli gecmis analiz verisi yoktur.</strong> Forecasting icin en az 5 analiz sonucu gerekir (Tier 1).
+                                                Guvenilir tahminler icin 20+ analiz birikmesi idealdir (Tier 3).
+                                                Trend analizi ise en az 3 gecmis kayit ister. Ne kadar cok analiz calistirirseniz
+                                                tahminler o kadar guvenilir olur.</p>
+                                            </details>
+
+                                            <details class="ppd-guide-faq-item">
+                                                <summary>Scheduler acilmali mi?</summary>
+                                                <p><strong>Evet — duzgun prediction icin scheduler cok onemlidir.</strong>
+                                                Scheduler, belirli araliklarla (varsayilan: 30 dakika) otomatik analiz calistirarak
+                                                prediction icin gereken gecmis veriyi biriktirir. Scheduler kapaliyken prediction
+                                                yalnizca manuel analizlerden veri alir — bu da duzensiz ve yetersiz olabilir.
+                                                Scheduler'i bu ekranin sol panelinden <strong>"Baslat"</strong> butonu ile guvenle etkinlestirebilirsiniz.</p>
+                                            </details>
+
+                                            <details class="ppd-guide-faq-item">
+                                                <summary>Incremental learning prediction'i etkiler mi?</summary>
+                                                <p>Evet. Incremental (online) learning, ML anomaly detection modelini her yeni analiz verisinden ogrenmeye devam
+                                                ettirir. Bu, zaman icinde daha az false positive ve daha isabetli anomali tespiti saglar —
+                                                dolayisiyla prediction modulleri de daha kaliteli girdi alir. Config'de
+                                                <code>online_learning.enabled: true</code> ile aktiftir.</p>
+                                            </details>
+
+                                            <details class="ppd-guide-faq-item">
+                                                <summary>Guvenilir tahmin icin ne yapmam gerekir?</summary>
+                                                <p>
+                                                    1. <strong>Scheduler'i etkinlestirin</strong> — duzgun veri birikimi saglar<br>
+                                                    2. <strong>En az 20 analiz biriktirin</strong> — Tier 3 (EWMA) aktif olur<br>
+                                                    3. <strong>Farkli zaman dilimlerinde analiz calistirin</strong> — temporal pattern'ler ogrenir<br>
+                                                    4. <strong>Incremental learning'i acik tutun</strong> — model surekli iyilesir
+                                                </p>
+                                            </details>
+
+                                            <details class="ppd-guide-faq-item">
+                                                <summary>Risk seviyesi ne anlama geliyor?</summary>
+                                                <p>
+                                                    <strong>CRITICAL:</strong> Acil mudahale gerektirir — ciddi anomali artisi, threshold asimi veya ML-destekli yuksek risk.<br>
+                                                    <strong>WARNING:</strong> Yakin takip gerektirir — trend kotulesme veya oran artisi mevcut.<br>
+                                                    <strong>INFO:</strong> Bilgi amacli — dikkate deger ama acil aksiyon gerektirmeyen durum.<br>
+                                                    <strong>OK:</strong> Normal — risk tespit edilmedi.
+                                                </p>
+                                            </details>
+
+                                            <details class="ppd-guide-faq-item">
+                                                <summary>DBA olarak simdi ne yapmaliyim?</summary>
+                                                <p>
+                                                    <strong>CRITICAL alert varsa:</strong> Ilgili sunucuyu hemen kontrol edin, anomali detaylarini inceleyin, gerekli mudahaleyi yapin.<br>
+                                                    <strong>WARNING varsa:</strong> Trend yonunu izleyin, sonraki analizlerde durumu tekrar kontrol edin.<br>
+                                                    <strong>Prediction bos ise:</strong> Scheduler'i etkinlestirin ve birkaç analiz calistirarak veri biriktirin.<br>
+                                                    <strong>Her sey OK ise:</strong> Scheduler acik oldugunu dogrulayin — sistem otomatik izlemeye devam eder.
+                                                </p>
+                                            </details>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Config pills -->
                                 <div class="ppd-config-grid" id="ppdConfigGrid"></div>
+
+                                <!-- Prediction Readiness Bar -->
+                                <div class="ppd-readiness-bar" id="ppdReadinessBar">
+                                    <span class="ppd-readiness-label">Tahmin Kalitesi: hesaplaniyor...</span>
+                                </div>
 
                                 <!-- Prediction Context Panel: son analiz durumu -->
                                 <div class="ppd-context-panel" id="ppdContextPanel" style="display:none;">

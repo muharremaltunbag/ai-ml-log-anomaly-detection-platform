@@ -1364,6 +1364,20 @@ class MongoDBHandler:
                 "risk_signals": risk_signals[:10]
             }
 
+            # Forecast history depth: prediction kalitesini belirlemek için
+            # anomaly_history collection'daki kayıt sayısı
+            try:
+                history_col = self.db[self.collections.get("anomaly_history", "anomaly_history")]
+                history_query: Dict[str, Any] = {}
+                if server_name:
+                    history_query["server_name"] = server_name
+                if source_type:
+                    history_query["source_type"] = source_type
+                history_count = await history_col.count_documents(history_query)
+                result["forecast_history_count"] = history_count
+            except Exception:
+                result["forecast_history_count"] = 0
+
             return result
 
         except Exception as e:

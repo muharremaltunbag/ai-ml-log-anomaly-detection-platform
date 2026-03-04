@@ -16659,6 +16659,234 @@ mark.text-highlight:hover {
     padding: 0;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   PREDICTION STUDIO — ONBOARDING GUIDE PANEL
+   ═══════════════════════════════════════════════════════════ */
+.ppd-guide-panel {
+    background: linear-gradient(135deg, #f0f4ff 0%, #f8faff 100%);
+    border: 1px solid #c5cae9;
+    border-radius: 10px;
+    margin-bottom: 18px;
+    overflow: hidden;
+}
+.ppd-guide-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 18px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a237e;
+    user-select: none;
+    transition: background 0.2s;
+}
+.ppd-guide-header:hover {
+    background: rgba(26, 35, 126, 0.06);
+}
+.ppd-guide-toggle-icon {
+    margin-left: auto;
+    font-size: 11px;
+    transition: transform 0.25s;
+    color: #5c6bc0;
+}
+.ppd-guide-panel.ppd-guide-collapsed .ppd-guide-toggle-icon {
+    transform: rotate(-90deg);
+}
+.ppd-guide-panel.ppd-guide-collapsed .ppd-guide-body {
+    display: none;
+}
+.ppd-guide-body {
+    padding: 0 20px 20px 20px;
+}
+.ppd-guide-intro {
+    font-size: 13px;
+    color: #37474f;
+    line-height: 1.65;
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 8px;
+    border-left: 3px solid #3f51b5;
+}
+
+/* Module cards */
+.ppd-guide-modules {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.ppd-guide-mod {
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    background: #fff;
+    transition: box-shadow 0.2s;
+}
+.ppd-guide-mod:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.ppd-guide-mod-trend { border-left: 3px solid #ff9800; }
+.ppd-guide-mod-rate  { border-left: 3px solid #f44336; }
+.ppd-guide-mod-forecast { border-left: 3px solid #4caf50; }
+
+.ppd-guide-mod-icon {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: #f5f5f5;
+}
+.ppd-guide-mod-trend .ppd-guide-mod-icon { color: #ff9800; background: #fff3e0; }
+.ppd-guide-mod-rate  .ppd-guide-mod-icon { color: #f44336; background: #ffebee; }
+.ppd-guide-mod-forecast .ppd-guide-mod-icon { color: #4caf50; background: #e8f5e9; }
+
+.ppd-guide-mod-content { flex: 1; min-width: 0; }
+.ppd-guide-mod-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #263238;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.ppd-guide-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.ppd-guide-tag-past   { background: #fff3e0; color: #e65100; }
+.ppd-guide-tag-now    { background: #ffebee; color: #c62828; }
+.ppd-guide-tag-future { background: #e8f5e9; color: #2e7d32; }
+
+.ppd-guide-mod-desc {
+    font-size: 12.5px;
+    color: #546e7a;
+    line-height: 1.6;
+    margin-bottom: 6px;
+}
+.ppd-guide-mod-example {
+    font-size: 11.5px;
+    color: #78909c;
+    line-height: 1.5;
+    padding: 6px 10px;
+    background: #fafafa;
+    border-radius: 5px;
+    border-left: 2px solid #e0e0e0;
+}
+
+/* FAQ accordion */
+.ppd-guide-faq {
+    border-top: 1px solid #e0e0e0;
+    padding-top: 14px;
+}
+.ppd-guide-faq-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #37474f;
+    margin-bottom: 10px;
+}
+.ppd-guide-faq-item {
+    margin-bottom: 4px;
+    border: 1px solid #e8eaf6;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #fff;
+}
+.ppd-guide-faq-item summary {
+    padding: 10px 14px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #1a237e;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+}
+.ppd-guide-faq-item summary::-webkit-details-marker { display: none; }
+.ppd-guide-faq-item summary::before {
+    content: '\25B6';
+    font-size: 9px;
+    margin-right: 8px;
+    transition: transform 0.2s;
+    color: #5c6bc0;
+}
+.ppd-guide-faq-item[open] summary::before {
+    transform: rotate(90deg);
+}
+.ppd-guide-faq-item summary:hover {
+    background: rgba(63, 81, 181, 0.04);
+}
+.ppd-guide-faq-item p {
+    padding: 6px 14px 12px 14px;
+    font-size: 12px;
+    color: #546e7a;
+    line-height: 1.7;
+    margin: 0;
+}
+.ppd-guide-faq-item code {
+    font-size: 11px;
+    background: #f5f5f5;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #c62828;
+}
+
+/* Scheduler status guidance */
+.ppd-sched-guidance {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: linear-gradient(135deg, #fff3e0 0%, #fff8e1 100%);
+    border: 1px solid #ffe0b2;
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: #e65100;
+    line-height: 1.6;
+}
+.ppd-sched-guidance strong { color: #bf360c; }
+
+/* Prediction readiness indicator */
+.ppd-readiness-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    background: #f5f5f5;
+    border-radius: 6px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: #546e7a;
+}
+.ppd-readiness-label { font-weight: 500; white-space: nowrap; }
+.ppd-readiness-track {
+    flex: 1;
+    height: 6px;
+    background: #e0e0e0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+.ppd-readiness-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+.ppd-readiness-fill-low    { background: #f44336; }
+.ppd-readiness-fill-medium { background: #ff9800; }
+.ppd-readiness-fill-high   { background: #4caf50; }
+.ppd-readiness-text { font-size: 11px; white-space: nowrap; }
+
 /* ── Studio context overrides: larger fonts, more breathing room ── */
 .pps-main .ppd-config-grid {
     gap: 10px;

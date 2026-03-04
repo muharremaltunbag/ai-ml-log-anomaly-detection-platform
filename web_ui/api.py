@@ -5677,7 +5677,8 @@ async def start_scheduler(request: Dict[str, Any]):
     if target_hosts:
         tools.scheduler.set_target_hosts(target_hosts)
 
-    started = tools.scheduler.start()
+    # force=True: UI'dan başlatıldığında config disabled olsa bile çalıştır
+    started = tools.scheduler.start(force=True)
     return {
         "status": "success" if started else "already_running_or_disabled",
         "scheduler": tools.scheduler.get_status()

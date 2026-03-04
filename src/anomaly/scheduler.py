@@ -65,9 +65,15 @@ class AnomalyScheduler:
             self._target_hosts = list(hosts)
             logger.info(f"Scheduler target hosts updated: {len(hosts)} hosts")
 
-    def start(self) -> bool:
-        """Scheduler'ı başlat"""
-        if not self.enabled:
+    def start(self, force: bool = False) -> bool:
+        """
+        Scheduler'ı başlat.
+
+        Args:
+            force: True ise config'de disabled olsa bile başlatır.
+                   UI'dan başlatıldığında kullanılır.
+        """
+        if not self.enabled and not force:
             logger.info("Scheduler is disabled in config, not starting")
             return False
 
@@ -81,6 +87,10 @@ class AnomalyScheduler:
 
         with self._lock:
             self._running = True
+            # Runtime enable — UI'dan başlatıldığında config override
+            if force and not self.enabled:
+                self.enabled = True
+                logger.info("Scheduler runtime-enabled via UI/API")
 
         logger.info(f"Scheduler started: will run every {self.interval_minutes} minutes")
         self._schedule_next()
