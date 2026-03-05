@@ -16435,12 +16435,12 @@ mark.text-highlight:hover {
 
 /* ── Left Sidebar ── */
 .pps-sidebar {
-    width: 340px;
-    min-width: 340px;
+    width: 380px;
+    min-width: 380px;
     background: #f8fafc;
     border-right: 1px solid var(--border-color, #e2e8f0);
     overflow-y: auto;
-    padding: 24px 20px;
+    padding: 24px 24px;
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -16552,10 +16552,10 @@ mark.text-highlight:hover {
     display: none; /* title is in sidebar-title, buttons moved to sidebar-sched-actions */
 }
 .pps-sidebar-sched .ppd-sched-body {
-    padding: 10px;
+    padding: 14px 16px;
 }
 .pps-sidebar-sched .ppd-sched-grid {
-    font-size: 12px;
+    font-size: 12.5px;
 }
 /* Target hosts interactive list */
 .pps-sidebar-hosts-header {
@@ -16596,8 +16596,8 @@ mark.text-highlight:hover {
 .pps-hosts-list {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    max-height: 300px;
+    gap: 6px;
+    max-height: 340px;
     overflow-y: auto;
     padding: 4px 0;
     scrollbar-width: thin;
@@ -16649,19 +16649,17 @@ mark.text-highlight:hover {
 .pps-host-item-label {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     color: var(--text-primary, #334155);
     font-weight: 500;
-    line-height: 1.3;
+    line-height: 1.4;
+    word-break: break-all;
 }
 
 .pps-sidebar-sched-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 10px;
+    gap: 8px;
+    margin-top: 14px;
 }
 .pps-sidebar-sched-actions .ppd-sched-btn {
     flex: 1;
@@ -18253,11 +18251,11 @@ body.pps-body-lock {
 .ppd-sched-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 10px;
+    gap: 12px;
 }
 .ppd-sched-stat {
     text-align: center;
-    padding: 8px;
+    padding: 10px 8px;
 }
 .ppd-sched-stat-label {
     font-size: 0.85em;
@@ -18689,16 +18687,21 @@ body.pps-body-lock {
 }
 .pps-sidebar .ppd-sched-grid {
     font-size: 13px;
+    gap: 14px;
+}
+.pps-sidebar .ppd-sched-stat {
+    padding: 10px;
 }
 .pps-sidebar .ppd-sched-stat-label {
     font-size: 12px;
+    margin-bottom: 5px;
 }
 .pps-sidebar .ppd-sched-stat-value {
     font-size: 14px;
 }
 .pps-sidebar .ppd-sched-btn {
     font-size: 12.5px;
-    padding: 6px 12px;
+    padding: 7px 14px;
 }
 
 /* ── Hints & Empty States ── */
@@ -19182,12 +19185,12 @@ body.pps-body-lock {
     background: #fff;
 }
 .pps-sidebar .ppd-sched-body {
-    padding: 12px;
+    padding: 16px 18px;
 }
 
 /* Host items — bigger, friendlier touch targets */
 .pps-sidebar .pps-host-item {
-    padding: 9px 12px;
+    padding: 10px 14px;
     border-radius: 8px;
     font-size: 13px;
     gap: 10px;
@@ -19200,11 +19203,11 @@ body.pps-body-lock {
 /* Scheduler action buttons — unified look */
 .pps-sidebar .pps-sidebar-sched-actions {
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 14px;
 }
 .pps-sidebar .pps-sidebar-sched-actions .ppd-sched-btn {
     font-size: 13px;
-    padding: 8px 8px;
+    padding: 8px 14px;
     border-radius: 8px;
     font-weight: 600;
 }
@@ -20232,60 +20235,62 @@ input, select, textarea, button {
    HOST LIVE STATUS PANEL — Prediction Studio
    ═══════════════════════════════════════════════════════ */
 .ppd-host-live-panel {
-    margin-top: 10px;
-    padding: 10px 12px;
+    margin-top: 12px;
+    padding: 14px 16px;
     background: #fafbfc;
     border: 1px solid #e8ecf0;
-    border-radius: 6px;
+    border-radius: 8px;
 }
 .ppd-host-live-title {
-    font-size: 11px;
-    font-weight: 600;
-    color: #78909c;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #64748b;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 .ppd-host-live-pulse {
     display: inline-block;
-    width: 7px;
-    height: 7px;
-    background: #48bb78;
+    width: 8px;
+    height: 8px;
+    background: #22c55e;
     border-radius: 50%;
     animation: sasPulse 1.5s ease-in-out infinite;
 }
 .ppd-host-live-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    margin: 2px 0;
-    border-radius: 4px;
-    font-size: 11.5px;
+    gap: 10px;
+    padding: 7px 10px;
+    margin: 3px 0;
+    border-radius: 6px;
+    font-size: 12.5px;
     border-left: 3px solid transparent;
     transition: background 0.15s;
 }
 .ppd-hls-name {
-    font-weight: 500;
-    color: #455a64;
-    min-width: 120px;
-    max-width: 180px;
+    font-weight: 600;
+    color: #334155;
+    min-width: 0;
+    flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 .ppd-hls-state {
-    font-size: 11px;
+    font-size: 12px;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 .ppd-hls-extra {
-    color: #90a4ae;
-    font-size: 10.5px;
+    color: #64748b;
+    font-size: 11.5px;
     margin-left: auto;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* State colors */
