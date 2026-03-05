@@ -54,7 +54,7 @@
 
             <!-- Scheduler Activity Strip — üst durum paneli -->
             <div id="schedulerActivityStrip" class="sas-strip" style="display:none;">
-                <!-- Row 1: Status + Source + Stage Pipeline + Timestamp -->
+                <!-- Row 1: Status + Source + Active Host + Stage Pipeline + Timestamp -->
                 <div class="sas-row sas-row-top">
                     <div class="sas-status-group">
                         <span class="sas-dot" id="sasDot"></span>
@@ -68,6 +68,11 @@
                         <span class="sas-run" id="sasRun"></span>
                     </div>
                     <span class="sas-sep"></span>
+                    <span class="sas-active-host" id="sasActiveHost" style="display:none;">
+                        <span class="sas-active-host-dot"></span>
+                        <span class="sas-active-host-label">Analiz ediliyor:</span>
+                        <span class="sas-active-host-name" id="sasActiveHostName"></span>
+                    </span>
                     <div class="sas-stage-group" id="sasStageGroup">
                         <span class="sas-stage" data-step="fetch" id="sasStage0">Log toplama</span>
                         <span class="sas-stage-arrow">&rsaquo;</span>
@@ -90,7 +95,6 @@
                         </span>
                         <span class="sas-queue-text" id="sasQueueText"></span>
                     </div>
-                    <span class="sas-current" id="sasCurrent" style="display:none;"></span>
                     <div class="sas-host-status" id="sasHostStatus"></div>
                 </div>
             </div>

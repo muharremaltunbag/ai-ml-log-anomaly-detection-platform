@@ -20011,8 +20011,8 @@ input, select, textarea, button {
 .sas-strip {
     background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
     border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    margin-bottom: 14px;
+    border-radius: 12px;
+    margin-bottom: 16px;
     padding: 0;
     overflow: hidden;
 }
@@ -20021,17 +20021,19 @@ input, select, textarea, button {
 .sas-row {
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 0 20px;
+    gap: 18px;
+    padding: 0 24px;
 }
 .sas-row-top {
-    padding-top: 12px;
-    padding-bottom: 8px;
+    padding-top: 16px;
+    padding-bottom: 12px;
     border-bottom: 1px solid #edf2f7;
+    flex-wrap: wrap;
+    row-gap: 10px;
 }
 .sas-row-bottom {
-    padding-top: 10px;
-    padding-bottom: 12px;
+    padding-top: 14px;
+    padding-bottom: 16px;
     flex-wrap: wrap;
     gap: 10px;
 }
@@ -20040,12 +20042,12 @@ input, select, textarea, button {
 .sas-status-group {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     flex-shrink: 0;
 }
 .sas-dot {
-    width: 10px;
-    height: 10px;
+    width: 11px;
+    height: 11px;
     border-radius: 50%;
     flex-shrink: 0;
     background: #a0aec0;
@@ -20068,14 +20070,14 @@ input, select, textarea, button {
 }
 .sas-label {
     font-weight: 700;
-    font-size: 14px;
+    font-size: 15px;
     color: #1e293b;
     white-space: nowrap;
 }
 .sas-badge {
-    padding: 2px 10px;
-    border-radius: 5px;
-    font-size: 10.5px;
+    padding: 3px 12px;
+    border-radius: 6px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.5px;
     text-transform: uppercase;
@@ -20098,7 +20100,7 @@ input, select, textarea, button {
 /* ── Separators ── */
 .sas-sep {
     width: 1px;
-    height: 20px;
+    height: 24px;
     background: #cbd5e0;
     flex-shrink: 0;
 }
@@ -20107,42 +20109,78 @@ input, select, textarea, button {
 .sas-meta-group {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     flex-shrink: 0;
 }
 .sas-source {
     background: #edf2f7;
     color: #334155;
-    padding: 3px 10px;
-    border-radius: 5px;
-    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12.5px;
     font-weight: 600;
     border: 1px solid #e2e8f0;
     white-space: nowrap;
 }
 .sas-hosts {
-    color: #64748b;
-    font-size: 12.5px;
+    color: #475569;
+    font-size: 13px;
     font-weight: 500;
     white-space: nowrap;
 }
 .sas-run {
-    color: #94a3b8;
-    font-size: 12px;
+    color: #64748b;
+    font-size: 12.5px;
     white-space: nowrap;
+}
+
+/* ── Active host indicator ── */
+.sas-active-host {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 14px;
+    background: #dbeafe;
+    border: 1px solid #93c5fd;
+    border-radius: 8px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    animation: sasActiveHostPulse 2s ease-in-out infinite;
+}
+@keyframes sasActiveHostPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.15); }
+    50% { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.08); }
+}
+.sas-active-host-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #3b82f6;
+    flex-shrink: 0;
+    animation: sasPulse 1.5s ease-in-out infinite;
+}
+.sas-active-host-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #64748b;
+}
+.sas-active-host-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1e40af;
 }
 
 /* ── Stage pipeline ── */
 .sas-stage-group {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     flex-shrink: 0;
 }
 .sas-stage {
-    padding: 3px 10px;
-    border-radius: 5px;
-    font-size: 11.5px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 12px;
     font-weight: 500;
     color: #94a3b8;
     background: transparent;
@@ -20163,7 +20201,7 @@ input, select, textarea, button {
 }
 .sas-stage-arrow {
     color: #cbd5e0;
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 300;
     line-height: 1;
 }
@@ -20172,17 +20210,17 @@ input, select, textarea, button {
 .sas-right-group {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 16px;
     margin-left: auto;
     flex-shrink: 0;
 }
 .sas-timestamp {
-    color: #94a3b8;
-    font-size: 11.5px;
+    color: #64748b;
+    font-size: 12px;
     white-space: nowrap;
 }
 .sas-link {
-    font-size: 12.5px;
+    font-size: 13px;
     color: #3b82f6;
     text-decoration: none;
     font-weight: 600;
@@ -20197,43 +20235,28 @@ input, select, textarea, button {
 .sas-queue-group {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     flex-shrink: 0;
-    min-width: 160px;
+    min-width: 180px;
 }
 .sas-queue-bar-wrap {
-    width: 80px;
-    height: 6px;
+    width: 100px;
+    height: 7px;
     background: #e2e8f0;
-    border-radius: 3px;
+    border-radius: 4px;
     overflow: hidden;
     flex-shrink: 0;
 }
 .sas-queue-bar-fill {
     height: 100%;
     background: linear-gradient(90deg, #3b82f6, #22c55e);
-    border-radius: 3px;
+    border-radius: 4px;
     transition: width 0.4s ease;
 }
 .sas-queue-text {
-    font-size: 12px;
-    color: #475569;
+    font-size: 12.5px;
+    color: #334155;
     font-weight: 500;
-    white-space: nowrap;
-}
-
-/* ── Current host (when actively processing) ── */
-.sas-current {
-    background: #dbeafe;
-    color: #1e40af;
-    padding: 3px 12px;
-    border-radius: 5px;
-    font-size: 12px;
-    font-weight: 600;
-    border: 1px solid #93c5fd;
-    max-width: 240px;
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
 }
 

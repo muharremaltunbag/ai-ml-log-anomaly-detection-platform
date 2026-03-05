@@ -1295,6 +1295,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
+            // Active host indicator (Row 1)
+            var activeHostEl = document.getElementById('sasActiveHost');
+            var activeHostName = document.getElementById('sasActiveHostName');
+            if (activeHostEl && activeHostName) {
+                if (currentHost && cycleActive) {
+                    activeHostName.textContent = currentHost;
+                    activeHostEl.style.display = '';
+                } else {
+                    activeHostName.textContent = '';
+                    activeHostEl.style.display = 'none';
+                }
+            }
+
             // Timestamp
             var tsEl = document.getElementById('sasTimestamp');
             if (tsEl) {
@@ -1325,18 +1338,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     queueText.textContent = 'Son cycle: ' + doneCount + '/' + totalHosts + ' tamamlandi';
                 } else {
                     queueText.textContent = '';
-                }
-            }
-
-            // Current host
-            var curEl = document.getElementById('sasCurrent');
-            if (curEl) {
-                if (currentHost && cycleActive) {
-                    curEl.textContent = '\u25B6 ' + currentHost;
-                    curEl.style.display = '';
-                } else {
-                    curEl.textContent = '';
-                    curEl.style.display = 'none';
                 }
             }
 
