@@ -1203,12 +1203,14 @@ document.addEventListener('DOMContentLoaded', function() {
             var targetHosts = s.target_hosts || [];
             var runCount = s.run_count || 0;
             var hostStates = s.host_states || {};
+            var lastRun = s.last_run || null;
+            var interval = s.interval_minutes || 30;
 
             // Hide if disabled
             if (!enabled) { strip.style.display = 'none'; return; }
             strip.style.display = '';
 
-            // Dot
+            // ── Row 1: Status ──
             var dot = document.getElementById('sasDot');
             if (dot) {
                 dot.className = 'sas-dot';
@@ -1217,32 +1219,120 @@ document.addEventListener('DOMContentLoaded', function() {
                 else dot.classList.add('sas-dot-idle');
             }
 
-            // Label
             var label = document.getElementById('sasLabel');
-            if (label) {
-                if (cycleActive) label.textContent = 'Scheduler: Analiz devam ediyor';
-                else if (running) label.textContent = 'Scheduler: Aktif';
-                else label.textContent = 'Scheduler: Hazir';
+            if (label) label.textContent = 'Scheduler';
+
+            // Badge
+            var badge = document.getElementById('sasBadge');
+            if (badge) {
+                badge.className = 'sas-badge';
+                if (cycleActive) {
+                    badge.textContent = 'ANALIZ DEVAM EDIYOR';
+                    badge.classList.add('sas-badge-running');
+                } else if (running) {
+                    badge.textContent = 'AKTIF';
+                } else {
+                    badge.textContent = 'HAZIR';
+                    badge.classList.add('sas-badge-idle');
+                }
             }
 
             // Source
             var srcEl = document.getElementById('sasSource');
             if (srcEl) {
-                var srcLabels = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'ES' };
+                var srcLabels = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' };
                 srcEl.textContent = srcLabels[sourceType] || sourceType;
             }
 
             // Host count
             var hostsEl = document.getElementById('sasHosts');
             if (hostsEl) {
-                hostsEl.textContent = targetHosts.length > 0 ? targetHosts.length + ' sunucu' : '';
+                var hCount = targetHosts.length || Object.keys(hostStates).length;
+                hostsEl.textContent = hCount > 0 ? hCount + ' sunucu' : '';
+            }
+
+            // Run info
+            var runEl = document.getElementById('sasRun');
+            if (runEl) {
+                if (runCount > 0) {
+                    runEl.textContent = runCount + '. calisma \u00B7 ' + interval + ' dk aralik';
+                } else {
+                    runEl.textContent = interval + ' dk aralik';
+                }
+            }
+
+            // Stage pipeline
+            var stages = [
+                document.getElementById('sasStage0'),
+                document.getElementById('sasStage1'),
+                document.getElementById('sasStage2'),
+                document.getElementById('sasStage3')
+            ];
+            var hKeys = Object.keys(hostStates);
+            var completedCount = 0, processingCount = 0, queuedCount = 0, errorCount = 0;
+            for (var si = 0; si < hKeys.length; si++) {
+                var st = (hostStates[hKeys[si]] || {}).state || 'idle';
+                if (st === 'completed') completedCount++;
+                else if (st === 'processing') processingCount++;
+                else if (st === 'queued') queuedCount++;
+                else if (st === 'error') errorCount++;
+            }
+
+            // Determine active stage
+            var activeStage = -1; // none active
+            if (cycleActive) {
+                if (processingCount > 0) activeStage = 1; // ML Analiz
+                else if (queuedCount > 0) activeStage = 0; // Log toplama (about to start)
+                else if (completedCount > 0) activeStage = 3; // Saving results
+            }
+
+            for (var stg = 0; stg < stages.length; stg++) {
+                if (!stages[stg]) continue;
+                stages[stg].className = 'sas-stage';
+                if (cycleActive) {
+                    if (stg < activeStage) stages[stg].classList.add('sas-stage-done');
+                    else if (stg === activeStage) stages[stg].classList.add('sas-stage-active');
+                }
+            }
+
+            // Timestamp
+            var tsEl = document.getElementById('sasTimestamp');
+            if (tsEl) {
+                if (lastRun) {
+                    var lr = String(lastRun);
+                    if (lr.length > 19) lr = lr.substring(0, 19).replace('T', ' ');
+                    tsEl.textContent = 'Son: ' + lr;
+                } else {
+                    tsEl.textContent = '';
+                }
+            }
+
+            // ── Row 2: Queue progress ──
+            var totalHosts = hKeys.length;
+            var doneCount = completedCount + errorCount;
+            var pct = totalHosts > 0 ? Math.round((doneCount / totalHosts) * 100) : 0;
+
+            var fillEl = document.getElementById('sasQueueFill');
+            if (fillEl) fillEl.style.width = pct + '%';
+
+            var queueText = document.getElementById('sasQueueText');
+            if (queueText) {
+                if (totalHosts > 0 && cycleActive) {
+                    queueText.textContent = doneCount + '/' + totalHosts + ' tamamlandi'
+                        + (processingCount > 0 ? ' \u00B7 ' + processingCount + ' analiz ediliyor' : '')
+                        + (queuedCount > 0 ? ' \u00B7 ' + queuedCount + ' sirada' : '');
+                } else if (totalHosts > 0 && !cycleActive && doneCount > 0) {
+                    queueText.textContent = 'Son cycle: ' + doneCount + '/' + totalHosts + ' tamamlandi';
+                } else {
+                    queueText.textContent = '';
+                }
             }
 
             // Current host
             var curEl = document.getElementById('sasCurrent');
             if (curEl) {
                 if (currentHost && cycleActive) {
-                    curEl.textContent = currentHost;
+                    curEl.textContent = '\u25B6 ' + currentHost;
                     curEl.style.display = '';
                 } else {
                     curEl.textContent = '';
@@ -1250,20 +1340,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Run info
-            var runEl = document.getElementById('sasRun');
-            if (runEl) {
-                if (runCount > 0) {
-                    runEl.textContent = runCount + '. calisma';
-                } else {
-                    runEl.textContent = '';
-                }
-            }
-
             // Host status chips
             var hostStatusEl = document.getElementById('sasHostStatus');
             if (hostStatusEl) {
-                var hKeys = Object.keys(hostStates);
                 if (hKeys.length > 0) {
                     var stOrder = { processing: 0, queued: 1, completed: 2, cooldown: 3, idle: 4, error: 5 };
                     hKeys.sort(function (a, b) {
@@ -1279,9 +1358,9 @@ document.addEventListener('DOMContentLoaded', function() {
                         var hn = hKeys[ci];
                         var hInf = hostStates[hn] || {};
                         var hs = hInf.state || 'idle';
-                        var shortN = hn.length > 18 ? hn.substring(0, 16) + '..' : hn;
+                        var shortN = hn.length > 22 ? hn.substring(0, 20) + '..' : hn;
                         var sLbl = sasStateLabels[hs] || hs;
-                        chipsHtml += '<span class="sas-host-chip sas-host-chip-' + hs + '">'
+                        chipsHtml += '<span class="sas-host-chip sas-host-chip-' + hs + '" title="' + escH(hn) + '">'
                             + '<span class="sas-chip-dot"></span>'
                             + escH(shortN)
                             + ' <span class="sas-chip-state">' + escH(sLbl) + '</span>'

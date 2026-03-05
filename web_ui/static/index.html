@@ -52,17 +52,46 @@
         <!-- Ana İçerik -->
         <main id="mainContent" style="display: none;">
 
-            <!-- Scheduler Activity Strip — ince üst durum şeridi -->
+            <!-- Scheduler Activity Strip — üst durum paneli -->
             <div id="schedulerActivityStrip" class="sas-strip" style="display:none;">
-                <div class="sas-inner">
-                    <span class="sas-dot" id="sasDot"></span>
-                    <span class="sas-label" id="sasLabel">Scheduler</span>
-                    <span class="sas-source" id="sasSource"></span>
-                    <span class="sas-hosts" id="sasHosts"></span>
-                    <span class="sas-current" id="sasCurrent"></span>
-                    <span class="sas-run" id="sasRun"></span>
-                    <span class="sas-host-status" id="sasHostStatus"></span>
-                    <a href="#" class="sas-link" id="sasDetailLink" onclick="if(window.PredictionDashboard)window.PredictionDashboard.show();return false;">Detay &rarr;</a>
+                <!-- Row 1: Status + Source + Stage Pipeline + Timestamp -->
+                <div class="sas-row sas-row-top">
+                    <div class="sas-status-group">
+                        <span class="sas-dot" id="sasDot"></span>
+                        <span class="sas-label" id="sasLabel">Scheduler</span>
+                        <span class="sas-badge" id="sasBadge">AKTIF</span>
+                    </div>
+                    <span class="sas-sep"></span>
+                    <div class="sas-meta-group">
+                        <span class="sas-source" id="sasSource"></span>
+                        <span class="sas-hosts" id="sasHosts"></span>
+                        <span class="sas-run" id="sasRun"></span>
+                    </div>
+                    <span class="sas-sep"></span>
+                    <div class="sas-stage-group" id="sasStageGroup">
+                        <span class="sas-stage" data-step="fetch" id="sasStage0">Log toplama</span>
+                        <span class="sas-stage-arrow">&rsaquo;</span>
+                        <span class="sas-stage" data-step="analyze" id="sasStage1">ML Analiz</span>
+                        <span class="sas-stage-arrow">&rsaquo;</span>
+                        <span class="sas-stage" data-step="predict" id="sasStage2">Tahmin</span>
+                        <span class="sas-stage-arrow">&rsaquo;</span>
+                        <span class="sas-stage" data-step="save" id="sasStage3">Kayit</span>
+                    </div>
+                    <div class="sas-right-group">
+                        <span class="sas-timestamp" id="sasTimestamp"></span>
+                        <a href="#" class="sas-link" id="sasDetailLink" onclick="if(window.PredictionDashboard)window.PredictionDashboard.show();return false;">Prediction Studio &rarr;</a>
+                    </div>
+                </div>
+                <!-- Row 2: Queue Progress + Host Chips -->
+                <div class="sas-row sas-row-bottom">
+                    <div class="sas-queue-group" id="sasQueueGroup">
+                        <span class="sas-queue-bar-wrap">
+                            <span class="sas-queue-bar-fill" id="sasQueueFill" style="width:0%"></span>
+                        </span>
+                        <span class="sas-queue-text" id="sasQueueText"></span>
+                    </div>
+                    <span class="sas-current" id="sasCurrent" style="display:none;"></span>
+                    <div class="sas-host-status" id="sasHostStatus"></div>
                 </div>
             </div>
 
