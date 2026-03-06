@@ -63,6 +63,8 @@ class AnomalyScheduler:
         self._last_results: Dict[str, Any] = {}
         self._host_last_analyzed: Dict[str, datetime] = {}  # per-host cooldown tracking
         self._cycle_in_progress = False  # prevent overlapping cycles
+        self._last_cycle_duration: Optional[float] = None  # seconds
+        self._heartbeat_at: Optional[datetime] = None  # last heartbeat timestamp
 
         # ── Host-level live state (UI live status feed) ──
         # Updated during each cycle for realtime visibility
@@ -121,6 +123,13 @@ class AnomalyScheduler:
         if not force and self._startup_delay_seconds > 0 and self._run_count == 0:
             logger.info(f"Scheduler startup delay: {self._startup_delay_seconds}s before first cycle")
             self._timer = threading.Timer(self._startup_delay_seconds, self._on_timer)
+            self._timer.daemon = True
+            self._timer.start()
+        elif force:
+            # UI'dan başlatıldığında ilk cycle'ı 2 saniye sonra çalıştır
+            # (hemen değil — host discovery ve bağlantılar hazır olsun)
+            logger.info("Scheduler force-started via UI: first cycle in 2 seconds")
+            self._timer = threading.Timer(2, self._on_timer)
             self._timer.daemon = True
             self._timer.start()
         else:
@@ -220,6 +229,8 @@ class AnomalyScheduler:
             "run_count": self._run_count,
             "last_run": self._last_run.isoformat() if self._last_run else None,
             "next_run": next_run,
+            "last_cycle_duration_seconds": self._last_cycle_duration,
+            "heartbeat_at": self._heartbeat_at.isoformat() if self._heartbeat_at else None,
             "target_hosts": self._target_hosts,
             "host_states": live_hosts,
             "cycle_batch": self._cycle_batch if self._cycle_in_progress else [],
@@ -261,12 +272,20 @@ class AnomalyScheduler:
         if not self._running:
             return
 
+        cycle_start = time.monotonic()
         try:
             logger.info(f"Scheduler cycle #{self._run_count + 1} starting...")
             self._run_cycle()
         except Exception as e:
             logger.error(f"Scheduler cycle error: {e}")
         finally:
+            elapsed = round(time.monotonic() - cycle_start, 2)
+            self._last_cycle_duration = elapsed
+            self._heartbeat_at = datetime.utcnow()
+            next_in = self.interval_minutes
+            logger.info(f"Scheduler heartbeat: cycle completed in {elapsed}s, "
+                        f"next cycle in {next_in} min, "
+                        f"total runs={self._run_count}, running={self._running}")
             # Sonraki çalışmayı zamanlayıcıya ekle
             self._schedule_next()
 
