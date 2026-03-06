@@ -898,12 +898,144 @@
                     return;
                 }
                 renderAlerts(data.alerts);
+                renderActiveRisks(data.alerts);
                 populateServerFilter(data.alerts);
             })
             .catch(function (err) {
                 _loading = false;
                 console.warn('[PredictionDashboard] Alerts fetch error:', err);
             });
+    }
+
+    // ============================
+    // ACTIVE RISKS PANEL
+    // ============================
+    function renderActiveRisks(alerts) {
+        var panel = _el('ppdActiveRisks');
+        var list = _el('ppdRiskList');
+        if (!panel || !list) return;
+
+        // Extract CRITICAL and WARNING alerts with actual sub-alerts
+        var risks = [];
+        for (var i = 0; i < alerts.length; i++) {
+            var a = alerts[i];
+            if (a.max_severity !== 'CRITICAL' && a.max_severity !== 'WARNING') continue;
+            var dataAlerts = (a.data && Array.isArray(a.data.alerts)) ? a.data.alerts : [];
+            if (dataAlerts.length === 0) continue;
+
+            for (var j = 0; j < dataAlerts.length; j++) {
+                var al = dataAlerts[j];
+                risks.push({
+                    severity: al.severity || a.max_severity,
+                    title: al.title || al.alert_type || '-',
+                    server: a.server_name || '-',
+                    source: a.alert_source || '-',
+                    sourceType: a.source_type || '',
+                    description: al.description || '',
+                    sample: (al.sample_messages && al.sample_messages.length > 0)
+                        ? al.sample_messages[0] : '',
+                    confidence: al.confidence,
+                    timestamp: a.timestamp || '',
+                    action: _riskAction(al),
+                    mlSupported: !!(al.ml_context && al.ml_context.ml_corroborated)
+                });
+            }
+        }
+
+        if (risks.length === 0) {
+            panel.style.display = 'none';
+            return;
+        }
+
+        // Sort: CRITICAL first, then by confidence desc
+        risks.sort(function (a, b) {
+            if (a.severity !== b.severity) {
+                return a.severity === 'CRITICAL' ? -1 : 1;
+            }
+            return (b.confidence || 0) - (a.confidence || 0);
+        });
+
+        // Limit to top 8
+        var top = risks.slice(0, 8);
+        var html = '';
+        for (var k = 0; k < top.length; k++) {
+            var r = top[k];
+            var sevCls = 'ppd-sev-' + r.severity.toLowerCase();
+            var ts = r.timestamp;
+            if (ts && ts.length > 16) ts = ts.substring(0, 16).replace('T', ' ');
+
+            // Source type label
+            var stLabel = '';
+            if (r.sourceType.indexOf('mssql') >= 0) stLabel = 'MSSQL';
+            else if (r.sourceType.indexOf('elasticsearch') >= 0) stLabel = 'ES';
+            else if (r.sourceType.indexOf('mongodb') >= 0 || r.sourceType.indexOf('opensearch') >= 0) stLabel = 'Mongo';
+
+            html += '<div class="ppd-risk-item">'
+                + '<div class="ppd-risk-header">'
+                +   '<span class="ppd-severity-tag ' + sevCls + '">' + esc(r.severity) + '</span>'
+                +   '<span class="ppd-risk-title">' + esc(r.title) + '</span>';
+            if (r.mlSupported) {
+                html += '<span class="ppd-ml-badge ppd-ml-confirmed" title="ML destekli">ML &#x2713;</span>';
+            }
+            if (typeof r.confidence === 'number') {
+                var pct = Math.round(r.confidence * 100);
+                html += '<span class="ppd-conf-badge ' + (pct >= 60 ? 'ppd-conf-high' : 'ppd-conf-med') + '">%' + pct + '</span>';
+            }
+            html += '</div>'
+                + '<div class="ppd-risk-meta">'
+                +   '<span class="ppd-risk-server">' + esc(r.server) + '</span>';
+            if (stLabel) html += '<span class="ppd-risk-src">' + stLabel + '</span>';
+            html += '<span class="ppd-risk-source">' + esc(r.source) + '</span>'
+                +   '<span class="ppd-risk-time">' + esc(ts) + '</span>'
+                + '</div>';
+
+            // Sample log message (fingerprint)
+            if (r.sample) {
+                var sampleShort = r.sample.length > 120 ? r.sample.substring(0, 120) + '...' : r.sample;
+                html += '<div class="ppd-risk-sample">' + esc(sampleShort) + '</div>';
+            }
+
+            // Actionable recommendation
+            if (r.action) {
+                html += '<div class="ppd-risk-action">' + esc(r.action) + '</div>';
+            }
+
+            html += '</div>';
+        }
+
+        if (risks.length > 8) {
+            html += '<div class="ppd-risk-more">+' + (risks.length - 8) + ' daha — detaylar icin alert tablosuna bakin</div>';
+        }
+
+        list.innerHTML = html;
+        panel.style.display = '';
+    }
+
+    function _riskAction(al) {
+        var type = al.alert_type || al.event_type || '';
+        if (type.indexOf('auth_failure') >= 0 || type.indexOf('failed_login') >= 0)
+            return 'Basarisiz giris kaynaklarini kontrol edin, IP/kullanici bazli filtreleme yapin';
+        if (type.indexOf('error_burst') >= 0)
+            return 'Hata loglarini inceleyin, son deployment veya config degisikligini kontrol edin';
+        if (type.indexOf('slow_query') >= 0)
+            return 'Yavas sorgulari optimize edin, eksik index olup olmadigini kontrol edin';
+        if (type.indexOf('collscan') >= 0)
+            return 'COLLSCAN yapan sorgular icin index olusturun';
+        if (type.indexOf('oom') >= 0 || type.indexOf('memory') >= 0)
+            return 'Bellek kullanimini kontrol edin, WiredTiger cache boyutunu gozden gecirin';
+        if (type.indexOf('connection') >= 0)
+            return 'Baglanti havuzunu ve ag durumunu kontrol edin';
+        if (type.indexOf('shard_failure') >= 0)
+            return 'Shard durumlarini ve replikasyon gecikme suresini kontrol edin';
+        if (type.indexOf('disk_watermark') >= 0)
+            return 'Disk alanini kontrol edin, eski index/veriyi temizleyin';
+        if (type.indexOf('circuit_breaker') >= 0)
+            return 'JVM heap kullanimini kontrol edin, sorgu karmasikligini azaltin';
+        if (type.indexOf('anomaly_rate') >= 0 || type.indexOf('trend') >= 0)
+            return 'Anomali artis nedenini arastirin, son degisiklikleri gozden gecirin';
+        if (type.indexOf('forecast') >= 0)
+            return 'Risk trendini izleyin, gerekirse onleyici aksiyon planlayin';
+        return '';
     }
 
     var _sevOrder = { 'CRITICAL': 0, 'WARNING': 1, 'INFO': 2, 'OK': 3 };
