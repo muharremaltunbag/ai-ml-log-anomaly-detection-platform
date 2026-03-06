@@ -65,6 +65,8 @@ class AnomalyScheduler:
         self._cycle_in_progress = False  # prevent overlapping cycles
         self._last_cycle_duration: Optional[float] = None  # seconds
         self._heartbeat_at: Optional[datetime] = None  # last heartbeat timestamp
+        self._cycle_ended_at: Optional[datetime] = None  # last cycle end time
+        self._last_cycle_summary: Dict[str, Any] = {}  # last cycle scope summary
 
         # ── Host-level live state (UI live status feed) ──
         # Updated during each cycle for realtime visibility
@@ -182,15 +184,29 @@ class AnomalyScheduler:
 
     def get_status(self) -> Dict[str, Any]:
         """Scheduler durumunu döndür"""
+        now = datetime.utcnow()
+
         # Next run hesaplama
         next_run = None
+        next_run_in_minutes = None
         if self._running and self._last_run:
-            from datetime import timedelta
             next_dt = self._last_run + timedelta(minutes=self.interval_minutes)
             next_run = next_dt.isoformat()
+            remaining = (next_dt - now).total_seconds() / 60
+            next_run_in_minutes = round(max(remaining, 0), 1)
         elif self._running and not self._last_run:
             # İlk cycle henüz çalışmadı, timer bekliyor
             next_run = "pending"
+
+        # Cycle state: ürün diliyle sade durum
+        if self._cycle_in_progress:
+            cycle_state = "running"
+        elif self._running and self._last_run:
+            cycle_state = "waiting"
+        elif self._running:
+            cycle_state = "starting"
+        else:
+            cycle_state = "idle"
 
         # Host-level live state for UI
         live_hosts: Dict[str, Any] = {}
@@ -221,6 +237,7 @@ class AnomalyScheduler:
         return {
             "enabled": self.enabled,
             "running": self._running,
+            "cycle_state": cycle_state,
             "cycle_in_progress": self._cycle_in_progress,
             "current_host": self._current_host,
             "interval_minutes": self.interval_minutes,
@@ -229,8 +246,12 @@ class AnomalyScheduler:
             "run_count": self._run_count,
             "last_run": self._last_run.isoformat() if self._last_run else None,
             "next_run": next_run,
+            "next_run_in_minutes": next_run_in_minutes,
             "last_cycle_duration_seconds": self._last_cycle_duration,
+            "cycle_started_at": self._cycle_started_at.isoformat() if self._cycle_started_at else None,
+            "cycle_ended_at": self._cycle_ended_at.isoformat() if self._cycle_ended_at else None,
             "heartbeat_at": self._heartbeat_at.isoformat() if self._heartbeat_at else None,
+            "last_cycle_summary": self._last_cycle_summary if self._last_cycle_summary else None,
             "target_hosts": self._target_hosts,
             "host_states": live_hosts,
             "cycle_batch": self._cycle_batch if self._cycle_in_progress else [],
@@ -420,9 +441,21 @@ class AnomalyScheduler:
             total_anomalies = sum(
                 r.get("anomaly_count", 0) for r in cycle_results.values()
             )
+            hosts_errored = sum(1 for r in cycle_results.values() if r.get("status") == "error")
+
             logger.info(f"Scheduler cycle #{self._run_count} completed: "
                          f"{len(cycle_results)} hosts analyzed, "
-                         f"{total_anomalies} total anomalies")
+                         f"{total_anomalies} total anomalies, "
+                         f"{hosts_errored} errors")
+
+            self._last_cycle_summary = {
+                "cycle_number": self._run_count,
+                "hosts_analyzed": len(cycle_results),
+                "hosts_errored": hosts_errored,
+                "hosts_skipped_cooldown": len(skipped_cooldown),
+                "total_anomalies": total_anomalies,
+                "source_type": getattr(self, '_source_type', 'mongodb'),
+            }
 
             return {
                 "status": "completed",
@@ -433,6 +466,7 @@ class AnomalyScheduler:
                 "results": cycle_results
             }
         finally:
+            self._cycle_ended_at = datetime.utcnow()
             self._cycle_in_progress = False
             self._current_host = None
 
