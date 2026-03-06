@@ -964,11 +964,14 @@
             var ts = r.timestamp;
             if (ts && ts.length > 16) ts = ts.substring(0, 16).replace('T', ' ');
 
-            // Source type label
+            // Source type label — dynamic from data
             var stLabel = '';
-            if (r.sourceType.indexOf('mssql') >= 0) stLabel = 'MSSQL';
-            else if (r.sourceType.indexOf('elasticsearch') >= 0) stLabel = 'ES';
-            else if (r.sourceType.indexOf('mongodb') >= 0 || r.sourceType.indexOf('opensearch') >= 0) stLabel = 'Mongo';
+            if (r.sourceType) {
+                if (r.sourceType.indexOf('mssql') >= 0) stLabel = 'MSSQL';
+                else if (r.sourceType.indexOf('elasticsearch') >= 0) stLabel = 'ES';
+                else if (r.sourceType.indexOf('mongodb') >= 0 || r.sourceType.indexOf('opensearch') >= 0) stLabel = 'Mongo';
+                else stLabel = r.sourceType;
+            }
 
             html += '<div class="ppd-risk-item">'
                 + '<div class="ppd-risk-header">'
@@ -989,9 +992,9 @@
                 +   '<span class="ppd-risk-time">' + esc(ts) + '</span>'
                 + '</div>';
 
-            // Sample log message (fingerprint)
+            // Sample log message (fingerprint) — wider display
             if (r.sample) {
-                var sampleShort = r.sample.length > 120 ? r.sample.substring(0, 120) + '...' : r.sample;
+                var sampleShort = r.sample.length > 180 ? r.sample.substring(0, 180) + '...' : r.sample;
                 html += '<div class="ppd-risk-sample">' + esc(sampleShort) + '</div>';
             }
 
@@ -1848,20 +1851,37 @@
     // ============================
     var _schedBusy = false;  // prevent double-click on scheduler actions
 
+    var _schedStatusRetry = 0;
+    var _schedStatusMaxRetry = 2;
+
     function loadSchedulerStatus() {
         var url = _apiUrl('schedulerStatus');
         if (!url) return;
 
         fetch(url)
-            .then(function (r) { return r.json(); })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
             .then(function (data) {
+                _schedStatusRetry = 0;
                 if (data.status !== 'success') return;
                 renderSchedulerStatus(data.scheduler || {});
             })
             .catch(function (err) {
                 console.warn('[PredictionDashboard] Scheduler status error:', err);
+                if (_schedStatusRetry < _schedStatusMaxRetry) {
+                    _schedStatusRetry++;
+                    var delay = _schedStatusRetry * 2000;
+                    console.log('[PredictionDashboard] Retrying scheduler status in ' + delay + 'ms (attempt ' + _schedStatusRetry + ')');
+                    setTimeout(loadSchedulerStatus, delay);
+                    return;
+                }
                 var grid = _el('ppdSchedGrid');
-                if (grid) grid.innerHTML = '<div class="ppd-error">Scheduler durumu alinamadi</div>';
+                if (grid) grid.innerHTML = '<div class="ppd-error">'
+                    + 'Scheduler durumu alinamadi — <a href="#" onclick="window.PredictionDashboard&&window.PredictionDashboard.refresh();return false;">Yenile</a>'
+                    + '<br><small style="opacity:0.7">' + esc(String(err)) + '</small>'
+                    + '</div>';
             });
     }
 
@@ -1873,6 +1893,7 @@
         var running = !!sched.running;
         _lastSchedulerRunning = running;
         var interval = sched.interval_minutes || 30;
+        var maxConcurrent = sched.max_concurrent || 3;
         var runCount = sched.run_count || 0;
         var lastRun = sched.last_run || null;
         var nextRun = sched.next_run || null;
@@ -1919,9 +1940,10 @@
         else if (cycleState === 'starting') { statusLabel = 'BASLATILIYOR'; statusClass = 'ppd-sched-status-running'; }
         else { statusLabel = 'HAZIR'; statusClass = 'ppd-sched-status-stopped'; }
 
-        // Source type label
+        // Source type label — dynamic from backend
         var sourceType = sched.source_type || 'mongodb';
-        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+        var backendSrcLabels = sched.source_labels || {};
+        var sourceLabel = sched.source_label || backendSrcLabels[sourceType] || sourceType;
 
         // Cycle duration
         var durationStr = '-';
@@ -2133,17 +2155,17 @@
             else label.textContent = 'Scheduler hazir';
         }
 
-        // Source
+        // Source — use backend-provided label dynamically
         var srcEl = _el('ppsActivitySource');
         if (srcEl) {
-            var srcLabels = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' };
-            srcEl.textContent = srcLabels[sourceType] || sourceType;
+            var backendLabels = sched.source_labels || {};
+            srcEl.textContent = sched.source_label || backendLabels[sourceType] || sourceType;
         }
 
-        // Host count
+        // Host count — prefer backend-provided count
         var countEl = _el('ppsActivityHostsCount');
         if (countEl) {
-            var hCount = targetHosts.length || hostKeys.length;
+            var hCount = sched.host_count || targetHosts.length || hostKeys.length;
             countEl.textContent = hCount > 0 ? hCount + ' sunucu' : '';
         }
 

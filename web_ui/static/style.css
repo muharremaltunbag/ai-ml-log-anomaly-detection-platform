@@ -19615,6 +19615,87 @@ body.pps-body-lock {
     border-bottom: 1px solid #dce1e8;
 }
 
+/* ── Risk Panel — Prominent Top Placement + Professional Typography ── */
+.pps-main .ppd-active-risks {
+    margin-bottom: 22px;
+    background: linear-gradient(135deg, #fffbf5 0%, #fff8f0 100%);
+    border: 1px solid #fed7aa;
+    border-radius: 10px;
+    padding: 16px 18px;
+}
+.ppd-section-title-risk {
+    font-size: 15px !important;
+    font-weight: 700 !important;
+    color: #9a3412 !important;
+    margin-bottom: 12px !important;
+}
+.pps-main .ppd-risk-list {
+    gap: 10px;
+}
+.pps-main .ppd-risk-item {
+    padding: 14px 18px;
+    border-radius: 10px;
+    border-left-width: 4px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+.pps-main .ppd-risk-header {
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.pps-main .ppd-risk-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    line-height: 1.4;
+    color: #1a202c;
+    letter-spacing: -0.01em;
+}
+.pps-main .ppd-risk-meta {
+    font-size: 13px;
+    gap: 12px;
+    margin-bottom: 6px;
+    line-height: 1.5;
+}
+.pps-main .ppd-risk-server {
+    font-size: 13px;
+    font-weight: 700;
+    color: #2d3748;
+}
+.pps-main .ppd-risk-src {
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+.pps-main .ppd-risk-source {
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.pps-main .ppd-risk-time {
+    font-size: 12.5px;
+    color: #718096;
+}
+.pps-main .ppd-risk-sample {
+    font-size: 12.5px;
+    line-height: 1.6;
+    padding: 8px 12px;
+    margin: 6px 0;
+    border-radius: 6px;
+    background: #f7f8fa;
+    border: 1px solid #edf0f4;
+}
+.pps-main .ppd-risk-action {
+    font-size: 13px;
+    line-height: 1.5;
+    margin-top: 6px;
+    color: #2b6cb0;
+    font-weight: 500;
+}
+.pps-main .ppd-risk-more {
+    font-size: 13px;
+    padding: 8px 0;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    END — SEVERITY BARS + INSIGHT POLISH + FINAL TOUCHES
    ══════════════════════════════════════════════════════════════════════════════ */

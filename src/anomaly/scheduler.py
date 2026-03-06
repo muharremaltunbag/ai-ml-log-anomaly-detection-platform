@@ -237,6 +237,19 @@ class AnomalyScheduler:
                     else:
                         live_hosts[host] = {"state": "idle"}
 
+        # Active source type
+        current_source = getattr(self, '_source_type', 'mongodb')
+
+        # Source label map — dynamic, extensible
+        source_labels = {
+            'mongodb': 'MongoDB',
+            'mssql': 'MSSQL',
+            'elasticsearch': 'Elasticsearch',
+        }
+
+        # Active sources summary: which sources are available
+        available_sources = list(source_labels.keys())
+
         return {
             "enabled": self.enabled,
             "running": self._running,
@@ -245,7 +258,11 @@ class AnomalyScheduler:
             "current_host": self._current_host,
             "interval_minutes": self.interval_minutes,
             "max_concurrent": self.max_concurrent,
-            "source_type": getattr(self, '_source_type', 'mongodb'),
+            "source_type": current_source,
+            "source_label": source_labels.get(current_source, current_source),
+            "available_sources": available_sources,
+            "source_labels": source_labels,
+            "host_count": len(self._target_hosts) or len(live_hosts),
             "run_count": self._run_count,
             "last_run": self._last_run.isoformat() if self._last_run else None,
             "next_run": next_run,

@@ -1237,17 +1237,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Source
+            // Source — use backend-provided label if available
             var srcEl = document.getElementById('sasSource');
             if (srcEl) {
-                var srcLabels = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' };
-                srcEl.textContent = srcLabels[sourceType] || sourceType;
+                var backendLabels = s.source_labels || {};
+                var srcLabel = s.source_label || backendLabels[sourceType] || sourceType;
+                srcEl.textContent = srcLabel;
             }
 
-            // Host count
+            // Host count — prefer backend-provided host_count
             var hostsEl = document.getElementById('sasHosts');
             if (hostsEl) {
-                var hCount = targetHosts.length || Object.keys(hostStates).length;
+                var hCount = s.host_count || targetHosts.length || Object.keys(hostStates).length;
                 hostsEl.textContent = hCount > 0 ? hCount + ' sunucu' : '';
             }
 
