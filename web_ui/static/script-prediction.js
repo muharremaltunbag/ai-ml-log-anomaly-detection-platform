@@ -690,9 +690,9 @@
         var cards = [
             { title: 'Toplam Kontrol', value: totalChecks, sub: 'Son ' + periodDays + ' gun', cls: '' },
             { title: 'Toplam Uyari', value: totalAlerts, sub: 'Alert orani: %' + alertRate, cls: totalAlerts > 0 ? 'ppd-card-warn' : '' },
-            { title: 'Trend Alerts', value: trendAlerts + ' / ' + trendTotal, sub: 'Trend analiz', cls: trendAlerts > 0 ? 'ppd-card-warn' : '' },
-            { title: 'Rate Alerts', value: rateAlerts + ' / ' + rateTotal, sub: 'Rate alerting', cls: rateAlerts > 0 ? 'ppd-card-warn' : '' },
-            { title: 'Forecast Alerts', value: forecastAlerts + ' / ' + forecastTotal, sub: 'Tahmin modeli', cls: forecastAlerts > 0 ? 'ppd-card-warn' : '' }
+            { title: 'Trend Uyarilari', value: trendAlerts + ' / ' + trendTotal, sub: 'Trend analizi', cls: trendAlerts > 0 ? 'ppd-card-warn' : '' },
+            { title: 'Oran Uyarilari', value: rateAlerts + ' / ' + rateTotal, sub: 'Oran izleme', cls: rateAlerts > 0 ? 'ppd-card-warn' : '' },
+            { title: 'Tahmin Uyarilari', value: forecastAlerts + ' / ' + forecastTotal, sub: 'Tahmin modeli', cls: forecastAlerts > 0 ? 'ppd-card-warn' : '' }
         ];
 
         for (var j = 0; j < cards.length; j++) {
@@ -795,13 +795,13 @@
                 html += '<div class="ppd-server-breakdown">'
                     + '<div class="ppd-breakdown-bar">'
                     +   '<div class="ppd-bar-trend" style="width:' + trendW + '%" title="Trend: ' + s.trend_alerts + '"></div>'
-                    +   '<div class="ppd-bar-rate" style="width:' + rateW + '%" title="Rate: ' + s.rate_alerts + '"></div>'
-                    +   '<div class="ppd-bar-forecast" style="width:' + forecastW + '%" title="Forecast: ' + s.forecast_alerts + '"></div>'
+                    +   '<div class="ppd-bar-rate" style="width:' + rateW + '%" title="Oran: ' + s.rate_alerts + '"></div>'
+                    +   '<div class="ppd-bar-forecast" style="width:' + forecastW + '%" title="Tahmin: ' + s.forecast_alerts + '"></div>'
                     + '</div>'
                     + '<div class="ppd-breakdown-legend">'
                     +   '<span class="ppd-legend-item"><span class="ppd-legend-dot ppd-dot-trend"></span>Trend ' + s.trend_alerts + '</span>'
-                    +   '<span class="ppd-legend-item"><span class="ppd-legend-dot ppd-dot-rate"></span>Rate ' + s.rate_alerts + '</span>'
-                    +   '<span class="ppd-legend-item"><span class="ppd-legend-dot ppd-dot-forecast"></span>Forecast ' + s.forecast_alerts + '</span>'
+                    +   '<span class="ppd-legend-item"><span class="ppd-legend-dot ppd-dot-rate"></span>Oran ' + s.rate_alerts + '</span>'
+                    +   '<span class="ppd-legend-item"><span class="ppd-legend-dot ppd-dot-forecast"></span>Tahmin ' + s.forecast_alerts + '</span>'
                     + '</div>'
                     + '</div>';
             }
@@ -929,7 +929,7 @@
                     severity: al.severity || a.max_severity,
                     title: al.title || al.alert_type || '-',
                     server: a.server_name || '-',
-                    source: a.alert_source || '-',
+                    source: ({ trend: 'Trend', rate: 'Oran', forecast: 'Tahmin', insight: 'Ozet' })[a.alert_source] || a.alert_source || '-',
                     sourceType: a.source_type || '',
                     description: al.description || '',
                     sample: (al.sample_messages && al.sample_messages.length > 0)
@@ -1041,7 +1041,9 @@
             var a = sorted[i];
             var ts = a.timestamp || '';
             if (ts && ts.length > 19) ts = ts.substring(0, 19).replace('T', ' ');
-            var source = a.alert_source || '-';
+            var rawSource = a.alert_source || '-';
+            var sourceLabels = { trend: 'Trend', rate: 'Oran', forecast: 'Tahmin', insight: 'Ozet' };
+            var source = sourceLabels[rawSource] || rawSource;
             var server = a.server_name || '-';
             var severity = a.max_severity || 'INFO';
             var hasAlerts = a.has_alerts;

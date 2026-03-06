@@ -343,20 +343,25 @@ class AnomalyScheduler:
             cycle_results = {}
 
             if not self._target_hosts:
-                # Auto-discover hosts if none configured
+                # Auto-discover hosts based on active source type
                 try:
-                    from src.anomaly.log_reader import get_available_mongodb_hosts
                     source = getattr(self, '_source_type', 'mongodb')
+                    discovered = []
                     if source == 'mongodb':
+                        from src.anomaly.log_reader import get_available_mongodb_hosts
                         discovered = get_available_mongodb_hosts(last_hours=24)
-                        if discovered:
-                            self._target_hosts = list(discovered)
-                            logger.info(f"Scheduler auto-discovered {len(discovered)} hosts")
-                        else:
-                            logger.info("No target hosts configured and auto-discovery found none, skipping cycle")
-                            return {"status": "skipped", "reason": "no_target_hosts"}
+                    elif source == 'mssql':
+                        from src.anomaly.mssql_log_reader import get_available_mssql_hosts
+                        discovered = get_available_mssql_hosts(last_hours=24)
+                    elif source == 'elasticsearch':
+                        from src.anomaly.elasticsearch_log_reader import get_available_es_hosts
+                        discovered = get_available_es_hosts(last_hours=24)
+
+                    if discovered:
+                        self._target_hosts = list(discovered)
+                        logger.info(f"Scheduler auto-discovered {len(discovered)} {source} hosts")
                     else:
-                        logger.info("No target hosts configured, skipping cycle")
+                        logger.info(f"No target hosts configured and auto-discovery found none for {source}, skipping cycle")
                         return {"status": "skipped", "reason": "no_target_hosts"}
                 except Exception as disc_err:
                     logger.warning(f"Host auto-discovery failed: {disc_err}")

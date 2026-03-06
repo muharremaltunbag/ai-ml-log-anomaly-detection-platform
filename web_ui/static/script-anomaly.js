@@ -1023,6 +1023,15 @@ async function handleAnalyzeLog() {
         if (window.AnomalyProgress) window.AnomalyProgress.complete();
         else window.showLoader(false);
 
+        // Scheduler collision guard — host meşgulse kullanıcıya bildir
+        if (result.durum === 'mesgul') {
+            if (window.AnomalyProgress) window.AnomalyProgress.complete();
+            var busyMsg = result['açıklama'] || 'Bu sunucu su an scheduler tarafindan analiz ediliyor.';
+            if (typeof showToast === 'function') showToast(busyMsg, 'warning');
+            else alert(busyMsg);
+            return;
+        }
+
         // Sonuçları işle (Mevcut kodlar)
         displayAnomalyResults(result);
 

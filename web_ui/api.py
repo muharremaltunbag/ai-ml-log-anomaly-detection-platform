@@ -845,7 +845,24 @@ async def analyze_cluster(request: Dict[str, Any]):
                 raise HTTPException(status_code=404, detail=f"Cluster '{cluster_id}' bulunamadı veya host'ları yok")
             
             logger.info(f"Starting cluster analysis for {cluster_id} with {len(cluster_hosts)} hosts")
-            
+
+            # Scheduler collision guard — meşgul host'ları filtrele
+            try:
+                sched_tools = _get_scheduler_tools()
+                if sched_tools.scheduler:
+                    busy = [h for h in cluster_hosts if sched_tools.scheduler.is_host_busy(h)]
+                    if busy:
+                        logger.info(f"Cluster analysis: skipping {len(busy)} busy hosts: {busy}")
+                        cluster_hosts = [h for h in cluster_hosts if h not in busy]
+                        if not cluster_hosts:
+                            return {
+                                "durum": "mesgul",
+                                "açıklama": f"Tum cluster host'lari scheduler tarafindan analiz ediliyor: {', '.join(busy)}",
+                                "sonuç": {"busy_hosts": busy}
+                            }
+            except Exception:
+                pass
+
             # Her host için paralel analiz
             from src.anomaly.anomaly_tools import AnomalyDetectionTools
 
@@ -1107,6 +1124,12 @@ async def analyze_uploaded_log(request: AnalyzeLogsRequest):
                 raise
             except Exception:
                 raise HTTPException(status_code=400, detail="Host filter gerekli")
+
+        # Scheduler collision guard — aynı host'un eşzamanlı analizi engellenir
+        if request.source_type == "opensearch" and request.host_filter:
+            busy_result = _check_host_busy(request.host_filter)
+            if busy_result:
+                return busy_result
 
         # Memory Protection: Concurrent analysis limiti
         # Max 3 eşzamanlı analiz - 4. ve sonrası queue'da bekler
@@ -1416,6 +1439,12 @@ async def analyze_mssql_logs(request: AnalyzeMSSQLLogsRequest):
             except Exception:
                 raise HTTPException(status_code=400, detail="Host filter gerekli")
 
+        # Scheduler collision guard
+        if request.host_filter:
+            busy_result = _check_host_busy(request.host_filter)
+            if busy_result:
+                return busy_result
+
         # Memory Protection: Concurrent analysis limiti
         update_progress(req_id, "queue", "Analiz kuyruğunda bekleniyor...", 8)
 
@@ -1581,6 +1610,12 @@ async def analyze_elasticsearch_logs(request: AnalyzeESLogsRequest):
                 raise
             except Exception:
                 raise HTTPException(status_code=400, detail="Host filter gerekli")
+
+        # Scheduler collision guard
+        if request.host_filter:
+            busy_result = _check_host_busy(request.host_filter)
+            if busy_result:
+                return busy_result
 
         # Memory Protection: Concurrent analysis limiti
         update_progress(req_id, "queue", "Analiz kuyruğunda bekleniyor...", 8)
@@ -5676,6 +5711,22 @@ def _get_scheduler_tools():
         if storage_manager and hasattr(storage_manager, 'mongodb'):
             _scheduler_tools_instance.set_storage_manager(storage_manager)
     return _scheduler_tools_instance
+
+
+def _check_host_busy(host_filter: str) -> Optional[Dict[str, Any]]:
+    """Scheduler'da bu host analiz ediliyorsa uyarı dict döndür, değilse None."""
+    try:
+        tools = _get_scheduler_tools()
+        if tools.scheduler and tools.scheduler.is_host_busy(host_filter):
+            return {
+                "durum": "mesgul",
+                "açıklama": f"'{host_filter}' sunucusu su an scheduler tarafindan analiz ediliyor. "
+                            f"Analiz tamamlandiktan sonra tekrar deneyin.",
+                "sonuç": {"busy_hosts": tools.scheduler.get_busy_hosts()}
+            }
+    except Exception:
+        pass
+    return None
 
 
 @app.get("/api/scheduler/hosts")
