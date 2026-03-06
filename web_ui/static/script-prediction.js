@@ -806,18 +806,28 @@
                     + '</div>';
             }
 
-            // Actionable guidance based on risk level
+            // Actionable DBA guidance based on risk level
             var guidanceText = '';
+            var guidanceIcon = '';
             if (riskLabel === 'CRITICAL') {
-                guidanceText = 'Acil inceleme gerekli — anomali artisi ve yuksek risk tespit edildi.';
+                guidanceIcon = '&#x26A0; ';
+                guidanceText = 'Sunucuyu kontrol edin — ';
+                // Add specifics from alert breakdown
+                var critParts = [];
+                if (s.trend_alerts > 0) critParts.push('trend artisi');
+                if (s.rate_alerts > 0) critParts.push('esik asimi');
+                if (s.forecast_alerts > 0) critParts.push('risk tahmini');
+                guidanceText += critParts.length > 0 ? critParts.join(' + ') + ' tespit edildi' : 'yuksek risk tespit edildi';
             } else if (riskLabel === 'WARNING') {
-                guidanceText = 'Yakin izleme oneriliyor — trend veya oran artisi tespit edildi.';
-            } else if (riskLabel === 'INFO') {
-                guidanceText = 'Bilgi amacli uyarilar mevcut — kritik olmayan anomali aktivitesi.';
+                guidanceIcon = '&#x1F50D; ';
+                guidanceText = 'Izleyin';
+                if (s.trend_alerts > 0) guidanceText += ' — anomali trendi yukarida';
+                else if (s.rate_alerts > 0) guidanceText += ' — oran artisi mevcut';
+                else guidanceText += ' — dikkat gerektiren sinyaller var';
             }
             if (guidanceText) {
                 html += '<div class="ppd-server-guidance">'
-                    + esc(guidanceText) + '</div>';
+                    + guidanceIcon + esc(guidanceText) + '</div>';
             }
 
             html += '<div class="ppd-server-footer">'
@@ -1015,7 +1025,7 @@
             parts.push('+' + (dataAlerts.length - 3) + ' daha');
         }
 
-        if (parts.length === 0) return '<span class="ppd-detail-hint">Uyari yok — detay icin tiklayin</span>';
+        if (parts.length === 0) return '<span class="ppd-detail-hint">Normal — detay icin tiklayin</span>';
         return parts.join(', ');
     }
 
@@ -1789,11 +1799,18 @@
         var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
         var maxConcurrent = sched.max_concurrent || 3;
 
+        // Cycle duration
+        var durationStr = '-';
+        if (typeof sched.last_cycle_duration_seconds === 'number') {
+            durationStr = sched.last_cycle_duration_seconds.toFixed(1) + 's';
+        }
+
         var stats = [
             { label: 'Durum', value: statusLabel, cls: statusClass },
             { label: 'Kaynak', value: sourceLabel, cls: '' },
             { label: 'Calisma', value: String(runCount), cls: '' },
-            { label: 'Son Calisma', value: lastRunStr, cls: '' }
+            { label: 'Son Calisma', value: lastRunStr, cls: '' },
+            { label: 'Cycle Suresi', value: durationStr, cls: '' }
         ];
         if (running) {
             stats.push({ label: 'Sonraki', value: nextRunStr, cls: '' });
