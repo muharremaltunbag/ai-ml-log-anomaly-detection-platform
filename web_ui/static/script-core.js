@@ -1251,14 +1251,42 @@ document.addEventListener('DOMContentLoaded', function() {
                 hostsEl.textContent = hCount > 0 ? hCount + ' sunucu' : '';
             }
 
-            // Run info
+            // Run info — cycle state + next run countdown
             var runEl = document.getElementById('sasRun');
             if (runEl) {
-                if (runCount > 0) {
-                    runEl.textContent = runCount + '. calisma \u00B7 ' + interval + ' dk aralik';
+                var cycleState = s.cycle_state || '';
+                var nextMin = s.next_run_in_minutes;
+                var cycleSummary = s.last_cycle_summary;
+                var parts = [];
+
+                if (runCount > 0) parts.push(runCount + '. calisma');
+
+                // Cycle state label
+                if (cycleState === 'running') {
+                    parts.push('Cycle devam ediyor');
+                } else if (cycleState === 'waiting' && typeof nextMin === 'number') {
+                    parts.push('Sonraki: ' + (nextMin < 1 ? '<1' : Math.round(nextMin)) + ' dk');
+                } else if (cycleState === 'starting') {
+                    parts.push('Baslatiliyor...');
                 } else {
-                    runEl.textContent = interval + ' dk aralik';
+                    parts.push(interval + ' dk aralik');
                 }
+
+                // Last cycle summary (compact)
+                if (cycleSummary && cycleSummary.hosts_analyzed > 0) {
+                    var sumParts = cycleSummary.hosts_analyzed + ' host';
+                    if (cycleSummary.total_anomalies > 0) sumParts += ', ' + cycleSummary.total_anomalies + ' anomali';
+                    if (cycleSummary.hosts_errored > 0) sumParts += ', ' + cycleSummary.hosts_errored + ' hata';
+                    parts.push('(' + sumParts + ')');
+                }
+
+                // Cycle duration
+                var dur = s.last_cycle_duration_seconds;
+                if (typeof dur === 'number' && dur > 0) {
+                    parts.push(dur.toFixed(1) + 's');
+                }
+
+                runEl.textContent = parts.join(' \u00B7 ');
             }
 
             // Stage pipeline

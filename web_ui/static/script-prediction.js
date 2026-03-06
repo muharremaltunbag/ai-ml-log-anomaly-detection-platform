@@ -1787,22 +1787,33 @@
         // Cycle in progress flag
         var cycleActive = !!sched.cycle_in_progress;
 
-        // Status label
+        // Cycle state from backend
+        var cycleState = sched.cycle_state || 'idle';
+        var nextRunMin = sched.next_run_in_minutes;
+        var cycleSummary = sched.last_cycle_summary || null;
+
+        // Status label — ürün diliyle
         var statusLabel, statusClass;
         if (!enabled) { statusLabel = 'DEVRE DISI'; statusClass = 'ppd-sched-status-disabled'; }
-        else if (running && cycleActive) { statusLabel = 'ANALIZ DEVAM EDIYOR'; statusClass = 'ppd-sched-status-running'; }
-        else if (running) { statusLabel = 'CALISIYOR'; statusClass = 'ppd-sched-status-running'; }
+        else if (cycleState === 'running') { statusLabel = 'ANALIZ DEVAM EDIYOR'; statusClass = 'ppd-sched-status-running'; }
+        else if (cycleState === 'waiting') { statusLabel = 'AKTIF'; statusClass = 'ppd-sched-status-running'; }
+        else if (cycleState === 'starting') { statusLabel = 'BASLATILIYOR'; statusClass = 'ppd-sched-status-running'; }
         else { statusLabel = 'HAZIR'; statusClass = 'ppd-sched-status-stopped'; }
 
         // Source type label
         var sourceType = sched.source_type || 'mongodb';
         var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
-        var maxConcurrent = sched.max_concurrent || 3;
 
         // Cycle duration
         var durationStr = '-';
         if (typeof sched.last_cycle_duration_seconds === 'number') {
             durationStr = sched.last_cycle_duration_seconds.toFixed(1) + 's';
+        }
+
+        // Next run countdown
+        var nextStr = nextRunStr;
+        if (cycleState === 'waiting' && typeof nextRunMin === 'number') {
+            nextStr = (nextRunMin < 1 ? '<1' : Math.round(nextRunMin)) + ' dk sonra';
         }
 
         var stats = [
@@ -1813,7 +1824,17 @@
             { label: 'Cycle Suresi', value: durationStr, cls: '' }
         ];
         if (running) {
-            stats.push({ label: 'Sonraki', value: nextRunStr, cls: '' });
+            stats.push({ label: 'Sonraki', value: nextStr, cls: '' });
+        }
+
+        // Last cycle summary — compact
+        if (cycleSummary && cycleSummary.hosts_analyzed > 0) {
+            var sumParts = [];
+            sumParts.push(cycleSummary.hosts_analyzed + ' host');
+            if (cycleSummary.total_anomalies > 0) sumParts.push(cycleSummary.total_anomalies + ' anomali');
+            if (cycleSummary.hosts_errored > 0) sumParts.push(cycleSummary.hosts_errored + ' hata');
+            if (cycleSummary.hosts_skipped_cooldown > 0) sumParts.push(cycleSummary.hosts_skipped_cooldown + ' cooldown');
+            stats.push({ label: 'Son Cycle', value: sumParts.join(', '), cls: '' });
         }
 
         var html = '';
