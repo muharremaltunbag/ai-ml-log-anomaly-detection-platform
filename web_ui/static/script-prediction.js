@@ -680,16 +680,10 @@
         // Empty state banner if no checks at all
         if (totalChecks === 0) {
             html += '<div class="pps-empty-state">'
-                + '<div class="pps-empty-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div>'
-                + '<div class="pps-empty-title">Bu zaman araliginda prediction verisi bulunamadi</div>'
+                + '<div class="pps-empty-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg></div>'
+                + '<div class="pps-empty-title">Prediction verisi henuz yok</div>'
                 + '<div class="pps-empty-desc">'
-                + 'Prediction verileri, her anomaly analizi sonrasinda otomatik uretilir.<br>'
-                + '<strong>Hizli baslangic:</strong><br>'
-                + '1. Ustteki <strong>"Analiz ve Tahmin Calistir"</strong> butonuna basin<br>'
-                + '2. Farkli bir zaman araligi secin (sol panel)<br>'
-                + '3. Duzenli veri biriktirmek icin <strong>Scheduler\'i etkinlestirin</strong><br><br>'
-                + '<strong>Not:</strong> Forecasting icin en az 5 analiz, guclu tahminler icin 20+ analiz gerekir. '
-                + 'Her analiz bir veri noktasi ekler.</div>'
+                + 'Scheduler\'i etkinlestirin veya manuel analiz calistirin. Her analiz otomatik prediction verisi uretir.</div>'
                 + '</div>';
         }
 
@@ -885,11 +879,9 @@
                         var emptyTbody = _el('ppdTableBody');
                         if (emptyTbody) {
                             emptyTbody.innerHTML = '<tr><td colspan="7" class="pps-table-empty">'
-                                + '<div class="pps-empty-icon pps-empty-icon-sm"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>'
-                                + '<div class="pps-empty-title pps-empty-title-sm">Bu zaman araliginda prediction kaydi yok</div>'
+                                + '<div class="pps-empty-title pps-empty-title-sm">Bu aralikta prediction kaydi yok</div>'
                                 + '<div class="pps-empty-desc">'
-                                + 'Prediction kayitlari anomaly analizi calistiktan sonra olusur. '
-                                + 'Farkli zaman araligi, sunucu veya kaynak filtresi deneyin.</div>'
+                                + 'Farkli zaman araligi veya filtre deneyin.</div>'
                                 + '</td></tr>';
                         }
                     }

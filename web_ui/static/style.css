@@ -16801,6 +16801,23 @@ mark.text-highlight:hover {
 .ppd-guide-panel.ppd-guide-collapsed .ppd-guide-body {
     display: none;
 }
+/* Compact guide variant */
+.ppd-guide-compact {
+    margin-bottom: 12px;
+}
+.ppd-guide-compact .ppd-guide-header {
+    padding: 8px 14px;
+    font-size: 13px;
+}
+.ppd-guide-compact .ppd-guide-body {
+    padding: 0 14px 12px 14px;
+}
+.ppd-guide-legend {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #546e7a;
+    line-height: 1.8;
+}
 .ppd-guide-body {
     padding: 0 20px 20px 20px;
 }
