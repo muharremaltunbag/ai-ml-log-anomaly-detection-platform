@@ -5882,7 +5882,26 @@ async def trigger_scheduler(request: Dict[str, Any]):
     server_name = request.get("server_name")
     target_hosts = request.get("target_hosts", [])
 
+    # Host-level busy check — prevent scheduler + manual overlap
+    if server_name and tools.scheduler.is_host_busy(server_name):
+        return {
+            "status": "busy",
+            "message": f"'{server_name}' sunucusu su an scheduler tarafindan analiz ediliyor. "
+                       f"Analiz tamamlandiktan sonra tekrar deneyin.",
+            "busy_hosts": tools.scheduler.get_busy_hosts(),
+            "scheduler": tools.scheduler.get_status()
+        }
+
     if target_hosts:
+        # Check if any target host is busy
+        busy = [h for h in target_hosts if tools.scheduler.is_host_busy(h)]
+        if busy:
+            return {
+                "status": "busy",
+                "message": f"{len(busy)} sunucu su an analiz ediliyor: {', '.join(busy)}",
+                "busy_hosts": busy,
+                "scheduler": tools.scheduler.get_status()
+            }
         # Çoklu host trigger: geçici olarak target_hosts set et ve cycle çalıştır
         tools.scheduler.set_target_hosts(target_hosts)
         result = tools.scheduler.trigger_now()  # full cycle

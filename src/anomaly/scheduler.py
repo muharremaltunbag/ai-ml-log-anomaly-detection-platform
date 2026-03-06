@@ -77,6 +77,9 @@ class AnomalyScheduler:
         self._cycle_batch: List[str] = []               # bu cycle'daki batch
         self._cycle_queue: List[str] = []                # henüz işlenmemiş host'lar
 
+        # Host-level in-progress registry — prevents scheduler + manual overlap
+        self._hosts_in_progress: set = set()
+
         # Analiz edilecek sunucu listesi (runtime'da set edilir)
         self._target_hosts: List[str] = []
         # Aktif veri kaynağı — UI'dan değiştirilebilir
@@ -470,10 +473,30 @@ class AnomalyScheduler:
             self._cycle_in_progress = False
             self._current_host = None
 
+    def is_host_busy(self, server_name: str) -> bool:
+        """Host'un şu an scheduler tarafından analiz edilip edilmediğini kontrol et.
+
+        Manuel analiz başlatmadan önce çağrılır — çakışmayı önler.
+        """
+        with self._lock:
+            return server_name in self._hosts_in_progress
+
+    def get_busy_hosts(self) -> List[str]:
+        """Şu an analiz edilen host listesini döndür."""
+        with self._lock:
+            return list(self._hosts_in_progress)
+
     def _run_analysis(self, server_name: str) -> Dict[str, Any]:
         """Tek bir sunucu için analiz çalıştır"""
         if not self.analysis_callback:
             return {"status": "error", "error": "no_callback"}
+
+        # Host-level lock
+        with self._lock:
+            if server_name in self._hosts_in_progress:
+                logger.warning(f"Host {server_name} already being analyzed, skipping")
+                return {"status": "skipped", "reason": "host_in_progress", "server_name": server_name}
+            self._hosts_in_progress.add(server_name)
 
         try:
             source = getattr(self, '_source_type', 'mongodb')
@@ -511,3 +534,6 @@ class AnomalyScheduler:
                 "error": str(e),
                 "timestamp": datetime.utcnow().isoformat()
             }
+        finally:
+            with self._lock:
+                self._hosts_in_progress.discard(server_name)

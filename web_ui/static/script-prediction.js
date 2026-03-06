@@ -2563,6 +2563,21 @@
                 // Step 4: Done
                 _showProgress('done');
 
+                if (data.status === 'busy') {
+                    // Host is being analyzed by scheduler
+                    _showSchedFeedback('warning',
+                        '<strong>Sunucu mesgul</strong>'
+                        + '<div class="pps-sched-feedback-detail">'
+                        + esc(data.message || 'Scheduler su an bu sunucu uzerinde calisiyor')
+                        + '</div>');
+                    _hideProgress();
+                    if (triggerBtn) {
+                        triggerBtn.textContent = origText;
+                        triggerBtn.disabled = false;
+                    }
+                    return;
+                }
+
                 if (result.status === 'completed') {
                     _showSchedFeedback('success',
                         '<strong>Analiz tamamlandi</strong>'
