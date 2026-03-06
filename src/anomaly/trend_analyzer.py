@@ -53,10 +53,48 @@ class TrendAlert:
     server_name: Optional[str] = None
     timestamp: str = ""
     explainability: str = "" # "Neye göre alarm verdi?" açıklaması
+    recommendation: str = ""  # Dinamik aksiyon önerisi (otomatik üretilir)
 
     def __post_init__(self):
         if not self.timestamp:
             self.timestamp = datetime.utcnow().isoformat()
+        if not self.recommendation:
+            self.recommendation = self._generate_recommendation()
+
+    def _generate_recommendation(self) -> str:
+        """Alert'in gerçek metriklerinden dinamik aksiyon önerisi üret."""
+        at = self.alert_type or ''
+        pct = f"%{abs(self.change_pct):.0f}" if self.change_pct else ""
+        urgency = "Acil: " if self.severity == "CRITICAL" else ""
+
+        if 'anomaly_rate_increase' in at or 'monotonic_increase' in at:
+            return (f"{urgency}Anomali orani {pct} artti (baseline {self.baseline_value:.2f} → "
+                    f"guncel {self.current_value:.2f}). Son degisiklikleri gozden gecirin.")
+        if 'component_concentration' in at:
+            return (f"{urgency}Anomali yogunlugu belirli component'lerde artis gosteriyor ({pct}). "
+                    f"Etkilenen component'leri arastirin.")
+        if 'severity_escalation' in at:
+            return (f"{urgency}Ciddiyet seviyesi yukseliyor ({pct}). "
+                    f"WARNING→CRITICAL gecislerinin nedenini inceleyin.")
+        if 'temporal_shift' in at:
+            return (f"{urgency}Anomali zamanlama deseni degisti ({pct}). "
+                    f"Yeni is yuku veya zamanlama degisikligini kontrol edin.")
+        if 'ml_score_degradation' in at:
+            return (f"{urgency}ML model skoru bozulma gosteriyor ({pct}). "
+                    f"Veri kalitesi ve model uyumunu kontrol edin.")
+        if 'rate_acceleration' in at:
+            return (f"{urgency}Anomali artis hizi ivmeleniyor ({pct}). "
+                    f"Kokceden analiz yapin, eskale olabilir.")
+        if 'stable_degradation' in at:
+            return (f"{urgency}Surekli bozulma trendi ({pct}). "
+                    f"Yapisal bir sorun olabilir — kapasite ve config gozden gecirin.")
+        if 'improvement' in at:
+            return (f"Iyilesme tespit edildi ({pct}). Mevcut ayarlar etkili gorunuyor.")
+
+        # Generic
+        return (f"{urgency}{self.metric_name} {pct} degisti "
+                f"(baseline {self.baseline_value:.2f} → guncel {self.current_value:.2f}). "
+                f"Trendi izleyin.")
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

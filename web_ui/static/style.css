@@ -18072,6 +18072,17 @@ body.pps-body-lock {
     color: var(--text-secondary);
     line-height: 1.45;
 }
+.ppd-drill-recommendation {
+    margin-top: 6px;
+    padding: 5px 8px;
+    font-size: 0.82em;
+    color: #1b5e20;
+    background: #e8f5e9;
+    border-left: 3px solid #4caf50;
+    border-radius: 3px;
+    line-height: 1.4;
+}
+.ppd-rec-icon { margin-right: 3px; }
 .ppd-drill-forecast {
     margin-top: 4px;
     font-size: 0.8em;

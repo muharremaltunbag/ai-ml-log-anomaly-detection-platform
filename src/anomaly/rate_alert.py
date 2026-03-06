@@ -47,10 +47,58 @@ class RateAlert:
     sample_messages: List[str] = field(default_factory=list)
     ml_context: Optional[Dict[str, Any]] = None  # ML-derived overlay (anomaly density, corroboration)
     confidence: float = 0.5  # 0-1 arası normalize güven skoru
+    recommendation: str = ""  # Dinamik aksiyon önerisi (otomatik üretilir)
 
     def __post_init__(self):
         if not self.timestamp:
             self.timestamp = datetime.utcnow().isoformat()
+        if not self.recommendation:
+            self.recommendation = self._generate_recommendation()
+
+    def _generate_recommendation(self) -> str:
+        """Alert'in gerçek metriklerinden dinamik aksiyon önerisi üret."""
+        et = self.event_type or self.alert_type or ''
+        ratio_str = f"{self.exceed_ratio:.1f}x" if self.exceed_ratio else ""
+        window_str = f"{self.window_minutes}dk" if self.window_minutes else ""
+
+        # Severity-aware urgency prefix
+        urgency = "Acil: " if self.severity == "CRITICAL" else ""
+
+        # Pattern-specific recommendation from actual metrics
+        if 'auth_failure' in et or 'failed_login' in et:
+            return (f"{urgency}{self.event_count} basarisiz giris ({window_str}, esik {ratio_str}). "
+                    f"Kaynak IP ve kullanici bazli filtreleme yapin.")
+        if 'error_burst' in et or 'error_rate' in et:
+            return (f"{urgency}{self.event_count} hata ({window_str}, esik {ratio_str}). "
+                    f"Son deployment/config degisikligini kontrol edin.")
+        if 'slow_query' in et:
+            return (f"{urgency}{self.event_count} yavas sorgu ({window_str}, esik {ratio_str}). "
+                    f"Eksik index ve sorgu planlari kontrol edilmeli.")
+        if 'collscan' in et:
+            return (f"{urgency}{self.event_count} COLLSCAN ({window_str}, esik {ratio_str}). "
+                    f"Index olusturun — full collection scan performansi dusurur.")
+        if 'oom' in et or 'memory' in et:
+            return (f"{urgency}{self.event_count} bellek uyarisi ({window_str}, esik {ratio_str}). "
+                    f"WiredTiger cache veya JVM heap kullanimini kontrol edin.")
+        if 'connection' in et:
+            return (f"{urgency}{self.event_count} baglanti sorunu ({window_str}, esik {ratio_str}). "
+                    f"Baglanti havuzu ve ag durumunu kontrol edin.")
+        if 'disk_watermark' in et or 'disk' in et:
+            return (f"{urgency}{self.event_count} disk uyarisi ({window_str}, esik {ratio_str}). "
+                    f"Disk alani kontrol edin, eski veriyi temizleyin.")
+        if 'circuit_breaker' in et:
+            return (f"{urgency}{self.event_count} circuit breaker ({window_str}, esik {ratio_str}). "
+                    f"JVM heap kullanimini azaltin, sorgu karmasikligini sinirlayin.")
+        if 'shard' in et or 'replication' in et:
+            return (f"{urgency}{self.event_count} shard/replikasyon sorunu ({window_str}, esik {ratio_str}). "
+                    f"Shard durumlarini ve replikasyon gecikme suresini kontrol edin.")
+        if 'drop_operation' in et or 'drop' in et:
+            return (f"{urgency}{self.event_count} drop islemi ({window_str}, esik {ratio_str}). "
+                    f"Beklenmeyen veri silme olup olmadigini dogrulayin.")
+
+        # Generic fallback — still uses actual metrics
+        return (f"{urgency}{self.event_count} {et} event'i ({window_str}, esik {ratio_str}). "
+                f"Ilgili loglari inceleyin.")
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

@@ -71,10 +71,41 @@ class ForecastAlert:
     upper_bound: float = 0.0
     lower_bound: float = 0.0
     change_point_detected: bool = False
+    recommendation: str = ""  # Dinamik aksiyon önerisi (otomatik üretilir)
 
     def __post_init__(self):
         if not self.timestamp:
             self.timestamp = datetime.utcnow().isoformat()
+        if not self.recommendation:
+            self.recommendation = self._generate_recommendation()
+
+    def _generate_recommendation(self) -> str:
+        """Tahmin verilerinden dinamik aksiyon önerisi üret."""
+        urgency = "Acil: " if self.severity == "CRITICAL" else ""
+        conf_pct = f"%{self.confidence * 100:.0f}" if self.confidence else ""
+        horizon = f"{self.forecast_horizon_hours}s" if self.forecast_horizon_hours else ""
+        method_label = {
+            'ewma': 'EWMA',
+            'linear_regression': 'LR',
+            'weighted_moving_average': 'WMA',
+            'direction_only': 'yon tahmini'
+        }.get(self.forecast_method, self.forecast_method)
+
+        direction = "artis" if self.forecast_value > self.current_value else "azalis"
+        metric = self.metric_name or 'metrik'
+
+        if self.severity == "CRITICAL":
+            return (f"{urgency}{metric} {horizon} icinde {self.current_value:.2f} → "
+                    f"{self.forecast_value:.2f} ({direction}) bekleniyor (guven {conf_pct}, {method_label}). "
+                    f"Onleyici aksiyon planlayin.")
+        if self.severity == "WARNING":
+            return (f"{metric} {horizon} icinde {self.current_value:.2f} → "
+                    f"{self.forecast_value:.2f} ({direction}) bekleniyor (guven {conf_pct}, {method_label}). "
+                    f"Trendi izleyin, gerekirse mudahale edin.")
+        # INFO
+        return (f"{metric} {horizon} icinde {self.current_value:.2f} → "
+                f"{self.forecast_value:.2f} ({direction}) tahmin ediliyor ({method_label}). "
+                f"Bilgi amaciyla izleyin.")
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

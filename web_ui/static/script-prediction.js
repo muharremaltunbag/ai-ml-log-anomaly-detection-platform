@@ -936,7 +936,7 @@
                         ? al.sample_messages[0] : '',
                     confidence: al.confidence,
                     timestamp: a.timestamp || '',
-                    action: _riskAction(al),
+                    action: al.recommendation || al.description || '',
                     mlSupported: !!(al.ml_context && al.ml_context.ml_corroborated)
                 });
             }
@@ -1011,32 +1011,10 @@
         panel.style.display = '';
     }
 
-    function _riskAction(al) {
-        var type = al.alert_type || al.event_type || '';
-        if (type.indexOf('auth_failure') >= 0 || type.indexOf('failed_login') >= 0)
-            return 'Basarisiz giris kaynaklarini kontrol edin, IP/kullanici bazli filtreleme yapin';
-        if (type.indexOf('error_burst') >= 0)
-            return 'Hata loglarini inceleyin, son deployment veya config degisikligini kontrol edin';
-        if (type.indexOf('slow_query') >= 0)
-            return 'Yavas sorgulari optimize edin, eksik index olup olmadigini kontrol edin';
-        if (type.indexOf('collscan') >= 0)
-            return 'COLLSCAN yapan sorgular icin index olusturun';
-        if (type.indexOf('oom') >= 0 || type.indexOf('memory') >= 0)
-            return 'Bellek kullanimini kontrol edin, WiredTiger cache boyutunu gozden gecirin';
-        if (type.indexOf('connection') >= 0)
-            return 'Baglanti havuzunu ve ag durumunu kontrol edin';
-        if (type.indexOf('shard_failure') >= 0)
-            return 'Shard durumlarini ve replikasyon gecikme suresini kontrol edin';
-        if (type.indexOf('disk_watermark') >= 0)
-            return 'Disk alanini kontrol edin, eski index/veriyi temizleyin';
-        if (type.indexOf('circuit_breaker') >= 0)
-            return 'JVM heap kullanimini kontrol edin, sorgu karmasikligini azaltin';
-        if (type.indexOf('anomaly_rate') >= 0 || type.indexOf('trend') >= 0)
-            return 'Anomali artis nedenini arastirin, son degisiklikleri gozden gecirin';
-        if (type.indexOf('forecast') >= 0)
-            return 'Risk trendini izleyin, gerekirse onleyici aksiyon planlayin';
-        return '';
-    }
+    // _riskAction() kaldirildi — aksiyon onerileri artik backend'den
+    // al.recommendation veya al.description olarak dinamik geliyor.
+    // Her alert tipi (RateAlert, TrendAlert, ForecastAlert) kendi
+    // metriklerinden otomatik recommendation uretur.
 
     var _sevOrder = { 'CRITICAL': 0, 'WARNING': 1, 'INFO': 2, 'OK': 3 };
 
@@ -1520,6 +1498,13 @@
             // Description
             if (al.description) {
                 html += '<div class="ppd-drill-desc">' + esc(al.description) + '</div>';
+            }
+
+            // Dynamic recommendation from backend
+            if (al.recommendation) {
+                html += '<div class="ppd-drill-recommendation">'
+                    + '<span class="ppd-rec-icon">&#x2794;</span> '
+                    + esc(al.recommendation) + '</div>';
             }
 
             // Forecast bounds + projection chart
