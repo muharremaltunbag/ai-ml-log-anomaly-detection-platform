@@ -3061,6 +3061,8 @@ class AnomalyDetectionTools:
 
             host_filter = args_dict.get('host_filter')
             time_range = args_dict.get('time_range', 'last_hour')
+            start_time = args_dict.get('start_time')
+            end_time = args_dict.get('end_time')
 
             # Time range → hours
             time_map = {
