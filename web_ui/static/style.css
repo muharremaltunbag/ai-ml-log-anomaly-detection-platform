@@ -20776,3 +20776,55 @@ input, select, textarea, button {
 }
 .sas-host-chip-idle .sas-chip-dot { background: #cbd5e0; }
 .sas-host-chip-cooldown .sas-chip-dot { background: #94a3b8; }
+
+/* ── Inline Error / Empty State Components ── */
+.ppd-inline-error {
+    text-align: center;
+    padding: 18px 20px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    color: #991b1b;
+    font-size: 13px;
+    line-height: 1.5;
+}
+.ppd-inline-error-msg {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.ppd-inline-error-hint {
+    font-size: 12px;
+    color: #b91c1c;
+    opacity: 0.8;
+    margin-bottom: 8px;
+}
+.ppd-inline-error-retry {
+    background: #fff;
+    border: 1px solid #fca5a5;
+    color: #b91c1c;
+    padding: 4px 14px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: background 0.15s;
+}
+.ppd-inline-error-retry:hover {
+    background: #fef2f2;
+    border-color: #f87171;
+}
+.ppd-inline-empty {
+    text-align: center;
+    padding: 24px 20px;
+    color: #64748b;
+    font-size: 13px;
+}
+.ppd-inline-empty-title {
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 4px;
+}
+.ppd-inline-empty-desc {
+    font-size: 12px;
+    color: #94a3b8;
+}

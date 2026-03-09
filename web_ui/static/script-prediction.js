@@ -54,6 +54,60 @@
     // ── DOM references (lazy) ──
     function _el(id) { return document.getElementById(id); }
 
+    // ── Centralized Labels ──
+    // Single source of truth for all UI labels.
+    // Internal values (source_type, opensearch variants) → user-facing names.
+    var _sourceLabels = {
+        mongodb: 'MongoDB', opensearch: 'MongoDB',
+        mssql: 'MSSQL', mssql_opensearch: 'MSSQL',
+        elasticsearch: 'Elasticsearch', elasticsearch_opensearch: 'Elasticsearch'
+    };
+    var _sourceLabelsShort = {
+        mongodb: 'MongoDB', opensearch: 'MongoDB',
+        mssql: 'MSSQL', mssql_opensearch: 'MSSQL',
+        elasticsearch: 'ES', elasticsearch_opensearch: 'ES'
+    };
+    var _alertSourceLabels = { trend: 'Trend', rate: 'Oran', forecast: 'Tahmin', insight: 'Ozet' };
+    var _sourceTypeCssClass = function (st) {
+        if (!st) return { label: '', cls: 'ppd-srctype-default' };
+        if (st.indexOf('mssql') >= 0) return { label: 'MSSQL', cls: 'ppd-srctype-mssql' };
+        if (st.indexOf('elasticsearch') >= 0) return { label: 'ES', cls: 'ppd-srctype-es' };
+        if (st.indexOf('opensearch') >= 0 || st.indexOf('mongodb') >= 0) return { label: 'MongoDB', cls: 'ppd-srctype-mongo' };
+        return { label: st, cls: 'ppd-srctype-default' };
+    };
+
+    function _getSourceLabel(st) { return _sourceLabels[st] || st || 'MongoDB'; }
+    function _getSourceLabelShort(st) { return _sourceLabelsShort[st] || st || 'MongoDB'; }
+
+    // ── Inline Error/Empty State Renderers ──
+    // Renders a compact error banner with retry action into a target element.
+    function _showInlineError(targetEl, message, hint, retryFn) {
+        if (!targetEl) return;
+        var html = '<div class="ppd-inline-error">'
+            + '<div class="ppd-inline-error-msg">' + esc(message) + '</div>';
+        if (hint) {
+            html += '<div class="ppd-inline-error-hint">' + esc(hint) + '</div>';
+        }
+        if (retryFn) {
+            html += '<button type="button" class="ppd-inline-error-retry">Yeniden Dene</button>';
+        }
+        html += '</div>';
+        targetEl.innerHTML = html;
+        if (retryFn) {
+            var btn = targetEl.querySelector('.ppd-inline-error-retry');
+            if (btn) btn.addEventListener('click', retryFn);
+        }
+    }
+
+    // Renders a standard empty state with optional description.
+    function _showInlineEmpty(targetEl, title, desc) {
+        if (!targetEl) return;
+        targetEl.innerHTML = '<div class="ppd-inline-empty">'
+            + '<div class="ppd-inline-empty-title">' + esc(title) + '</div>'
+            + (desc ? '<div class="ppd-inline-empty-desc">' + esc(desc) + '</div>' : '')
+            + '</div>';
+    }
+
     // ============================
     // MODAL OVERLAY VISIBILITY
     // ============================
@@ -179,7 +233,7 @@
     function _showHostsError(sourceType, detail) {
         var container = _el('ppsHostsList');
         if (!container) return;
-        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+        var sourceLabel = _getSourceLabel(sourceType);
         container.innerHTML = '<span class="pps-hosts-empty pps-hosts-error">'
             + sourceLabel + ' sunucu listesi alinamadi. '
             + '<br><small>' + esc(detail) + '</small>'
@@ -221,11 +275,17 @@
         fetch(url)
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                if (data.status !== 'success') return;
+                if (data.status !== 'success') {
+                    var grid = _el('ppdConfigGrid');
+                    _showInlineError(grid, 'Yapilandirma alinamadi', data.message || null, loadConfig);
+                    return;
+                }
                 renderConfig(data.prediction_config || {});
             })
             .catch(function (err) {
                 console.warn('[PredictionDashboard] Config fetch error:', err);
+                var grid = _el('ppdConfigGrid');
+                _showInlineError(grid, 'Yapilandirma alinamadi', 'Baglanti hatasi', loadConfig);
             });
     }
 
@@ -288,7 +348,11 @@
         fetch(url)
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                if (data.status !== 'success' || !data.context) return;
+                if (data.status !== 'success' || !data.context) {
+                    var body = _el('ppdContextBody');
+                    if (body) _showInlineEmpty(body, 'Prediction verisi bulunamadi', 'Analiz calistirildiktan sonra burada gorunecek.');
+                    return;
+                }
                 renderLatestContext(data.context);
                 // Update readiness bar with actual forecast history depth
                 if (typeof data.context.forecast_history_count === 'number') {
@@ -298,6 +362,8 @@
             })
             .catch(function (err) {
                 console.warn('[PredictionDashboard] Latest context fetch error:', err);
+                var body = _el('ppdContextBody');
+                _showInlineError(body, 'Veri alinamadi', 'Baglanti hatasi', function () { loadLatestContext(server); });
             });
     }
 
@@ -361,8 +427,7 @@
 
         // Source type
         if (ctx.source_type) {
-            var srcLabels = { mongodb: 'MongoDB', opensearch: 'MongoDB (OpenSearch)', mssql: 'MSSQL', mssql_opensearch: 'MSSQL', elasticsearch: 'Elasticsearch', elasticsearch_opensearch: 'Elasticsearch' };
-            var srcLabel = srcLabels[ctx.source_type] || ctx.source_type;
+            var srcLabel = _getSourceLabel(ctx.source_type);
             html += '<div class="ppd-ctx-row">'
                 + '<span class="ppd-ctx-label">Kaynak</span>'
                 + '<span class="ppd-ctx-value">' + esc(srcLabel) + '</span>'
@@ -731,7 +796,7 @@
             })
             .catch(function (err) {
                 console.warn('[PredictionDashboard] Server overview fetch error:', err);
-                grid.innerHTML = '';
+                _showInlineError(grid, 'Sunucu risk durumu alinamadi', 'Baglanti hatasi', function () { loadServerOverview(days); });
             });
     }
 
@@ -904,6 +969,18 @@
             .catch(function (err) {
                 _loading = false;
                 console.warn('[PredictionDashboard] Alerts fetch error:', err);
+                if (wrapper) {
+                    wrapper.style.display = 'block';
+                    var emptyTbody = _el('ppdTableBody');
+                    if (emptyTbody) {
+                        emptyTbody.innerHTML = '<tr><td colspan="7">'
+                            + '<div class="ppd-inline-error">'
+                            + '<div class="ppd-inline-error-msg">Alert verileri alinamadi</div>'
+                            + '<div class="ppd-inline-error-hint">Baglanti hatasi</div>'
+                            + '<button type="button" class="ppd-inline-error-retry" onclick="window.PredictionDashboard&&window.PredictionDashboard.refresh()">Yeniden Dene</button>'
+                            + '</div></td></tr>';
+                    }
+                }
             });
     }
 
@@ -929,7 +1006,7 @@
                     severity: al.severity || a.max_severity,
                     title: al.title || al.alert_type || '-',
                     server: a.server_name || '-',
-                    source: ({ trend: 'Trend', rate: 'Oran', forecast: 'Tahmin', insight: 'Ozet' })[a.alert_source] || a.alert_source || '-',
+                    source: _alertSourceLabels[a.alert_source] || a.alert_source || '-',
                     sourceType: a.source_type || '',
                     description: al.description || '',
                     sample: (al.sample_messages && al.sample_messages.length > 0)
@@ -964,14 +1041,8 @@
             var ts = r.timestamp;
             if (ts && ts.length > 16) ts = ts.substring(0, 16).replace('T', ' ');
 
-            // Source type label — dynamic from data
-            var stLabel = '';
-            if (r.sourceType) {
-                if (r.sourceType.indexOf('mssql') >= 0) stLabel = 'MSSQL';
-                else if (r.sourceType.indexOf('elasticsearch') >= 0) stLabel = 'ES';
-                else if (r.sourceType.indexOf('mongodb') >= 0 || r.sourceType.indexOf('opensearch') >= 0) stLabel = 'Mongo';
-                else stLabel = r.sourceType;
-            }
+            // Source type label — centralized mapping
+            var stLabel = r.sourceType ? _getSourceLabelShort(r.sourceType) : '';
 
             html += '<div class="ppd-risk-item">'
                 + '<div class="ppd-risk-header">'
@@ -1045,8 +1116,7 @@
             var ts = a.timestamp || '';
             if (ts && ts.length > 19) ts = ts.substring(0, 19).replace('T', ' ');
             var rawSource = a.alert_source || '-';
-            var sourceLabels = { trend: 'Trend', rate: 'Oran', forecast: 'Tahmin', insight: 'Ozet' };
-            var source = sourceLabels[rawSource] || rawSource;
+            var source = _alertSourceLabels[rawSource] || rawSource;
             var server = a.server_name || '-';
             var severity = a.max_severity || 'INFO';
             var hasAlerts = a.has_alerts;
@@ -1061,20 +1131,11 @@
 
             var sevClass = 'ppd-sev-' + severity.toLowerCase();
 
-            // Source type badge (MongoDB / MSSQL / Elasticsearch)
+            // Source type badge — centralized mapping
             var sourceType = a.source_type || '';
-            var sourceTypeLabel = '';
-            var sourceTypeCls = 'ppd-srctype-default';
-            if (sourceType.indexOf('mssql') >= 0) {
-                sourceTypeLabel = 'MSSQL';
-                sourceTypeCls = 'ppd-srctype-mssql';
-            } else if (sourceType.indexOf('elasticsearch') >= 0) {
-                sourceTypeLabel = 'ES';
-                sourceTypeCls = 'ppd-srctype-es';
-            } else if (sourceType.indexOf('opensearch') >= 0 || sourceType.indexOf('mongodb') >= 0) {
-                sourceTypeLabel = 'Mongo';
-                sourceTypeCls = 'ppd-srctype-mongo';
-            }
+            var stInfo = _sourceTypeCssClass(sourceType);
+            var sourceTypeLabel = stInfo.label;
+            var sourceTypeCls = stInfo.cls;
             var sourceTypeBadge = sourceTypeLabel
                 ? '<span class="ppd-srctype-badge ' + sourceTypeCls + '">' + sourceTypeLabel + '</span> '
                 : '';
@@ -1712,11 +1773,30 @@
         fetch(url)
             .then(function (r) { return r.json(); })
             .then(function (data) {
-                if (data.status !== 'success' || !data.timeseries) return;
+                if (data.status !== 'success' || !data.timeseries) {
+                    var emptyEl = _el('ppsChartEmpty');
+                    var canvas = _el('ppsTimeseriesCanvas');
+                    if (canvas) canvas.style.display = 'none';
+                    if (emptyEl) {
+                        emptyEl.style.display = 'block';
+                        emptyEl.textContent = 'Bu aralikta grafik verisi bulunamadi.';
+                    }
+                    return;
+                }
                 renderTimeseries(data.timeseries);
             })
             .catch(function (err) {
                 console.warn('[PredictionDashboard] Timeseries fetch error:', err);
+                var emptyEl = _el('ppsChartEmpty');
+                var canvas = _el('ppsTimeseriesCanvas');
+                if (canvas) canvas.style.display = 'none';
+                if (emptyEl) {
+                    emptyEl.style.display = 'block';
+                    emptyEl.innerHTML = '<div class="ppd-inline-error">'
+                        + '<div class="ppd-inline-error-msg">Grafik verileri alinamadi</div>'
+                        + '<div class="ppd-inline-error-hint">Baglanti hatasi</div>'
+                        + '</div>';
+                }
             });
     }
 
@@ -1865,7 +1945,11 @@
             })
             .then(function (data) {
                 _schedStatusRetry = 0;
-                if (data.status !== 'success') return;
+                if (data.status !== 'success') {
+                    var grid = _el('ppdSchedGrid');
+                    _showInlineError(grid, 'Scheduler durumu alinamadi', data.message || null, loadSchedulerStatus);
+                    return;
+                }
                 renderSchedulerStatus(data.scheduler || {});
             })
             .catch(function (err) {
@@ -2233,7 +2317,7 @@
         if (hosts.length === 0) {
             if (countBadge) countBadge.textContent = '0';
             var st = _getSourceType() || 'mongodb';
-            var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[st] || st;
+            var sourceLabel = _getSourceLabel(st);
             container.innerHTML = '<span class="pps-hosts-empty">'
                 + sourceLabel + ' icin aktif sunucu bulunamadi. '
                 + 'Son 24 saatte log gonderimi olan sunucular burada listelenir. '
@@ -2536,7 +2620,7 @@
         var sourceType = _getSourceType() || 'mongodb';
         var intervalSel = _el('ppsSchedIntervalSelect');
         var interval = intervalSel ? parseInt(intervalSel.value, 10) : 30;
-        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+        var sourceLabel = _getSourceLabel(sourceType);
         var hostDesc = selectedHosts.length > 0 ? selectedHosts.length + ' sunucu' : 'Tum sunucular';
 
         var msg = 'Periyodik anomaly analizi baslatilacak.\n'
@@ -2639,7 +2723,7 @@
         var serverVal = (_el('ppdServerFilter') || {}).value || '';
         var selectedHosts = _getSelectedHosts();
         var sourceType = _getSourceType() || 'mongodb';
-        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+        var sourceLabel = _getSourceLabel(sourceType);
 
         var targetDesc;
         if (serverVal) {
@@ -2782,7 +2866,7 @@
 
         var serverVal = (_el('ppdServerFilter') || {}).value || '';
         var sourceType = _getSourceType() || 'mongodb';
-        var sourceLabel = { mongodb: 'MongoDB', mssql: 'MSSQL', elasticsearch: 'Elasticsearch' }[sourceType] || sourceType;
+        var sourceLabel = _getSourceLabel(sourceType);
 
         var msg = serverVal
             ? '"' + serverVal + '" icin ' + sourceLabel + ' analiz ve tahmin calistirilacak. Devam?'
