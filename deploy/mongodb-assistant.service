@@ -1,0 +1,59 @@
+# /etc/systemd/system/mongodb-assistant.service
+# MongoDB Anomaly Detection Assistant - systemd unit
+#
+# Kurulum:
+#   sudo cp deploy/mongodb-assistant.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable mongodb-assistant
+#   sudo systemctl start mongodb-assistant
+
+[Unit]
+Description=MongoDB Anomaly Detection Assistant API
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=mongodb-assistant
+Group=mongodb-assistant
+
+# Uygulama dizini (symlink → aktif release)
+WorkingDirectory=/opt/mongodb-assistant/current
+
+# .env shared dizinden okunur (release bağımsız)
+EnvironmentFile=/opt/mongodb-assistant/shared/.env
+
+# PYTHONPATH — src modüllerinin import edilebilmesi için
+Environment=PYTHONPATH=/opt/mongodb-assistant/current
+
+# Başlatma
+ExecStart=/opt/mongodb-assistant/current/venv/bin/uvicorn \
+    web_ui.api:app \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --workers 1 \
+    --log-level info
+
+# Restart politikası
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Güvenlik hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# Storage ve log dizinlerine yazma izni
+ReadWritePaths=/opt/mongodb-assistant/shared/storage
+ReadWritePaths=/var/log/mongodb-assistant
+# Temp dizinine yazma izni (upload işlemleri)
+ReadWritePaths=/opt/mongodb-assistant/current/temp_logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mongodb-assistant
+
+[Install]
+WantedBy=multi-user.target
