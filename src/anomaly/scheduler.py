@@ -526,18 +526,25 @@ class AnomalyScheduler:
             result = self.analysis_callback(server_name, source)
 
             # Callback sonucundan anomaly count çıkar
+            # _format_result çıktısı: {"durum":..., "sonuç": {summary:{n_anomalies:N},...}}
+            # Callback parse edip dict döndürür → "sonuç" anahtarı altında aranmalı.
             anomaly_count = 0
             if isinstance(result, dict):
-                data = result.get("data", {})
-                summary = data.get("summary", {})
-                anomaly_count = summary.get("n_anomalies", 0)
+                # Önce "sonuç" altında ara (callback parsed _format_result)
+                sonuc = result.get("sonuç") or result.get("data") or {}
+                if isinstance(sonuc, dict):
+                    summary = sonuc.get("summary", {})
+                    anomaly_count = summary.get("n_anomalies", 0)
+                # Fallback: doğrudan top-level summary (raw dict dönerse)
+                if anomaly_count == 0 and "summary" in result:
+                    anomaly_count = result["summary"].get("n_anomalies", 0)
             elif isinstance(result, str):
-                # JSON string olabilir
                 import json
                 try:
                     parsed = json.loads(result)
-                    data = parsed.get("sonuç", {}).get("data", {})
-                    anomaly_count = data.get("summary", {}).get("n_anomalies", 0)
+                    sonuc = parsed.get("sonuç") or parsed.get("data") or {}
+                    if isinstance(sonuc, dict):
+                        anomaly_count = sonuc.get("summary", {}).get("n_anomalies", 0)
                 except (json.JSONDecodeError, AttributeError):
                     pass
 
