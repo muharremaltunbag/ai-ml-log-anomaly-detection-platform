@@ -10,7 +10,11 @@ from datetime import timedelta
 
 # Base paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-STORAGE_ROOT = PROJECT_ROOT / "storage"
+_storage_path_env = os.getenv('STORAGE_PATH')
+if _storage_path_env:
+    STORAGE_ROOT = Path(_storage_path_env).resolve()
+else:
+    STORAGE_ROOT = PROJECT_ROOT / "storage"
 
 # MongoDB Optional Control
 MONGODB_ENABLED = os.getenv('MONGODB_ENABLED', 'true').lower() == 'true'
@@ -19,7 +23,7 @@ MONGODB_ENABLED = os.getenv('MONGODB_ENABLED', 'true').lower() == 'true'
 if MONGODB_ENABLED:
     MONGODB_CONFIG = {
         "connection_string": os.getenv('MONGODB_URI', 'mongodb://localhost:27017/'),
-        "database": os.getenv('MONGODB_STORAGE_DB', 'anomaly_detection'),
+        "database": os.getenv('MONGODB_STORAGE_DB', os.getenv('MONGODB_DATABASE', 'anomaly_detection')),
         "collections": {
             "anomaly_history": "anomaly_history",
             "model_registry": "model_registry",
@@ -91,7 +95,7 @@ def validate_config():
     errors = []
     
     # MongoDB connection check
-    if not MONGODB_CONFIG["connection_string"]:
+    if MONGODB_ENABLED and MONGODB_CONFIG and not MONGODB_CONFIG.get("connection_string"):
         errors.append("MongoDB connection string is missing")
     
     # Directory permissions check

@@ -38,7 +38,10 @@ services:
       
       # Output klasörü - generated files için
       - ./output:/app/output
-      
+
+      # Storage klasörü - anomaly exports, models, backups, uploads, cache
+      - ./storage:/app/storage
+
       # Config klasörü - anomaly_config.json vb. için
       - ./config:/app/config:ro
     

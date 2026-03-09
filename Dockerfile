@@ -43,8 +43,8 @@ COPY main.py .
 # models/ klasörü (eğer varsa)
 COPY models/ ./models/
 
-# Log ve output klasörlerini oluştur
-RUN mkdir -p logs output temp_logs
+# Log, output ve storage klasörlerini oluştur
+RUN mkdir -p logs output temp_logs storage/{models,exports,temp,backups,uploads}
 
 # Güvenlik: root olmayan kullanıcı oluştur
 RUN useradd -m -u 1000 appuser && \

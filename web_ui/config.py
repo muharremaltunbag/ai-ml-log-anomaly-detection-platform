@@ -16,8 +16,9 @@ MAX_QUERY_LENGTH = 10000
 RATE_LIMIT_REQUESTS = 30
 RATE_LIMIT_MINUTES = 1
 
-# CORS ayarları (test için localhost)
+# CORS ayarları
+_extra_origins = os.getenv("CORS_ORIGINS", "")
 ALLOWED_ORIGINS = [
     "http://localhost:8000",
     "http://127.0.0.1:8000",
-]
+] + [o.strip() for o in _extra_origins.split(",") if o.strip()]
