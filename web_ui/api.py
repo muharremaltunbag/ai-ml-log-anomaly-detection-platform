@@ -5256,10 +5256,10 @@ async def startup_event():
 
     logger.info("Starting API server...")
 
-    # Storage Manager'ı başlat
+    # Storage Manager'ı başlat (get_storage_manager ile tutarlı)
     if ENABLE_STORAGE:
-        storage_manager = StorageManager()
-        connected = await storage_manager.initialize()
+        storage_manager = await get_storage_manager()
+        connected = isinstance(storage_manager, StorageManager)
 
         if connected:
             logger.info("✅ Storage Manager initialized successfully")

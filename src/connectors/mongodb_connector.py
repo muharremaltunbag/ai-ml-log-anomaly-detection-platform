@@ -16,8 +16,8 @@ class MongoDBConnector(BaseConnector):
         super().__init__()
         self.client: Optional[MongoClient] = None
         self.database = None
-        self.uri = os.getenv('MONGODB_URI')
-        self.db_name = os.getenv('MONGODB_DATABASE')
+        self.uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+        self.db_name = os.getenv('MONGODB_DATABASE', 'anomaly_detection')
         
     def connect(self) -> bool:
         """MongoDB'ye güvenli bağlantı"""
