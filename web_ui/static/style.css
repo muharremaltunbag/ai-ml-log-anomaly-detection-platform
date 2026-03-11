@@ -13912,7 +13912,7 @@ mark.text-highlight:hover {
     position: fixed;
     right: 0;
     top: 56px;
-    width: 360px;
+    width: 440px;
     height: calc(100vh - 56px);
     border-left: 1px solid var(--border-color);
     border-radius: 0;
