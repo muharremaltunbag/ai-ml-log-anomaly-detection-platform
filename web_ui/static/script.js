@@ -697,10 +697,10 @@ async function handleConnect() {
             elements.mainContent.style.display = 'block';
             elements.apiKeyInput.disabled = true;
 
-            // ML Sidebar: Baglaninca otomatik ac ve metrik yukle
+            // ML Sidebar: Baglaninca metrikleri yukle (panel kapalı kalır, kullanıcı butonla açar)
             if (window.MLPanel) {
                 setTimeout(() => {
-                    if (window.MLPanel.show) window.MLPanel.show();
+                    if (window.MLPanel.loadMetrics) window.MLPanel.loadMetrics();
                 }, 500);
             }
             elements.connectBtn.textContent = 'BAĞLANDI';

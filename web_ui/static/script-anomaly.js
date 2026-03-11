@@ -1875,12 +1875,9 @@ function displayAnomalyResults(result) {
     if (window.MLPanel && window.MLPanel.autoUpdate) {
         try {
             window.MLPanel.autoUpdate(result);
-            // Sidebar acik degilse ac
+            // Sidebar zaten aciksa metrikleri tazele, kapali ise dokunma
             var mlPanel = document.getElementById('mlModelPanel');
-            if (mlPanel && !mlPanel.classList.contains('open') && window.MLPanel.show) {
-                window.MLPanel.show();
-            } else if (window.MLPanel.loadMetrics) {
-                // Zaten aciksa sadece metrikleri tazele
+            if (mlPanel && mlPanel.classList.contains('open') && window.MLPanel.loadMetrics) {
                 window.MLPanel.loadMetrics();
             }
             console.log('✅ ML Sidebar auto-updated after displayAnomalyResults');
