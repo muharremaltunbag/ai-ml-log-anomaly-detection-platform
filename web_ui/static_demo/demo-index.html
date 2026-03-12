@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Anomaly Detection | Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css?v=20260303b">
+    <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230047BA'/><text x='16' y='22' font-family='Arial' font-size='14' fill='white' text-anchor='middle'>ML</text></svg>">
+</head>
+<body>
+<!-- ===== APP TWO-COLUMN LAYOUT WRAPPER ===== -->
+<div id="appMainColumn">
+    <!-- ===== STICKY HEADER BAR (Figma layout) ===== -->
+    <header id="appHeader" class="app-header">
+        <div class="app-header-inner">
+            <!-- Sol: Logo + Baslik -->
+            <div class="app-header-left">
+                <div class="logo">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" class="logo-img">
+                        <rect width="40" height="40" rx="8" fill="#0047BA"/>
+                        <path d="M12 28V12h3v13h7v3H12z" fill="white"/>
+                        <path d="M24 12h3l4 16h-3l-0.8-3.5h-3.4L23 28h-3l4-16zm0.3 9.5h2.4L25.5 15h-0.1l-1.1 6.5z" fill="white"/>
+                    </svg>
+                </div>
+                <div class="app-header-title-group">
+                    <h1 class="app-header-title">Log Anomaly Detection</h1>
+                    <span class="app-header-subtitle">Machine Learning-Powered Analysis Platform</span>
+                </div>
+            </div>
+
+            <!-- Sag: Status + API Key + Baglan -->
+            <div class="app-header-right">
+                <div id="status" class="status">
+                    <span class="status-indicator"></span>
+                    <span class="status-text">Bağlantı kontrol ediliyor...</span>
+                </div>
+                <div class="app-header-apikey">
+                    <input type="password" id="apiKey" placeholder="API anahtarı" value="demo-api-key">
+                    <button id="connectBtn" class="btn btn-primary">BAĞLAN</button>
+                </div>
+                <button id="mlSidebarToggleBtn" class="ml-sidebar-toggle-btn" title="ML Model Metrikleri"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg> ML</button>
+                <button id="sidebarToggleBtn" class="sidebar-toggle-btn" title="AI Assistant"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 1 4 4v2a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M16 14H8a4 4 0 0 0-4 4v2h16v-2a4 4 0 0 0-4-4z"/></svg> AI</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="container" id="mainContainer">
+
+
+        <!-- Main content wrapper -->
+        <div class="main-wrapper">
+
+        <!-- Ana İçerik -->
+        <main id="mainContent" style="display: none;">
+
+            <!-- Scheduler Activity Strip — üst durum paneli -->
+            <div id="schedulerActivityStrip" class="sas-strip" style="display:none;">
+                <!-- Row 1: Status + Source + Active Host + Stage Pipeline + Timestamp -->
+                <div class="sas-row sas-row-top">
+                    <div class="sas-status-group">
+                        <span class="sas-dot" id="sasDot"></span>
+                        <span class="sas-label" id="sasLabel">Scheduler</span>
+                        <span class="sas-badge" id="sasBadge">AKTIF</span>
+                    </div>
+                    <span class="sas-sep"></span>
+                    <div class="sas-meta-group">
+                        <span class="sas-source" id="sasSource"></span>
+                        <span class="sas-hosts" id="sasHosts"></span>
+                        <span class="sas-run" id="sasRun"></span>
+                    </div>
+                    <span class="sas-sep"></span>
+                    <span class="sas-active-host" id="sasActiveHost" style="display:none;">
+                        <span class="sas-active-host-dot"></span>
+                        <span class="sas-active-host-label">Analiz ediliyor:</span>
+                        <span class="sas-active-host-name" id="sasActiveHostName"></span>
+                    </span>
+                    <div class="sas-stage-group" id="sasStageGroup">
+                        <span class="sas-stage" data-step="fetch" id="sasStage0">Log toplama</span>
+                        <span class="sas-stage-arrow">&rsaquo;</span>
+                        <span class="sas-stage" data-step="analyze" id="sasStage1">ML Analiz</span>
+                        <span class="sas-stage-arrow">&rsaquo;</span>
+                        <span class="sas-stage" data-step="predict" id="sasStage2">Tahmin</span>
+                        <span class="sas-stage-arrow">&rsaquo;</span>
+                        <span class="sas-stage" data-step="save" id="sasStage3">Kayit</span>
+                    </div>
+                    <div class="sas-right-group">
+                        <span class="sas-timestamp" id="sasTimestamp"></span>
+                        <a href="#" class="sas-link" id="sasDetailLink" onclick="if(window.PredictionDashboard)window.PredictionDashboard.show();return false;">Prediction Studio &rarr;</a>
+                    </div>
+                </div>
+                <!-- Row 2: Queue Progress + Host Chips -->
+                <div class="sas-row sas-row-bottom">
+                    <div class="sas-queue-group" id="sasQueueGroup">
+                        <span class="sas-queue-bar-wrap">
+                            <span class="sas-queue-bar-fill" id="sasQueueFill" style="width:0%"></span>
+                        </span>
+                        <span class="sas-queue-text" id="sasQueueText"></span>
+                    </div>
+                    <div class="sas-host-status" id="sasHostStatus"></div>
+                </div>
+            </div>
+
+            <!-- ===== INLINE ANALYSIS CONFIGURATION (Figma layout) ===== -->
+            <section id="analysisConfigSection" class="analysis-config-section">
+                <div class="analysis-config-header">
+                    <h2>Analiz Konfigürasyonu</h2>
+                    <span id="analysisConfigStatus" class="config-status-badge">Hazır</span>
+                </div>
+                <div class="analysis-config-body">
+                    <!-- Veri Kaynağı Seçimi — Kart stili (Figma) -->
+                    <div class="config-field">
+                        <label class="config-label">Veri Kaynağı</label>
+                        <div class="datasource-cards">
+                            <label class="datasource-card">
+                                <input type="radio" name="dataSource" value="opensearch" checked>
+                                <div class="datasource-card-inner">
+                                    <span class="datasource-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><ellipse cx="12" cy="7.5" rx="7" ry="2.5"/><path d="M5 12c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5"/><path d="M5 16.5c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5"/></svg></span>
+                                    <span class="datasource-title">MongoDB Logları</span>
+                                    <span class="datasource-desc">Canlı MongoDB log analizi</span>
+                                </div>
+                            </label>
+                            <label class="datasource-card">
+                                <input type="radio" name="dataSource" value="mssql_opensearch">
+                                <div class="datasource-card-inner">
+                                    <span class="datasource-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg></span>
+                                    <span class="datasource-title">MSSQL Logları</span>
+                                    <span class="datasource-desc">Canlı MSSQL log analizi</span>
+                                </div>
+                            </label>
+                            <label class="datasource-card">
+                                <input type="radio" name="dataSource" value="elasticsearch_opensearch">
+                                <div class="datasource-card-inner">
+                                    <span class="datasource-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="11" y1="8" x2="11" y2="14"/></svg></span>
+                                    <span class="datasource-title">Elasticsearch Logları</span>
+                                    <span class="datasource-desc">Canlı Elasticsearch log analizi</span>
+                                </div>
+                            </label>
+                            <label class="datasource-card">
+                                <input type="radio" name="dataSource" value="upload">
+                                <div class="datasource-card-inner">
+                                    <span class="datasource-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
+                                    <span class="datasource-title">Dosya Yükle</span>
+                                    <span class="datasource-desc">Manuel log dosyası analizi</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Kaynağa özel inputlar -->
+                    <div id="sourceSpecificInputs" style="margin-top: 15px;">
+                        <!-- Upload için dosya listesi -->
+                        <div id="uploadSourceInputs" style="display: none;"></div>
+
+                        <!-- OpenSearch için -->
+                        <div id="opensearchSourceInputs" style="display: none;">
+                            <div style="margin-bottom: 15px;">
+                                <label class="host-mode-label">
+                                    <input type="radio" name="hostSelectionMode" value="single" checked>
+                                    Tek Sunucu Analizi
+                                </label>
+                                <label class="host-mode-label">
+                                    <input type="radio" name="hostSelectionMode" value="cluster">
+                                    Cluster Analizi (Tum Node'lar)
+                                </label>
+                            </div>
+                            <div id="singleHostSelection" style="margin-bottom: 15px;">
+                                <label>MongoDB Sunucusu:</label>
+                                <select id="mongodbHostSelect" class="form-select">
+                                    <option value="" disabled selected>Sunucu seçin...</option>
+                                </select>
+                            </div>
+                            <div id="clusterSelection" style="display: none; margin-bottom: 15px;">
+                                <label>MongoDB Cluster:</label>
+                                <select id="clusterSelect" class="form-select">
+                                    <option value="" disabled selected>Cluster seçin...</option>
+                                </select>
+                                <div id="clusterHostsInfo" style="margin-top: 10px; display: none;">
+                                    <label style="font-size: 12px; color: #666;">Cluster Node'ları:</label>
+                                    <div id="clusterHostsList" style="padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px;"></div>
+                                </div>
+                            </div>
+                            <button id="refreshHostsBtn" class="btn btn-secondary btn-refresh">
+                                Sunucu Listesini Yenile
+                            </button>
+                        </div>
+
+                        <!-- MSSQL OpenSearch için -->
+                        <div id="mssqlSourceInputs" style="display: none;">
+                            <div style="margin-bottom: 15px;">
+                                <label>MSSQL Sunucusu:</label>
+                                <select id="mssqlHostSelect" class="form-select">
+                                    <option value="" disabled selected>MSSQL sunucu seçin...</option>
+                                </select>
+                            </div>
+                            <button id="refreshMSSQLHostsBtn" class="btn btn-secondary btn-refresh">
+                                MSSQL Sunucu Listesini Yenile
+                            </button>
+                        </div>
+
+                        <!-- Elasticsearch OpenSearch için -->
+                        <div id="elasticsearchSourceInputs" style="display: none;">
+                            <div style="margin-bottom: 15px;">
+                                <label>Elasticsearch Node:</label>
+                                <select id="esHostSelect" class="form-select">
+                                    <option value="" disabled selected>ES node seçin...</option>
+                                </select>
+                            </div>
+                            <button id="refreshESHostsBtn" class="btn btn-secondary btn-refresh">
+                                ES Node Listesini Yenile
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Dosya seçimi (upload modu) -->
+                    <div class="anomaly-file-selection" id="fileSelectionSection" style="display: none;">
+                        <h4>Log Dosyası Seçin</h4>
+                        <div id="modalFilesList" class="files-list"></div>
+                    </div>
+
+                    <!-- Zaman Aralığı + Sunucu yan yana (Figma grid) -->
+                    <div class="config-row">
+                        <div class="config-field">
+                            <label class="config-label">Zaman Aralığı</label>
+                            <div class="timerange-pills">
+                                <label class="timerange-pill">
+                                    <input type="radio" name="modalTimeRange" value="last_24h" checked>
+                                    <span>Son 24 Saat</span>
+                                </label>
+                                <label class="timerange-pill">
+                                    <input type="radio" name="modalTimeRange" value="last_7d">
+                                    <span>Son 7 Gün</span>
+                                </label>
+                                <label class="timerange-pill">
+                                    <input type="radio" name="modalTimeRange" value="last_30d">
+                                    <span>Son 30 Gün</span>
+                                </label>
+                                <label class="timerange-pill">
+                                    <input type="radio" name="modalTimeRange" value="custom">
+                                    <span>Ozel</span>
+                                </label>
+                            </div>
+                            <!-- Custom Date Inputs -->
+                            <div id="customDateInputs" style="display: none; margin-top: 15px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div>
+                                        <label>Başlangıç:</label>
+                                        <input type="datetime-local" id="customStartTime" class="form-input">
+                                    </div>
+                                    <div>
+                                        <label>Bitiş:</label>
+                                        <input type="datetime-local" id="customEndTime" class="form-input">
+                                    </div>
+                                </div>
+                                <small class="timezone-note">
+                                    Zaman dilimi: UTC+3 (Turkiye Saati)
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Analizi Başlat butonu -->
+                    <div class="config-actions">
+                        <button id="startAnalysisBtn" class="btn btn-primary btn-start-analysis">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5,3 19,12 5,21"/></svg>
+                            ML Analizini Baslat
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Hizli Islemler -->
+            <section class="quick-actions">
+                <div class="qa-group qa-group-primary">
+                    <button id="anomalyAnalysisBtn" class="quick-action-card quick-action-primary">
+                        <span class="qa-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+                        <span class="qa-label">Anomali Analizi</span>
+                    </button>
+                    <button id="dbaAnalysisBtn" class="quick-action-card quick-action-primary">
+                        <span class="qa-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+                        <span class="qa-label">DBA Tavsiye Sistemi</span>
+                    </button>
+                    <button id="predictionDashboardBtn" class="quick-action-card quick-action-primary quick-action-prediction">
+                        <span class="qa-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+                        <span class="qa-label">Prediction Studio</span>
+                    </button>
+                </div>
+                <div class="qa-group qa-group-secondary">
+                    <button id="logUploadBtn" class="quick-action-card">
+                        <span class="qa-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
+                        <span class="qa-label">Log Yukle</span>
+                    </button>
+                    <button id="toggleMLPanelBtn" class="quick-action-card">
+                        <span class="qa-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg></span>
+                        <span class="qa-label">ML Metrikleri</span>
+                    </button>
+                    <button id="systemResetBtn" class="quick-action-card">
+                        <span class="qa-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+                        <span class="qa-label">Sistem Reset</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- ===== SYSTEM RESET MODAL ===== -->
+            <div id="systemResetModal" class="system-reset-overlay" style="display: none;">
+                <div class="system-reset-modal">
+                    <!-- Header -->
+                    <div class="sr-modal-header">
+                        <div class="sr-header-left">
+                            <div class="sr-header-icon">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                            </div>
+                            <div class="sr-header-text">
+                                <h2>Sistem Reset Konfigurasyonu</h2>
+                                <p>Sifirlanacak bilesenleri seciniz</p>
+                            </div>
+                        </div>
+                        <button id="systemResetCloseBtn" class="sr-close-btn" title="Kapat">✕</button>
+                    </div>
+
+                    <!-- Body -->
+                    <div class="sr-modal-body">
+                        <!-- Select All Toggle -->
+                        <div class="sr-select-all-bar">
+                            <div class="sr-select-all-left">
+                                <span class="sr-select-all-label">Tumunu Sec</span>
+                            </div>
+                            <label class="sr-toggle">
+                                <input type="checkbox" id="srSelectAll">
+                                <span class="sr-toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- Category Header -->
+                        <h3 class="sr-categories-title">Sifirlama Kategorileri</h3>
+
+                        <!-- Category Grid -->
+                        <div class="sr-categories-grid">
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="ml_models" checked>
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">ML Modelleri</span>
+                                    <span class="sr-cat-desc">Egitilmis model dosyalari</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="anomaly_output">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Anomali Analizleri</span>
+                                    <span class="sr-cat-desc">Gecmis analiz raporlari</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="storage_depot">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Storage Deposu</span>
+                                    <span class="sr-cat-desc">Yerel dosya saklama alani</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="cache">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Cache</span>
+                                    <span class="sr-cat-desc">Feature cache ve baseline</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="mongodb">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">MongoDB</span>
+                                    <span class="sr-cat-desc">Veritabani kayitlari</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="logs">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Loglar</span>
+                                    <span class="sr-cat-desc">Sistem ve hata gunlukleri</span>
+                                </div>
+                            </label>
+                            <label class="sr-category-card">
+                                <input type="checkbox" name="srCategory" value="metrics">
+                                <div class="sr-category-inner">
+                                    <span class="sr-cat-name">Metrikler</span>
+                                    <span class="sr-cat-desc">Performans olcumleri</span>
+                                </div>
+                            </label>
+                        </div>
+
+                        <!-- Info Banner -->
+                        <div class="sr-info-banner">
+                            <span class="sr-info-icon">i</span>
+                            <div>
+                                <span class="sr-info-title">Bilgilendirme</span>
+                                Config dosyalari ve kaynak kodlari bu islemden etkilenmez ve korunur.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="sr-modal-footer">
+                        <button id="srDryRunBtn" class="sr-btn sr-btn-secondary">
+                            Simulasyon (Dry Run)
+                        </button>
+                        <button id="srFullResetBtn" class="sr-btn sr-btn-danger">
+                            Sistemi Sifirla
+                        </button>
+                    </div>
+
+                    <!-- Results Panel (hidden initially) -->
+                    <div id="srResultsPanel" class="sr-results-panel" style="display: none;">
+                        <div class="sr-results-header">
+                            <h3 id="srResultsTitle">Islem Sonucu</h3>
+                            <button id="srResultsCloseBtn" class="sr-close-btn" title="Kapat">✕</button>
+                        </div>
+                        <div id="srResultsContent" class="sr-results-content"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Yükleme Göstergesi — Figma Processing Modal -->
+            <div id="loader" class="processing-overlay" style="display: none;">
+                <div class="processing-modal">
+                    <div class="processing-header">
+                        <div class="processing-icon-spinner"></div>
+                        <h3>Anomali Analizi Isleniyor</h3>
+                        <p class="processing-subtitle">Log verileri taraniyor ve anomaliler tespit ediliyor...</p>
+                    </div>
+                    <div id="processingSteps" class="processing-steps">
+                        <div class="processing-step completed" data-step="validation">
+                            <span class="step-indicator step-done">✓</span>
+                            <span class="step-label">Parametre Doğrulama</span>
+                        </div>
+                        <div class="processing-step active" data-step="connection">
+                            <span class="step-indicator step-active">
+                                <span class="step-spinner"></span>
+                            </span>
+                            <div class="step-label-wrapper">
+                                <span class="step-label">Veri Kaynağına Bağlanılıyor</span>
+                                <div class="step-progress-bar">
+                                    <div class="step-progress-fill" style="width: 0%;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="processing-step pending" data-step="reading">
+                            <span class="step-indicator step-pending"></span>
+                            <span class="step-label">Log Okuma ve Ayrıştırma</span>
+                        </div>
+                        <div class="processing-step pending" data-step="feature_engineering">
+                            <span class="step-indicator step-pending"></span>
+                            <span class="step-label">Feature Engineering</span>
+                        </div>
+                        <div class="processing-step pending" data-step="ml_inference">
+                            <span class="step-indicator step-pending"></span>
+                            <span class="step-label">ML Model Çıkarımı ve Skorlama</span>
+                        </div>
+                    </div>
+                    <p id="processingMessage" class="processing-message">Sorgu işleniyor, lütfen bekleyin...</p>
+                </div>
+            </div>
+
+            <!-- Sorgu Alanı — Görsel olarak gizli, sidebar chat bu input'u kullanıyor -->
+            <section class="query-section" style="display: none;" aria-hidden="true">
+                <div class="query-input-wrapper">
+                    <textarea
+                        id="queryInput"
+                        placeholder="Sorgunuzu doğal dilde yazın..."
+                        rows="3"
+                    ></textarea>
+                    <button id="queryBtn" class="btn btn-primary">
+                        <span>SORGUYU ÇALIŞTIR</span>
+                    </button>
+                </div>
+                <div class="examples">
+                    <div class="example-chips">
+                        <span class="chip" data-query="Mevcut koleksiyonları listele">Koleksiyon Listesi</span>
+                        <span class="chip" data-query="users koleksiyonunun şemasını göster">Şema Görüntüleme</span>
+                        <span class="chip" data-query="products koleksiyonunda stok sayısı 10'dan az olan ürünleri bul">Stok Kontrolü</span>
+                        <span class="chip" data-query="orders koleksiyonunda bugünkü siparişlerin toplam sayısını getir">Sipariş Sayımı</span>
+                        <span class="chip" data-query="customers koleksiyonunda city alanına göre gruplama yap">Müşteri Analizi</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Sonuç Alanı - GENİŞLETİLEBİLİR WRAPPER İLE -->
+            <div class="result-wrapper">
+                <section id="resultSection" class="result-section expandable-section" style="display: none;">
+                    <div class="section-header">
+                        <h3>Sorgu Sonucu</h3>
+                        <div class="expand-controls">
+                            <button class="btn-expand-section" onclick="toggleSectionExpand()" title="Alanı Genişlet">
+                                ⛶
+                            </button>
+                        </div>
+                    </div>
+                    <div id="resultContent" class="result-content expandable-content"></div>
+                </section>
+            </div>
+
+            <!-- YENİ: Konuşma Geçmişi & Anomali Geçmişi -->
+            <section class="history-section">
+                <div class="history-header">
+                    <h3>Gecmis</h3>
+                    <div class="history-actions">
+                        <button id="clearHistoryBtn" class="btn btn-secondary btn-small">Gecmisi Temizle</button>
+                        <button id="exportHistoryBtn" class="btn btn-secondary btn-small">Disa Aktar</button>
+                    </div>
+                </div>
+                
+                <div class="history-tabs">
+                    <button class="history-tab active" data-tab="all">Tümü</button>
+                    <button class="history-tab" data-tab="chatbot">Chatbot Sorguları</button>
+                    <button class="history-tab" data-tab="anomaly">Anomali Analizleri</button>
+                </div>
+                
+                <div id="historyContent" class="history-content">
+                    <div class="history-empty">
+                        <div class="empty-icon empty-icon-muted">--</div>
+                        <p>Henüz sorgu geçmişi bulunmuyor.</p>
+                        <small>Yaptığınız sorgular burada görüntülenecek.</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Anomali Analiz Sonuçları -->
+            <section id="anomalyResults" class="anomaly-results" style="display: none;">
+
+                <div class="section-header">
+
+                    <h3>Anomali Analiz Sonuclari</h3>
+
+                    <div class="header-actions">
+
+                        <button class="btn-minimize" onclick="document.getElementById('anomalyContent').classList.toggle('hidden')">_</button>
+
+                    </div>
+
+                </div>
+
+                
+
+                <div id="anomalyContent" class="anomaly-content"></div>
+
+
+
+                <div class="dba-explorer-panel">
+
+                    <div class="dba-explorer-header">
+
+                        <h4>DBA Log Explorer</h4>
+
+                        <span id="currentHostBadge" class="badge badge-info" style="display:none;">Host: --</span>
+
+                    </div>
+
+
+
+                    <div class="filter-controls dba-filter-controls">
+
+                        <div class="filter-grid dba-filter-grid">
+
+                            <div class="form-group">
+
+                                <label class="dba-filter-label">Bilesen (Component):</label>
+
+                                <select id="filterComponent" class="form-select text-sm">
+
+                                    <option value="ALL">Tümü</option>
+
+                                    <option value="NETWORK">NETWORK</option>
+
+                                    <option value="QUERY">QUERY / COMMAND</option>
+
+                                    <option value="REPL">REPL (Replication)</option>
+
+                                    <option value="STORAGE">STORAGE / WT</option>
+
+                                    <option value="ACCESS">ACCESS / AUTH</option>
+
+                                    <option value="CONTROL">CONTROL</option>
+
+                                    <option value="WRITE">WRITE</option>
+
+                                    <option value="INDEX">INDEX</option>
+
+                                </select>
+
+                            </div>
+
+
+
+                            <div class="form-group">
+
+                                <label class="dba-filter-label">Min. Severity (0-100):</label>
+
+                                <div class="dba-severity-slider">
+
+                                    <input type="range" id="filterSeverityRange" min="0" max="100" value="0">
+
+                                    <span id="filterSeverityValue" class="dba-severity-value">0</span>
+
+                                </div>
+
+                            </div>
+
+
+
+                            <div class="form-group dba-filter-wide">
+
+                                <label class="dba-filter-label">Log Pattern / Mesaj Icerigi:</label>
+
+                                <input type="text" id="filterPattern" class="form-input text-sm" placeholder="Örn: 'connection refused', 'timeout', 'duplicate key'...">
+
+                            </div>
+
+                        </div>
+
+
+
+                        <div class="filter-actions dba-filter-actions">
+
+                            <button id="btnApplyFilter" class="btn btn-primary btn-sm">
+
+                                Filtrele
+
+                            </button>
+
+                            <button id="btnResetFilter" class="btn btn-secondary btn-sm">
+
+                                Temizle
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+
+
+                    <div id="dbaResultsTableWrapper" class="dba-results-wrapper">
+
+                        <table class="dba-table">
+
+                            <thead>
+
+                                <tr>
+
+                                    <th>Zaman</th>
+
+                                    <th>Severity</th>
+
+                                    <th>Component</th>
+
+                                    <th>Log Mesaji</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody id="dbaResultsBody">
+
+                                <tr>
+
+                                    <td colspan="4" class="dba-empty-cell">
+
+                                        Filtreleme yapmak için yukarıdaki butonu kullanın.
+
+                                    </td>
+
+                                </tr>
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+
+
+                    <div id="dbaPagination" class="dba-pagination" style="display: none;">
+
+                        <button id="btnLoadMoreAnomalies" class="btn btn-secondary btn-sm">
+
+                            Daha Fazla Yukle (+50)
+
+                        </button>
+
+                        <p class="dba-result-count" id="dbaResultCountInfo"></p>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+            <!-- ===== PREDICTION STUDIO MODAL OVERLAY ===== -->
+            <div id="ppsOverlay" class="pps-overlay" style="display:none;">
+                <div class="pps-modal">
+                    <!-- Studio Header -->
+                    <div class="pps-modal-header">
+                        <div class="pps-header-left">
+                            <div class="pps-header-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+                            <div class="pps-header-text">
+                                <h2>Prediction &amp; Forecasting Studio</h2>
+                                <p>Anomali Trend Analizi &bull; Anlik Rate Alert &bull; Gelecek Tahmini</p>
+                            </div>
+                            <span class="ppd-header-badge" id="ppdConfigBadge">--</span>
+                        </div>
+                        <div class="pps-header-right">
+                            <button id="ppdRunAnalysisBtn" type="button" class="pps-run-analysis-btn" title="Analiz ve Tahmin Calistir">
+                                <span class="pps-run-icon">&#x25B6;</span> Analiz ve Tahmin Calistir
+                            </button>
+                            <button id="ppdRefreshBtn" type="button" class="pps-header-btn" title="Yenile">&#x21bb;</button>
+                            <button id="ppsCloseBtn" type="button" class="pps-header-btn pps-close-btn" title="Kapat">&times;</button>
+                        </div>
+                    </div>
+
+                    <!-- Activity Strip — modal üst durum şeridi -->
+                    <div id="ppsActivityStrip" class="pps-activity-strip" style="display:none;">
+                        <div class="pps-activity-inner" id="ppsActivityInner">
+                            <div class="pps-activity-meta">
+                                <span class="pps-activity-dot" id="ppsActivityDot"></span>
+                                <span class="pps-activity-label" id="ppsActivityLabel">Scheduler</span>
+                                <span class="pps-activity-source" id="ppsActivitySource"></span>
+                                <span class="pps-activity-hosts-count" id="ppsActivityHostsCount"></span>
+                            </div>
+                            <span class="pps-activity-divider"></span>
+                            <div class="pps-activity-hosts" id="ppsActivityHosts"></div>
+                        </div>
+                    </div>
+
+                    <!-- Studio Body: Sidebar + Main -->
+                    <div class="pps-modal-body">
+
+                        <!-- ── Left Sidebar: Filters & Scheduler ── -->
+                        <aside class="pps-sidebar">
+                            <!-- Source toggle -->
+                            <div class="pps-sidebar-section">
+                                <h4 class="pps-sidebar-title">Veri Kaynagi</h4>
+                                <div class="pps-source-toggle" id="ppsSourceToggle">
+                                    <button type="button" class="pps-source-btn pps-source-active" data-source="opensearch" title="MongoDB">
+                                        <span class="pps-source-label">MongoDB</span>
+                                    </button>
+                                    <button type="button" class="pps-source-btn" data-source="mssql_opensearch" title="MSSQL">
+                                        <span class="pps-source-label">MSSQL</span>
+                                    </button>
+                                    <button type="button" class="pps-source-btn" data-source="elasticsearch_opensearch" title="Elasticsearch">
+                                        <span class="pps-source-label">Elastic</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="pps-sidebar-divider"></div>
+
+                            <!-- Filter section -->
+                            <div class="pps-sidebar-section">
+                                <h4 class="pps-sidebar-title">Filtreler</h4>
+                                <div class="pps-sidebar-field">
+                                    <label class="pps-sidebar-label">Sunucu</label>
+                                    <select id="ppdServerFilter" class="pps-sidebar-select" title="Sunucu filtresi">
+                                        <option value="">Tum Sunucular</option>
+                                    </select>
+                                </div>
+                                <div class="pps-sidebar-field">
+                                    <label class="pps-sidebar-label">Zaman Araligi</label>
+                                    <select id="ppdDaysFilter" class="pps-sidebar-select" title="Zaman araligi">
+                                        <option value="1">Son 1 Gun</option>
+                                        <option value="7" selected>Son 7 Gun</option>
+                                        <option value="30">Son 30 Gun</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="pps-sidebar-divider"></div>
+
+                            <!-- Scheduler section -->
+                            <div class="pps-sidebar-section">
+                                <h4 class="pps-sidebar-title" title="Scheduler, duzenli otomatik analiz calistirarak prediction verisinin birikmesini saglar. Guvenilir tahmin icin acik olmasi onerilir.">Scheduler Yonetimi</h4>
+
+                                <!-- Enable/Disable Toggle -->
+                                <div class="pps-sched-enable-row" id="ppsSchedEnableRow">
+                                    <label class="pps-sched-toggle-label">
+                                        <input type="checkbox" id="ppsSchedEnableCheck" class="pps-sched-toggle-input">
+                                        <span class="pps-sched-toggle-slider"></span>
+                                        <span class="pps-sched-toggle-text" id="ppsSchedEnableText">Scheduler Kapali</span>
+                                    </label>
+                                </div>
+
+                                <!-- Interval setting -->
+                                <div class="pps-sidebar-field pps-sched-interval-row" id="ppsSchedIntervalRow">
+                                    <label class="pps-sidebar-label">Analiz Araligi</label>
+                                    <div class="pps-sched-interval-input-wrap">
+                                        <select id="ppsSchedIntervalSelect" class="pps-sidebar-select pps-sched-interval-select" title="Scheduler calisma araligi">
+                                            <option value="5">5 dk</option>
+                                            <option value="10">10 dk</option>
+                                            <option value="15">15 dk</option>
+                                            <option value="30" selected>30 dk</option>
+                                            <option value="60">1 saat</option>
+                                            <option value="120">2 saat</option>
+                                            <option value="360">6 saat</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="ppd-sched-panel pps-sidebar-sched" id="ppdSchedPanel">
+                                    <div class="ppd-sched-body">
+                                        <div class="ppd-sched-grid" id="ppdSchedGrid">
+                                            <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Target hosts (interactive checkboxes) -->
+                                <div class="pps-sidebar-field pps-sidebar-field-hosts">
+                                    <div class="pps-sidebar-hosts-header">
+                                        <label class="pps-sidebar-label">Hedef Sunucular <span id="ppsHostsCount" class="pps-hosts-count-badge">0</span></label>
+                                        <button type="button" id="ppsHostsSelectAll" class="pps-hosts-toggle-btn">Temizle</button>
+                                    </div>
+                                    <div class="pps-hosts-search-wrap" id="ppsHostsSearchWrap">
+                                        <input type="text" id="ppsHostsSearch" class="pps-hosts-search" placeholder="Sunucu ara..." autocomplete="off">
+                                    </div>
+                                    <div class="pps-hosts-list" id="ppsHostsList">
+                                        <span class="pps-hosts-empty">Scheduler verisi bekleniyor...</span>
+                                    </div>
+                                </div>
+
+                                <div class="pps-sidebar-sched-actions">
+                                    <button type="button" id="ppdSchedStartBtn" class="ppd-sched-btn ppd-sched-btn-start" disabled>Baslat</button>
+                                    <button type="button" id="ppdSchedStopBtn" class="ppd-sched-btn ppd-sched-btn-stop" disabled>Durdur</button>
+                                    <button type="button" id="ppdSchedTriggerBtn" class="ppd-sched-btn ppd-sched-btn-trigger" disabled>Manuel Calistir</button>
+                                </div>
+
+                                <!-- Scheduler feedback banner -->
+                                <div id="ppsSchedFeedback" class="pps-sched-feedback" style="display:none;"></div>
+
+                                <!-- Progress stepper for active operations -->
+                                <div id="ppsSchedProgress" class="pps-sched-progress" style="display:none;">
+                                    <div class="pps-sched-progress-bar">
+                                        <div class="pps-sched-progress-fill" id="ppsSchedProgressFill"></div>
+                                    </div>
+                                    <div class="pps-sched-progress-steps" id="ppsSchedProgressSteps"></div>
+                                </div>
+                            </div>
+                        </aside>
+
+                        <!-- ── Right Main Content ── -->
+                        <div class="pps-main">
+                            <section id="predictionDashboardSection" class="ppd-section pps-content">
+
+                                <!-- ═══ COMPACT GUIDE BANNER ═══ -->
+                                <div class="ppd-guide-panel ppd-guide-compact" id="ppdGuidePanel">
+                                    <div class="ppd-guide-header" id="ppdGuideToggle">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px;opacity:.7"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                        Nasil Calisir?
+                                        <span class="ppd-guide-toggle-icon" id="ppdGuideArrow">&#x25BC;</span>
+                                    </div>
+                                    <div class="ppd-guide-body" id="ppdGuideBody">
+                                        <div class="ppd-guide-intro">
+                                            Her anomaly analizi sonrasinda uc modul otomatik calisir:
+                                            <strong>Trend</strong> (gecmis karsilastirma) &bull;
+                                            <strong>Rate Alert</strong> (anlik esik asimi) &bull;
+                                            <strong>Forecast</strong> (6 saatlik tahmin).
+                                            Scheduler acikken veriler otomatik birikir.
+                                        </div>
+                                        <div class="ppd-guide-legend">
+                                            <span class="ppd-severity-tag ppd-sev-critical" style="font-size:11px">CRITICAL</span> Acil mudahale &nbsp;
+                                            <span class="ppd-severity-tag ppd-sev-warning" style="font-size:11px">WARNING</span> Yakin izleme &nbsp;
+                                            <span class="ppd-severity-tag ppd-sev-info" style="font-size:11px">INFO</span> Bilgi amacli &nbsp;
+                                            <span class="ppd-severity-tag ppd-sev-ok" style="font-size:11px">OK</span> Normal
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Config pills -->
+                                <div class="ppd-config-grid" id="ppdConfigGrid"></div>
+
+                                <!-- Prediction Readiness Bar -->
+                                <div class="ppd-readiness-bar" id="ppdReadinessBar">
+                                    <span class="ppd-readiness-label">Tahmin Kalitesi: hesaplaniyor...</span>
+                                </div>
+
+                                <!-- Prediction Context Panel: son analiz durumu -->
+                                <div class="ppd-context-panel" id="ppdContextPanel" style="display:none;">
+                                    <div class="ppd-context-header">
+                                        <span class="ppd-context-title">Prediction Durumu</span>
+                                        <span class="ppd-context-badge" id="ppdContextBadge">--</span>
+                                    </div>
+                                    <div class="ppd-context-body" id="ppdContextBody"></div>
+                                </div>
+
+                                <!-- Active Risks Panel — en üstte, ilk görülen -->
+                                <div class="ppd-active-risks" id="ppdActiveRisks" style="display:none;">
+                                    <h3 class="ppd-section-title ppd-section-title-risk">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px;">
+                                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                                            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                                        </svg>
+                                        Potansiyel Riskler
+                                    </h3>
+                                    <div class="ppd-risk-list" id="ppdRiskList"></div>
+                                </div>
+
+                                <!-- Summary cards -->
+                                <div class="ppd-summary-grid" id="ppdSummaryGrid">
+                                    <div class="ppd-loading"><div class="ppd-loading-spinner"></div><br>Yukleniyor...</div>
+                                </div>
+
+                                <!-- Server Risk Overview -->
+                                <div class="ppd-server-overview" id="ppdServerOverview">
+                                    <h3 class="ppd-section-title">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px;">
+                                            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                                            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                                            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                                            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                                        </svg>
+                                        Sunucu Risk Durumu
+                                    </h3>
+                                    <div class="ppd-server-grid" id="ppdServerGrid"></div>
+                                </div>
+
+                                <!-- Time-series Chart -->
+                                <div class="pps-chart-wrapper" id="ppsChartWrapper">
+                                    <h3 class="pps-chart-title">Alert Zaman Serisi</h3>
+                                    <canvas id="ppsTimeseriesCanvas" height="260"></canvas>
+                                    <div class="pps-chart-empty" id="ppsChartEmpty" style="display:none;">
+                                        <div class="pps-empty-title">Grafik verisi bekleniyor</div>
+                                        <div class="pps-empty-desc">
+                                            Scheduler acikken veriler otomatik birikir. Manuel analiz de veri noktasi ekler.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Alert history table -->
+                                <div class="ppd-table-wrapper" id="ppdTableWrapper" style="display:none;">
+                                    <table class="ppd-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Zaman</th>
+                                                <th>Kaynak</th>
+                                                <th>Sunucu</th>
+                                                <th>Severity</th>
+                                                <th>Guven</th>
+                                                <th>Uyari Sayisi</th>
+                                                <th>Detay</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ppdTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- Log Yükleme Bölümü -->
+            <section class="log-upload-section">
+                <h3>Manuel Log Yukleme</h3>
+                <div class="upload-container">
+                    <div class="upload-area">
+                        <input type="file" id="logFileInput" accept=".log,.txt,.json,text/plain,application/json,application/octet-stream,*/*" style="display: none;">
+                        <div class="upload-dropzone" id="uploadDropzone">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#0047BA" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            <p>Log dosyasını buraya sürükleyin veya <span class="upload-link">seçmek için tıklayın</span></p>
+                            <small>Desteklenen formatlar: .log, .txt, .json (Max 100MB)</small>
+                        </div>
+                    </div>
+                    
+                    <!-- Yüklenen Dosyalar Listesi -->
+                    <div id="uploadedFiles" class="uploaded-files" style="display: none;">
+                        <h4>Yüklenen Log Dosyaları</h4>
+                        <div id="filesList" class="files-list"></div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Anomaly Modal (shell — JS references #anomalyModal) -->
+        <div id="anomalyModal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer>
+            <p>&copy; 2026 &mdash; Log Anomaly Detection Platform v1.0 (Demo)</p>
+        </footer>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Başlık</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <!-- ===== ML MODEL METRICS SIDEBAR (Figma layout — sol panel) ===== -->
+    <aside id="mlModelPanel" class="ml-metrics-sidebar">
+        <!-- Sidebar Header -->
+        <div class="ml-sidebar-header">
+            <div class="ml-sidebar-header-left">
+                <h3 class="ml-sidebar-title">ML Model Metrikleri</h3>
+            </div>
+            <button id="mlSidebarCloseBtn" class="ml-sidebar-close-btn" title="Paneli Kapat">✕</button>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div class="ml-sidebar-content">
+
+            <!-- Section 1: Model Performansi -->
+            <div class="ml-sidebar-section">
+                <h4 class="ml-section-title">
+                    <span class="ml-section-dot ml-section-dot-green"></span>
+                    Model Performansi
+                </h4>
+                <div class="ml-perf-grid">
+                    <div class="ml-perf-card">
+                        <div class="ml-perf-label">Accuracy</div>
+                        <div class="ml-perf-value" id="modelAccuracy">--</div>
+                    </div>
+                    <div class="ml-perf-card">
+                        <div class="ml-perf-label">Precision</div>
+                        <div class="ml-perf-value" id="modelPrecision">--</div>
+                    </div>
+                    <div class="ml-perf-card">
+                        <div class="ml-perf-label">F1 Score</div>
+                        <div class="ml-perf-value" id="modelF1">--</div>
+                    </div>
+                    <div class="ml-perf-card">
+                        <div class="ml-perf-label">Recall</div>
+                        <div class="ml-perf-value" id="modelRecall">--</div>
+                    </div>
+                </div>
+
+                <!-- Kullanici Feedback Metrikleri -->
+                <div class="feedback-metrics-section" id="feedbackMetricsSection" style="display: none;">
+                    <h4>Kullanici Feedback Metrikleri</h4>
+                    <div class="feedback-metric-row">
+                        <span class="feedback-metric-label">Dogru Tespit (TP)</span>
+                        <span class="feedback-metric-value" id="fbTruePositives">0</span>
+                    </div>
+                    <div class="feedback-metric-row">
+                        <span class="feedback-metric-label">Yanlis Alarm (FP)</span>
+                        <span class="feedback-metric-value" id="fbFalsePositives">0</span>
+                    </div>
+                    <div class="feedback-metric-row">
+                        <span class="feedback-metric-label">Toplam Feedback</span>
+                        <span class="feedback-metric-value" id="fbTotalFeedbacks">0</span>
+                    </div>
+                    <div class="feedback-metric-row">
+                        <span class="feedback-metric-label">Guven Seviyesi</span>
+                        <span class="confidence-badge none" id="fbConfidenceLevel">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ml-sidebar-divider"></div>
+
+            <!-- Section 2: Anomali Istatistikleri -->
+            <div class="ml-sidebar-section">
+                <h4 class="ml-section-title">
+                    <span class="ml-section-dot ml-section-dot-purple"></span>
+                    Anomali Istatistikleri
+                </h4>
+                <div class="ml-stats-grid">
+                    <div class="ml-stat-card">
+                        <span class="ml-stat-label">Toplam Log</span>
+                        <span class="ml-stat-value" id="totalLogs">--</span>
+                    </div>
+                    <div class="ml-stat-card">
+                        <span class="ml-stat-label">Tespit</span>
+                        <span class="ml-stat-value" id="detectedAnomalies">--</span>
+                    </div>
+                    <div class="ml-stat-card ml-stat-card-danger">
+                        <span class="ml-stat-label">Oran</span>
+                        <span class="ml-stat-value ml-stat-value-danger" id="anomalyRate">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ml-sidebar-divider"></div>
+
+            <!-- Section 3: Analiz Edilen Featurelar -->
+            <div class="ml-sidebar-section">
+                <h4 class="ml-section-title">
+                    <span class="ml-section-dot ml-section-dot-indigo"></span>
+                    Analiz Edilen Featurelar
+                </h4>
+                <div id="mlFeaturesContainer" class="ml-features-container">
+                    <!-- Kritik Durumlar -->
+                    <div class="ml-feature-group">
+                        <h5 class="ml-feature-group-title">Kritik Durumlar</h5>
+                        <div class="ml-feature-grid" id="mlCriticalFeatures">
+                            <div class="ml-feature-item ml-feature-critical">
+                                <span class="ml-feature-name">is_fatal</span>
+                                <span class="ml-feature-dot ml-feature-dot-red"></span>
+                            </div>
+                            <div class="ml-feature-item ml-feature-critical">
+                                <span class="ml-feature-name">is_out_of_mem</span>
+                                <span class="ml-feature-dot ml-feature-dot-red"></span>
+                            </div>
+                            <div class="ml-feature-item ml-feature-critical">
+                                <span class="ml-feature-name">is_shutdown</span>
+                                <span class="ml-feature-dot ml-feature-dot-red"></span>
+                            </div>
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">is_mem_limit</span>
+                                <span class="ml-feature-dot ml-feature-dot-orange"></span>
+                            </div>
+                            <div class="ml-feature-item ml-feature-wide">
+                                <span class="ml-feature-name">is_assertion</span>
+                                <span class="ml-feature-badge-warning">Yuksek</span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Diger Metrikler -->
+                    <div class="ml-feature-group">
+                        <h5 class="ml-feature-group-title">Diger Metrikler</h5>
+                        <div class="ml-feature-grid" id="mlOtherFeatures">
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">query_dur</span>
+                                <span class="ml-feature-dot ml-feature-dot-blue"></span>
+                            </div>
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">docs_exam</span>
+                                <span class="ml-feature-dot ml-feature-dot-blue"></span>
+                            </div>
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">keys_exam</span>
+                                <span class="ml-feature-dot ml-feature-dot-blue"></span>
+                            </div>
+                            <div class="ml-feature-item">
+                                <span class="ml-feature-name">is_restart</span>
+                                <span class="ml-feature-dot ml-feature-dot-purple"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ml-sidebar-divider"></div>
+
+            <!-- Section 4: Model Bilgisi -->
+            <div class="ml-sidebar-section">
+                <h4 class="ml-section-title">
+                    <span class="ml-section-dot ml-section-dot-blue"></span>
+                    Model Bilgisi
+                </h4>
+                <div class="ml-model-info-card">
+                    <div class="ml-info-row ml-info-row-border">
+                        <span class="ml-info-label">Sunucu Adi</span>
+                        <div class="ml-info-value-row">
+                            <span class="ml-info-value-mono" id="mlServerName">--</span>
+                        </div>
+                    </div>
+                    <div class="ml-info-row ml-info-row-border">
+                        <span class="ml-info-label">Kullanilan Teknik</span>
+                        <span class="ml-info-value-mono" id="mlModelType">Isolation Forest</span>
+                    </div>
+                    <div class="ml-info-row ml-info-row-border ml-model-file-row">
+                        <span class="ml-info-label">Model Dosyasi</span>
+                        <div class="ml-model-file-path">
+                            <span class="ml-info-value-filepath" id="mlModelFilePath">--</span>
+                        </div>
+                    </div>
+                    <div class="ml-info-row-grid">
+                        <div class="ml-info-cell ml-info-cell-border-right">
+                            <span class="ml-info-label">Egitim Seti</span>
+                            <span class="ml-info-value-mono" id="mlTrainingSamples">--</span>
+                        </div>
+                        <div class="ml-info-cell">
+                            <span class="ml-info-label">Versiyon</span>
+                            <span class="ml-info-value-mono" id="modelVersion">--</span>
+                        </div>
+                    </div>
+                    <div class="ml-info-row ml-info-row-border">
+                        <span class="ml-info-label">Egitim Tarihi</span>
+                        <span class="ml-info-value-bold" id="lastTrainingDate">--</span>
+                    </div>
+                    <div class="ml-info-row">
+                        <div class="ml-info-sub">
+                            <span class="ml-info-label">Feature Sayisi</span>
+                            <span class="ml-info-value-small" id="mlFeatureCount">--</span>
+                        </div>
+                        <div class="ml-info-sub">
+                            <span class="ml-info-label">Buffer</span>
+                            <span class="ml-info-value-small" id="mlBufferInfo">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /ml-sidebar-content -->
+    </aside><!-- /mlModelPanel -->
+
+</div><!-- /appMainColumn -->
+
+<!-- ===== AI ASSISTANT SIDEBAR ===== -->
+<aside id="lcwgptSidebar" class="lcwgpt-sidebar open">
+    <!-- Sidebar Header -->
+    <div class="sidebar-header">
+        <div class="sidebar-header-left">
+            <span class="sidebar-title">AI Assistant</span>
+        </div>
+        <button id="sidebarCloseBtn" class="sidebar-close-btn" title="Sidebar'ı Kapat">✕</button>
+    </div>
+
+    <!-- Chat Messages Area -->
+    <div id="sidebarChatMessages" class="sidebar-chat-messages">
+        <div class="sidebar-welcome-msg">
+            <div class="sidebar-ai-bubble">
+                <span class="sidebar-ai-avatar">AI</span>
+                <div class="sidebar-bubble-content">
+                    Merhaba! Anomali analizleriniz hakkinda yardimci olabilirim. Baglanti kuruldugunda analiz yapilmis sunucular listelenecek — birini secerek baslayin.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Input -->
+    <div class="sidebar-chat-input">
+        <div id="exampleQuestionsContainer" class="example-questions-container"></div>
+        <div class="sidebar-input-wrapper">
+            <input type="text" id="sidebarChatInput" placeholder="Soru sorun..." autocomplete="off">
+            <button id="sidebarSendBtn" class="sidebar-send-btn" title="Gonder"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg></button>
+        </div>
+    </div>
+</aside>
+
+    <!-- Chart.js (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+
+    <!-- DEMO MODE: Masking layer - tüm script'lerden önce yüklenmeli -->
+    <script>window.DEMO_MODE = true;</script>
+    <script src="/static_demo/demo-masking.js?v=20260312"></script>
+
+    <!-- Core Configuration Module - EN ÖNCE YÜKLENMELİ -->
+    <script src="/static/script-core.js?v=20260226"></script>
+
+    <!-- UI Helper Module -->
+    <script src="/static/script-ui.js?v=20260226"></script>
+
+    <!-- History Management Module -->
+    <script src="/static/script-history.js?v=20260226"></script>
+
+    <!-- Anomaly Analysis Module -->
+    <script src="/static/script-anomaly.js?v=20260226"></script>
+    <script src="/static/script-performance.js?v=20260226"></script>
+    <script src="/static/script-ml-visualization.js?v=20260226"></script>
+    <!-- ML Panel Module -->
+    <script src="/static/script-ml-panel.js?v=20260226"></script>
+
+    <!-- Log Filter & Grouping Module -->
+    <script src="/static/script-log-filter.js?v=20260226"></script>
+
+    <!-- DBA Explorer Module -->
+    <script src="/static/script-dba-explorer.js?v=20260226"></script>
+
+    <!-- Prediction Dashboard Module -->
+    <script src="/static/script-prediction.js?v=20260226"></script>
+
+    <script src="/static/script.js?v=20260226"></script>
+</body>
+</html>

@@ -416,6 +416,7 @@ UPLOAD_DIR = Path("temp_logs")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # Static dosyaları servis et
+app.mount("/static_demo", StaticFiles(directory="web_ui/static_demo"), name="static_demo")
 app.mount("/static", StaticFiles(directory="web_ui/static"), name="static")
 
 # Ana sayfa
@@ -423,6 +424,13 @@ app.mount("/static", StaticFiles(directory="web_ui/static"), name="static")
 async def home():
     """Ana sayfa"""
     with open("web_ui/static/index.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+# Demo UI sayfası (production UI'ya dokunmaz)
+@app.get("/demo", response_class=HTMLResponse)
+async def demo_home():
+    """Demo UI - hassas veriler maskelenmiş hali"""
+    with open("web_ui/static_demo/demo-index.html", "r", encoding="utf-8") as f:
         return f.read()
 
 # API Endpoints
