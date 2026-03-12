@@ -22,14 +22,20 @@
     var DEMO_HOST_POOLS = {
         prod:  [],
         stage: [],
-        test:  []
+        test:  [],
+        sql_prod: [],
+        sql_test: []
     };
     var i;
-    for (i = 1; i <= 5; i++) DEMO_HOST_POOLS.prod.push('mongo-prod-node-' + String(i).padStart(2, '0'));
-    for (i = 1; i <= 3; i++) DEMO_HOST_POOLS.stage.push('mongo-stage-node-' + String(i).padStart(2, '0'));
-    for (i = 1; i <= 3; i++) DEMO_HOST_POOLS.test.push('mongo-test-node-' + String(i).padStart(2, '0'));
+    for (i = 1; i <= 15; i++) DEMO_HOST_POOLS.prod.push('mongo-prod-node-' + String(i).padStart(2, '0'));
+    for (i = 1; i <= 5; i++) DEMO_HOST_POOLS.stage.push('mongo-stage-node-' + String(i).padStart(2, '0'));
+    for (i = 1; i <= 5; i++) DEMO_HOST_POOLS.test.push('mongo-test-node-' + String(i).padStart(2, '0'));
+    for (i = 1; i <= 40; i++) DEMO_HOST_POOLS.sql_prod.push('sql-prod-node-' + String(i).padStart(2, '0'));
+    for (i = 1; i <= 5; i++) DEMO_HOST_POOLS.sql_test.push('sql-test-node-' + String(i).padStart(2, '0'));
 
-    var ALL_DEMO_HOSTS = DEMO_HOST_POOLS.prod.concat(DEMO_HOST_POOLS.stage, DEMO_HOST_POOLS.test);
+    var ALL_DEMO_HOSTS = DEMO_HOST_POOLS.prod
+        .concat(DEMO_HOST_POOLS.stage, DEMO_HOST_POOLS.test,
+                DEMO_HOST_POOLS.sql_prod, DEMO_HOST_POOLS.sql_test);
 
     // Demo isimlerini hızlı lookup için Set'e al
     var _demoHostSet = {};
@@ -39,9 +45,56 @@
     // 2) Sabit override mapping (bilinen hostlar)
     // ============================================================
     var OVERRIDE_MAP = {
+        // ── MongoDB hostları ──
         'ecaztrdbmng015': 'mongo-prod-node-01',
         'ecaztrdbmng014': 'mongo-prod-node-02',
-        'pplazmongodbn3': 'mongo-prod-node-03'
+        'ecaztrdbmng013': 'mongo-prod-node-03',
+        'pplazmongodbn3': 'mongo-prod-node-04',
+        'pplazmongodbn2': 'mongo-prod-node-05',
+        'pplmongodbn1':   'mongo-prod-node-06',
+        'pplmongodbn2':   'mongo-prod-node-07',
+        'pplmongodbn3':   'mongo-prod-node-08',
+        'testmongodb01':  'mongo-test-node-01',
+        'testmongodb02':  'mongo-test-node-02',
+        'testmongodb03':  'mongo-test-node-03',
+        // ── MSSQL hostları ──
+        'lcwsql15n1':     'sql-prod-node-01',
+        'testoltp2':      'sql-test-node-01',
+        'eislemdb3':      'sql-prod-node-02',
+        'growae':         'sql-prod-node-03',
+        'sqlgrw07n1':     'sql-prod-node-04',
+        'lcwsql16n2':     'sql-prod-node-05',
+        'lcwsql25n1':     'sql-prod-node-06',
+        'lcwsql09n1':     'sql-prod-node-07',
+        'lcwsql08n1':     'sql-prod-node-08',
+        'lcwlogopluster': 'sql-prod-node-09',
+        'sqloltpn1':      'sql-prod-node-10',
+        'peo1':           'sql-prod-node-11',
+        'lcwsql18n1':     'sql-prod-node-12',
+        'lcwsql20n2':     'sql-prod-node-13',
+        'lcwsql22n1':     'sql-prod-node-14',
+        'lcwsql13n1':     'sql-prod-node-15',
+        'lcwsql25n2':     'sql-prod-node-16',
+        'lcwsql21n2':     'sql-prod-node-17',
+        'axr3intprddbn1': 'sql-prod-node-18',
+        'ydsqldb2':       'sql-prod-node-19',
+        'sp19dbn1':       'sql-prod-node-20',
+        'saperpintegdbn1':'sql-prod-node-21',
+        'lcwsql02n1':     'sql-prod-node-22',
+        'odsdbn1':        'sql-prod-node-23',
+        'lcwsql21n1':     'sql-prod-node-24',
+        'lcwsql14n1':     'sql-prod-node-25',
+        'ikdwhn2':        'sql-prod-node-26',
+        'lcwsql19n1':     'sql-prod-node-27',
+        'lcwsql07n1':     'sql-prod-node-28',
+        'ydsqldb1':       'sql-prod-node-29',
+        'lcwlogodbn4':    'sql-prod-node-30',
+        'lcwsql20n1':     'sql-prod-node-31',
+        'lcwsql22n2':     'sql-prod-node-32',
+        'lcwsql05n1':     'sql-prod-node-33',
+        'sqldb1':         'sql-prod-node-34',
+        'axhqerpprddb01': 'sql-prod-node-35',
+        'sqlgrw01n1':     'sql-prod-node-36'
     };
 
     // Reverse map: demo -> real (çift maskeleme önleme)
@@ -191,7 +244,14 @@
     var BRAND_REPLACEMENTS = [
         [/LCWGPT/g, 'AI Assistant'],
         [/LC Waikiki/gi, 'Demo'],
-        [/lcw-test-\d+/gi, 'demo-api-key']
+        [/lcw-test-\d+/gi, 'demo-api-key'],
+        // FQDN domain suffix'lerini kaldır (hostname zaten maskelenmiş olacak)
+        [/\.lcwecomtr\.com/gi, '.demo.local'],
+        [/\.lcwaikiki\.local/gi, '.demo.local'],
+        [/\.Icwecomtr\.com/gi, '.demo.local'],
+        [/\.Icwaikiki\.local/gi, '.demo.local'],
+        [/lcwecomtr\.com/gi, 'demo.local'],
+        [/lcwaikiki\.local/gi, 'demo.local']
     ];
 
     // ── Geliştirilmiş maskText: hostname + IP + marka maskeleme ──
