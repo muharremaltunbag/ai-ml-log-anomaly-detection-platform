@@ -133,6 +133,69 @@
         'server_id', 'serverId', 'node', 'node_name'
     ];
 
+    // ── Model path maskeleme ──
+    var PATH_FIELDS = [
+        'model_path', 'modelPath', 'model_file', 'modelFile',
+        'file_path', 'filePath', 'config_path', 'configPath'
+    ];
+    var MASKED_PATH_LABEL = 'server-specific model file';
+
+    function maskModelPath(val) {
+        if (!val || typeof val !== 'string') return val;
+        // Dosya yolu gibi görünüyorsa maskele
+        if (val.indexOf('/') !== -1 || val.indexOf('\\') !== -1) {
+            return MASKED_PATH_LABEL;
+        }
+        return val;
+    }
+
+    // ── Client IP maskeleme ──
+    var IP_FIELDS = ['client_ip', 'clientIp', 'ip_address', 'ipAddress', 'ip', 'source_ip'];
+    var _ipMap = {};
+    var _ipCounter = 1;
+    // IP regex: x.x.x.x pattern
+    var IP_REGEX = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g;
+
+    function maskIp(ip) {
+        if (!ip || typeof ip !== 'string') return ip;
+        var key = ip.trim();
+        if (_ipMap[key]) return _ipMap[key];
+        _ipMap[key] = '10.0.0.' + _ipCounter;
+        _ipCounter++;
+        return _ipMap[key];
+    }
+
+    function maskIpsInText(text) {
+        if (!text || typeof text !== 'string') return text;
+        return text.replace(IP_REGEX, function (match) {
+            return maskIp(match);
+        });
+    }
+
+    // ── Username maskeleme ──
+    var USER_FIELDS = ['username', 'userName', 'user', 'db_user', 'dbUser'];
+    var _userMap = {};
+    var _userCounter = 1;
+
+    function maskUsername(name) {
+        if (!name || typeof name !== 'string') return name;
+        var key = name.trim().toLowerCase();
+        if (!key || key === 'unknown' || key === 'n/a') return name;
+        if (_userMap[key]) return _userMap[key];
+        _userMap[key] = 'demo-user-' + String(_userCounter).padStart(2, '0');
+        _userCounter++;
+        return _userMap[key];
+    }
+
+    // ── Geliştirilmiş maskText: hostname + IP maskeleme ──
+    var _origMaskText = maskText;
+    maskText = function (text) {
+        if (!text || typeof text !== 'string') return text;
+        var result = _origMaskText(text);
+        result = maskIpsInText(result);
+        return result;
+    };
+
     function maskJsonDeep(obj) {
         if (obj === null || obj === undefined) return obj;
         if (typeof obj === 'string') return maskText(obj);
@@ -148,11 +211,24 @@
                 var k = objKeys[ki];
                 var val = obj[k];
                 if (typeof val === 'string') {
+                    // Model path alanları → tamamen maskele
+                    if (PATH_FIELDS.indexOf(k) !== -1) {
+                        obj[k] = maskModelPath(val);
+                    }
+                    // IP alanları → demo IP
+                    else if (IP_FIELDS.indexOf(k) !== -1) {
+                        obj[k] = maskIp(val);
+                    }
+                    // Username alanları → demo-user
+                    else if (USER_FIELDS.indexOf(k) !== -1) {
+                        obj[k] = maskUsername(val);
+                    }
                     // Hostname alanları → maskHostname (tam eşleşme)
-                    if (HOST_FIELDS.indexOf(k) !== -1) {
+                    else if (HOST_FIELDS.indexOf(k) !== -1) {
                         obj[k] = maskHostname(val);
-                    } else {
-                        // Diğer string alanları → maskText (metin içi tarama)
+                    }
+                    // Diğer string alanları → maskText (metin içi tarama)
+                    else {
                         obj[k] = maskText(val);
                     }
                 } else if (typeof val === 'object' && val !== null) {
@@ -272,16 +348,28 @@
         });
     }
 
+    // Dosya yolu pattern'i: /xxx/yyy veya C:\xxx\yyy
+    var PATH_LIKE_REGEX = /(?:\/[\w.-]+){2,}|(?:[A-Z]:\\[\w.-]+){2,}/;
+
     function maskDomNode(node, re) {
         if (!node) return;
 
         // Text node
         if (node.nodeType === 3) {
             var val = node.nodeValue;
-            if (val && re.test(val)) {
+            if (!val) return;
+            var changed = false;
+            if (re.test(val)) {
                 re.lastIndex = 0;
-                node.nodeValue = maskText(val);
+                val = maskText(val);
+                changed = true;
             }
+            if (IP_REGEX.test(val)) {
+                IP_REGEX.lastIndex = 0;
+                val = maskIpsInText(val);
+                changed = true;
+            }
+            if (changed) node.nodeValue = val;
             return;
         }
 
@@ -290,20 +378,54 @@
             var tag = node.tagName;
             if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return;
 
-            // data-server, title, value attribute'larını maskele
+            // ── .model-path class'lı elementler → path maskeleme ──
+            if (node.classList && node.classList.contains('model-path')) {
+                // title attribute'taki tam path'i maskele
+                if (node.getAttribute('title')) {
+                    node.setAttribute('title', MASKED_PATH_LABEL);
+                }
+                // Görünür text'i de maskele
+                if (node.textContent && PATH_LIKE_REGEX.test(node.textContent)) {
+                    node.textContent = MASKED_PATH_LABEL;
+                }
+            }
+
+            // ── data-server, title, value attribute'larını maskele ──
             var attrs = ['data-server', 'title', 'value'];
             for (var ai = 0; ai < attrs.length; ai++) {
                 var attrVal = node.getAttribute && node.getAttribute(attrs[ai]);
-                if (attrVal && re.test(attrVal)) {
+                if (!attrVal) continue;
+
+                var attrChanged = false;
+                // Dosya yolu içeren title → maskele
+                if (attrs[ai] === 'title' && PATH_LIKE_REGEX.test(attrVal)) {
+                    attrVal = MASKED_PATH_LABEL;
+                    attrChanged = true;
+                }
+                if (re && re.test(attrVal)) {
                     re.lastIndex = 0;
-                    node.setAttribute(attrs[ai], maskText(attrVal));
+                    attrVal = maskText(attrVal);
+                    attrChanged = true;
+                }
+                if (IP_REGEX.test(attrVal)) {
+                    IP_REGEX.lastIndex = 0;
+                    attrVal = maskIpsInText(attrVal);
+                    attrChanged = true;
+                }
+                if (attrChanged) node.setAttribute(attrs[ai], attrVal);
+            }
+
+            // ── #mlModelFilePath elementi → path maskeleme ──
+            if (node.id === 'mlModelFilePath' && node.textContent) {
+                if (PATH_LIKE_REGEX.test(node.textContent) || node.textContent.indexOf('.pkl') !== -1 || node.textContent.indexOf('.joblib') !== -1) {
+                    node.textContent = MASKED_PATH_LABEL;
                 }
             }
 
             // option.textContent (select dropdown)
             if (tag === 'OPTION' && node.textContent) {
                 var optText = node.textContent;
-                if (re.test(optText)) {
+                if (re && re.test(optText)) {
                     re.lastIndex = 0;
                     node.textContent = maskText(optText);
                     if (node.value && re.test(node.value)) {
@@ -335,25 +457,31 @@
         maskHostname: maskHostname,
         maskText: maskText,
         maskJsonDeep: maskJsonDeep,
+        maskModelPath: maskModelPath,
+        maskIp: maskIp,
+        maskUsername: maskUsername,
         getMapping: function () {
             var merged = {};
             Object.keys(OVERRIDE_MAP).forEach(function (k) { merged[k] = OVERRIDE_MAP[k]; });
             Object.keys(_dynamicMap).forEach(function (k) { merged[k] = _dynamicMap[k]; });
             return merged;
         },
+        getIpMapping: function () { return Object.assign({}, _ipMap); },
+        getUserMapping: function () { return Object.assign({}, _userMap); },
         addOverride: function (realHost, demoHost) {
             OVERRIDE_MAP[realHost.toLowerCase()] = demoHost;
             _reverseMap[demoHost] = realHost.toLowerCase();
-            _cachedRegex = null; // regex yeniden derlenecek
+            _cachedRegex = null;
         },
         DEMO_HOST_POOLS: DEMO_HOST_POOLS,
         ALL_DEMO_HOSTS: ALL_DEMO_HOSTS,
+        MASKED_PATH_LABEL: MASKED_PATH_LABEL,
         isActive: function () {
             return window.DEMO_MODE === true;
         }
     };
 
     console.log('[DemoMasking] Demo mode aktif — 3 katmanli koruma.');
-    console.log('[DemoMasking] Override mapping:', JSON.stringify(OVERRIDE_MAP));
+    console.log('[DemoMasking] Maskeleme: hostname + model_path + client_ip + username');
     console.log('[DemoMasking] Koruma: fetch interceptor + escapeHtml wrapper + MutationObserver');
 })();
