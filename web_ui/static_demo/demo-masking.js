@@ -525,6 +525,25 @@
         }
     };
 
+    // ============================================================
+    // 9) Demo API key injection
+    //    HTML kaynağında API key görünmez, runtime'da inject edilir
+    // ============================================================
+    var DEMO_API_KEY = 'lcw-test-2024';
+
+    function injectApiKey() {
+        var input = document.getElementById('apiKey');
+        if (input && !input.value) {
+            input.value = DEMO_API_KEY;
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', injectApiKey);
+    } else {
+        injectApiKey();
+    }
+
     console.log('[DemoMasking] Demo mode aktif — 3 katmanli koruma.');
     console.log('[DemoMasking] Maskeleme: hostname + model_path + client_ip + username');
     console.log('[DemoMasking] Koruma: fetch interceptor + escapeHtml wrapper + MutationObserver');
