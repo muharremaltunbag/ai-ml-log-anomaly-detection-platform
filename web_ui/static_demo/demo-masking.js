@@ -187,12 +187,22 @@
         return _userMap[key];
     }
 
-    // ── Geliştirilmiş maskText: hostname + IP maskeleme ──
+    // ── Marka/şirket metin maskeleme ──
+    var BRAND_REPLACEMENTS = [
+        [/LCWGPT/g, 'AI Assistant'],
+        [/LC Waikiki/gi, 'Demo'],
+        [/lcw-test-\d+/gi, 'demo-api-key']
+    ];
+
+    // ── Geliştirilmiş maskText: hostname + IP + marka maskeleme ──
     var _origMaskText = maskText;
     maskText = function (text) {
         if (!text || typeof text !== 'string') return text;
         var result = _origMaskText(text);
         result = maskIpsInText(result);
+        for (var bi = 0; bi < BRAND_REPLACEMENTS.length; bi++) {
+            result = result.replace(BRAND_REPLACEMENTS[bi][0], BRAND_REPLACEMENTS[bi][1]);
+        }
         return result;
     };
 
@@ -385,7 +395,7 @@
             var val = node.nodeValue;
             if (!val) return;
             var changed = false;
-            if (re.test(val)) {
+            if (re && re.test(val)) {
                 re.lastIndex = 0;
                 val = maskText(val);
                 changed = true;
@@ -394,6 +404,14 @@
                 IP_REGEX.lastIndex = 0;
                 val = maskIpsInText(val);
                 changed = true;
+            }
+            // Marka metinleri
+            for (var bri = 0; bri < BRAND_REPLACEMENTS.length; bri++) {
+                if (BRAND_REPLACEMENTS[bri][0].test(val)) {
+                    BRAND_REPLACEMENTS[bri][0].lastIndex = 0;
+                    val = val.replace(BRAND_REPLACEMENTS[bri][0], BRAND_REPLACEMENTS[bri][1]);
+                    changed = true;
+                }
             }
             if (changed) node.nodeValue = val;
             return;
