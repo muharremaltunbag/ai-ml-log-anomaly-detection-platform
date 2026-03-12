@@ -196,6 +196,19 @@
         return result;
     };
 
+    // Object key'lerin hostname olup olmadığını test eden heuristik:
+    // Bilinen override'lar + dynamic map + hostname pattern (alfanumerik, 6+ char)
+    var HOSTNAME_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9._-]{5,}$/;
+
+    function _isLikelyHostnameKey(key) {
+        if (OVERRIDE_MAP[key.toLowerCase()]) return true;
+        if (_dynamicMap[key.toLowerCase()]) return true;
+        // hostStates gibi object'lerde key'ler genellikle hostname'dir
+        // güvenli heuristik: alfanumerik, 6+ karakter, sayı içermeli
+        if (HOSTNAME_KEY_PATTERN.test(key) && /\d/.test(key)) return true;
+        return false;
+    }
+
     function maskJsonDeep(obj) {
         if (obj === null || obj === undefined) return obj;
         if (typeof obj === 'string') return maskText(obj);
@@ -207,34 +220,47 @@
         }
         if (typeof obj === 'object') {
             var objKeys = Object.keys(obj);
+            var renamedKeys = []; // key rename'leri topla, sonra uygula
+
             for (var ki = 0; ki < objKeys.length; ki++) {
                 var k = objKeys[ki];
                 var val = obj[k];
+
+                // ── Value maskeleme ──
                 if (typeof val === 'string') {
-                    // Model path alanları → tamamen maskele
                     if (PATH_FIELDS.indexOf(k) !== -1) {
                         obj[k] = maskModelPath(val);
-                    }
-                    // IP alanları → demo IP
-                    else if (IP_FIELDS.indexOf(k) !== -1) {
+                    } else if (IP_FIELDS.indexOf(k) !== -1) {
                         obj[k] = maskIp(val);
-                    }
-                    // Username alanları → demo-user
-                    else if (USER_FIELDS.indexOf(k) !== -1) {
+                    } else if (USER_FIELDS.indexOf(k) !== -1) {
                         obj[k] = maskUsername(val);
-                    }
-                    // Hostname alanları → maskHostname (tam eşleşme)
-                    else if (HOST_FIELDS.indexOf(k) !== -1) {
+                    } else if (HOST_FIELDS.indexOf(k) !== -1) {
                         obj[k] = maskHostname(val);
-                    }
-                    // Diğer string alanları → maskText (metin içi tarama)
-                    else {
+                    } else {
                         obj[k] = maskText(val);
                     }
                 } else if (typeof val === 'object' && val !== null) {
                     obj[k] = maskJsonDeep(val);
                 }
+
+                // ── Key maskeleme (hostname olarak kullanılan key'ler) ──
+                if (_isLikelyHostnameKey(k)) {
+                    var maskedKey = maskHostname(k);
+                    if (maskedKey !== k) {
+                        renamedKeys.push({ oldKey: k, newKey: maskedKey });
+                    }
+                }
             }
+
+            // Key rename'leri uygula
+            for (var ri = 0; ri < renamedKeys.length; ri++) {
+                var rk = renamedKeys[ri];
+                if (!obj.hasOwnProperty(rk.newKey)) {
+                    obj[rk.newKey] = obj[rk.oldKey];
+                    delete obj[rk.oldKey];
+                }
+            }
+
             return obj;
         }
         return obj;
