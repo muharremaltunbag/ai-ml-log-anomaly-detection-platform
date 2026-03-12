@@ -279,9 +279,31 @@
     // Orijinal fetch'i sakla ve intercept et
     var _originalFetch = window.fetch;
 
+    // Outgoing request'lerde maskelenmiş değerleri geri çevir
+    function _restoreRequestUrl(url) {
+        if (typeof url !== 'string') return url;
+        // demo-api-key → gerçek key (API auth için)
+        return url.replace(/api_key=demo-api-key/gi, 'api_key=' + DEMO_API_KEY);
+    }
+
+    function _restoreRequestBody(body) {
+        if (!body || typeof body !== 'string') return body;
+        return body.replace(/demo-api-key/gi, DEMO_API_KEY);
+    }
+
     window.fetch = function demoFetch(input, init) {
+        // ── Outgoing: maskelenmiş key'leri geri çevir ──
+        if (typeof input === 'string') {
+            input = _restoreRequestUrl(input);
+        } else if (input && input.url) {
+            input = new Request(_restoreRequestUrl(input.url), input);
+        }
+        if (init && init.body && typeof init.body === 'string') {
+            init = Object.assign({}, init, { body: _restoreRequestBody(init.body) });
+        }
+
         return _originalFetch.call(this, input, init).then(function (response) {
-            // Sadece API endpoint'lerini yakala
+            // ── Incoming: API response'larını maskele ──
             var url = (typeof input === 'string') ? input : (input && input.url ? input.url : '');
             if (url.indexOf('/api/') === -1) return response;
 
