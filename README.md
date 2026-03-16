@@ -1,276 +1,670 @@
-# MongoDB Anomaly Detection Platform
+﻿[English](README.md) | [Türkçe](README.tr.md)
 
-ML-powered database log anomaly detection and early-warning system.
-Reads **MongoDB**, **MSSQL**, and **Elasticsearch** logs from OpenSearch, detects anomalies with IsolationForest, predicts trends, and shows everything in a web dashboard.
+# AI / ML Log Anomaly Detection Platform
 
-**Bu proje nedir?**
-OpenSearch'ten MongoDB/MSSQL/Elasticsearch loglarını okur, IsolationForest ile anomali tespit eder, trend/rate/forecast tahminleri üretir ve sonuçları web arayüzünde gösterir.
+AI- and ML-powered platform for log anomaly detection, forecasting, and LLM-assisted operational analysis across MongoDB, MSSQL, and Elasticsearch.
 
----
+## Overview
 
-## Features
+Modern systems produce enormous volumes of logs, but most of that data is never interpreted in a proactive, operationally useful way. In practice, incidents are often detected too late, investigated from the wrong layer, or hidden inside noisy, fragmented log streams.
 
-- **Multi-source:** MongoDB, MSSQL, Elasticsearch log analysis from OpenSearch
-- **ML detection:** IsolationForest + ensemble rules + online learning
-- **Prediction:** Trend detection, rate alerting, time-series forecasting
-- **AI explanations:** OpenAI or custom LLM endpoint integration
-- **Scheduler:** Automated periodic analysis
-- **Web UI:** Dashboard with Prediction Studio, DBA Explorer, ML visualization
-- **Config-driven:** Everything via `.env` and JSON config files — no hardcoded secrets
+This project was built to solve that problem.
 
-## Architecture
+Instead of treating logs as static text that must be manually scanned, the platform converts operational logs into structured signals, analyzes them with machine learning, estimates short-term risk direction, and presents the results through a unified web interface. The goal is not just to say that an anomaly exists, but to help answer:
 
-```
-OpenSearch ──→ Log Reader ──→ Feature Engineer ──→ IsolationForest
-                                                        │
-                                          ┌─────────────┼──────────────┐
-                                          ▼             ▼              ▼
-                                    Trend Analyzer  Rate Alert    Forecaster
-                                          │             │              │
-                                          └─────────────┼──────────────┘
-                                                        ▼
-                                               StorageManager
-                                            (MongoDB or JSON)
-                                                        │
-                                                        ▼
-                                               Web UI + API
-```
+- what is happening,
+- where it is concentrated,
+- how severe it is,
+- whether it is getting worse,
+- and what it likely means operationally.
+
+This is not a single-source script or a narrow anomaly detector. It is a modular, multi-source observability and anomaly analysis platform designed to support:
+
+- **MongoDB**
+- **MSSQL**
+- **Elasticsearch**
+
+all within one shared analysis pipeline.
 
 ---
 
-## Quick Start
+## Why This Project Exists
 
-### Prerequisites
+When something goes wrong in a large environment, one of two things usually happens:
 
-- Python 3.10+
-- OpenSearch instance (data source)
-- MongoDB (optional — falls back to JSON file storage)
+1. the issue is noticed too late, or
+2. the investigation starts in the wrong place.
 
-### 1. Clone and install
+The root problem is rarely the absence of logs. In most systems, there are already too many logs. The real difficulty is identifying which signals matter before they grow into larger operational problems.
+
+This project was created to make operational data:
+
+- more readable,
+- more interpretable,
+- more predictable,
+- and more actionable.
+
+The design therefore goes beyond anomaly detection alone. The platform combines:
+
+- log ingestion,
+- source-aware parsing,
+- feature engineering,
+- anomaly detection,
+- trend analysis,
+- rate-based alerting,
+- forecasting,
+- AI-assisted explanation,
+- storage/history,
+- and scheduler-driven orchestration.
+
+---
+
+## What the Platform Does
+
+At a high level, the platform does five things:
+
+1. **Collects logs from multiple technologies into one platform**
+2. **Detects unusual behavior with machine learning**
+3. **Surfaces risk without requiring constant manual inspection**
+4. **Estimates near-term direction through forecasting**
+5. **Explains results in natural language for faster investigation**
+
+In technical terms, this is a **multi-source anomaly detection and forecasting platform**.
+
+In day-to-day use, its value is simpler:
+
+- it gives an earlier signal before a problem grows,
+- it shows where the issue is concentrated,
+- it makes temporal escalation easier to see,
+- and it helps turn noisy logs into understandable operational context.
+
+---
+
+## Supported Sources
+
+The platform currently supports:
+
+- **MongoDB**
+- **MSSQL**
+- **Elasticsearch**
+
+The architecture is intentionally modular, so additional sources can be added by following the same pattern:
+
+- source-specific reader,
+- source-specific feature engineering,
+- source-specific detector,
+- shared prediction layer,
+- shared storage/history,
+- shared API/UI integration.
+
+---
+
+## Core Features
+
+### 1. Multi-source log analysis
+
+Logs from different systems are read through source-aware readers and normalized into a shared analysis flow.
+
+### 2. Machine learning-based anomaly detection
+
+The platform uses **Isolation Forest** as the core anomaly detection model and manages models at the **per-server** level, preserving behavioral context instead of forcing all hosts into one universal profile.
+
+### 3. Prediction layer
+
+The platform does not stop at current anomalies. It also provides:
+
+- **trend detection**
+- **rate-based alerting**
+- **short-term forecasting**
+
+This makes it possible to analyze both current deviation and likely direction.
+
+### 4. AI-assisted interpretation
+
+Findings can be translated into natural language through LLM integration, making raw ML results easier to understand and act on.
+
+### 5. Historical context and adaptive behavior
+
+The system preserves historical context and supports adaptive behavior over time through:
+
+- historical buffers,
+- incremental learning structures,
+- mini-model / ensemble-style updates,
+- feature alignment and schema stabilization.
+
+### 6. Unified web interface
+
+A FastAPI backend and Vanilla JavaScript frontend provide one interface for:
+
+- anomaly analysis,
+- prediction dashboards,
+- risk views,
+- scheduler controls,
+- historical analysis,
+- ML metrics and visualizations,
+- alert drill-down,
+- and operational context panels.
+
+---
+
+## High-Level Architecture
+
+The platform is built as a layered system rather than a single model wrapped in an API.
+
+### Main layers
+
+1. **Log ingestion**
+2. **Source-aware parsing**
+3. **Feature engineering**
+4. **Anomaly detection**
+5. **Prediction layer**
+6. **AI explanation**
+7. **Storage and history**
+8. **Scheduler / orchestration**
+
+### Data flow
+
+```text
+User
+  â†’ Web UI / API
+  â†’ Analysis Orchestrator
+  â†’ Source-specific Reader
+  â†’ Feature Engineering
+  â†’ Anomaly Detection
+  â†’ Prediction Layer
+  â†’ AI Explanation
+  â†’ Storage / History
+```
+
+### Operational structure
+
+```text
+Logs (MongoDB / MSSQL / Elasticsearch)
+  â†’ OpenSearch
+  â†’ Reader layer
+  â†’ Feature engineering
+  â†’ ML anomaly detection
+  â†’ Trend / rate / forecast checks
+  â†’ AI explanation
+  â†’ Storage + API response
+  â†’ Web UI / dashboards
+```
+
+---
+
+## Repository Structure
+
+```text
+.
+â”œâ”€â”€ config/                     # Configuration files
+â”œâ”€â”€ docs/                       # Documentation and transfer notes
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ agents/                 # Query / LLM-related agent logic
+â”‚   â”œâ”€â”€ anomaly/                # Readers, features, detectors, forecasting
+â”‚   â”œâ”€â”€ connectors/             # LLM and database connectors
+â”‚   â”œâ”€â”€ monitoring/             # Monitoring helpers
+â”‚   â”œâ”€â”€ performance/            # Performance analysis tools
+â”‚   â””â”€â”€ storage/                # Storage manager, history, fallback logic
+â”œâ”€â”€ tests/                      # Test suite
+â”œâ”€â”€ web_ui/
+â”‚   â”œâ”€â”€ api.py                  # FastAPI backend
+â”‚   â””â”€â”€ static/                 # Frontend assets
+â”œâ”€â”€ Dockerfile
+â”œâ”€â”€ docker-compose.yml
+â”œâ”€â”€ main.py
+â””â”€â”€ requirements.txt
+```
+
+---
+
+## Technical Breakdown
+
+## Log Readers
+
+The platform reads logs from OpenSearch using source-specific readers.
+
+| Source        | Reader Layer                  | Purpose                                                                  |
+| ------------- | ----------------------------- | ------------------------------------------------------------------------ |
+| MongoDB       | `log_reader.py`               | Reads MongoDB logs, supports structured and text-like ingestion patterns |
+| MSSQL         | `mssql_log_reader.py`         | Reads MSSQL-related logs through source-aware parsing                    |
+| Elasticsearch | `elasticsearch_log_reader.py` | Reads Elasticsearch operational logs and source-specific patterns        |
+
+---
+
+## Feature Engineering
+
+A raw log line is not directly usable by a machine learning model. The system therefore transforms logs into structured signals.
+
+### Feature categories include:
+
+- **time signals**
+  - hour of day
+  - weekday/weekend
+  - inter-arrival timing
+  - burst density
+
+- **operational flags**
+  - authentication failures
+  - slow queries
+  - scans
+  - transactions
+  - memory issues
+  - restarts
+  - replication-related signals
+  - source-specific operational markers
+
+- **numeric weight**
+  - durations
+  - counts
+  - volume indicators
+  - severity measures
+  - source-specific performance metrics
+
+- **component context**
+  - subsystem or component source
+  - rare component behavior
+  - message fingerprint repetition
+  - concentration patterns
+
+- **schema stabilization**
+  - feature alignment
+  - missing-column handling
+  - consistent ordering and typing
+
+This allows the model to see not just message text, but behavioral patterns.
+
+---
+
+## Anomaly Detection Engine
+
+The core anomaly detection model is based on **scikit-learn IsolationForest**.
+
+### Design principles
+
+- **per-server context**
+  - one model should not represent all hosts equally
+
+- **feature scaling**
+  - numeric fields are standardized before model use
+
+- **incremental behavior**
+  - mini-batch or ensemble-style logic helps absorb newer behavior
+
+- **critical override layer**
+  - statistically "normal" does not always mean operationally safe
+
+- **severity scoring**
+  - anomalies are prioritized rather than returned as an undifferentiated list
+
+### Severity scoring combines
+
+- ML anomaly score
+- component criticality
+- operational feature flags
+- time context
+- rule-based override results
+
+The goal is not only detection, but prioritization.
+
+---
+
+## Historical Buffer and Adaptive Modeling
+
+The platform does not start every cycle from zero.
+
+### Historical buffer
+
+Past features, anomaly scores, and prior results are preserved and aligned before new analysis. This gives the model context beyond the current batch.
+
+### Adaptive behavior
+
+The system supports a more flexible structure than one static model retrained forever. New behavior can be absorbed through incremental or mini-model style updates.
+
+This matters in operational environments where log distributions drift over time.
+
+---
+
+## Critical Rule Layer
+
+Pure anomaly logic is not enough in production.
+
+Some events are operationally important even if they are not statistically rare. For that reason, the platform includes a rule-based critical override layer.
+
+Examples of operationally important behavior may include:
+
+- severe memory issues
+- large scans
+- critical system failures
+- replication-related risk
+- high-impact security events
+- long transactions
+- repeated error bursts
+
+This layer complements the model instead of replacing it.
+
+---
+
+## Prediction Layer
+
+One of the most important parts of the platform is that it does not only describe the present. It also estimates short-term direction.
+
+The prediction layer combines:
+
+- **trend detection**
+- **rate-based alerting**
+- **forecasting**
+
+### Forecasting strategy
+
+The forecasting engine uses a tiered approach depending on available history.
+
+| Data availability | Strategy                       |
+| ----------------- | ------------------------------ |
+| Under 5 points    | Direction only                 |
+| 5â€“9 points        | Weighted moving average        |
+| 10â€“19 points      | Linear regression              |
+| 20+ points        | EWMA-based trend decomposition |
+
+### Forecast outputs may include:
+
+- confidence score
+- upper/lower bounds
+- volatility
+- trend explanation
+- recommendation field
+
+### Why this matters
+
+Anomaly detection shows current deviation.
+
+Forecasting helps answer:
+
+- is the situation stabilizing?
+- is it escalating?
+- is the short-term risk rising?
+- which metric is moving toward a more dangerous state?
+
+---
+
+### AI / LLM Layer
+
+The platform supports AI-assisted explanation on top of anomaly and prediction outputs.
+
+This layer helps convert:
+
+- raw scores,
+- feature patterns,
+- source-specific findings,
+- and prediction context
+
+into natural-language summaries that are easier to interpret operationally.
+
+### Typical goals of the AI layer
+
+- summarize key findings
+- explain likely operational meaning
+- suggest immediate checks or actions
+- provide a clearer narrative for investigation
+
+The project supports both:
+
+- OpenAI-compatible LLM usage
+- custom LLM endpoint integration
+
+---
+
+### Storage and History
+
+The storage layer preserves analysis outputs and makes them reusable.
+
+### Responsibilities include:
+
+- saving anomaly analysis results
+- storing prediction alerts and summaries
+- retaining model metadata
+- preserving history for later comparison
+- providing fallback storage paths when needed
+
+This makes the platform useful not just for one-time analysis, but for ongoing operational workflows.
+
+---
+
+## Scheduler and Orchestration
+
+The platform can run as a repeatable operational process rather than only as a manually triggered script.
+
+### Orchestration safeguards include:
+
+- interval control
+- cooldown handling
+- overlap protection
+- concurrency limits
+- host-level tracking
+
+This helps make the platform usable in production-like recurring analysis scenarios.
+
+---
+
+## Technology Stack
+
+### Backend
+
+- Python
+- FastAPI
+- Uvicorn
+
+### Machine Learning
+
+- scikit-learn
+- pandas
+- numpy
+- joblib
+
+### Storage / Data
+
+- MongoDB
+- OpenSearch
+
+### Frontend
+
+- Vanilla JavaScript
+- HTML
+- CSS
+- Chart.js
+
+### AI / LLM
+
+- OpenAI-compatible models
+- custom LLM endpoint support
+
+### Deployment
+
+- Docker
+- docker-compose
+
+---
+
+## Main Functional Areas
+
+### Anomaly Detection
+
+Detects anomalies from MongoDB, MSSQL, and Elasticsearch log streams.
+
+### Prediction Studio
+
+Provides trend analysis, rate alerting, forecasting, and risk context views.
+
+### Analysis History
+
+Stores and retrieves prior analysis results.
+
+### Scheduler Controls
+
+Supports periodic automated workflows.
+
+### AI Explanation
+
+Generates readable summaries of technical findings.
+
+### ML Visualization
+
+Supports metrics and model-related visibility through the web UI.
+
+---
+
+## Getting Started
+
+### 1. Clone the repository
 
 ```bash
-git clone <repo-url>
-cd MongoDB-LLM-assistant
+git clone https://github.com/muharremaltunbag/ai-ml-log-anomaly-detection-platform.git
+cd ai-ml-log-anomaly-detection-platform
+```
+
+### 2. Create a virtual environment
+
+```bash
 python -m venv venv
-source venv/bin/activate   # Linux/Mac
-# venv\Scripts\activate    # Windows
-pip install -r requirements.txt
 ```
 
-### 2. Configure
+#### Windows
 
 ```bash
-cp .env.example .env
+venv\Scripts\activate
 ```
 
-Open `.env` and set at minimum:
-
-```
-OPENSEARCH_URL=https://your-opensearch:9200
-OPENSEARCH_USER=your_user
-OPENSEARCH_PASS=your_password
-API_KEY=any-random-secret-string
-```
-
-### 3. Run
+#### Linux / macOS
 
 ```bash
-uvicorn web_ui.api:app --host 127.0.0.1 --port 8000
-```
-
-Open **http://localhost:8000** in your browser.
-
-### Docker
-
-```bash
-cp .env.example .env
-# edit .env
-docker-compose up -d
-```
-
----
-
-## Hizli Kurulum (TR)
-
-```bash
-git clone <repo-url>
-cd MongoDB-LLM-assistant
-python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-
-cp .env.example .env
-# .env dosyasini duzenle (OpenSearch URL, sifre, API key)
-
-uvicorn web_ui.api:app --host 127.0.0.1 --port 8000
-# Tarayicida http://localhost:8000 ac
 ```
 
-**Minimum gerekli ayarlar:** `OPENSEARCH_URL`, `OPENSEARCH_PASS`, `API_KEY`
-**MongoDB yoksa:** Sistem otomatik olarak JSON dosya depolamaya duser.
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Create your environment file
+
+#### Linux / macOS
+
+```bash
+cp .env.example .env
+```
+
+#### Windows PowerShell
+
+```powershell
+Copy-Item .env.example .env
+```
+
+### 5. Fill in required environment variables
+
+Update `.env` with the values appropriate for your environment.
+
+Typical variables include:
+
+- `OPENSEARCH_URL`
+- `OPENSEARCH_USER`
+- `OPENSEARCH_PASS`
+- `MONGODB_URI`
+- `OPENAI_API_KEY`
+- `LLM_PROVIDER`
+- source-specific or storage-related settings
+
+### 6. Run the application
+
+Depending on your setup:
+
+```bash
+python main.py
+```
+
+or
+
+```bash
+uvicorn web_ui.api:app --reload
+```
 
 ---
 
 ## Configuration
 
-### Environment Variables (.env)
+The project is configuration-driven and avoids hardcoded credentials in the public release.
 
-| Variable | Required | Description | Default |
-|----------|----------|-------------|---------|
-| `OPENSEARCH_URL` | Yes | OpenSearch endpoint | `https://localhost:9200` |
-| `OPENSEARCH_USER` | Yes | OpenSearch username | `admin` |
-| `OPENSEARCH_PASS` | Yes | OpenSearch password | (empty) |
-| `OPENSEARCH_TENANT` | No | Multi-tenant setup | `default` |
-| `OPENSEARCH_VERIFY_SSL` | No | SSL verification | `true` |
-| `API_KEY` | Recommended | Web UI API key | (empty) |
-| `MONGODB_URI` | No | MongoDB connection | `mongodb://localhost:27017/...` |
-| `MONGODB_ENABLED` | No | Enable MongoDB storage | `true` |
-| `LLM_PROVIDER` | No | `openai` or `custom` | `openai` |
-| `OPENAI_API_KEY` | No | OpenAI API key (for AI explanations) | (empty) |
-| `CUSTOM_LLM_API_KEY` | No | Corporate LLM key | (empty) |
-| `CUSTOM_LLM_ENDPOINT` | No | Corporate LLM URL | (empty) |
-| `MONGODB_FQDN_SUFFIX` | No | FQDN suffix for short hostnames | `.local` |
-| `HOSTNAME_STRIP_SUFFIXES` | No | Suffixes to strip during normalization | `.local,.internal,.example.com` |
-| `WEB_HOST` | No | Server bind address | `127.0.0.1` |
-| `WEB_PORT` | No | Server port | `8000` |
-| `LOG_LEVEL` | No | Logging level | `INFO` |
-| `ENVIRONMENT` | No | `development` or `production` | `development` |
+Important configuration areas include:
 
-### Config Files
+- OpenSearch connectivity
+- MongoDB connectivity
+- LLM provider selection
+- anomaly model behavior
+- prediction configuration
+- scheduler configuration
+- cluster mappings
+- monitoring mappings
 
-| File | Purpose | Required |
-|------|---------|----------|
-| `config/anomaly_config.json` | MongoDB anomaly detection settings, ML model params, feature config | No (safe defaults) |
-| `config/mssql_anomaly_config.json` | MSSQL anomaly detection settings | No |
-| `config/elasticsearch_anomaly_config.json` | Elasticsearch anomaly detection settings | No |
-| `config/cluster_mapping.json` | Maps hostnames to cluster names | No (unmapped hosts still work) |
-| `config/monitoring_servers.json` | SSH monitoring targets for Linux metrics | No |
+Relevant files include:
 
-If a config file is missing, the system logs a warning and continues with empty/default config. No crash.
-
-### Demo Mode / Hostname Masking
-
-The repo includes a **demo UI** at `web_ui/static_demo/` with a 3-layer hostname masking system:
-
-1. **Fetch interceptor** — masks API responses before they reach the app
-2. **escapeHtml wrapper** — masks during HTML rendering
-3. **MutationObserver** — catches any unmasked text in the DOM
-
-Demo mode is **off by default**. It only activates when accessing `demo-index.html`. The main UI (`index.html`) shows real data unmasked.
-
-To customize demo hostname mappings, edit `web_ui/static_demo/demo-masking.js` → `DEMO_HOST_OVERRIDE_MAP`.
+- `.env.example`
+- `config/anomaly_config.json`
+- `config/cluster_mapping.json`
+- `config/monitoring_servers.json`
 
 ---
 
-## Data Sources
+## Development Notes
 
-The system reads logs from **OpenSearch** using three specialized readers:
+This repository is designed to support modular development and extension.
 
-| Source | Index Pattern | Reader |
-|--------|---------------|--------|
-| MongoDB | `db-mongodb-*` | `OpenSearchProxyReader` |
-| MSSQL | `db-mssql-*` | `MSSQLOpenSearchReader` |
-| Elasticsearch | `db-elasticsearch-*` | `ElasticsearchOpenSearchReader` |
+### Principles used in the project
 
-You can also **upload log files** directly through the Web UI (MongoDB `.log` files).
-
-**Setup:** Point `OPENSEARCH_URL` to your OpenSearch instance. The readers auto-discover available hosts via the configured index patterns.
-
----
-
-## Storage
-
-Analysis results, predictions, and model metadata are persisted via `StorageManager`:
-
-- **Primary:** MongoDB (if `MONGODB_ENABLED=true` and `MONGODB_URI` is valid)
-- **Fallback:** JSON files in `STORAGE_PATH` directory (default: `./data/storage`)
-
-If MongoDB is unavailable, the system automatically falls back to file storage with no data loss. Set `STORAGE_PATH` in `.env` to control where files are saved.
+- avoid hardcoded secrets
+- preserve backward-compatible data structures where possible
+- keep source-specific logic modular
+- keep UI logic driven by backend responses
+- favor isolated, testable changes
+- preserve parity across supported sources where applicable
 
 ---
 
-## API Endpoints
+## Current Status
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/status` | GET | System health check |
-| `/api/anomaly/analyze` | POST | Run anomaly analysis |
-| `/api/anomaly/hosts` | GET | List discovered hosts |
-| `/api/anomaly/results/{host}` | GET | Get analysis results |
-| `/api/anomaly/clusters` | GET | Get cluster-grouped hosts |
-| `/api/prediction/risks` | GET | Risk predictions |
-| `/api/prediction/forecast/{host}` | GET | Time-series forecast |
-| `/api/scheduler/status` | GET | Scheduler status |
-| `/api/scheduler/start` | POST | Start automated analysis |
-| `/api/chat` | POST | AI-powered Q&A about anomalies |
+Implemented and available in the platform:
 
----
+- multi-source log ingestion
+- source-aware feature engineering
+- ML-based anomaly detection
+- rule-assisted severity logic
+- trend analysis
+- rate-based alerting
+- forecasting
+- AI-assisted explanation
+- storage and history
+- web interface
+- scheduler support
 
-## Project Structure
-
-```
-├── src/
-│   ├── anomaly/          # Core: detection, feature engineering, prediction, scheduling
-│   ├── connectors/       # LLM connectors (OpenAI, corporate LLM)
-│   ├── agents/           # LangChain MongoDB agent + query translator
-│   ├── storage/          # Persistence (MongoDB + JSON fallback)
-│   ├── monitoring/       # Linux server monitoring via SSH
-│   └── performance/      # Query performance analysis
-├── web_ui/
-│   ├── api.py            # FastAPI backend
-│   ├── config.py         # Web config (reads .env)
-│   ├── static/           # Production frontend
-│   └── static_demo/      # Demo frontend with hostname masking
-├── config/               # JSON configuration files
-├── deploy/               # Docker, systemd, deployment scripts
-├── tests/                # Test suites
-├── .env.example          # Environment variable template
-└── requirements.txt      # Python dependencies
-```
 
 ---
 
-## Security / Public Release Notes
+## Public Release Notes
 
-- **No secrets in this repo.** All API keys, passwords, and credentials are loaded from `.env` (which is in `.gitignore`).
-- **No real hostnames.** All server names in config files and code are generic placeholders.
-- **Hostname masking** is available in demo mode for screenshots/demos.
-- **Example values** (like `CHANGE_ME`, `localhost`) are clearly marked as placeholders.
-- To use this system, clone the repo, copy `.env.example` to `.env`, and fill in your own values.
+This is a sanitized public release of the platform.
 
----
+Sensitive environment-specific details such as:
 
-## Troubleshooting
+- credentials,
+- internal endpoints,
+- host mappings,
+- organization-specific identifiers,
+- and internal operational references
 
-**"Config file not found" warning**
-Non-critical. The system works with defaults. Create the missing config file from the examples in `config/` if you need custom settings.
+have been removed or replaced with configurable placeholders.
 
-**"Failed to connect to OpenSearch"**
-Check `OPENSEARCH_URL`, `OPENSEARCH_USER`, `OPENSEARCH_PASS` in `.env`. Verify the OpenSearch instance is reachable and SSL settings match (`OPENSEARCH_VERIFY_SSL`).
-
-**"MongoDB connection failed"**
-The system falls back to JSON file storage automatically. If you need MongoDB, check `MONGODB_URI` in `.env`. Set `MONGODB_ENABLED=false` to disable MongoDB entirely.
-
-**"Custom LLM/OpenAI not configured"**
-AI-powered explanations are optional. Set `LLM_PROVIDER=openai` and `OPENAI_API_KEY` to enable, or leave empty to skip AI features.
-
-**Import errors (langchain)**
-Run `pip install -r requirements.txt` to install all dependencies. The code has fallback imports for both `langchain` and `langchain-core`.
 
 ---
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| ML | scikit-learn (IsolationForest), pandas, numpy |
-| Backend | FastAPI, uvicorn |
-| Frontend | Vanilla JS, Chart.js, CSS Grid |
-| Storage | MongoDB (primary), JSON file (fallback) |
-| Data Source | OpenSearch |
-| LLM | LangChain, OpenAI / Custom LLM |
-| Deploy | Docker, systemd |
 
 ## License
 
-MIT
+MIT License
+
