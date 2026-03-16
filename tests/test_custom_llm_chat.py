@@ -1,4 +1,4 @@
-# test_lcwgpt_chat.py
+# test_custom_llm_chat.py
 import requests
 import json
 import time
@@ -38,7 +38,7 @@ for i, query in enumerate(test_queries, 1):
             print(f"📊 Toplam Anomali: {result.get('total_anomalies')}")
             print(f"⏱️ Yanıt Süresi: {elapsed:.2f} saniye")
             print(f"📦 Chunk Info: {result.get('chunk_info', 'N/A')}")
-            print(f"\n🤖 LCWGPT Yanıtı:")
+            print(f"\n🤖 AI Response:")
             print("-" * 50)
             print(result.get('ai_response', 'Yanıt yok'))
             print("-" * 50)

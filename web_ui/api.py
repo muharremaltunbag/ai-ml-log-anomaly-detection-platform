@@ -41,7 +41,7 @@ try:
     from langchain.schema import HumanMessage, SystemMessage
 except ImportError:
     from langchain_core.messages import HumanMessage, SystemMessage
-from src.connectors.lcwgpt_connector import LCWGPTConnector
+from src.connectors.custom_llm_connector import CustomLLMConnector
 from src.agents.mongodb_agent import MongoDBAgent
 from web_ui.config import *
 from dotenv import load_dotenv
@@ -123,13 +123,13 @@ class AnomalyProgressLogHandler(logging.Handler):
                 update_progress(req_id, "ml", "Anomali skorları hesaplandı...", 70)
 
             # ==========================================
-            # 2. CHAT / LCWGPT AKIŞI (FRONTEND İLE UYUMLU ID'LER)
+            # 2. CHAT / Custom LLM AKIŞI (FRONTEND İLE UYUMLU ID'LER)
             # ==========================================
-            elif "Found" in msg and "anomalies for LCWGPT" in msg:
+            elif "Found" in msg and "anomalies for Custom LLM" in msg:
                 update_progress(req_id, "context", "İlgili anomali kayıtları geçmişten yükleniyor...", 10)
 
-            elif "LCWGPT Connector initialized" in msg:
-                update_progress(req_id, "connect", "LCWGPT servisi ile bağlantı kuruluyor...", 20)
+            elif "Custom LLM Connector initialized" in msg:
+                update_progress(req_id, "connect", "Custom LLM servisi ile bağlantı kuruluyor...", 20)
 
             elif "Will process" in msg and "chunks" in msg:
                 # ID: 'chunk' (Frontend'deki 🧩 ikonu için)
@@ -199,7 +199,7 @@ ENABLE_STORAGE = AUTO_SAVE_CONFIG.get("enabled", True)
 MODEL_AUTO_LOAD = True  # Startup'ta modeli otomatik yükle
 MODEL_PATH = "models/isolation_forest.pkl"  # Default model path
 
-# Global LCWGPT connector instance
+# Global Custom LLM connector instance
 llm_connector: Optional[Any] = None
 llm_lock = asyncio.Lock()
 
@@ -359,20 +359,20 @@ async def get_agent() -> MongoDBAgent:
             logger.debug("Mevcut agent instance kullanılıyor")
         return agent
 
-# LCWGPT Connector'ı singleton olarak al
+# Custom LLM Connector'ı singleton olarak al
 async def get_llm_connector():
-    """Singleton LCWGPT connector instance"""
+    """Singleton Custom LLM connector instance"""
     global llm_connector
     async with llm_lock:
         if llm_connector is None:
-            from src.connectors.lcwgpt_connector import LCWGPTConnector
-            logger.info("LCWGPT Connector başlatılıyor...")
-            llm_connector = LCWGPTConnector()
+            from src.connectors.custom_llm_connector import CustomLLMConnector
+            logger.info("Custom LLM Connector başlatılıyor...")
+            llm_connector = CustomLLMConnector()
             llm_connector.connect()
             if not llm_connector.is_connected():
-                logger.error("LCWGPT bağlantısı kurulamadı")
+                logger.error("Custom LLM bağlantısı kurulamadı")
                 return None
-            logger.info("LCWGPT Connector hazır")
+            logger.info("Custom LLM Connector hazır")
         return llm_connector
 
 # StorageManager başlatma
@@ -1990,7 +1990,7 @@ async def get_anomaly_detail(analysis_id: str, api_key: str):
 
 @app.get("/api/analyzed-servers")
 async def get_analyzed_servers(api_key: str):
-    """Anomali analizi yapılmış sunucu listesini döndür (LCWGPT sunucu seçimi için)"""
+    """Anomali analizi yapılmış sunucu listesini döndür (Custom LLM sunucu seçimi için)"""
     if not await verify_api_key(api_key):
         raise HTTPException(status_code=401, detail="Geçersiz API anahtarı")
 
@@ -2025,7 +2025,7 @@ async def get_analyzed_servers(api_key: str):
                     if isinstance(critical, list):
                         anomaly_count = len(critical)
 
-            # 0 anomali varsa bu sunucuyu atla (LCWGPT çalışacak veri yok)
+            # 0 anomali varsa bu sunucuyu atla (Custom LLM çalışacak veri yok)
             if anomaly_count == 0:
                 skipped_zero += 1
                 continue
@@ -2040,11 +2040,11 @@ async def get_analyzed_servers(api_key: str):
                 }
 
         if skipped_zero > 0:
-            logger.info(f"LCWGPT server list: Skipped {skipped_zero} analyses with 0 anomalies")
+            logger.info(f"Custom LLM server list: Skipped {skipped_zero} analyses with 0 anomalies")
 
         server_list = sorted(servers.values(), key=lambda x: x.get("last_analysis") or "", reverse=True)
 
-        logger.info(f"LCWGPT server list: Returning {len(server_list)} servers with anomaly data")
+        logger.info(f"Custom LLM server list: Returning {len(server_list)} servers with anomaly data")
 
         return {
             "status": "success",
@@ -2472,7 +2472,7 @@ def _save_conversation_turn(analysis_id: str, query: str, response: str):
 
 @app.post("/api/chat-query-anomalies")
 async def chat_query_anomalies(request: Dict[str, Any]):
-    """Chat üzerinden anomali sorgulama - LCWGPT ile (Progress Tracking Destekli)"""
+    """Chat üzerinden anomali sorgulama - Custom LLM ile (Progress Tracking Destekli)"""
     start_time = datetime.now()  # Performance tracking için
 
     # ✅ YENİ: Request ID ve Context Yönetimi
@@ -2746,11 +2746,11 @@ async def chat_query_anomalies(request: Dict[str, Any]):
 
         logger.info(f"AI will scan {len(all_anomalies)} diverse anomalies in batches.")
 
-        logger.info(f"Found {len(all_anomalies)} anomalies for LCWGPT processing")
+        logger.info(f"Found {len(all_anomalies)} anomalies for Custom LLM processing")
 
         # ✅ GUARD: 0 anomali durumunda güvenli erken dönüş — IndexError önlenir
         if len(all_anomalies) == 0:
-            logger.warning("No anomalies found for LCWGPT processing — returning safe fallback response")
+            logger.warning("No anomalies found for Custom LLM processing — returning safe fallback response")
             update_progress(request_id, "complete", "İşlem tamamlandı!", 100)
             return {
                 "status": "success",
@@ -2774,15 +2774,15 @@ async def chat_query_anomalies(request: Dict[str, Any]):
             }
 
         # 2. ADIM: Bağlantı
-        update_progress(request_id, "connect", "LCWGPT servisi ile güvenli bağlantı kuruluyor...", 20)
+        update_progress(request_id, "connect", "Custom LLM servisi ile güvenli bağlantı kuruluyor...", 20)
         llm_connector = await get_llm_connector()
 
         if not llm_connector:
-            logger.error("LCWGPT connection failed")
-            update_progress(request_id, "error", "LCWGPT servisine bağlanılamadı!", 0)
+            logger.error("Custom LLM connection failed")
+            update_progress(request_id, "error", "Custom LLM servisine bağlanılamadı!", 0)
             return {
                 "status": "error",
-                "message": "LCWGPT bağlantısı kurulamadı",
+                "message": "Custom LLM bağlantısı kurulamadı",
                 "total_anomalies": len(all_anomalies)
             }
 
@@ -2824,7 +2824,7 @@ async def chat_query_anomalies(request: Dict[str, Any]):
             sev = a.get('severity_level', 'N/A')
             severity_dist[sev] = severity_dist.get(sev, 0) + 1
 
-        # LCWGPT system prompt — kaynak tipine göre dinamik
+        # Custom LLM system prompt — kaynak tipine göre dinamik
         if is_mssql:
             system_prompt = """Sen MSSQL veritabanı anomali analizi ve performans optimizasyonu konusunda uzman bir Senior DBA'sin.
 MSSQL loglarındaki pattern'leri tanıyabilir, root cause analizi yapabilir ve ÇALIŞTIRILABİLİR T-SQL çözüm komutları sunabilirsin.
@@ -3341,7 +3341,7 @@ Türkçe yanıt ver. MUTLAKA gerçek çalıştırılabilir MongoDB komutları ``
 @app.post("/api/get-anomaly-chunk")
 async def get_anomaly_chunk(request: Request):
     """
-    Belirli bir anomali chunk'ını getir ve LCWGPT ile işle
+    Belirli bir anomali chunk'ını getir ve Custom LLM ile işle
     
     Request body:
     {
@@ -3413,11 +3413,11 @@ async def get_anomaly_chunk(request: Request):
             # İstenen chunk'ı al
             selected_chunk = chunks[chunk_index]
             
-            # LCWGPT'ye gönder
+            # Custom LLM'ye gönder
             logger.info(f"Processing chunk {chunk_index + 1}/{total_chunks} with {len(selected_chunk)} anomalies")
             
-            # LCWGPT isteği hazırla
-            lcwgpt_prompt = f"""Aşağıda MongoDB anomali logları var. Bunları analiz et ve önemli pattern'leri açıkla.
+            # Custom LLM isteği hazırla
+            llm_prompt = f"""Aşağıda MongoDB anomali logları var. Bunları analiz et ve önemli pattern'leri açıkla.
             
             CHUNK BİLGİSİ: {chunk_index + 1}/{total_chunks}
             Toplam {len(anomalies)} anomaliden {chunk_index * chunk_size + 1}-{min((chunk_index + 1) * chunk_size, len(anomalies))} arası gösteriliyor.
@@ -3426,23 +3426,23 @@ async def get_anomaly_chunk(request: Request):
             """
             
             for i, anomaly in enumerate(selected_chunk, start=chunk_index * chunk_size + 1):
-                lcwgpt_prompt += f"\n{i}. [{anomaly.get('timestamp', 'N/A')}] {anomaly.get('component', 'N/A')}: {anomaly.get('message', 'N/A')[:200]}"
+                llm_prompt += f"\n{i}. [{anomaly.get('timestamp', 'N/A')}] {anomaly.get('component', 'N/A')}: {anomaly.get('message', 'N/A')[:200]}"
             
-            # LCWGPT'ye gönder
+            # Custom LLM'ye gönder
             llm_connector = await get_llm_connector()
             if llm_connector:
                 try:
                     messages = [
                         SystemMessage(content="Sen MongoDB log analiz uzmanısın. Türkçe ve anlaşılır şekilde anomalileri açıkla."),
-                        HumanMessage(content=lcwgpt_prompt)
+                        HumanMessage(content=llm_prompt)
                     ]
                     response = llm_connector.invoke(messages)
-                    lcwgpt_response = response.content
+                    llm_response = response.content
                 except Exception as e:
-                    logger.error(f"LCWGPT invoke error: {e}")
-                    lcwgpt_response = f"LCWGPT analizi yapılamadı: {str(e)}"
+                    logger.error(f"Custom LLM invoke error: {e}")
+                    llm_response = f"Custom LLM analizi yapılamadı: {str(e)}"
             else:
-                lcwgpt_response = "LCWGPT bağlantısı kurulamadı"
+                llm_response = "Custom LLM bağlantısı kurulamadı"
             
             # Response hazırla
             result = {
@@ -3452,7 +3452,7 @@ async def get_anomaly_chunk(request: Request):
                 "chunk_info": f"{chunk_index + 1}/{total_chunks} chunk",
                 "anomalies_in_chunk": len(selected_chunk),
                 "total_anomalies": len(anomalies),
-                "ai_response": lcwgpt_response,
+                "ai_response": llm_response,
                 "has_next": chunk_index < total_chunks - 1,
                 "has_previous": chunk_index > 0
             }
@@ -3800,7 +3800,7 @@ async def dba_analyze_specific_time(
     start_time: str = Query(..., description="Başlangıç zamanı (ISO format)"),
     end_time: str = Query(..., description="Bitiş zamanı (ISO format)"),
     api_key: str = Query(..., description="API anahtarı"),
-    auto_explain: bool = Query(True, description="LCWGPT ile otomatik açıklama")
+    auto_explain: bool = Query(True, description="Custom LLM ile otomatik açıklama")
 ):
     """
     DBA'lar için spesifik zaman aralığı anomali analizi (Semaphore Korumalı)
@@ -3953,7 +3953,7 @@ async def dba_analyze_specific_time(
             anomaly_count = len(critical_anomalies)
             
 
-            # LCWGPT ile her anomaliyi tek tek açıklama (chunk bazlı, context-aware)
+            # Custom LLM ile her anomaliyi tek tek açıklama (chunk bazlı, context-aware)
             ai_explanation = None
             if auto_explain and anomaly_count > 0:
                 llm_connector = await get_llm_connector()
@@ -4102,7 +4102,7 @@ Yanıtların kısa, net ve aksiyona yönelik olmalı."""),
                             logger.info(f"✅ Complete individual anomaly analysis for {len(anomalies_to_analyze)} anomalies")
 
                     except Exception as e:
-                        logger.error(f"LCWGPT analysis error: {e}")
+                        logger.error(f"Custom LLM analysis error: {e}")
                         ai_explanation = f"Anomali analizi sırasında hata: {str(e)}"
             # Storage'a kaydet
             storage_id = None

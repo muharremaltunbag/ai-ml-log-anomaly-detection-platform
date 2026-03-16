@@ -788,15 +788,15 @@ window._reportCopyCode = function(btn) {
 // Mevcut fonksiyonlara dokunmaz, sadece sidebar UI kontrolu
 // ============================================================
 
-window.toggleLcwgptSidebar = function() {
-    const sidebar = document.getElementById('lcwgptSidebar');
+window.toggleAiSidebar = function() {
+    const sidebar = document.getElementById('aiSidebar');
     if (!sidebar) return;
     sidebar.classList.toggle('open');
     console.log('AI Assistant Sidebar toggled:', sidebar.classList.contains('open') ? 'open' : 'closed');
 };
 
-window.closeLcwgptSidebar = function() {
-    const sidebar = document.getElementById('lcwgptSidebar');
+window.closeAiSidebar = function() {
+    const sidebar = document.getElementById('aiSidebar');
     if (sidebar) sidebar.classList.remove('open');
 };
 
@@ -1094,13 +1094,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Sidebar toggle
     const toggleBtn = document.getElementById('sidebarToggleBtn');
     if (toggleBtn) {
-        toggleBtn.addEventListener('click', window.toggleLcwgptSidebar);
+        toggleBtn.addEventListener('click', window.toggleAiSidebar);
     }
 
     // Sidebar close
     const closeBtn = document.getElementById('sidebarCloseBtn');
     if (closeBtn) {
-        closeBtn.addEventListener('click', window.closeLcwgptSidebar);
+        closeBtn.addEventListener('click', window.closeAiSidebar);
     }
 
     // Sidebar send
@@ -1118,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Sidebar varsayilan olarak acik gelsin
-    const sidebar = document.getElementById('lcwgptSidebar');
+    const sidebar = document.getElementById('aiSidebar');
     if (sidebar && !sidebar.classList.contains('open')) {
         sidebar.classList.add('open');
     }

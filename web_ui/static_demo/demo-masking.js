@@ -242,9 +242,8 @@
 
     // ── Marka/şirket metin maskeleme ──
     var BRAND_REPLACEMENTS = [
-        [/LCWGPT/g, 'AI Assistant'],
+        [/Custom LLM/g, 'AI Assistant'],
         [/Demo Company/gi, 'Demo Company'],
-        [/lcw-test-\d+/gi, 'demo-api-key'],
         // FQDN domain suffix'lerini kaldır (hostname zaten maskelenmiş olacak)
         [/\.example\.com/gi, '.example.com'],
         [/\.internal\.local/gi, '.internal.local']

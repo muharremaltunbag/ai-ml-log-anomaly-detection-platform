@@ -40,7 +40,7 @@ from .elasticsearch_feature_engineer import ElasticsearchFeatureEngineer
 from .elasticsearch_anomaly_detector import ElasticsearchAnomalyDetector
 
 from ..connectors.openai_connector import OpenAIConnector
-from ..connectors.lcwgpt_connector import LCWGPTConnector
+from ..connectors.custom_llm_connector import CustomLLMConnector
 try:
     from langchain.schema import HumanMessage, SystemMessage
 except ImportError:
@@ -119,13 +119,13 @@ class AnomalyDetectionTools:
         self.detector = None 
         logger.debug("Feature engineer initialized. Detector will be fetched on-demand via Singleton.")
         
-        # YENİ: LLM connector'ı başlat (OpenAI veya LCWGPT)
+        # LLM connector'ı başlat (OpenAI veya Custom LLM)
         llm_provider = os.getenv('LLM_PROVIDER', 'openai').lower()
 
-        if llm_provider == 'lcwgpt':
-            self.llm_connector = LCWGPTConnector()
+        if llm_provider == 'custom':
+            self.llm_connector = CustomLLMConnector()
             self.llm_connector.connect()
-            logger.info("LCWGPT connector initialized for anomaly explanations")
+            logger.info("Custom LLM connector initialized for anomaly explanations")
         elif llm_provider == 'openai':
             self.llm_connector = OpenAIConnector()
             self.llm_connector.connect()
@@ -3464,7 +3464,7 @@ EN KRİTİK 10 ANOMALİ:
                 }
 
             # LLM yanıt vermedi — data-driven fallback
-            logger.warning(f"[LCWGPT:{context}] No response, using data-driven fallback")
+            logger.warning(f"[Custom LLM:{context}] No response, using data-driven fallback")
             summary = analysis.get('summary', {})
             return {
                 "özet": (
@@ -3828,11 +3828,11 @@ Bu verileri analiz et ve JSON formatında yanıt ver."""
                     expected_keys = ['ozet', 'kritik_bulgular', 'guvenlik_degerlendirmesi', 'onerilen_aksiyonlar']
                     missing_keys = [k for k in expected_keys if k not in parsed]
                     if missing_keys:
-                        logger.warning(f"[LCWGPT:{context}] Response missing expected keys: {missing_keys}")
+                        logger.warning(f"[Custom LLM:{context}] Response missing expected keys: {missing_keys}")
                     return parsed
 
                 # JSON parse başarısız — raw text'ten fallback oluştur
-                logger.warning(f"[LCWGPT:{context}] JSON parse failed, using raw text as summary")
+                logger.warning(f"[Custom LLM:{context}] JSON parse failed, using raw text as summary")
                 return {
                     "ozet": content[:2000],
                     "kritik_bulgular": [],
@@ -3845,7 +3845,7 @@ Bu verileri analiz et ve JSON formatında yanıt ver."""
                 }
 
             # LLM yanıt vermedi
-            logger.warning(f"[LCWGPT:{context}] No response from LLM")
+            logger.warning(f"[Custom LLM:{context}] No response from LLM")
             return {}
 
         except Exception as e:
@@ -3898,7 +3898,7 @@ Bu verileri analiz et ve JSON formatında yanıt ver."""
 
     def _generate_ai_explanation(self, anomaly_data: Dict[str, Any], server_name: str = None,
                                    prediction_context: str = "") -> Dict[str, Any]:
-        """LCWGPT kullanarak anomali verisi için zengin açıklama üret"""
+        """Custom LLM kullanarak anomali verisi için zengin açıklama üret"""
         logger.info(f"=== AI EXPLANATION DEBUG ===")
         logger.info(f"LLM connected: {self.llm_connector.is_connected() if self.llm_connector else False}")
         if server_name:
@@ -4050,12 +4050,12 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
             ai_explanation = self._safe_invoke_llm(messages, context=context)
 
             if not ai_explanation:
-                logger.warning(f"[LCWGPT:{context}] No response, using fallback explanation")
+                logger.warning(f"[Custom LLM:{context}] No response, using fallback explanation")
                 return self._create_fallback_explanation(anomaly_data)
 
             logger.info(f"AI response received, length: {len(ai_explanation)}")
 
-            # Yeni parse fonksiyonu - LCWGPT'nin yeni formatı için
+            # Yeni parse fonksiyonu - Custom LLM'nin yeni formatı için
             parsed_explanation = self._parse_ai_explanation_structured(ai_explanation)
 
             logger.info(f"AI explanation parsed successfully: {list(parsed_explanation.keys())}")
@@ -4110,7 +4110,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         return sections
     
     def _parse_ai_explanation_improved(self, ai_text: str) -> Dict[str, Any]:
-        """AI metnini yapılandırılmış formata dönüştür - LCWGPT markdown formatı için optimize edilmiş"""
+        """AI metnini yapılandırılmış formata dönüştür - Custom LLM markdown formatı için optimize edilmiş"""
         sections = {
             "ne_tespit_edildi": "",
             "potansiyel_etkiler": [],
@@ -4232,7 +4232,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         
         return sections
     def _parse_ai_explanation_structured(self, ai_text: str) -> Dict[str, Any]:
-        """LCWGPT'nin kısa formatını parse et - Optimize versiyon"""
+        """Custom LLM'nin kısa formatını parse et - Optimize versiyon"""
         sections = {
             "ne_tespit_edildi": "",
             "potansiyel_etkiler": [],
@@ -4776,12 +4776,12 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         }
 
     # =================================================================
-    # LCWGPT RESPONSE VALIDATION HELPERS
+    # Custom LLM RESPONSE VALIDATION HELPERS
     # =================================================================
 
     def _safe_invoke_llm(self, messages, context: str = "") -> Optional[str]:
         """
-        LCWGPT'yi güvenli şekilde çağır ve response content'i döndür.
+        Custom LLM'yi güvenli şekilde çağır ve response content'i döndür.
 
         Tüm source'lar (MongoDB, MSSQL, Elasticsearch) bu wrapper'ı kullanır.
         None/boş/kısa response durumlarını, timeout ve exception'ları handle eder.
@@ -4793,7 +4793,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
         Returns:
             Response content string veya None (hata durumunda)
         """
-        log_prefix = f"[LCWGPT:{context}]" if context else "[LCWGPT]"
+        log_prefix = f"[Custom LLM:{context}]" if context else "[Custom LLM]"
 
         # 1. Connector check
         if not self.llm_connector or not self.llm_connector.is_connected():
@@ -4854,7 +4854,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
             Parsed JSON dict veya None
         """
         import re
-        log_prefix = f"[LCWGPT:{context}]" if context else "[LCWGPT]"
+        log_prefix = f"[Custom LLM:{context}]" if context else "[Custom LLM]"
 
         if not content:
             return None
@@ -5458,7 +5458,7 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
 
     async def query_anomalies_from_storage(self, query: str, analysis_id: str = None, limit: int = 50) -> Dict[str, Any]:
         """
-        Storage'daki anomalileri LCWGPT ile sorgula
+        Storage'daki anomalileri Custom LLM ile sorgula
         
         Args:
             query: Kullanıcı sorusu
@@ -5501,9 +5501,9 @@ En yoğun 3 saat: {', '.join(map(str, temporal_analysis.get('peak_hours', [])[:3
             if not all_anomalies:
                 return {"error": "Kayıtlı anomali bulunamadı"}
                 
-            # LCWGPT ile işle (chunked)
+            # Custom LLM ile işle (chunked)
             if not self.llm_connector or not self.llm_connector.is_connected():
-                return {"error": "LCWGPT bağlantısı yok"}
+                return {"error": "Custom LLM bağlantısı yok"}
                 
             # Token limit için chunk'lara böl
             chunks = [all_anomalies[i:i+limit] for i in range(0, len(all_anomalies), limit)]

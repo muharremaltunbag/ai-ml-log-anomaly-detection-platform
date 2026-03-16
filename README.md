@@ -125,10 +125,10 @@ uvicorn web_ui.api:app --host 127.0.0.1 --port 8000
 | `API_KEY` | Recommended | Web UI API key | (empty) |
 | `MONGODB_URI` | No | MongoDB connection | `mongodb://localhost:27017/...` |
 | `MONGODB_ENABLED` | No | Enable MongoDB storage | `true` |
-| `LLM_PROVIDER` | No | `openai` or `lcwgpt` | `openai` |
+| `LLM_PROVIDER` | No | `openai` or `custom` | `openai` |
 | `OPENAI_API_KEY` | No | OpenAI API key (for AI explanations) | (empty) |
-| `LCWGPT_API_KEY` | No | Corporate LLM key | (empty) |
-| `LCWGPT_ENDPOINT` | No | Corporate LLM URL | (empty) |
+| `CUSTOM_LLM_API_KEY` | No | Corporate LLM key | (empty) |
+| `CUSTOM_LLM_ENDPOINT` | No | Corporate LLM URL | (empty) |
 | `MONGODB_FQDN_SUFFIX` | No | FQDN suffix for short hostnames | `.local` |
 | `HOSTNAME_STRIP_SUFFIXES` | No | Suffixes to strip during normalization | `.local,.internal,.example.com` |
 | `WEB_HOST` | No | Server bind address | `127.0.0.1` |
@@ -251,7 +251,7 @@ Check `OPENSEARCH_URL`, `OPENSEARCH_USER`, `OPENSEARCH_PASS` in `.env`. Verify t
 **"MongoDB connection failed"**
 The system falls back to JSON file storage automatically. If you need MongoDB, check `MONGODB_URI` in `.env`. Set `MONGODB_ENABLED=false` to disable MongoDB entirely.
 
-**"LCWGPT/OpenAI not configured"**
+**"Custom LLM/OpenAI not configured"**
 AI-powered explanations are optional. Set `LLM_PROVIDER=openai` and `OPENAI_API_KEY` to enable, or leave empty to skip AI features.
 
 **Import errors (langchain)**

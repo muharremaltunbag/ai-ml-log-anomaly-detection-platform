@@ -13908,7 +13908,7 @@ mark.text-highlight:hover {
    ============================================================ */
 
 /* AI Sidebar — kurumsal panel stili */
-.lcwgpt-sidebar {
+.ai-sidebar {
     position: fixed;
     right: 0;
     top: 56px;
@@ -13929,7 +13929,7 @@ mark.text-highlight:hover {
 }
 
 /* Sidebar acikken — sag taraftan kayarak acilir */
-.lcwgpt-sidebar.open {
+.ai-sidebar.open {
     transform: translateX(0);
     visibility: visible;
 }
