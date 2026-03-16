@@ -1,5 +1,8 @@
 from typing import Dict, List, Any, Optional, Tuple
-from langchain.schema import BaseMessage, HumanMessage, SystemMessage
+try:
+    from langchain.schema import BaseMessage, HumanMessage, SystemMessage
+except ImportError:
+    from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 import json
 import logging

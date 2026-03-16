@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 try:
     from langchain.tools import Tool, StructuredTool
 except ImportError:
-    from langchain_classic.tools import Tool, StructuredTool
+    from langchain_core.tools import Tool, StructuredTool
 from pydantic import BaseModel, Field
 import json
 import logging
@@ -1028,10 +1028,10 @@ class AnomalyDetectionTools:
             r'(hqsectwrapmdbn\d+)',
             r'(drhqsectmdbn\d+)',  # DR node
 
-            # WPOS MongoDB: WPOSMNG1, WPOSMNG2, WPOSMNG3
+            # WPOS MongoDB nodes
             r'(wposmng\d+)',
 
-            # Logistic MongoDB: LGSTMNGDB01, LGSTMNGDB02, LGSTMNGDB03
+            # Logistic MongoDB nodes
             r'(lgstmngdb\d+)',
 
             # Test/Dev environments
@@ -3830,7 +3830,10 @@ EN KRİTİK 10 ANOMALİ:
 {anomaly_text}{prediction_context}
 Bu verileri analiz et ve JSON formatında yanıt ver."""
 
-            from langchain.schema import HumanMessage, SystemMessage
+            try:
+                from langchain.schema import HumanMessage, SystemMessage
+            except ImportError:
+                from langchain_core.messages import HumanMessage, SystemMessage
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)

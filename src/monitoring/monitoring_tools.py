@@ -3,7 +3,10 @@
 # src\monitoring\monitoring_tools.py
 
 from typing import Dict, Any, List, Optional
-from langchain.tools import Tool, StructuredTool
+try:
+    from langchain.tools import Tool, StructuredTool
+except ImportError:
+    from langchain_core.tools import Tool, StructuredTool
 from pydantic import BaseModel, Field
 import json
 import logging

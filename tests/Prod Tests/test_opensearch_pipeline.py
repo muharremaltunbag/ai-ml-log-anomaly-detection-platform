@@ -101,7 +101,7 @@ def discover_all_mongodb_hosts(reader):
             
             # Host gruplandırma
             dbsrv_hosts = []
-            lcw_hosts = []
+            prod_hosts = []
             test_hosts = []
             other_hosts = []
             
@@ -110,7 +110,7 @@ def discover_all_mongodb_hosts(reader):
                 if 'DBSRV' in h_upper and 'MNG' in h_upper:
                     dbsrv_hosts.append(h)
                 elif 'MONGOPROD' in h_upper:
-                    lcw_hosts.append(h)
+                    prod_hosts.append(h)
                 elif 'TEST' in h_upper and 'MONGO' in h_upper:
                     test_hosts.append(h)
                 else:
@@ -124,9 +124,9 @@ def discover_all_mongodb_hosts(reader):
                 if len(dbsrv_hosts) > 15:
                     print(f"   ... ve {len(dbsrv_hosts)-15} host daha")
             
-            if lcw_hosts:
-                print(f"\n🔸 Production Hosts ({len(lcw_hosts)}):")
-                for h in sorted(lcw_hosts):
+            if prod_hosts:
+                print(f"\n🔸 Production Hosts ({len(prod_hosts)}):")
+                for h in sorted(prod_hosts):
                     print(f"   - {h}")
             
             if test_hosts:
@@ -143,7 +143,7 @@ def discover_all_mongodb_hosts(reader):
             
             return hosts, {
                 'dbsrv': dbsrv_hosts,
-                'lcw': lcw_hosts,
+                'prod': prod_hosts,
                 'test': test_hosts,
                 'other': other_hosts
             }

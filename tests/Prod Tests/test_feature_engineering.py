@@ -35,7 +35,7 @@ def test_feature_engineering():
                     "errmsg": "not authorized on admin"
                 }
             },
-            "host": "ECOMFIXMONGODB01"
+            "host": "mongo-prod-01"
         },
         # 2. Slow query
         {
@@ -48,7 +48,7 @@ def test_feature_engineering():
                 "docsExamined": 50000,
                 "keysExamined": 0
             },
-            "host": "ECOMFIXMONGODB01"
+            "host": "mongo-prod-01"
         },
         # 3. Error severity
         {
@@ -57,7 +57,7 @@ def test_feature_engineering():
             "c": "NETWORK",
             "msg": "Connection refused",
             "attr": {},
-            "host": "ECOMFIXMONGODB01"
+            "host": "mongo-prod-01"
         },
         # 4. Out of Memory
         {
@@ -71,7 +71,7 @@ def test_feature_engineering():
                     "errmsg": "OutOfMemory"
                 }
             },
-            "host": "ECOMFIXMONGODB01"
+            "host": "mongo-prod-01"
         },
         # 5. Index build
         {
@@ -80,7 +80,7 @@ def test_feature_engineering():
             "c": "INDEX",
             "msg": "Index build: starting",
             "attr": {},
-            "host": "ECOMFIXMONGODB01"
+            "host": "mongo-prod-01"
         },
         # 6. Drop operation
         {
@@ -89,7 +89,7 @@ def test_feature_engineering():
             "c": "COMMAND",
             "msg": "CMD: dropIndexes",
             "attr": {},
-            "host": "ECOMFIXMONGODB01"
+            "host": "mongo-prod-01"
         }
     ])
     
@@ -212,7 +212,7 @@ def test_real_opensearch_data():
     df = reader.read_logs(
         limit=500,
         last_hours=2,
-        host_filter="ECOMFIXMONGODB01"
+        host_filter="mongo-prod-01"
     )
     
     if df.empty:

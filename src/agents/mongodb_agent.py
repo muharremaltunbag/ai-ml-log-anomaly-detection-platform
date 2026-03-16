@@ -1,8 +1,14 @@
 # src\agents\mongodb_agent.py
 
 from typing import Dict, Any, List, Optional, Tuple
-from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain.memory import ConversationBufferMemory
+try:
+    from langchain.agents import AgentExecutor, create_openai_tools_agent
+except ImportError:
+    from langchain_classic.agents import AgentExecutor, create_openai_tools_agent
+try:
+    from langchain.memory import ConversationBufferMemory
+except ImportError:
+    from langchain_classic.memory import ConversationBufferMemory
 from langchain_core.messages import SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI

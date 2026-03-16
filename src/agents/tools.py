@@ -1,7 +1,10 @@
 #src/agents/tools.py
 
 from typing import Dict, Any, List, Optional
-from langchain.tools import Tool
+try:
+    from langchain.tools import Tool
+except ImportError:
+    from langchain_core.tools import Tool
 from pydantic import BaseModel, Field  # pydantic_v1 yerine pydantic
 from ..connectors.mongodb_connector import MongoDBConnector
 from .schema_analyzer import SchemaAnalyzer

@@ -40,7 +40,7 @@ def main():
     # -----------------------------------------------------------
     print_header("FULL MODEL VERSION TEST BAŞLADI")
 
-    SERVER = "ECAZGLDB"   # Prod test etmek istediğin sunucu adını buraya yaz
+    SERVER = "mongo-prod-01"   # Set your server name here for testing
     MODEL_PATH = f"models/isolation_forest_{SERVER}.pkl"
 
     # -----------------------------------------------------------

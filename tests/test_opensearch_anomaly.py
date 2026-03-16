@@ -83,12 +83,12 @@ def test_opensearch_anomaly_analysis():
         "source_type": "opensearch", 
         "time_range": "last_24h",
         "threshold": 0.03,
-        "host_filter": "ECOMFIXMONGODB01"
+        "host_filter": "mongo-prod-01"
     })
     
     result_dict_host = json.loads(result_host)
     if result_dict_host['durum'] == 'başarılı':
-        print(f"✓ ECOMFIXMONGODB01 için analiz tamamlandı")
+        print(f"✓ mongo-prod-01 için analiz tamamlandı")
         sonuc_host = result_dict_host['sonuç']
         print(f"  - Log sayısı: {sonuc_host['logs_analyzed']:,}")
         print(f"  - Anomali sayısı: {sonuc_host['summary']['n_anomalies']}")

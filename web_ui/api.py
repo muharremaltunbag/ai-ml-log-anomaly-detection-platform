@@ -37,7 +37,10 @@ import re           # ✅ Log parsing için (Chat entegrasyonunda lazım olacak)
 # İş parçacıkları (Threads) arasında Request ID taşımak için
 request_context: contextvars.ContextVar[str] = contextvars.ContextVar('request_context', default=None)
 
-from langchain.schema import HumanMessage, SystemMessage
+try:
+    from langchain.schema import HumanMessage, SystemMessage
+except ImportError:
+    from langchain_core.messages import HumanMessage, SystemMessage
 from src.connectors.lcwgpt_connector import LCWGPTConnector
 from src.agents.mongodb_agent import MongoDBAgent
 from web_ui.config import *

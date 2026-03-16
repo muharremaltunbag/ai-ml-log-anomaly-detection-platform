@@ -1,7 +1,10 @@
 # src\performance\performance_tools.py
 
 from typing import Dict, Any, List, Optional
-from langchain.tools import Tool
+try:
+    from langchain.tools import Tool
+except ImportError:
+    from langchain_core.tools import Tool
 import json
 import logging
 from .query_analyzer import QueryPerformanceAnalyzer
