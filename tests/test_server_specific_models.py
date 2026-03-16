@@ -29,7 +29,7 @@ def test_server_specific_model_save_load():
         X = pd.DataFrame(np.random.randn(100, 10), columns=[f'feature_{i}' for i in range(10)])
         
         # Test server isimleri
-        test_servers = ["lcwmongodb01n2", "lcwmongodb02n1", "testmongodb01"]
+        test_servers = ["mongo-prod-01", "mongo-prod-04", "testmongodb01"]
         
         for server in test_servers:
             print(f"\n Testing server: {server}")
@@ -80,8 +80,8 @@ def test_opensearch_with_host_filter():
         
         # Test host filters
         test_hosts = [
-            "lcwmongodb01n2.lcwaikiki.local",
-            "lcwmongodb02n1",
+            "mongo-prod-01.internal.local",
+            "mongo-prod-04",
             "KZNMONGODBN2"
         ]
         
@@ -174,9 +174,9 @@ def test_api_response_structure():
         test_response = {
             "data": {
                 "server_info": {
-                    "server_name": "lcwmongodb01n2",
+                    "server_name": "mongo-prod-01",
                     "model_status": "existing",
-                    "model_path": "models/isolation_forest_lcwmongodb01n2.pkl",
+                    "model_path": "models/isolation_forest_mongo-prod-01.pkl",
                     "historical_buffer_size": 360673,
                     "last_update": "2024-01-15T10:30:00"
                 },

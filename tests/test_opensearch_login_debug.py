@@ -23,14 +23,14 @@ print(f"Password length: {len(password) if password else 0}")
 print("-" * 50)
 
 # Login URL
-login_url = "https://opslog.lcwaikiki.com/auth/login"
+login_url = "https://localhost:9200/auth/login"
 
 # Headers (browser'dan alınan)
 headers = {
     "Content-Type": "application/json",
     "osd-version": "2.6.0",
-    "Referer": "https://opslog.lcwaikiki.com/app/login?",
-    "Origin": "https://opslog.lcwaikiki.com"
+    "Referer": "https://localhost:9200/app/login?",
+    "Origin": "https://localhost:9200"
 }
 
 # Login data

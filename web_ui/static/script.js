@@ -1,7 +1,7 @@
 // web_ui\static\script.js
 
 /**
- * LC Waikiki MongoDB Assistant - Frontend JavaScript
+ * DB Anomaly Platform - Frontend JavaScript
  * 
  * Bu dosya UI ile backend API arasındaki iletişimi sağlar.
  * Mevcut MongoDB Agent yapısına hiçbir müdahale yapmadan,
@@ -151,7 +151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
                 console.log('🔧 Development mode - auto-connecting with test API key...');
                 
-                const testApiKey = 'lcw-test-2024';
+                const testApiKey = '';
                 if (elements.apiKeyInput) {
                     elements.apiKeyInput.value = testApiKey;
                     await handleConnect();
@@ -290,7 +290,7 @@ function initializeEventListeners() {
             const configSection = document.getElementById('analysisConfigSection');
             if (configSection) {
                 configSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                configSection.style.outline = '2px solid var(--lcw-blue)';
+                configSection.style.outline = '2px solid var(--primary-blue)';
                 setTimeout(() => { configSection.style.outline = 'none'; }, 2000);
             }
             
@@ -868,7 +868,7 @@ async function handleQuery() {
 
             // Sidebar seçimi veya lastAnomalyResult varsa devam et
             if (window.lastAnomalyResult || hasSidebarAnalysisId) {
-                console.log('✅ Chat anomaly query CONFIRMED, using LCWGPT endpoint');
+                console.log('✅ Chat anomaly query CONFIRMED, using AI endpoint');
                 console.log('🔍 DEBUG: lastAnomalyResult structure check:');
                 console.log('🔍 DEBUG: - storage_info:', !!window.lastAnomalyResult?.storage_info);
                 console.log('🔍 DEBUG: - storage_id:', !!window.lastAnomalyResult?.storage_id);
@@ -891,7 +891,7 @@ async function handleQuery() {
                     // Adımlar (Önceki adımda eklemiştik, aynen koruyoruz)
                     window.AnomalyProgress.steps = [
                         { id: 'context', text: 'Analiz bağlamı storage\'dan yükleniyor...', icon: '', duration: 1500 },
-                        { id: 'connect', text: 'LCWGPT servisi ile bağlantı kuruluyor...', icon: '', duration: 2000 },
+                        { id: 'connect', text: 'AI servisi ile bağlantı kuruluyor...', icon: '', duration: 2000 },
                         { id: 'chunk',   text: 'Veri setleri parçalanıyor (Chunking)...', icon: '', duration: 1500 },
                         { id: 'analyze', text: 'Yapay zeka analizi yapılıyor (Bu işlem zaman alabilir)...', icon: '', duration: 15000 },
                         { id: 'merge',   text: 'Yanıtlar birleştiriliyor ve özetleniyor...', icon: '', duration: 1000 }
@@ -907,7 +907,7 @@ async function handleQuery() {
                             const headerTitle = progressModal.querySelector('.progress-header h3');
                             const headerDesc = progressModal.querySelector('.progress-header p');
                             if (headerTitle) {
-                                headerTitle.innerHTML = 'LCWGPT Asistan Devrede';
+                                headerTitle.innerHTML = 'AI Asistan Devrede';
                                 headerTitle.style.color = '#9b59b6';
                             }
                             if (headerDesc) headerDesc.textContent = 'Büyük veri setleri parçalı olarak işleniyor, lütfen bekleyin...';
@@ -931,7 +931,7 @@ async function handleQuery() {
                         })
                     });
 
-                console.log('LCWGPT response status:', chatResponse.status);
+                console.log('AI response status:', chatResponse.status);
 
                 if (chatResponse.ok) {
                     const chatResult = await chatResponse.json();
@@ -940,7 +940,7 @@ async function handleQuery() {
                     if (window.AnomalyProgress) window.AnomalyProgress.complete();
                     else showLoader(false);
 
-                    console.log('LCWGPT result:', chatResult);
+                    console.log('AI result:', chatResult);
 
                     // ✅ SIDEBAR AI YANIT — sidebar'da boş cevap sorununu gider
                     if (typeof window.addSidebarAIMessage === 'function') {
@@ -1015,7 +1015,7 @@ async function handleQuery() {
 
                     return; // Burada return ediyoruz
                 } else {
-                    console.error('LCWGPT request failed:', chatResponse.status);
+                    console.error('AI request failed:', chatResponse.status);
                     const errorText = await chatResponse.text();
                     console.error('Error response:', errorText);
                     // ✅ Sidebar'a HTTP hata mesajı
@@ -1030,7 +1030,7 @@ async function handleQuery() {
                     }, 500);
                 }
             } catch (error) {
-                console.error('LCWGPT error:', error);
+                console.error('AI error:', error);
                 // YENİ: Progress Hata Gösterimi
                 if (window.AnomalyProgress) window.AnomalyProgress.error();
                 else showLoader(false);
@@ -2486,7 +2486,7 @@ function displayDBAAnalysisResults(result, cluster, startTime, endTime) {
         html += renderDBACriticalAnomalies(result.results.critical_anomalies);
     }
     
-    // AI açıklaması (LCWGPT)
+    // AI explanation
     if (result.results && result.results.ai_summary) {
         html += renderDBAExplanation(result.results.ai_summary);
     }
@@ -2756,7 +2756,7 @@ window.changeDBAPage = function(page) {
  */
 function renderDBAExplanation(explanation) {
     let html = '<div class="dba-ai-explanation" style="margin-top: 30px; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px;">';
-    html += '<h3 style="margin-bottom: 15px;">LCWGPT Analizi</h3>';
+    html += '<h3 style="margin-bottom: 15px;">AI Analizi</h3>';
     html += '<div class="ai-explanation-content" style="background: rgba(255,255,255,0.95); color: #333; padding: 15px; border-radius: 6px;">';
     
     // formatAIResponse fonksiyonunu kullan (mevcut fonksiyon)

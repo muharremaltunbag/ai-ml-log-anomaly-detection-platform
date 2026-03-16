@@ -5,7 +5,7 @@ from src.anomaly.log_reader import OpenSearchProxyReader
 def test_consistency():
     """Log tutarlılık testi"""
     
-    host = "lcwmongodb01n3.lcwaikiki.local"
+    host = "mongo-prod-03.internal.local"
     results = []
     
     print(f"Test Host: {host}")

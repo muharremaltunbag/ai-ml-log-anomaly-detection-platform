@@ -1,7 +1,7 @@
 // web_ui\static\script-history.js
 /**
  * MongoDB-LLM-assistant\web_ui\static\script-history.js
- * LC Waikiki MongoDB Assistant - History Management Module
+ * DB Anomaly Platform - History Management Module
  * 
  * Bu modül konuşma geçmişi yönetimi ile ilgili tüm fonksiyonları içerir:
  * - History yükleme/kaydetme (MongoDB entegrasyonu)
@@ -130,7 +130,7 @@ async function autoLoadHistoryOnStartup() {
         window.apiKey = apiKey;
         window.isConnected = true;
         
-        // LCWGPT: Bağlantı kurulunca sunucu listesini çek ve sidebar'da göster
+        // AI: Bağlantı kurulunca sunucu listesini çek ve sidebar'da göster
         if (typeof window.loadAnalyzedServers === 'function') {
             window.loadAnalyzedServers().then(function() {
                 if (window.chatServerList && window.chatServerList.length > 0 && !window.selectedChatServer) {

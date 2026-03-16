@@ -3,7 +3,7 @@ import os
 
 # Production model'i kontrol et
 print(f"\Production ortamında test:")
-prod_model_path = "models/isolation_forest_lcwmongodb01n2.pkl"
+prod_model_path = "models/isolation_forest_mongo-prod-01.pkl"
 print(f"Production model size: {os.path.getsize(prod_model_path) / (1024*1024):.2f} MB")
 
 model_data = joblib.load(prod_model_path)

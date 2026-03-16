@@ -121,8 +121,8 @@ def test_server_extraction():
     
     # Test dosya adları
     test_filenames = [
-        ("mongod_lcwmongodb01n2.log", "lcwmongodb01n2"),
-        ("ECAZTRDBMNG019.log", "ecaztrdbmng019"),
+        ("mongod_mongo-prod-02.log", "mongo-prod-02"),
+        ("DBSERVER019.log", "dbserver-019"),
         ("mongod.log.PPLMNGDBN2", "pplmngdbn2"),
         ("testmongodb01_2025.log", "testmongodb01"),
         ("random_file.log", None),  # Tanınmayan pattern

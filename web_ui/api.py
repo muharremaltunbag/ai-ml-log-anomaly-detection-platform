@@ -171,7 +171,7 @@ logger.addHandler(console_handler)
 # FastAPI app
 app = FastAPI(
     title="MongoDB LangChain Assistant",
-    description="LC Waikiki MongoDB Doğal Dil Sorgu Arayüzü",
+    description="MongoDB Natural Language Query Interface with Anomaly Detection",
     version="1.0.0"
 )
 
@@ -497,7 +497,7 @@ async def process_query(request: QueryRequest):
                     return QueryResponse(
                         durum="eksik_parametre",
                         işlem="server_validation_failed",
-                        açıklama="⚠️ Hangi sunucuyu incelememi istersiniz?\n\nLütfen sunucu adını belirtin (Örn: 'ecaztrdbmng015' veya 'cluster-a').",
+                        açıklama="⚠️ Hangi sunucuyu incelememi istersiniz?\n\nLütfen sunucu adını belirtin (Örn: 'mongo-prod-01' veya 'cluster-a').",
                         öneriler=[
                             "Mevcut sunucuları listele",
                             "En kritik sunucuyu bul",
@@ -2559,7 +2559,7 @@ async def chat_query_anomalies(request: Dict[str, Any]):
                         for h in src_hosts[:2]:  # Her tipten max 2 örnek
                             host_examples.append(f"{h} ({src_label})")
 
-                    first_host = available_hosts[0] if available_hosts else 'lcwmongodb01n2'
+                    first_host = available_hosts[0] if available_hosts else 'localhost'
                     first_host_short = first_host.split('.')[0] if '.' in first_host else first_host
 
                     return {
@@ -3750,7 +3750,7 @@ async def debug_server_validation(api_key: str):
         })
         
         # Test 4: FQDN düzeltmesi
-        test_hostname = "lcwmongodb01n2"
+        test_hostname = "test-mongo-01"
         from src.anomaly.anomaly_tools import AnomalyDetectionTools
         tools = AnomalyDetectionTools()
         fixed_hostname = tools._fix_mongodb_hostname_fqdn(test_hostname)
@@ -3803,7 +3803,7 @@ async def dba_analyze_specific_time(
     DBA'lar için spesifik zaman aralığı anomali analizi (Semaphore Korumalı)
     
     Örnek kullanım:
-    /api/dba/analyze-specific-time?host=LCWMONGODB01&start_time=2025-09-15T16:09:00Z&end_time=2025-09-15T16:11:00Z&api_key=xxx
+    /api/dba/analyze-specific-time?host=mongo-prod-01&start_time=2025-09-15T16:09:00Z&end_time=2025-09-15T16:11:00Z&api_key=xxx
     """
     async with ANOMALY_ANALYSIS_SEMAPHORE:
         try:

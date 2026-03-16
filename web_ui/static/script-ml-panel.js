@@ -44,7 +44,7 @@
     }
 
     /**
-     * ML Sidebar'i göster (CSS class toggle — LCWGPT ile aynı mantık)
+     * ML Sidebar'i göster (CSS class toggle)
      */
     function showMLPanel() {
         var panel = document.getElementById('mlModelPanel');

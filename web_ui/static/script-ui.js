@@ -1,7 +1,7 @@
 // web_ui\static\script-ui.js
 /**
  * MongoDB-LLM-assistant\web_ui\static\script-ui.js
- * LC Waikiki MongoDB Assistant - UI Helper Module
+ * DB Anomaly Platform - UI Helper Module
  * 
  * Bu modül UI ile ilgili yardımcı fonksiyonları içerir:
  * - Durum güncelleme (updateStatus)

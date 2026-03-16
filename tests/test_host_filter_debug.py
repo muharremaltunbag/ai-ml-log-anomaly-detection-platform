@@ -21,7 +21,7 @@ def test_host_filter():
     df2 = reader.read_logs(
         limit=100, 
         last_hours=1,
-        host_filter="lcwmongodb01n3.lcwaikiki.local"
+        host_filter="mongo-prod-03.internal.local"
     )
     print(f"   Log sayısı: {len(df2)}")
     
@@ -33,7 +33,7 @@ def test_host_filter():
             "bool": {
                 "must": [
                     {"range": {"@timestamp": {"gte": "now-1h"}}},
-                    {"term": {"host.name": "lcwmongodb01n3.lcwaikiki.local"}}
+                    {"term": {"host.name": "mongo-prod-03.internal.local"}}
                 ]
             }
         }

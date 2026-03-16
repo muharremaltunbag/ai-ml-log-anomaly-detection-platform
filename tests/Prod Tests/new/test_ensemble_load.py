@@ -16,8 +16,8 @@ print("=== ENSEMBLE LOAD TEST ===\n")
 print("1. Creating new detector instance...")
 detector = MongoDBAnomalyDetector()
 
-print("2. Loading model for ecaztrdbmng015...")
-success = detector.load_model(server_name="ecaztrdbmng015")
+print("2. Loading model for dbserver-015...")
+success = detector.load_model(server_name="dbserver-015")
 
 print(f"\n--- Load Result ---")
 print(f"Load successful: {success}")

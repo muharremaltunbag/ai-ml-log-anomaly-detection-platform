@@ -1,7 +1,7 @@
 // web_ui\static\script-anomaly.js
 
 /**
- * LC Waikiki MongoDB Assistant - Anomaly Analysis Module
+ * DB Anomaly Platform - Anomaly Analysis Module
  * 
  * Bu modül anomali analizi ile ilgili tüm fonksiyonları içerir:
  * - Anomali analiz başlatma ve yönetim
@@ -151,7 +151,7 @@ function displayChatQueryResult(result, userQuery) {
     
     // AI yanıtı
     html += '<div class="chat-message ai-message">';
-    html += '<div class="message-header">LCWGPT Asistan</div>';
+    html += '<div class="message-header">AI Asistan</div>';
     html += '<div class="message-content">';
     
     if (result.status === 'success' && result.ai_response) {
@@ -1910,24 +1910,24 @@ function displayAnomalyResults(result) {
     }
 
     // ============================================
-    // ✅ LCWGPT SIDEBAR SUNUCU LİSTESİ OTOMATİK GÜNCELLEME
+    // ✅ AI SIDEBAR SUNUCU LİSTESİ OTOMATİK GÜNCELLEME
     // ============================================
     // Analiz tamamlandığında sidebar'daki sunucu listesini yenile
     // storage_info varsa kayıt zaten tamamlanmış — hemen yenile
     // yoksa backend'in kaydetme süresini bekle
     if (typeof window.loadAnalyzedServers === 'function') {
         const refreshDelay = result.storage_info ? 500 : 2000;
-        console.log(`🔄 LCWGPT: Refreshing server list in ${refreshDelay}ms...`);
+        console.log(`🔄 AI: Refreshing server list in ${refreshDelay}ms...`);
 
         // ✅ FIX 3: Yeni analiz tamamlandığında mevcut sunucu seçimini sıfırla
         // Kullanıcı yeni (veya güncellenmiş) verilerle çalışabilsin
         window.selectedChatServer = null;
         window.selectedChatAnalysisId = null;
-        console.log('🔄 LCWGPT: Server selection reset for new analysis');
+        console.log('🔄 AI: Server selection reset for new analysis');
 
         setTimeout(() => {
             window.loadAnalyzedServers().then(() => {
-                console.log('✅ LCWGPT: Server list refreshed. Servers:',
+                console.log('✅ AI: Server list refreshed. Servers:',
                     (window.chatServerList || []).map(s => s.host).join(', '));
 
                 // ✅ FIX 3: Her zaman yeni sunucu seçim ekranını göster
@@ -1942,7 +1942,7 @@ function displayAnomalyResults(result) {
                 if (typeof window.renderExampleQuestions === 'function') {
                     window.renderExampleQuestions(null);
                 }
-            }).catch(e => console.warn('LCWGPT: Server list refresh failed:', e));
+            }).catch(e => console.warn('AI: Server list refresh failed:', e));
         }, refreshDelay);
     }
 
@@ -2897,7 +2897,7 @@ const AnomalyProgress = {
         { id: 'fetch', label: 'Log Verilerinin Çekilmesi (Slice Read)' },
         { id: 'processing', label: 'Veri İşleme & Feature Engineering' },
         { id: 'ml', label: 'Model Eğitimi & Anomali Tespiti' },
-        { id: 'ai', label: 'LCWGPT ile Kök Neden Analizi' },
+        { id: 'ai', label: 'AI ile Kök Neden Analizi' },
         { id: 'save', label: 'Sonuçların Kaydedilmesi & Raporlama' }
     ],
 

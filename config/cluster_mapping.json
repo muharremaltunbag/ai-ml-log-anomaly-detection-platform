@@ -1,57 +1,28 @@
-
-
 {
     "cluster_mappings": {
-      "ecommercefix": ["ECOMFIXMONGODB01", "ECOMFIXMONGODB02", "ECOMFIXMONGODB03"],
-      "lcwmongodb01": ["lcwmongodb01n1", "lcwmongodb01n2", "lcwmongodb01n3"],
-      "testmongo": ["testmongodb01", "testmongodb02", "testmongodb03"],
-      "rsdevmongo": ["devmongodb01", "devmongodb02", "devmongodbarb"],
-      "rs_pplaz": ["pplazmongodbn1", "pplazmongodbn2", "pplazmongodbn3"],
-      "ntfcmongo": ["NTFCMONGODB01", "ntfcmongodb02", "ntfcmongodb04"],
-      "rs_rumongo": ["rumongo02"],
-      "rs_kzmongo": ["kzmongo02"],
-      "ecommerce": ["TTESTMONGO01", "ECAZTRDBMNG007", "ECAZTRDBMNG008", "ECAZTRDBMNG009"],
-      "ecommercemp": ["ECAZTRDBMNG001", "ECAZTRDBMNG002", "ECAZTRDBMNG003"],
-      "ecommercebilling": ["ECAZTRDBMNG004", "ECAZTRDBMNG005", "ECAZTRDBMNG006"],
-      "ecommercelog": ["ECAZTRDBMNG010", "ECAZTRDBMNG011", "ECAZTRDBMNG012"],
-      "rs_ecfavmongo": ["ECAZTRDBMNG013", "ECAZTRDBMNG014", "ECAZTRDBMNG015"],
-      "ppl": ["pplmongodbn1", "pplmongodbn2", "pplmongodbn3", "DRPPLMNGDBN1"],
-      "kznmongors": ["kznmngdbn1", "kznmngdbn2", "kznmngdbn3"],
-      "kzmongors": ["DRKZNMNGDBN1"],
-      "lcwmongotest": ["MNGDBTEST01", "MNGDBTEST02", "MNGDBTEST03"],
-      "rs_sec_twrap": ["hqsectwrapmdbn1", "hqsectwrapmdbn2", "hqsectwrapmdbn3", "drhqsectmdbn1"],
-      "ECAZGLDB": ["ECAZGLDBMNG001", "ECAZGLDBMNG002", "ECAZGLDBMNG003"],
-      "rs_onefixtestmongo": ["onefixtestmongo01"],
-      "rs_onefixppmongo": ["onefixppmongo01"]
+      "webapp-cluster": ["webapp-mongo-01", "webapp-mongo-02", "webapp-mongo-03"],
+      "main-cluster": ["main-mongo-n1", "main-mongo-n2", "main-mongo-n3"],
+      "test-cluster": ["test-mongo-01", "test-mongo-02", "test-mongo-03"],
+      "dev-cluster": ["dev-mongo-01", "dev-mongo-02", "dev-mongo-arb"],
+      "analytics-cluster": ["analytics-mongo-n1", "analytics-mongo-n2", "analytics-mongo-n3"],
+      "notification-cluster": ["notif-mongo-01", "notif-mongo-02", "notif-mongo-04"],
+      "billing-cluster": ["billing-mongo-01", "billing-mongo-02", "billing-mongo-03"],
+      "logging-cluster": ["logging-mongo-01", "logging-mongo-02", "logging-mongo-03"]
     },
     "cluster_display_names": {
-      "ecommercefix": "ecommercefix",
-      "lcwmongodb01": "lcwmongodb01",
-      "testmongo": "testmongo",
-      "rsdevmongo": "rsdevmongo",
-      "rs_pplaz": "rs_pplaz",
-      "ntfcmongo": "ntfcmongo",
-      "ppl": "ppl",
-      "rs_sec_twrap": "rs_sec_twrap",
-      "ECAZGLDB": "ECAZGLDB",
-      "ecommerce": "ecommerce",
-      "ecommercemp": "ecommercemp",
-      "ecommercebilling": "ecommercebilling",
-      "ecommercelog": "ecommercelog",
-      "rs_ecfavmongo": "rs_ecfavmongo",
-      "kznmongors": "kznmongors",
-      "kzmongors": "kzmongors",
-      "lcwmongotest": "lcwmongotest",
-      "rs_onefixtestmongo": "rs_onefixtestmongo",
-      "rs_onefixppmongo": "rs_onefixppmongo",
-      "rs_rumongo": "rs_rumongo",
-      "rs_kzmongo": "rs_kzmongo"
+      "webapp-cluster": "Web Application",
+      "main-cluster": "Main Database",
+      "test-cluster": "Test Environment",
+      "dev-cluster": "Development",
+      "analytics-cluster": "Analytics",
+      "notification-cluster": "Notifications",
+      "billing-cluster": "Billing",
+      "logging-cluster": "Logging"
     },
-    "standalone_hosts": ["tecomhqmongo01"],
+    "standalone_hosts": ["standalone-mongo-01"],
     "environment_mapping": {
-      "production": ["ecommercefix", "lcwmongodb01", "ppl", "rs_pplaz", "ntfcmongo", "ecommerce", "ecommercemp", "ecommercebilling", "ecommercelog", "rs_ecfavmongo", "ECAZGLDB", "rs_sec_twrap"],
-      "test": ["testmongo", "lcwmongotest", "rs_onefixtestmongo", "rs_onefixppmongo", "TTESTMONGO01"],
-      "development": ["rsdevmongo"],
-      "regional": ["kznmongors", "kzmongors", "rs_rumongo", "rs_kzmongo"]
+      "production": ["webapp-cluster", "main-cluster", "analytics-cluster", "notification-cluster", "billing-cluster", "logging-cluster"],
+      "test": ["test-cluster"],
+      "development": ["dev-cluster"]
     }
   }

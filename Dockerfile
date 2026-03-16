@@ -1,9 +1,9 @@
-# LC Waikiki MongoDB LangChain Assistant - Dockerfile
+# MongoDB Anomaly Detection Platform - Dockerfile
 # Python 3.11 base image (pandas/numpy için gerekli C kütüphaneleri içerir)
 FROM python:3.11
 
 # Maintainer bilgisi
-LABEL maintainer="LC Waikiki BT Analitik Veritabanları Müdürlüğü"
+LABEL maintainer="DBA Team"
 LABEL description="MongoDB Anomaly DetectionAssistant API"
 
 # Sistem bağımlılıklarını yükle

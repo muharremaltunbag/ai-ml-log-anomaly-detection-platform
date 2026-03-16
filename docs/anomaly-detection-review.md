@@ -32,7 +32,7 @@ ANOMALY SCORING              THRESHOLD/OUTPUT               HISTORY/STORAGE
 └─────────────────────┘      └──────────────────┘          └────────────────────┘
          │                            │
          ▼                            ▼
-UI/LCWGPT                    API Layer
+UI/AI Assistant               API Layer
 ┌─────────────────┐          ┌─────────────────────────┐
 │ script-anomaly.js│◀────────│ api.py                   │
 │ script-ml-panel  │  JSON   │ /api/analyze-uploaded-log │

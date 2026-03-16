@@ -27,11 +27,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Bilinen host varyasyonları
-KNOWN_ECAZ_HOSTS = [
-    "ECAZTRDBMNG004", "ECAZTRDBMNG005", "ECAZTRDBMNG006",  # ecommercebilling
-    "ECAZTRDBMNG007", "ECAZTRDBMNG008", "ECAZTRDBMNG009",  # ecommerce
-    "ECAZTRDBMNG010", "ECAZTRDBMNG011", "ECAZTRDBMNG012",  # ecommercelog
-    "ECAZTRDBMNG013", "ECAZTRDBMNG014", "ECAZTRDBMNG015",  # rs_ecfavmongo
+KNOWN_DBSRV_HOSTS = [
+    "DBSERVER004", "DBSERVER005", "DBSERVER006",  # ecommercebilling
+    "DBSERVER007", "DBSERVER008", "DBSERVER009",  # ecommerce
+    "DBSERVER010", "DBSERVER011", "DBSERVER012",  # ecommercelog
+    "DBSERVER013", "DBSERVER014", "DBSERVER015",  # rs_ecfavmongo
 ]
 
 def generate_host_variants(base_hostname):
@@ -45,9 +45,9 @@ def generate_host_variants(base_hostname):
     
     # FQDN varyantları
     domains = [
-        ".lcwecomtr.com",
-        ".lcwaikiki.local",
-        ".lcwecommerce.com"
+        ".example.com",
+        ".internal.local",
+        ".example.com"
     ]
     
     for domain in domains:
@@ -100,16 +100,16 @@ def discover_all_mongodb_hosts(reader):
             print(f"\n✅ {len(hosts)} aktif host bulundu!")
             
             # Host gruplandırma
-            ecaz_hosts = []
+            dbsrv_hosts = []
             lcw_hosts = []
             test_hosts = []
             other_hosts = []
             
             for h in hosts:
                 h_upper = h.upper()
-                if 'ECAZ' in h_upper and 'MNG' in h_upper:
-                    ecaz_hosts.append(h)
-                elif 'LCWMONGODB' in h_upper:
+                if 'DBSRV' in h_upper and 'MNG' in h_upper:
+                    dbsrv_hosts.append(h)
+                elif 'MONGOPROD' in h_upper:
                     lcw_hosts.append(h)
                 elif 'TEST' in h_upper and 'MONGO' in h_upper:
                     test_hosts.append(h)
@@ -117,15 +117,15 @@ def discover_all_mongodb_hosts(reader):
                     other_hosts.append(h)
             
             # Detaylı rapor
-            if ecaz_hosts:
-                print(f"\n🔸 ECAZ Production Hosts ({len(ecaz_hosts)}):")
-                for h in sorted(ecaz_hosts)[:15]:
+            if dbsrv_hosts:
+                print(f"\n🔸 DBSRV Production Hosts ({len(dbsrv_hosts)}):")
+                for h in sorted(dbsrv_hosts)[:15]:
                     print(f"   - {h}")
-                if len(ecaz_hosts) > 15:
-                    print(f"   ... ve {len(ecaz_hosts)-15} host daha")
+                if len(dbsrv_hosts) > 15:
+                    print(f"   ... ve {len(dbsrv_hosts)-15} host daha")
             
             if lcw_hosts:
-                print(f"\n🔸 LCW Production Hosts ({len(lcw_hosts)}):")
+                print(f"\n🔸 Production Hosts ({len(lcw_hosts)}):")
                 for h in sorted(lcw_hosts):
                     print(f"   - {h}")
             
@@ -142,7 +142,7 @@ def discover_all_mongodb_hosts(reader):
                     print(f"   ... ve {len(other_hosts)-10} host daha")
             
             return hosts, {
-                'ecaz': ecaz_hosts,
+                'dbsrv': dbsrv_hosts,
                 'lcw': lcw_hosts,
                 'test': test_hosts,
                 'other': other_hosts
@@ -157,21 +157,21 @@ def discover_all_mongodb_hosts(reader):
         traceback.print_exc()
         return [], {}
 
-def test_ecaz_hosts_specifically(reader):
-    """Bilinen ECAZ hostlarını spesifik olarak test et"""
+def test_dbsrv_hosts_specifically(reader):
+    """Bilinen DBSRV hostlarını spesifik olarak test et"""
     print("\n" + "="*60)
-    print("ECAZ HOST SPECIFIC TESTING")
+    print("DBSRV HOST SPECIFIC TESTING")
     print("="*60)
     
     found_hosts = []
     
-    for base_host in KNOWN_ECAZ_HOSTS[:5]:  # İlk 5 host'u test et
+    for base_host in KNOWN_DBSRV_HOSTS[:5]:  # İlk 5 host'u test et
         actual_hostname = find_host_in_opensearch(reader, base_host)
         if actual_hostname:
             found_hosts.append(actual_hostname)
     
     if found_hosts:
-        print(f"\n✅ {len(found_hosts)} ECAZ host bulundu:")
+        print(f"\n✅ {len(found_hosts)} DBSRV host bulundu:")
         for h in found_hosts:
             print(f"   • {h}")
         
@@ -197,7 +197,7 @@ def test_ecaz_hosts_specifically(reader):
         
         if all_logs:
             combined_df = pd.concat(all_logs, ignore_index=True)
-            print(f"\n✅ Toplam {len(combined_df)} ECAZ log birleştirildi")
+            print(f"\n✅ Toplam {len(combined_df)} DBSRV log birleştirildi")
             return combined_df
     
     return pd.DataFrame()
@@ -258,7 +258,7 @@ def analyze_logs(df):
 def main():
     """Ana test fonksiyonu"""
     print("\n" + "="*60)
-    print("MongoDB Log Anomaly Detection - ECAZ Host Test v3")
+    print("MongoDB Log Anomaly Detection - DBSRV Host Test v3")
     print("Test Tarihi:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     print("="*60)
     
@@ -287,17 +287,17 @@ def main():
         # Host discovery
         all_hosts, grouped_hosts = discover_all_mongodb_hosts(reader)
         
-        # ECAZ hostları spesifik test et
-        ecaz_logs = test_ecaz_hosts_specifically(reader)
+        # DBSRV hostları spesifik test et
+        dbsrv_logs = test_dbsrv_hosts_specifically(reader)
         
         # Log analizi
-        if not ecaz_logs.empty:
-            analyze_logs(ecaz_logs)
+        if not dbsrv_logs.empty:
+            analyze_logs(dbsrv_logs)
         
-        # Eğer ECAZ'da log yoksa, keşfedilen diğer hostları dene
-        if ecaz_logs.empty and grouped_hosts.get('ecaz'):
-            print("\n→ Keşfedilen ECAZ hostlarından log okuma deneniyor...")
-            for host in grouped_hosts['ecaz'][:3]:
+        # Eğer DBSRV'da log yoksa, keşfedilen diğer hostları dene
+        if dbsrv_logs.empty and grouped_hosts.get('dbsrv'):
+            print("\n→ Keşfedilen DBSRV hostlarından log okuma deneniyor...")
+            for host in grouped_hosts['dbsrv'][:3]:
                 df = reader.read_logs(limit=100, last_hours=24, host_filter=host)
                 if not df.empty:
                     print(f"✅ {host} üzerinden {len(df)} log okundu!")
@@ -310,8 +310,8 @@ def main():
         print("="*60)
         print(f"✅ Test tamamlandı!")
         print(f"   • {len(all_hosts)} host keşfedildi")
-        if not ecaz_logs.empty:
-            print(f"   • {len(ecaz_logs)} ECAZ log işlendi")
+        if not dbsrv_logs.empty:
+            print(f"   • {len(dbsrv_logs)} DBSRV log işlendi")
         
         return True
         

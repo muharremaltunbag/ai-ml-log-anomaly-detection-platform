@@ -63,7 +63,7 @@ def test_opensearch_connection():
     # Test 2: Tenant Selection
     print("\n[TEST 2] Tenant Selection Test...")
     tenant_success = reader._select_tenant()
-    print(f"✅ Tenant (LCW): {'SELECTED' if tenant_success else 'FAILED'}")
+    print(f"✅ Tenant: {'SELECTED' if tenant_success else 'FAILED'}")
     
     # Test 3: Full Connection
     print("\n[TEST 3] Full Connection Test...")

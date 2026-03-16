@@ -11,10 +11,10 @@ project_root = os.path.abspath(os.path.join(test_dir, '..', '..', '..'))
 sys.path.insert(0, project_root)
 
 # Model dosyasi path'i - Proje root'undaki models klasoru
-model_path = os.path.join(project_root, 'models', 'isolation_forest_ecaztrdbmng015.pkl')
+model_path = os.path.join(project_root, 'models', 'isolation_forest_dbserver-015.pkl')
 
 # Alternatif: Linux sunucusundaysa
-# model_path = '/opt/lcw-mongodb-assistant/models/isolation_forest_ECAZGLDBMNG002.pkl'
+# model_path = '/opt/mongodb-assistant/models/isolation_forest_DBSERVER002.pkl'
 
 print(f"Model path: {model_path}")
 print(f"File exists: {os.path.exists(model_path)}")

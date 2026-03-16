@@ -16,7 +16,7 @@ sys.path.insert(0, str(root_dir))
 
 # API Configuration
 BASE_URL = "http://localhost:8000"
-API_KEY = os.getenv("API_KEY", "lcw-test-2024")  # .env'den veya default
+API_KEY = os.getenv("API_KEY", "test-api-key")  # .env'den veya default
 
 print("=" * 50)
 print("API ENDPOINT TESTS (FIXED)")

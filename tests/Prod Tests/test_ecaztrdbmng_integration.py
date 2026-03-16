@@ -1,10 +1,10 @@
 """
-ECAZTRDBMNG Sunucuları Entegrasyon Test Script
+DBSERVER Sunucuları Entegrasyon Test Script
 ==============================================
 
 Bu script şunları test eder:
 1. OpenSearch bağlantısı ve authentication
-2. 15 ECAZTRDBMNG sunucusunun varlığı
+2. 15 DBSERVER sunucusunun varlığı
 3. Cluster mapping doğruluğu (5 cluster)
 4. Her sunucudan log okuma
 5. Hostname normalization
@@ -13,7 +13,7 @@ Bu script şunları test eder:
 8. Frontend entegrasyonu
 
 Kullanım:
-    python tests/Prod\ Tests/test_ecaztrdbmng_integration.py
+    python tests/Prod\ Tests/test_dbserver_integration.py
 """
 
 import sys
@@ -68,35 +68,35 @@ def print_detail(text: str):
     print(f"   {text}")
 
 
-class ECAZTRDBMNGIntegrationTest:
-    """ECAZTRDBMNG sunucuları için kapsamlı entegrasyon testi"""
+class DBServerIntegrationTest:
+    """DBSERVER sunucuları için kapsamlı entegrasyon testi"""
     
     # Beklenen sunucular
     EXPECTED_HOSTS = {
         'ecommercemp': [
-            'ecaztrdbmng001.lcwecomtr.com',
-            'ecaztrdbmng002.lcwecomtr.com',
-            'ecaztrdbmng003.lcwecomtr.com'
+            'dbserver-001.example.com',
+            'dbserver-002.example.com',
+            'dbserver-003.example.com'
         ],
         'ecommercebilling': [
-            'ecaztrdbmng004.lcwecomtr.com',
-            'ecaztrdbmng005.lcwecomtr.com',
-            'ecaztrdbmng006.lcwecomtr.com'
+            'dbserver-004.example.com',
+            'dbserver-005.example.com',
+            'dbserver-006.example.com'
         ],
         'ecommerce': [
-            'ecaztrdbmng007.lcwecomtr.com',
-            'ecaztrdbmng008.lcwecomtr.com',
-            'ecaztrdbmng009.lcwecomtr.com'
+            'dbserver-007.example.com',
+            'dbserver-008.example.com',
+            'dbserver-009.example.com'
         ],
         'ecommercelog': [
-            'ecaztrdbmng010.lcwecomtr.com',
-            'ecaztrdbmng011.lcwecomtr.com',
-            'ecaztrdbmng012.lcwecomtr.com'
+            'dbserver-010.example.com',
+            'dbserver-011.example.com',
+            'dbserver-012.example.com'
         ],
         'rs_ecfavmongo': [
-            'ecaztrdbmng013.lcwecomtr.com',
-            'ecaztrdbmng014.lcwecomtr.com',
-            'ecaztrdbmng015.lcwecomtr.com'
+            'dbserver-013.example.com',
+            'dbserver-014.example.com',
+            'dbserver-015.example.com'
         ]
     }
     
@@ -116,7 +116,7 @@ class ECAZTRDBMNGIntegrationTest:
         
     def run_all_tests(self):
         """Tüm testleri çalıştır"""
-        print_header("ECAZTRDBMNG SUNUCULARI ENTEGRASYON TEST SUITE")
+        print_header("DBSERVER SUNUCULARI ENTEGRASYON TEST SUITE")
         print_info(f"Test başlangıç: {self.test_results['start_time'].strftime('%Y-%m-%d %H:%M:%S')}")
         print_info(f"Beklenen toplam sunucu: {sum(len(hosts) for hosts in self.EXPECTED_HOSTS.values())}")
         
@@ -130,7 +130,7 @@ class ECAZTRDBMNGIntegrationTest:
             ('Hostname Normalization', self.test_hostname_normalization),
             ('Log Reading - Single Host', self.test_log_reading_single),
             ('Log Reading - Multiple Hosts', self.test_log_reading_multiple),
-            ('Log Reading - All ECAZTRDBMNG', self.test_log_reading_all_ecaz),
+            ('Log Reading - All DBSERVER', self.test_log_reading_all_ecaz),
             ('Host Log Statistics', self.test_host_statistics),
             ('API Endpoints (if available)', self.test_api_endpoints),
             ('Anomaly Detection Pipeline', self.test_anomaly_pipeline),
@@ -224,7 +224,7 @@ class ECAZTRDBMNGIntegrationTest:
             
             print_success(f"cluster_mapping.json loaded: {len(mapping['cluster_mappings'])} clusters")
             
-            # 2. ECAZTRDBMNG cluster'larını kontrol et
+            # 2. DBSERVER cluster'larını kontrol et
             missing_clusters = []
             for cluster_id in self.EXPECTED_HOSTS.keys():
                 if cluster_id not in mapping['cluster_mappings']:
@@ -248,12 +248,12 @@ class ECAZTRDBMNGIntegrationTest:
                         blacklist = anomaly_config['hosts'].get('blacklist', [])
                         
                         if whitelist:
-                            print_warning(f"Whitelist is not empty ({len(whitelist)} hosts). Ensure ECAZTRDBMNG hosts are included.")
+                            print_warning(f"Whitelist is not empty ({len(whitelist)} hosts). Ensure DBSERVER hosts are included.")
                         
-                        # Blacklist'te ECAZTRDBMNG var mı?
-                        blocked = [h for h in blacklist if 'ecaztrdbmng' in h.lower()]
+                        # Blacklist'te DBSERVER var mı?
+                        blocked = [h for h in blacklist if 'dbserver' in h.lower()]
                         if blocked:
-                            print_error(f"ECAZTRDBMNG hosts found in blacklist: {blocked}")
+                            print_error(f"DBSERVER hosts found in blacklist: {blocked}")
                             return False
                         
                         print_success("anomaly_config.json checked: No blocking rules")
@@ -306,10 +306,10 @@ class ECAZTRDBMNGIntegrationTest:
             
             print_success(f"Found {len(hosts)} total MongoDB hosts")
             
-            # ECAZTRDBMNG sunucularını filtrele
-            ecaz_hosts = [h for h in hosts if 'ecaztrdbmng' in h.lower()]
+            # DBSERVER sunucularını filtrele
+            ecaz_hosts = [h for h in hosts if 'dbserver' in h.lower()]
             
-            print_info(f"ECAZTRDBMNG hosts found: {len(ecaz_hosts)}")
+            print_info(f"DBSERVER hosts found: {len(ecaz_hosts)}")
             
             # Her host'u yazdır
             for host in sorted(ecaz_hosts):
@@ -319,7 +319,7 @@ class ECAZTRDBMNGIntegrationTest:
             expected_count = sum(len(hosts) for hosts in self.EXPECTED_HOSTS.values())
             
             if len(ecaz_hosts) < 9:  # En az 9 sunucu (zaten çalışanlar)
-                print_error(f"Expected at least 9 ECAZTRDBMNG hosts, found {len(ecaz_hosts)}")
+                print_error(f"Expected at least 9 DBSERVER hosts, found {len(ecaz_hosts)}")
                 
                 # Hangileri eksik?
                 all_expected = []
@@ -339,9 +339,9 @@ class ECAZTRDBMNGIntegrationTest:
                 return False
             
             if len(ecaz_hosts) >= expected_count:
-                print_success(f"All {expected_count} ECAZTRDBMNG hosts are available!")
+                print_success(f"All {expected_count} DBSERVER hosts are available!")
             else:
-                print_warning(f"Found {len(ecaz_hosts)}/{expected_count} ECAZTRDBMNG hosts")
+                print_warning(f"Found {len(ecaz_hosts)}/{expected_count} DBSERVER hosts")
             
             return True
             
@@ -382,8 +382,8 @@ class ECAZTRDBMNGIntegrationTest:
                     found_normalized = set(h.lower().split('.')[0] for h in found_hosts)
                     expected_normalized = set(h.lower().split('.')[0] for h in expected_hosts)
                     
-                    # Bu cluster'a ait ECAZTRDBMNG'leri bul
-                    ecaz_in_cluster = [h for h in found_hosts if 'ecaztrdbmng' in h.lower()]
+                    # Bu cluster'a ait DBSERVER'leri bul
+                    ecaz_in_cluster = [h for h in found_hosts if 'dbserver' in h.lower()]
                     
                     for host in ecaz_in_cluster:
                         print_detail(f"  ✓ {host}")
@@ -399,9 +399,9 @@ class ECAZTRDBMNGIntegrationTest:
             
             # Unmapped kontrolü
             if clusters['unmapped']:
-                ecaz_unmapped = [h for h in clusters['unmapped'] if 'ecaztrdbmng' in h.lower()]
+                ecaz_unmapped = [h for h in clusters['unmapped'] if 'dbserver' in h.lower()]
                 if ecaz_unmapped:
-                    print_error(f"ECAZTRDBMNG hosts not mapped to clusters: {ecaz_unmapped}")
+                    print_error(f"DBSERVER hosts not mapped to clusters: {ecaz_unmapped}")
                     all_good = False
             
             return all_good
@@ -420,11 +420,11 @@ class ECAZTRDBMNGIntegrationTest:
             print_info("Testing hostname normalization...")
             
             test_cases = [
-                ('ecaztrdbmng001.lcwecomtr.com', 'ECAZTRDBMNG001'),
-                ('ecaztrdbmng004.lcwecomtr.com', 'ECAZTRDBMNG004'),
-                ('ECAZTRDBMNG010.lcwecomtr.com', 'ECAZTRDBMNG010'),
-                ('ecazgldbmng001.lcwaikiki.local', 'ECAZGLDBMNG001'),
-                ('testmongo01.lcwecommerce.com', 'TESTMONGO01'),
+                ('dbserver-001.example.com', 'DBSERVER001'),
+                ('dbserver-004.example.com', 'DBSERVER004'),
+                ('DBSERVER010.example.com', 'DBSERVER010'),
+                ('dbserver001.internal.local', 'DBSERVER001'),
+                ('testmongo01.example.com', 'TESTMONGO01'),
             ]
             
             all_good = True
@@ -453,8 +453,8 @@ class ECAZTRDBMNGIntegrationTest:
             return False
         
         try:
-            # ECAZTRDBMNG010 (en aktif sunucu)
-            test_host = 'ecaztrdbmng010.lcwecomtr.com'
+            # DBSERVER010 (en aktif sunucu)
+            test_host = 'dbserver-010.example.com'
             print_info(f"Reading logs from {test_host}...")
             
             logs = self.reader.read_logs(
@@ -527,13 +527,13 @@ class ECAZTRDBMNGIntegrationTest:
             return False
     
     def test_log_reading_all_ecaz(self) -> bool:
-        """Tüm ECAZTRDBMNG sunucularından log okumayı test et"""
+        """Tüm DBSERVER sunucularından log okumayı test et"""
         if not self.reader:
             print_warning("Skipping (OpenSearch not connected)")
             return False
         
         try:
-            print_info("Reading logs from all ECAZTRDBMNG servers...")
+            print_info("Reading logs from all DBSERVER servers...")
             
             # Tüm beklenen host'ları topla
             all_ecaz_hosts = []
@@ -547,10 +547,10 @@ class ECAZTRDBMNGIntegrationTest:
             )
             
             if logs.empty:
-                print_error("No logs found from any ECAZTRDBMNG server")
+                print_error("No logs found from any DBSERVER server")
                 return False
             
-            print_success(f"Read {len(logs)} logs from ECAZTRDBMNG servers")
+            print_success(f"Read {len(logs)} logs from DBSERVER servers")
             
             # Host dağılımı
             if 'host' in logs.columns:
@@ -559,7 +559,7 @@ class ECAZTRDBMNGIntegrationTest:
                 
                 host_counts = logs['host'].value_counts()
                 for host, count in host_counts.items():
-                    if 'ecaztrdbmng' in host.lower():
+                    if 'dbserver' in host.lower():
                         print_detail(f"  {host}: {count} logs")
             
             return True
@@ -575,14 +575,14 @@ class ECAZTRDBMNGIntegrationTest:
             return False
         
         try:
-            print_info("Getting log statistics for each ECAZTRDBMNG host...")
+            print_info("Getting log statistics for each DBSERVER host...")
             
             # Önce mevcut host'ları al
             hosts = get_available_mongodb_hosts(last_hours=24)
-            ecaz_hosts = [h for h in hosts if 'ecaztrdbmng' in h.lower()]
+            ecaz_hosts = [h for h in hosts if 'dbserver' in h.lower()]
             
             if not ecaz_hosts:
-                print_error("No ECAZTRDBMNG hosts found")
+                print_error("No DBSERVER hosts found")
                 return False
             
             print_info(f"Checking statistics for {len(ecaz_hosts)} hosts...")
@@ -630,9 +630,9 @@ class ECAZTRDBMNGIntegrationTest:
                 if response.status_code == 200:
                     data = response.json()
                     hosts = data.get('hosts', [])
-                    ecaz_hosts = [h for h in hosts if 'ecaztrdbmng' in h.lower()]
+                    ecaz_hosts = [h for h in hosts if 'dbserver' in h.lower()]
                     
-                    print_success(f"GET /api/anomaly/hosts: {len(ecaz_hosts)} ECAZTRDBMNG hosts")
+                    print_success(f"GET /api/anomaly/hosts: {len(ecaz_hosts)} DBSERVER hosts")
                 else:
                     print_warning(f"GET /api/anomaly/hosts: HTTP {response.status_code}")
                     
@@ -677,8 +677,8 @@ class ECAZTRDBMNGIntegrationTest:
         try:
             print_info("Testing anomaly detection pipeline...")
             
-            # ECAZTRDBMNG004 için anomaly detection
-            test_host = 'ecaztrdbmng010.lcwecomtr.com'  # En aktif sunucu
+            # DBSERVER004 için anomaly detection
+            test_host = 'dbserver-010.example.com'  # En aktif sunucu
             
             print_detail(f"Reading logs from {test_host}...")
             logs = self.reader.read_logs(
@@ -825,7 +825,7 @@ class ECAZTRDBMNGIntegrationTest:
 def main():
     """Main test fonksiyonu"""
     try:
-        tester = ECAZTRDBMNGIntegrationTest()
+        tester = DBServerIntegrationTest()
         exit_code = tester.run_all_tests()
         sys.exit(exit_code)
         

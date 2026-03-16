@@ -7,7 +7,7 @@ MongoDB Log Anomaly Detection - Model Retraining Script
 Bu script, feature optimizasyonu sonrası tüm modelleri yeniden eğitir.
 
 Kullanım:
-    python retrain_all_models.py --server lcwmongodb01n2
+    python retrain_all_models.py --server mongo-prod-01
     python retrain_all_models.py --all
     python retrain_all_models.py --validate-only
 

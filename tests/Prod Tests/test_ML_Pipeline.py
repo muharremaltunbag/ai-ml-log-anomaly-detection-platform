@@ -35,9 +35,9 @@ def test_feature_engineering():
         
         # Production host'lardan log oku
         test_hosts = [
-            "ecaztrdbmng007.lcwecomtr.com",  # ecommerce
-            "ecaztrdbmng010.lcwecomtr.com",  # ecommercelog
-            "lcwmongodb01n1.lcwaikiki.local" # lcw production
+            "dbserver-007.example.com",  # ecommerce
+            "dbserver-010.example.com",  # ecommercelog
+            "mongo-prod-01.internal.local" # production
         ]
         
         all_logs = []

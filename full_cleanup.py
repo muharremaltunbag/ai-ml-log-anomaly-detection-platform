@@ -48,7 +48,7 @@ def nuke_databases():
         # Loglardan ve kodlardan tespit edilen isimler
         target_dbs = [
             "anomaly_detection", 
-            "lcw_assistant", 
+            "db_assistant",
             "mongodb_agent", 
             "admin_panel",
             "logs_db"

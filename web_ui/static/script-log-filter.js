@@ -1,6 +1,6 @@
 // web_ui/static/script-log-filter.js
 /**
- * LC Waikiki MongoDB Assistant - Log Filter & Grouping Module
+ * DB Anomaly Platform - Log Filter & Grouping Module
  * 
  * Bu modül anomali loglarının filtrelenmesi ve gruplanması işlemlerini yönetir:
  * - Component bazlı filtreleme

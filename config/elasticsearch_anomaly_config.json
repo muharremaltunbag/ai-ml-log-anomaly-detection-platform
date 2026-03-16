@@ -24,7 +24,7 @@
             "data_sources": {
                 "opensearch": {
                     "enabled": true,
-                    "host": "opslog.lcwaikiki.com",
+                    "host": "localhost",
                     "port": 443,
                     "protocol": "https",
                     "index_pattern": "db-elasticsearch-*",
@@ -39,20 +39,20 @@
                         "scroll": "5m"
                     },
                     "alternate_hosts": [
-                        "https://10.29.21.30:443",
-                        "https://hqopnsrcmstr01.lcwaikiki.local:9200",
-                        "https://hqopnsrcmstr02.lcwaikiki.local:9200",
-                        "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+                        "https://localhost:9200",
+                        "https://localhost:9201",
+                        "https://localhost:9202",
+                        "https://localhost:9203"
                     ]
                 }
             }
         },
         "production": {
-            "description": "Production Environment - LC Waikiki",
+            "description": "Production Environment",
             "data_sources": {
                 "opensearch": {
                     "enabled": true,
-                    "host": "opslog.lcwaikiki.com",
+                    "host": "localhost",
                     "port": 443,
                     "protocol": "https",
                     "index_pattern": "db-elasticsearch-*",
@@ -71,10 +71,10 @@
                         }
                     },
                     "alternate_hosts": [
-                        "https://10.29.21.30:443",
-                        "https://hqopnsrcmstr01.lcwaikiki.local:9200",
-                        "https://hqopnsrcmstr02.lcwaikiki.local:9200",
-                        "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+                        "https://localhost:9200",
+                        "https://localhost:9201",
+                        "https://localhost:9202",
+                        "https://localhost:9203"
                     ]
                 }
             }
@@ -262,7 +262,7 @@
             "coordinating_node": "CR",
             "worker_node": "RW"
         },
-        "description": "Host name contains role identifier (e.g., ECAZTRDBESDT011 = data node, ECAZTRDBESMS006 = master node, ECAZTRDBESRW001 = worker/read-write node)"
+        "description": "Host name contains role identifier (e.g., es-data-011 = data node, es-master-006 = master node, es-worker-001 = worker/read-write node)"
     },
     "processing": {
         "batch_size": 10000,

@@ -938,7 +938,8 @@ class AnomalyDetectionTools:
             return hostname
 
         # Zaten FQDN varsa dokunma
-        if hostname.endswith('.lcwaikiki.local'):
+        fqdn_suffix = os.getenv('MONGODB_FQDN_SUFFIX', '.local')
+        if hostname.endswith(fqdn_suffix):
             logger.debug(f"Hostname already has FQDN: {hostname}")
             return hostname
 
@@ -947,19 +948,19 @@ class AnomalyDetectionTools:
 
         # FQDN eklenmesi gereken pattern'ler (whitelist)
         fqdn_required_patterns = [
-            r'^lcwmongodb\d+n\d+$',           # lcwmongodb01n2
-            r'^testmongodb\d+$',               # testmongodb01
-            r'^devmongodb\d+$',                # devmongodb02
-            r'^pplmongodbn\d+$',               # pplmongodbn1 (az'sız!)
-            r'^kznmongodbn\d+$',               # kznmongodbn1, KZNMONGODBN2
-            r'^ntfcmongodb\d+$',               # NTFCMONGODB01
+            r'^lcwmongodb\d+n\d+$',           # e.g. mongo01n2
+            r'^testmongodb\d+$',               # e.g. testmongo01
+            r'^devmongodb\d+$',                # e.g. devmongo02
+            r'^pplmongodbn\d+$',               # e.g. pplmongo1
+            r'^kznmongodbn\d+$',               # e.g. kznmongo1
+            r'^ntfcmongodb\d+$',               # e.g. ntfcmongo01
         ]
 
         # Pattern kontrolü - küçük harfle kontrol et
         for pattern in fqdn_required_patterns:
             if re.match(pattern, hostname_lower):
                 # ORİJİNAL CASE'İ KORUYARAK FQDN EKLE!
-                fixed_hostname = f"{hostname}.lcwaikiki.local"
+                fixed_hostname = f"{hostname}{fqdn_suffix}"
                 logger.debug(f"FQDN added: {hostname} -> {fixed_hostname}")
                 return fixed_hostname
 
@@ -971,12 +972,12 @@ class AnomalyDetectionTools:
         """
         Upload edilen dosya adından MongoDB server adını çıkar
 
-        Desteklenen LC Waikiki MongoDB hostname pattern'leri:
-        - lcwmongodb01n2.log -> lcwmongodb01n2
-        - ECAZTRDBMNG019.log -> ecaztrdbmng019
+        Supported MongoDB hostname patterns:
+        - mongo-node01.log -> mongo-node01
+        - DBSERVER019.log -> dbserver019
         - PPLMNGDBN2.log -> pplmngdbn2
-        - mongod_lcwmongodb01n2.log -> lcwmongodb01n2
-        - mongod.log.ECAZTRDBMNG005 -> ecaztrdbmng005
+        - mongod_server01n2.log -> server01n2
+        - mongod.log.DBSERVER005 -> dbserver005
 
         Args:
             filename: Dosya adı
@@ -991,38 +992,39 @@ class AnomalyDetectionTools:
         # Dosya adını normalize et (lowercase)
         filename_lower = filename.lower()
 
-        # LC Waikiki MongoDB server hostname pattern'leri (gerçek envanter bazlı)
+        # MongoDB server hostname patterns
+        # NOTE: Customize these patterns to match YOUR server naming convention
         patterns = [
-            # LCW MongoDB cluster: lcwmongodb01n1, lcwmongodb01n2, lcwmongodb01n3
+            # MongoDB cluster nodes (e.g. mongocluster01n1, mongocluster01n2)
             r'(lcwmongodb\d+n\d+)',
 
-            # ECAZ TR DB MNG: ECAZTRDBMNG004 - ECAZTRDBMNG021
+            # Database management nodes
             r'(ecaztrdbmng\d+)',
 
-            # ECAZ GL DB MNG: ECAZGLDBMNG001, ECAZGLDBMNG002, ECAZGLDBMNG003
+            # Global database management nodes
             r'(ecazgldbmng\d+)',
 
-            # PPL MongoDB: PPLMNGDBN1, PPLMNGDBN2, PPLMNGDBN3
+            # PPL MongoDB nodes
             r'(pplmngdbn\d+)',
             r'(drpplmngdbn\d+)',  # DR node
 
-            # KZN MongoDB: kznmngdbn1, kznmngdbn2, kznmngdbn3
+            # KZN MongoDB nodes
             r'(kznmngdbn\d+)',
             r'(drkznmngdbn\d+)',  # DR node
 
-            # NTFC MongoDB: ntfcmongodb01, ntfcmongodb02, ntfcmongodb04
+            # NTFC MongoDB nodes
             r'(ntfcmongodb\d+)',
 
-            # ECOMFIX MongoDB: ECOMFIXMONGODB01, ECOMFIXMONGODB02, ECOMFIXMONGODB03
+            # ECOMFIX MongoDB nodes
             r'(ecomfixmongodb\d+)',
 
-            # PPL AZ MongoDB: pplazmongodbn1, pplazmongodbn2, pplazmongodbn3
+            # Analytics MongoDB nodes
             r'(pplazmongodbn\d+)',
 
-            # RU MongoDB: rumongo02
+            # Regional MongoDB nodes
             r'(rumongo\d+)',
 
-            # HQ SEC TWRAP: hqsectwrapmdbn1, hqsectwrapmdbn2, hqsectwrapmdbn3
+            # HQ security MongoDB nodes
             r'(hqsectwrapmdbn\d+)',
             r'(drhqsectmdbn\d+)',  # DR node
 
@@ -1511,14 +1513,14 @@ class AnomalyDetectionTools:
                     server_for_model = None
                     if host_filter:
                         if is_cluster_analysis:
-                            # Cluster için cluster adını kullan (örn: lcwmongodb01_cluster)
+                            # Cluster için cluster adını kullan (örn: cluster01_cluster)
                             # İlk host'tan cluster adını çıkar
                             first_host = cluster_hosts[0] if cluster_hosts else host_filter[0]
-                            cluster_name = first_host.split('.')[0].rsplit('n', 1)[0]  # lcwmongodb01n2 -> lcwmongodb01
+                            cluster_name = first_host.split('.')[0].rsplit('n', 1)[0]  # e.g. cluster01n2 -> cluster01
                             server_for_model = f"{cluster_name}_cluster"
                             logger.info(f"Using cluster model for: {server_for_model}")
                         else:
-                            # FQDN'den sunucu adını çıkar (örn: lcwmongodb01n2.lcwaikiki.local -> lcwmongodb01n2)
+                            # Extract server name from FQDN (e.g. mongo01n2.internal.local -> mongo01n2)
                             server_for_model = host_filter.split('.')[0] if '.' in host_filter else host_filter
                             logger.info(f"Using server-specific model for: {server_for_model}")
                     

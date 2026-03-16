@@ -7,9 +7,9 @@ tools = AnomalyDetectionTools(environment='production')
 result = tools.analyze_mongodb_logs({
     "source_type": "opensearch",
     "host_filter": [
-        "lcwmongodb01n1.lcwaikiki.local",
-        "lcwmongodb01n2.lcwaikiki.local",
-        "lcwmongodb01n3.lcwaikiki.local"
+        "mongo-prod-02.internal.local",
+        "mongo-prod-01.internal.local",
+        "mongo-prod-03.internal.local"
     ],
     "start_time": "2025-09-15T16:09:00Z",
     "end_time": "2025-09-15T16:11:00Z"

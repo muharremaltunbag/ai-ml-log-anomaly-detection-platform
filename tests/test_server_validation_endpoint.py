@@ -11,7 +11,7 @@ import os
 
 # Base URL ve API key
 BASE_URL = "http://localhost:8000"
-API_KEY = "lcw-test-2024"
+API_KEY = "test-api-key"
 
 def test_debug_endpoint():
     """Debug endpoint'ini test et"""

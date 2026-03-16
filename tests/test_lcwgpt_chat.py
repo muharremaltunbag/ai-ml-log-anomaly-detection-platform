@@ -4,7 +4,7 @@ import json
 import time
 
 url = "http://localhost:8000/api/chat-query-anomalies"
-api_key = "lcw-test-2024"
+api_key = "test-api-key"
 analysis_id = "analysis_9b5bca3322e7"  # MongoDB'den aldığımız ID
 
 # Test sorguları

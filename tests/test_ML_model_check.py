@@ -1,7 +1,7 @@
 import joblib
 import os
 
-model_path = "models/isolation_forest_lcwmongodb01n2.pkl"
+model_path = "models/isolation_forest_mongo-prod-01.pkl"
 file_size_mb = os.path.getsize(model_path) / (1024 * 1024)
 print(f"Model dosya boyutu: {file_size_mb:.2f} MB")
 

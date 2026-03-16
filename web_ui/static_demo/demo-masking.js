@@ -45,56 +45,56 @@
     // 2) Sabit override mapping (bilinen hostlar)
     // ============================================================
     var OVERRIDE_MAP = {
-        // ── MongoDB hostları ──
-        'ecaztrdbmng015': 'mongo-prod-node-01',
-        'ecaztrdbmng014': 'mongo-prod-node-02',
-        'ecaztrdbmng013': 'mongo-prod-node-03',
-        'pplazmongodbn3': 'mongo-prod-node-04',
-        'pplazmongodbn2': 'mongo-prod-node-05',
-        'pplmongodbn1':   'mongo-prod-node-06',
-        'pplmongodbn2':   'mongo-prod-node-07',
-        'pplmongodbn3':   'mongo-prod-node-08',
-        'testmongodb01':  'mongo-test-node-01',
-        'testmongodb02':  'mongo-test-node-02',
-        'testmongodb03':  'mongo-test-node-03',
-        // ── MSSQL hostları ──
-        'lcwsql15n1':     'sql-prod-node-01',
-        'testoltp2':      'sql-test-node-01',
-        'eislemdb3':      'sql-prod-node-02',
-        'growae':         'sql-prod-node-03',
-        'sqlgrw07n1':     'sql-prod-node-04',
-        'lcwsql16n2':     'sql-prod-node-05',
-        'lcwsql25n1':     'sql-prod-node-06',
-        'lcwsql09n1':     'sql-prod-node-07',
-        'lcwsql08n1':     'sql-prod-node-08',
-        'lcwlogopluster': 'sql-prod-node-09',
-        'sqloltpn1':      'sql-prod-node-10',
-        'peo1':           'sql-prod-node-11',
-        'lcwsql18n1':     'sql-prod-node-12',
-        'lcwsql20n2':     'sql-prod-node-13',
-        'lcwsql22n1':     'sql-prod-node-14',
-        'lcwsql13n1':     'sql-prod-node-15',
-        'lcwsql25n2':     'sql-prod-node-16',
-        'lcwsql21n2':     'sql-prod-node-17',
-        'axr3intprddbn1': 'sql-prod-node-18',
-        'ydsqldb2':       'sql-prod-node-19',
-        'sp19dbn1':       'sql-prod-node-20',
-        'saperpintegdbn1':'sql-prod-node-21',
-        'lcwsql02n1':     'sql-prod-node-22',
-        'odsdbn1':        'sql-prod-node-23',
-        'lcwsql21n1':     'sql-prod-node-24',
-        'lcwsql14n1':     'sql-prod-node-25',
-        'ikdwhn2':        'sql-prod-node-26',
-        'lcwsql19n1':     'sql-prod-node-27',
-        'lcwsql07n1':     'sql-prod-node-28',
-        'ydsqldb1':       'sql-prod-node-29',
-        'lcwlogodbn4':    'sql-prod-node-30',
-        'lcwsql20n1':     'sql-prod-node-31',
-        'lcwsql22n2':     'sql-prod-node-32',
-        'lcwsql05n1':     'sql-prod-node-33',
-        'sqldb1':         'sql-prod-node-34',
-        'axhqerpprddb01': 'sql-prod-node-35',
-        'sqlgrw01n1':     'sql-prod-node-36'
+        // ── MongoDB servers ──
+        'mongo-prod-01':      'mongo-prod-node-01',
+        'mongo-prod-02':      'mongo-prod-node-02',
+        'mongo-prod-03':      'mongo-prod-node-03',
+        'mongo-analytics-01': 'mongo-prod-node-04',
+        'mongo-analytics-02': 'mongo-prod-node-05',
+        'mongo-prod-04':      'mongo-prod-node-06',
+        'mongo-prod-05':      'mongo-prod-node-07',
+        'mongo-prod-06':      'mongo-prod-node-08',
+        'mongo-test-01':      'mongo-test-node-01',
+        'mongo-test-02':      'mongo-test-node-02',
+        'mongo-test-03':      'mongo-test-node-03',
+        // ── MSSQL servers ──
+        'sql-prod-01':        'sql-prod-node-01',
+        'sql-test-01':        'sql-test-node-01',
+        'sql-prod-02':        'sql-prod-node-02',
+        'sql-prod-03':        'sql-prod-node-03',
+        'sql-analytics-01':   'sql-prod-node-04',
+        'sql-prod-04':        'sql-prod-node-05',
+        'sql-prod-05':        'sql-prod-node-06',
+        'sql-prod-06':        'sql-prod-node-07',
+        'sql-prod-07':        'sql-prod-node-08',
+        'sql-log-01':         'sql-prod-node-09',
+        'sql-prod-08':        'sql-prod-node-10',
+        'sql-prod-09':        'sql-prod-node-11',
+        'sql-prod-10':        'sql-prod-node-12',
+        'sql-prod-11':        'sql-prod-node-13',
+        'sql-prod-12':        'sql-prod-node-14',
+        'sql-prod-13':        'sql-prod-node-15',
+        'sql-prod-14':        'sql-prod-node-16',
+        'sql-prod-15':        'sql-prod-node-17',
+        'sql-prod-16':        'sql-prod-node-18',
+        'sql-prod-17':        'sql-prod-node-19',
+        'sql-prod-18':        'sql-prod-node-20',
+        'sql-prod-19':        'sql-prod-node-21',
+        'sql-prod-20':        'sql-prod-node-22',
+        'sql-prod-21':        'sql-prod-node-23',
+        'sql-prod-22':        'sql-prod-node-24',
+        'sql-prod-23':        'sql-prod-node-25',
+        'sql-prod-24':        'sql-prod-node-26',
+        'sql-prod-25':        'sql-prod-node-27',
+        'sql-prod-26':        'sql-prod-node-28',
+        'sql-prod-27':        'sql-prod-node-29',
+        'sql-prod-28':        'sql-prod-node-30',
+        'sql-prod-29':        'sql-prod-node-31',
+        'sql-prod-30':        'sql-prod-node-32',
+        'sql-prod-31':        'sql-prod-node-33',
+        'sql-test-02':        'sql-prod-node-34',
+        'sql-prod-32':        'sql-prod-node-35',
+        'sql-prod-33':        'sql-prod-node-36'
     };
 
     // Reverse map: demo -> real (çift maskeleme önleme)
@@ -243,15 +243,11 @@
     // ── Marka/şirket metin maskeleme ──
     var BRAND_REPLACEMENTS = [
         [/LCWGPT/g, 'AI Assistant'],
-        [/LC Waikiki/gi, 'Demo'],
+        [/Demo Company/gi, 'Demo Company'],
         [/lcw-test-\d+/gi, 'demo-api-key'],
         // FQDN domain suffix'lerini kaldır (hostname zaten maskelenmiş olacak)
-        [/\.lcwecomtr\.com/gi, '.demo.local'],
-        [/\.lcwaikiki\.local/gi, '.demo.local'],
-        [/\.Icwecomtr\.com/gi, '.demo.local'],
-        [/\.Icwaikiki\.local/gi, '.demo.local'],
-        [/lcwecomtr\.com/gi, 'demo.local'],
-        [/lcwaikiki\.local/gi, 'demo.local']
+        [/\.example\.com/gi, '.example.com'],
+        [/\.internal\.local/gi, '.internal.local']
     ];
 
     // ── Geliştirilmiş maskText: hostname + IP + marka maskeleme ──
@@ -611,7 +607,7 @@
     // 9) Demo API key injection
     //    HTML kaynağında API key görünmez, runtime'da inject edilir
     // ============================================================
-    var DEMO_API_KEY = 'lcw-test-2024';
+    var DEMO_API_KEY = 'demo-api-key-change-me';
 
     function injectApiKey() {
         var input = document.getElementById('apiKey');

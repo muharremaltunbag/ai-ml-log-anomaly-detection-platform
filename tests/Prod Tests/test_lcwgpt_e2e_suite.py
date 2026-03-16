@@ -59,9 +59,9 @@ class LCWGPTTestSuite:
         try:
             # Farklı host kombinasyonlarını dene
             test_hosts = [
-                "ecaztrdbmng008.lcwecomtr.com",  # FQDN ile
-                "ecaztrdbmng008",  # Sadece hostname
-                "ECAZTRDBMNG008"   # Büyük harf
+                "dbserver-008.example.com",  # FQDN ile
+                "dbserver-008",  # Sadece hostname
+                "DBSERVER008"   # Büyük harf
             ]
             
             success = False
@@ -122,7 +122,7 @@ class LCWGPTTestSuite:
                     SystemMessage(content="MongoDB anomali uzmanısın. Kısa özet ver."),
                     HumanMessage(content=f"""
                     Analiz Özeti:
-                    - Sunucu: ecaztrdbmng001
+                    - Sunucu: dbserver-001
                     - Toplam anomali: {anomaly_count}
                     - Zaman: Son 1 saat
                     
@@ -152,7 +152,7 @@ class LCWGPTTestSuite:
         # Test sorguları
         test_queries = [
             {
-                "query": "Dün ECAZTRDBMNG cluster'da slow query var mıydı?",
+                "query": "Dün DBSERVER cluster'da slow query var mıydı?",
                 "expected_action": "opensearch_query_with_time_filter"
             },
             {
@@ -293,7 +293,7 @@ class LCWGPTTestSuite:
             # İlk soru
             messages_1 = [
                 SystemMessage(content="MongoDB anomali uzmanısın."),
-                HumanMessage(content="ECAZTRDBMNG008 sunucusunda slow query problemi var. Hatırla bunu.")  # Host adını da güncelle
+                HumanMessage(content="DBSERVER008 sunucusunda slow query problemi var. Hatırla bunu.")  # Host adını da güncelle
             ]
             response_1 = self.lcwgpt.invoke(messages_1)
             
@@ -301,7 +301,7 @@ class LCWGPTTestSuite:
             if response_1 and response_1.content:
                 messages_2 = [
                     SystemMessage(content="MongoDB anomali uzmanısın. Önceki mesajları hatırla."),
-                    HumanMessage(content="ECAZTRDBMNG008 sunucusunda slow query problemi var."),
+                    HumanMessage(content="DBSERVER008 sunucusunda slow query problemi var."),
                     AIMessage(content=response_1.content),  # ✅ AIMessage wrapper ekledik
                     HumanMessage(content="Az önce bahsettiğim sunucu için hangi index'leri önerirsin?")
                 ]
@@ -310,7 +310,7 @@ class LCWGPTTestSuite:
                 
                 if response_2 and response_2.content:
                     # Sunucu adının yanıtta geçip geçmediğini kontrol et
-                    if "ECAZTRDBMNG008" in response_2.content.upper() or "index" in response_2.content.lower():
+                    if "DBSERVER008" in response_2.content.upper() or "index" in response_2.content.lower():
                         self.record_result(
                             "Context Preservation",
                             True,
@@ -342,7 +342,7 @@ class LCWGPTTestSuite:
 ## 📊 Anomali Özeti
 - Kritik Sayı: 15
 - Risk Seviyesi: Yüksek
-- Etkilenen Sunucu: ECAZTRDBMNG008
+- Etkilenen Sunucu: DBSERVER008
 
 ## 🚨 Acil Aksiyonlar
 1. Index eksik olan collection'ları tespit et
@@ -356,7 +356,7 @@ class LCWGPTTestSuite:
 
 Yukarıdaki formatı AYNEN TAKIP ET. ## ile başlık, - ile liste, numara ile sıralı liste yap.
 ÖNEMLİ: Yanıtın ## ile başlayan başlıklar içermeli."""),
-                HumanMessage(content="ECAZTRDBMNG008 sunucusunda 15 kritik anomali var. Yukarıdaki formata UYGUN rapor hazırla.")
+                HumanMessage(content="DBSERVER008 sunucusunda 15 kritik anomali var. Yukarıdaki formata UYGUN rapor hazırla.")
             ]
 
             response = self.lcwgpt.invoke(messages)

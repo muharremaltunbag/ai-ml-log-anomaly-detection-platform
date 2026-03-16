@@ -6,7 +6,7 @@ url = "http://localhost:8000/api/chat-query-anomalies"
 
 # Basit bir test
 data = {
-    "api_key": "lcw-test-2024",
+    "api_key": "test-api-key",
     "query": "ACCESS component kaç anomali var?",
     "analysis_id": "analysis_9b5bca3322e7"
 }

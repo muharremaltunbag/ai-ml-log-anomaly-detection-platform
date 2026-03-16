@@ -1,6 +1,6 @@
 // web_ui/static/script-prediction.js
 /**
- * LC Waikiki MongoDB Assistant - Prediction Dashboard Module
+ * DB Anomaly Platform - Prediction Dashboard Module
  *
  * Standalone dashboard that fetches prediction data via API:
  *   - /api/prediction/alerts      → alert history table

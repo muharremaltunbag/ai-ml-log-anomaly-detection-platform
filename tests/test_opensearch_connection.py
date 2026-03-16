@@ -19,7 +19,7 @@ print(f"Username: {username}")
 print("-" * 50)
 
 # Base URL
-base_url = "https://opslog.lcwaikiki.com"
+base_url = "https://localhost:9200"
 
 # Session with auth
 session = requests.Session()

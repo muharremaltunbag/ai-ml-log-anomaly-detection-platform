@@ -1,6 +1,6 @@
 // web_ui\static\script-core.js
 /**
- * LC Waikiki MongoDB Assistant - Core Configuration Module
+ * DB Anomaly Platform - Core Configuration Module
  * 
  * Bu modül tüm diğer modüllerin kullanacağı merkezi konfigürasyonu sağlar:
  * - Global değişkenler (window objesi üzerinden erişilebilir)
@@ -22,9 +22,9 @@ window.currentSessionId = `session_${Date.now()}_${Math.random().toString(36).su
 console.log('Session initialized:', window.currentSessionId);
 
 // ============================================
-// LCWGPT ASSISTANT STATE
+// AI Assistant ASSISTANT STATE
 // ============================================
-window.selectedChatServer = null;   // Seçilen sunucu (LCWGPT chat için)
+window.selectedChatServer = null;   // Seçilen sunucu (AI Assistant chat için)
 window.chatServerList = [];         // Analiz yapılmış sunucu listesi
 
 // ============================================
@@ -65,7 +65,7 @@ window.API_ENDPOINTS = {
     esHosts: '/api/elasticsearch/available-hosts',
     analyzeESLog: '/api/analyze-elasticsearch-logs',
     esAnalysisHistory: '/api/elasticsearch/analysis-history',
-    // LCWGPT ASSISTANT
+    // AI Assistant ASSISTANT
     analyzedServers: '/api/analyzed-servers',
     // SYSTEM RESET
     systemReset: '/api/system-reset',
@@ -313,11 +313,11 @@ window.loadLastAnomalyFromStorage = async function() {
 };
 
 // ============================================
-// LCWGPT SIDEBAR — AI Yanıt Formatlayıcı
+// AI Assistant SIDEBAR — AI Yanıt Formatlayıcı
 // ============================================
 
 /**
- * LCWGPT sidebar AI yanıtını Bento-box "AI Technical Resolution Report" formatında üret.
+ * AI Assistant sidebar AI yanıtını Bento-box "AI Technical Resolution Report" formatında üret.
  * Backend response objesini alır, yapılandırılmış rapor HTML'i döner.
  *
  * chatResult objesi (api.py /api/chat-query-anomalies'den):
@@ -784,7 +784,7 @@ window._reportCopyCode = function(btn) {
 };
 
 // ============================================================
-// LCWGPT Sidebar — Toggle, Close, Send (Figma layout)
+// AI Assistant Sidebar — Toggle, Close, Send (Figma layout)
 // Mevcut fonksiyonlara dokunmaz, sadece sidebar UI kontrolu
 // ============================================================
 
@@ -792,7 +792,7 @@ window.toggleLcwgptSidebar = function() {
     const sidebar = document.getElementById('lcwgptSidebar');
     if (!sidebar) return;
     sidebar.classList.toggle('open');
-    console.log('LCWGPT Sidebar toggled:', sidebar.classList.contains('open') ? 'open' : 'closed');
+    console.log('AI Assistant Sidebar toggled:', sidebar.classList.contains('open') ? 'open' : 'closed');
 };
 
 window.closeLcwgptSidebar = function() {
@@ -829,7 +829,7 @@ window.addSidebarUserMessage = function(text) {
 };
 
 // ============================================
-// LCWGPT SUNUCU LİSTESİ VE SEÇİM FONKSİYONLARI
+// AI Assistant SUNUCU LİSTESİ VE SEÇİM FONKSİYONLARI
 // ============================================
 
 // Analiz yapılmış sunucu listesini backend'den çek
@@ -841,10 +841,10 @@ window.loadAnalyzedServers = async function() {
         const data = await response.json();
         if (data.status === 'success' && data.servers) {
             window.chatServerList = data.servers;
-            console.log('LCWGPT: Loaded', data.servers.length, 'analyzed servers');
+            console.log('AI Assistant: Loaded', data.servers.length, 'analyzed servers');
         }
     } catch (e) {
-        console.warn('LCWGPT: Could not load analyzed servers:', e);
+        console.warn('AI Assistant: Could not load analyzed servers:', e);
     }
 };
 
@@ -992,7 +992,7 @@ window.renderExampleQuestions = function(sourceType) {
         container.appendChild(chip);
     });
 
-    console.log('LCWGPT: Example questions rendered for source:', dataSource, '(' + questions.length + ' chips)');
+    console.log('AI Assistant: Example questions rendered for source:', dataSource, '(' + questions.length + ' chips)');
 };
 
 /**
@@ -1029,7 +1029,7 @@ window.selectChatServer = function(serverName, analysisId) {
         }
     });
 
-    console.log('LCWGPT: Server selected:', serverName, 'analysis_id:', analysisId);
+    console.log('AI Assistant: Server selected:', serverName, 'analysis_id:', analysisId);
 
     // Ornek sorulari secilen sunucunun source type'ina gore guncelle
     if (typeof window.updateExampleQuestions === 'function') {
@@ -1125,7 +1125,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // ML Metrics Sidebar — kullanici butona tiklayarak acsin (varsayilan kapali)
 
-    // LCWGPT: Sunucu listesini yükle ve seçim göster
+    // AI Assistant: Sunucu listesini yükle ve seçim göster
     // apiKey henüz set edilmemiş olabilir — bağlantı kurulunca tekrar çekilecek
     setTimeout(function() {
         if (window.apiKey) {
@@ -1166,7 +1166,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    console.log('✅ LCWGPT Sidebar + ML Sidebar event listeners initialized');
+    console.log('✅ AI Assistant Sidebar + ML Sidebar event listeners initialized');
 
     // ── Scheduler Activity Strip — lightweight polling ──
     (function initSchedulerStrip() {

@@ -11,7 +11,7 @@ def debug_reader():
     configs = [
         {"host_filter": None, "time_range": "last_hour"},
         {"host_filter": None, "time_range": "last_day"},
-        {"host_filter": "lcwmongodb01n3.lcwaikiki.local", "time_range": "last_day"},
+        {"host_filter": "mongo-prod-03.internal.local", "time_range": "last_day"},
     ]
     
     for config in configs:

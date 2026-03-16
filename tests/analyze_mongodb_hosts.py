@@ -190,11 +190,11 @@ def analyze_mongodb_hosts():
     if len(mongodb_hosts) > 10:
         print(f"\n   ... ve {len(mongodb_hosts) - 10} sunucu daha")
     
-    # lcwmongodb01n2 özel kontrolü
-    print("\n4. lcwmongodb01n2 Sunucusu Kontrolü:")
+    # mongo-prod-01 özel kontrolü
+    print("\n4. mongo-prod-01 Sunucusu Kontrolü:")
     print("-" * 80)
     
-    target_host = "lcwmongodb01n2"
+    target_host = "mongo-prod-01"
     found = False
     
     for host in hosts:
@@ -254,10 +254,10 @@ def analyze_mongodb_hosts():
     print("-" * 80)
     
     known_servers = [
-        "lcwmongodb01n1", "lcwmongodb01n2", "lcwmongodb01n3",
-        "ECOMLOGMNG01", "testmongodb01", "testmongodb02", "testmongodb03",
-        "NTFCMONGODB01", "NTFCMONGODB02", "NTFCMONGODB03", "NTFCMONGODB04",
-        "pplmongodbn1"
+        "mongo-prod-02", "mongo-prod-01", "mongo-prod-03",
+        "dbserver-001", "testmongodb01", "testmongodb02", "testmongodb03",
+        "notif-mongo-01", "notif-mongo-02", "notif-mongo-03", "notif-mongo-04",
+        "analytics-mongo-01"
     ]
     
     for server in known_servers:
@@ -326,15 +326,15 @@ GET db-mongodb-*/_search
 }
 """,
         
-        "lcwmongodb01n2 Sunucusunu Ara": """
+        "mongo-prod-01 Sunucusunu Ara": """
 GET db-mongodb-*/_search
 {
   "query": {
     "bool": {
       "should": [
-        {"term": {"host.name": "lcwmongodb01n2"}},
-        {"term": {"host.name": "lcwmongodb01n2.lcwaikiki.local"}},
-        {"wildcard": {"host.name": "*lcwmongodb01n2*"}}
+        {"term": {"host.name": "mongo-prod-01"}},
+        {"term": {"host.name": "mongo-prod-01.internal.local"}},
+        {"wildcard": {"host.name": "*mongo-prod-01*"}}
       ]
     }
   }
@@ -395,7 +395,7 @@ GET db-mongodb-*/_search
         print(query)
         print("-" * 80)
     
-    print("\nBu sorguları https://opslog.lcwaikiki.com Dev Tools'da kullanabilirsiniz.")
+    print("\nBu sorguları https://localhost:9200 Dev Tools'da kullanabilirsiniz.")
 
 if __name__ == "__main__":
     # Host analizi yap

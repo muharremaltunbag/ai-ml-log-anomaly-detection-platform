@@ -4,7 +4,7 @@ services:
   # MongoDB LangChain Assistant API Servisi
   mongodb-assistant:
     # Image adı ve tag
-    image: lcw-mongodb-assistant:latest
+    image: mongodb-anomaly-platform:latest
     
     # Container adı
     container_name: mongodb-assistant-api

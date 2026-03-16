@@ -30,7 +30,7 @@
           },
           "opensearch": {
             "enabled": true,
-            "host": "opslog.lcwaikiki.com",
+            "host": "localhost",
             "port": 443,
             "protocol": "https",
             "index_pattern": "db-mongodb-*",
@@ -44,10 +44,10 @@
               "scroll": "5m"
             },
             "alternate_hosts": [
-              "https://10.29.21.30:443",
-              "https://hqopnsrcmstr01.lcwaikiki.local:9200",
-              "https://hqopnsrcmstr02.lcwaikiki.local:9200",
-              "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+              "https://localhost:9200",
+              "https://localhost:9201",
+              "https://localhost:9202",
+              "https://localhost:9203"
             ]
           },
           "upload": {
@@ -58,8 +58,8 @@
           },
           "mongodb_direct": {
             "enabled": true,
-            "default_connection": "mongodb://lcw_test_user:lcw_test_pass@192.168.56.101:27017,192.168.56.102:27017,192.168.56.103:27017/test_lcw?authSource=admin&replicaSet=rs0",
-            "default_database": "test_lcw",
+            "default_connection": "mongodb://test_user:CHANGE_ME@localhost:27017/test_db?authSource=admin&replicaSet=rs0",
+            "default_database": "test_db",
             "default_collection": "system.profile",
             "query_limit": 10000
           },
@@ -72,7 +72,7 @@
         }
       },
       "production": {
-        "description": "Production Environment - LC Waikiki",
+        "description": "Production Environment",
         "data_sources": {
           "file": {
             "enabled": false,
@@ -83,7 +83,7 @@
           },
           "opensearch": {
             "enabled": true,
-            "host": "opslog.lcwaikiki.com",
+            "host": "localhost",
             "port": 443,
             "protocol": "https",
             "index_pattern": "db-mongodb-*",
@@ -101,10 +101,10 @@
               }
             },
             "alternate_hosts": [
-              "https://10.29.21.30:443",
-              "https://hqopnsrcmstr01.lcwaikiki.local:9200",
-              "https://hqopnsrcmstr02.lcwaikiki.local:9200",
-              "https://hqopnsrcmstr03.lcwaikiki.local:9200"
+              "https://localhost:9200",
+              "https://localhost:9201",
+              "https://localhost:9202",
+              "https://localhost:9203"
             ]
           },
           "filebeat": {
@@ -112,7 +112,7 @@
             "config_path": "/etc/filebeat/filebeat.yml",
             "output": {
               "logstash": {
-                "hosts": ["10.29.21.32:5044"]
+                "hosts": ["localhost:5044"]
               }
             }
           },
@@ -124,7 +124,7 @@
           },
           "mongodb_direct": {
             "enabled": true,
-            "default_connection": "mongodb://lcw_prod_user:lcw_prod_pass@10.29.21.32:27017/chatbot_prod?authSource=admin",
+            "default_connection": "mongodb://prod_user:CHANGE_ME@localhost:27017/prod_db?authSource=admin",
             "default_database": "local",
             "default_collection": "startup_log",
             "query_limit": 50000

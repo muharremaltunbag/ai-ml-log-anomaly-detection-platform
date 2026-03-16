@@ -1,6 +1,6 @@
 // web_ui/static/script-dba-explorer.js
 /**
- * LC Waikiki MongoDB Assistant - DBA Log Explorer Module
+ * DB Anomaly Platform - DBA Log Explorer Module
  * 
  * Bu modül DBA Explorer panelini yönetir:
  * - Server-side filtreleme

@@ -3,12 +3,12 @@
 MongoDB Host Inventory Check - OpenSearch vs Config Comparison
 
 Bu script:
-1. OpenSearch'ten (https://opslog.lcwaikiki.com) gerçek MongoDB host'larını çeker
+1. OpenSearch'ten (https://localhost:9200) gerçek MongoDB host'larını çeker
 2. config/cluster_mapping.json ile karşılaştırır
 3. Eksik, unmapped, ve fazla host'ları detaylı raporlar
 4. JSON ve console output üretir
 
-Author: LC Waikiki DBA Team
+Author: Example Corp DBA Team
 Date: 2025
 """
 
@@ -54,7 +54,7 @@ class HostInventoryChecker:
         self.cluster_mapping = {}
         self.results = {
             "timestamp": datetime.now().isoformat(),
-            "opensearch_url": "https://opslog.lcwaikiki.com",
+            "opensearch_url": "https://localhost:9200",
             "summary": {},
             "missing_hosts": [],
             "unmapped_hosts": [],
@@ -65,7 +65,7 @@ class HostInventoryChecker:
     def fetch_opensearch_hosts(self, last_hours: int = 24) -> List[str]:
         """OpenSearch'ten gerçek host listesini çek"""
         print(f"\n🔍 OpenSearch'ten son {last_hours} saatteki aktif MongoDB host'ları çekiliyor...")
-        print(f"   URL: https://opslog.lcwaikiki.com")
+        print(f"   URL: https://localhost:9200")
         
         try:
             # OpenSearch'e bağlan
@@ -206,27 +206,27 @@ class HostInventoryChecker:
         # Pattern matching ile cluster tahmini
         patterns = {
             "ecomfix": "ecommercefix",
-            "lcwmongodb01": "lcwmongodb01",
+            "mongo-prod-01": "mongo-prod-01",
             "ntfc": "ntfcmongo",
             "pplaz": "rs_pplaz",
             "test": "testmongo",
             "dev": "rsdevmongo",
-            "ecaztrdbmng001": "ecommercemp",
-            "ecaztrdbmng002": "ecommercemp",
-            "ecaztrdbmng003": "ecommercemp",
-            "ecaztrdbmng004": "ecommercebilling",
-            "ecaztrdbmng005": "ecommercebilling",
-            "ecaztrdbmng006": "ecommercebilling",
-            "ecaztrdbmng007": "ecommerce",
-            "ecaztrdbmng008": "ecommerce",
-            "ecaztrdbmng009": "ecommerce",
-            "ecaztrdbmng010": "ecommercelog",
-            "ecaztrdbmng011": "ecommercelog",
-            "ecaztrdbmng012": "ecommercelog",
-            "ecaztrdbmng013": "rs_ecfavmongo",
-            "ecaztrdbmng014": "rs_ecfavmongo",
-            "ecaztrdbmng015": "rs_ecfavmongo",
-            "ecazgldb": "ECAZGLDB",
+            "dbserver-001": "ecommercemp",
+            "dbserver-002": "ecommercemp",
+            "dbserver-003": "ecommercemp",
+            "dbserver-004": "ecommercebilling",
+            "dbserver-005": "ecommercebilling",
+            "dbserver-006": "ecommercebilling",
+            "dbserver-007": "ecommerce",
+            "dbserver-008": "ecommerce",
+            "dbserver-009": "ecommerce",
+            "dbserver-010": "ecommercelog",
+            "dbserver-011": "ecommercelog",
+            "dbserver-012": "ecommercelog",
+            "dbserver-013": "rs_ecfavmongo",
+            "dbserver-014": "rs_ecfavmongo",
+            "dbserver-015": "rs_ecfavmongo",
+            "ecazgldb": "ecazgldb",
             "ppl": "ppl",
             "kzn": "kznmongors",
             "kz": "kzmongors",
@@ -458,7 +458,7 @@ def main():
     print("="*80)
     print("🚀 MONGODB HOST INVENTORY CHECKER")
     print("="*80)
-    print("LC Waikiki - MongoDB Log Anomaly Detection System")
+    print("Example Corp - MongoDB Log Anomaly Detection System")
     print("OpenSearch Host Inventory vs Config Comparison Tool")
     print("="*80)
     

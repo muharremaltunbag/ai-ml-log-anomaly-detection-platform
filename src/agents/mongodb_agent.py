@@ -16,6 +16,7 @@ from .schema_analyzer import SchemaAnalyzer
 from .tools import get_all_tools
 
 import logging
+import os
 
 class MongoDBAgent:
     """MongoDB doğal dil sorgu agent'ı"""
@@ -744,25 +745,26 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 self.logger.debug(f"Sunucu tespit edildi: {server_name}")
                 
                 # FQDN kontrolü ve ekleme mantığı
-                # Whitelist yaklaşımı - belirli pattern'lere .lcwaikiki.local ekle
+                # Whitelist approach - add FQDN suffix to matching patterns
                 server_lower = server_name.lower()
-                
+
                 # Zaten FQDN varsa ekleme
-                if not server_name.endswith('.lcwaikiki.local'):
+                fqdn_suffix = os.getenv('MONGODB_FQDN_SUFFIX', '.local')
+                if not server_name.endswith(fqdn_suffix):
                     # FQDN eklenmesi gereken pattern'ler (whitelist)
                     fqdn_required_patterns = [
-                        r'^lcwmongodb\d+n\d+$',           # lcwmongodb01n2
-                        r'^testmongodb\d+$',               # testmongodb01
-                        r'^devmongodb\d+$',                # devmongodb02
-                        r'^pplmongodbn\d+$',               # pplmongodbn1 (az'sız olanlar!)
-                        r'^kznmongodbn\d+$',               # kznmongodbn1, KZNMONGODBN2
-                        r'^ntfcmongodb\d+$',               # NTFCMONGODB01 (karışık durum)
+                        r'^lcwmongodb\d+n\d+$',           # e.g. mongo01n2
+                        r'^testmongodb\d+$',               # e.g. testmongo01
+                        r'^devmongodb\d+$',                # e.g. devmongo02
+                        r'^pplmongodbn\d+$',               # e.g. pplmongo1
+                        r'^kznmongodbn\d+$',               # e.g. kznmongo1
+                        r'^ntfcmongodb\d+$',               # e.g. ntfcmongo01
                     ]
-                    
+
                     # Pattern kontrolü
                     for fqdn_pattern in fqdn_required_patterns:
                         if re.match(fqdn_pattern, server_lower):
-                            server_name = f"{server_name}.lcwaikiki.local"
+                            server_name = f"{server_name}{fqdn_suffix}"
                             self.logger.debug(f"FQDN eklendi: {server_name}")
                             break
                     else:

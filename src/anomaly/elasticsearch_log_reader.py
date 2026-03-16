@@ -441,7 +441,7 @@ class ElasticsearchOpenSearchReader:
         # OpenSearch bağlantı bilgileri
         self.base_url = os.getenv(
             'OPENSEARCH_URL',
-            'https://opslog.lcwaikiki.com'
+            'https://localhost:9200'
         )
         self.index_pattern = "db-elasticsearch-*"  # Elasticsearch index pattern
 
@@ -458,7 +458,7 @@ class ElasticsearchOpenSearchReader:
         self.cookies = None
 
         # Auth credentials
-        self.username = os.getenv('OPENSEARCH_USER', 'db_admin')
+        self.username = os.getenv('OPENSEARCH_USER', 'admin')
         self.password = os.getenv('OPENSEARCH_PASS', '')
 
         # Bağlantı durumu
@@ -556,12 +556,12 @@ class ElasticsearchOpenSearchReader:
             logger.error(f"OpenSearch login error: {e}")
             return False
 
-    def _select_tenant(self, tenant: str = "LCW") -> bool:
+    def _select_tenant(self, tenant: str = None) -> bool:
         """
         OpenSearch tenant seç.
 
         Args:
-            tenant: Tenant adı (default: LCW)
+            tenant: Tenant name (from OPENSEARCH_TENANT env var)
 
         Returns:
             True if successful
@@ -661,7 +661,7 @@ class ElasticsearchOpenSearchReader:
                 return False
 
             # 2. Tenant seç
-            self._select_tenant("LCW")
+            self._select_tenant(os.getenv('OPENSEARCH_TENANT', 'default'))
 
             # 3. Bağlantı testi
             result = self._make_request(f"{self.index_pattern}/_count", "GET")

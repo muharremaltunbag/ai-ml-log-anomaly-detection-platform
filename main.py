@@ -1,4 +1,4 @@
-# C:\Users\muharrem.altunbag\MongoDB-LLM-assistant\MongoDB-LLM-assistant\main.py
+# main.py - MongoDB Anomaly Detection Platform Entry Point
 
 """MongoDB LangChain Assistant - Ana Giriş Noktası"""
 

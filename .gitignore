@@ -20,3 +20,21 @@ storage/temp/*.json
 # runtime cache
 storage/temp/analysis_cache.json
 
+# Secrets - never commit
+.env
+
+# Backup files
+*.backup
+*.backup_*
+*_backup_*
+*_backup.*
+
+# Context transfer docs (may contain internal info)
+docs/CONTEXT_TRANSFER_*.md
+
+# Prod test reports
+tests/Prod Tests/reports/*.json
+
+# Storage cache
+storage/
+data/

@@ -1,8 +1,8 @@
 # MongoDB-LLM-assistant\src\connectors\lcwgpt_connector.py
 
 """
-LCWGPT Connector - LC Waikiki Kurumsal LLM Entegrasyonu
-Bu modül, OpenAI yerine kurumsal LCWGPT servisini kullanmak için yazılmıştır.
+LCWGPT Connector - Corporate LLM Integration
+This module provides integration with a corporate LLM service as an alternative to OpenAI.
 """
 import os
 import json
@@ -268,10 +268,16 @@ class LCWGPTConnector(BaseConnector):
         super().__init__()
         
         # Ortam değişkenlerinden yapılandırmayı al
-        self.api_key = os.getenv('LCWGPT_API_KEY', 'sk_gsMk5_sScqq9ZXFxOr751GJsuIf4VhI6tQhMOp2siW8')
-        self.endpoint = os.getenv('LCWGPT_ENDPOINT', 'https://lcwgpt-test.lcwaikiki.com/api/service/message')
-        self.institution_id = os.getenv('LCWGPT_INSTITUTION_ID', 'analitikverimüdürlügü')
+        self.api_key = os.getenv('LCWGPT_API_KEY', '')
+        self.endpoint = os.getenv('LCWGPT_ENDPOINT', '')
+        self.institution_id = os.getenv('LCWGPT_INSTITUTION_ID', '')
         self.model_name = os.getenv('LCWGPT_MODEL', 'Sonnet')
+
+        # Validate required configuration
+        if not self.api_key:
+            self.logger.warning("LCWGPT_API_KEY not set. LCWGPT connector will not work until configured.")
+        if not self.endpoint:
+            self.logger.warning("LCWGPT_ENDPOINT not set. LCWGPT connector will not work until configured.")
         self.llm: Optional[LCWGPTChat] = None
         
         # Log yapılandırma bilgileri (hassas bilgileri gizle)

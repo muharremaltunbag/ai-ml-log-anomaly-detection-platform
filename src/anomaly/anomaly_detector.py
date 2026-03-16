@@ -35,8 +35,8 @@ class MongoDBAnomalyDetector:
     def get_instance(cls, server_name: str = "global", config_path: str = "config/anomaly_config.json"):
         """Belirli bir sunucu için bellekteki mevcut modeli döndürür, yoksa oluşturur."""
         # FQDN NORMALIZATION
-        # ecaztrdbmng015.lcwecomtr.com → ecaztrdbmng015
-        # ECAZTRDBMNG015.lcwaikiki.local → ecaztrdbmng015
+        # server01.example.com → server01
+        # SERVER01.internal.local → server01
         raw_name = server_name or "global"
         
         # FQDN ise sadece hostname'i al (ilk nokta öncesi)

@@ -27,7 +27,7 @@ def test_actual_reader():
     df2 = reader.read_logs(
         limit=100, 
         last_hours=1, 
-        host_filter="lcwmongodb01n3.lcwaikiki.local"
+        host_filter="mongo-prod-03.internal.local"
     )
     print(f"   Dönen log sayısı: {len(df2)}")
     
@@ -36,7 +36,7 @@ def test_actual_reader():
     df3 = reader.read_logs(
         limit=None,  # Scroll kullanacak
         last_hours=1,
-        host_filter="lcwmongodb01n3.lcwaikiki.local"
+        host_filter="mongo-prod-03.internal.local"
     )
     print(f"   Dönen log sayısı: {len(df3)}")
     

@@ -73,7 +73,7 @@ def test_opensearch():
         from src.anomaly.log_reader import OpenSearchLogReader
         
         reader = OpenSearchLogReader(
-            host_filter="lcwmongodb01n1.lcwaikiki.local",
+            host_filter="mongo-prod-02.internal.local",
             time_range="last_hour"
         )
         

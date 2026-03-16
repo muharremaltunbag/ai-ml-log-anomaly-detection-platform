@@ -61,7 +61,7 @@ class MongoDBLogReader:
             # Linux/Production
             Path("/var/log/mongodb/mongod.log"),
             # Windows test ortamı
-            Path("C:/Users/muharrem.altunbag/Desktop/Anomaly_Detection/Latest/log dosya/mongod.log"),
+            Path("sample_logs/mongod.log"),
             # Vagrant test
             Path("/home/vagrant/mongod.log"),
         ]
@@ -612,8 +612,8 @@ class OpenSearchProxyReader:
         
         print("[DEBUG] OpenSearchProxyReader init started")
         # .env'den değerleri al
-        self.base_url = os.getenv('OPENSEARCH_URL', 'https://opslog.lcwaikiki.com')
-        self.username = os.getenv('OPENSEARCH_USER', 'db_admin')
+        self.base_url = os.getenv('OPENSEARCH_URL', 'https://localhost:9200')
+        self.username = os.getenv('OPENSEARCH_USER', 'admin')
         self.password = os.getenv('OPENSEARCH_PASS', '')
         print(f"[DEBUG] OpenSearch URL: {self.base_url}, User: {self.username}")
         
@@ -711,12 +711,12 @@ class OpenSearchProxyReader:
             print("[DEBUG] Starting tenant selection")
             tenant_url = f"{self.base_url}/api/v1/multitenancy/tenant"
             tenant_data = {
-                "tenant": "LCW",
+                "tenant": os.getenv('OPENSEARCH_TENANT', 'default'),
                 "username": self.username
             }
             
-            logger.debug(f"Selecting tenant: LCW for user: {self.username}")
-            print(f"[DEBUG] Selecting tenant: LCW for user: {self.username}")
+            logger.debug(f"Selecting tenant for user: {self.username}")
+            print(f"[DEBUG] Selecting tenant for user: {self.username}")
             
             # POST request yap
             response = self.session.post(
@@ -731,13 +731,13 @@ class OpenSearchProxyReader:
             print(f"[DEBUG] Tenant selection response: {response.status_code}")
             
             if response.status_code == 200:
-                # Response "ok" veya "LCW" (tenant adı) olabilir
+                # Response "ok" or tenant name
                 if response.status_code == 200 and (
-                    response.text.strip() in ['"ok"', 'ok', 'LCW', '"LCW"'] or 
+                    response.text.strip() in ['"ok"', 'ok'] or
                     len(response.text.strip()) <= 10  # Kısa tenant adı response'u
                 ):
-                    logger.info(f"Successfully selected tenant: LCW (Response: {response.text.strip()})")
-                    print("[DEBUG] Successfully selected tenant: LCW")
+                    logger.info(f"Successfully selected tenant (Response: {response.text.strip()})")
+                    print("[DEBUG] Successfully selected tenant")
                     
                     # Yeni cookie'yi kontrol et
                     cookies = self.session.cookies.get_dict()
@@ -1644,8 +1644,16 @@ def normalize_hostname(host: str) -> str:
     Returns:
         str: Normalize edilmiş host adı
     """
-    # .lcwaikiki.local, .lcwecommerce.com .lcwecomtr.com gibi suffix'leri temizle
-    normalized = host.replace('.lcwaikiki.local', '').replace('.lcwecommerce.com', '').replace('.lcwecomtr.com', '')
+    # Strip FQDN suffixes for hostname normalization
+    # Strip common FQDN suffixes (configurable via HOSTNAME_STRIP_SUFFIXES env var)
+    _default_suffixes = '.local,.internal,.example.com'
+    _suffixes = os.getenv('HOSTNAME_STRIP_SUFFIXES', _default_suffixes).split(',')
+    normalized = host
+    for suffix in _suffixes:
+        suffix = suffix.strip()
+        if suffix and normalized.endswith(suffix):
+            normalized = normalized[:-len(suffix)]
+            break
     # Uppercase yap (karşılaştırma için)
     normalized = normalized.upper()
     

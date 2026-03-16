@@ -26,36 +26,36 @@ if reader.connect():
         for host, count in host_counts.items():
             print(f"  - {host}: {count} log")
     
-    # 2. lcwmongodb01n2 özel araması
-    print(f"\n\n🔎 lcwmongodb01n2 ÖZEL ARAMASI:")
+    # 2. mongo-prod-01 özel araması
+    print(f"\n\n🔎 mongo-prod-01 ÖZEL ARAMASI:")
     
     # Custom query ile ara
-    lcw_query = {
+    host_query = {
         "size": 100,
         "query": {
             "bool": {
                 "must": [
                     {"range": {"@timestamp": {"gte": "now-24h"}}},
-                    {"match": {"host.name": "lcwmongodb01n2"}}
+                    {"match": {"host.name": "mongo-prod-01"}}
                 ]
             }
         }
     }
     
-    result = reader._make_request("db-mongodb-*/_search", "GET", lcw_query)
+    result = reader._make_request("db-mongodb-*/_search", "GET", host_query)
     
     if result and 'hits' in result:
         total = result['hits']['total']['value'] if isinstance(result['hits']['total'], dict) else result['hits']['total']
-        print(f"lcwmongodb01n2 için bulunan log sayısı: {total}")
+        print(f"mongo-prod-01 için bulunan log sayısı: {total}")
         
         if total > 0:
-            print("\n📝 Örnek lcwmongodb01n2 logu:")
+            print("\n📝 Örnek mongo-prod-01 logu:")
             hit = result['hits']['hits'][0]
             print(f"  Index: {hit['_index']}")
             print(f"  Timestamp: {hit['_source'].get('@timestamp')}")
             print(f"  Host: {hit['_source'].get('host', {}).get('name')}")
     else:
-        print("lcwmongodb01n2 için log bulunamadı!")
+        print("mongo-prod-01 için log bulunamadı!")
     
     # 3. Tüm host.name değerlerini aggregation ile bul
     print(f"\n\n📊 HOST.NAME AGGREGATION ANALİZİ:")

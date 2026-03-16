@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modüler Frontend Mimari (script-*.js ayrıştırmaları)
 - DBA Analiz Modalı (zaman aralığı + çoklu host)
 - ML Görselleştirmeleri (feature importance, component dağılımı, heatmap, metrikler)
-- LCWGPT genişletilmiş açıklamalar (20 anomali, 5’li chunk)
+- AI genişletilmiş açıklamalar (20 anomali, 5’li chunk)
 - MongoDB history saklama + verify & retry
 - Session ID üretimi ve 3 denemeli kaydetme
 - Cluster paralel analizi (asyncio.gather)
@@ -41,9 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 # Changelog
 
 ## v17 – 01.12.2025  
-### Full OpenSearch Modernization + ML Scaling + Hybrid Rule Engine + LCWGPT Visibility Fixes
+### Full OpenSearch Modernization + ML Scaling + Hybrid Rule Engine + AI Visibility Fixes
 
-Bu sürüm, LC Waikiki MongoDB Anomaly Detection platformunun tam kapsamlı modernizasyonudur.  
+Bu sürüm, MongoDB Anomaly Detection platformunun tam kapsamlı modernizasyonudur.  
 Sistem artık sadece “Slow Query Dedektörü” değil; OpenSearch tabanlı gerçek zamanlı risk tarayıcısı ve bütüncül bir sağlık monitörü olarak çalışmaktadır.
 
 ---
@@ -70,10 +70,10 @@ Sistem artık sadece “Slow Query Dedektörü” değil; OpenSearch tabanlı ge
 
 ---
 
-### 4) UI & LCWGPT İyileştirmeleri
+### 4) UI & AI İyileştirmeleri
 - UI limit 500 → 2000
-- Hardcoded tenant (“LCW”) → Dinamik tenant yapısına geçildi
-- LCWGPT float parsing hatası düzeltildi → AI sonuçları eksiksiz okuyabiliyor
+- Hardcoded tenant → Dinamik tenant yapısına geçildi
+- AI float parsing hatası düzeltildi → AI sonuçları eksiksiz okuyabiliyor
 
 ---
 
