@@ -120,7 +120,7 @@ class AnomalyDetectionTools:
         logger.debug("Feature engineer initialized. Detector will be fetched on-demand via Singleton.")
         
         # YENİ: LLM connector'ı başlat (OpenAI veya LCWGPT)
-        llm_provider = os.getenv('LLM_PROVIDER', 'lcwgpt').lower()
+        llm_provider = os.getenv('LLM_PROVIDER', 'openai').lower()
 
         if llm_provider == 'lcwgpt':
             self.llm_connector = LCWGPTConnector()
