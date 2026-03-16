@@ -26,7 +26,6 @@ This is not a single-source script or a narrow anomaly detector. It is a modular
 
 all within one shared analysis pipeline.
 
--
 
 ## Why This Project Exists
 
@@ -57,8 +56,6 @@ The design therefore goes beyond anomaly detection alone. The platform combines:
 - storage/history,
 - and scheduler-driven orchestration.
 
--
-
 ## What the Platform Does
 
 At a high level, the platform does five things:
@@ -78,7 +75,6 @@ In day-to-day use, its value is simpler:
 - it makes temporal escalation easier to see,
 - and it helps turn noisy logs into understandable operational context.
 
--
 
 ## Supported Sources
 
@@ -96,8 +92,6 @@ The architecture is intentionally modular, so additional sources can be added by
 - shared prediction layer,
 - shared storage/history,
 - shared API/UI integration.
-
--
 
 ## Core Features
 
@@ -145,8 +139,6 @@ A FastAPI backend and Vanilla JavaScript frontend provide one interface for:
 - alert drill-down,
 - and operational context panels.
 
--
-
 ## High-Level Architecture
 
 The platform is built as a layered system rather than a single model wrapped in an API.
@@ -166,28 +158,28 @@ The platform is built as a layered system rather than a single model wrapped in 
 
 ```text
 User
-  â†’ Web UI / API
-  â†’ Analysis Orchestrator
-  â†’ Source-specific Reader
-  â†’ Feature Engineering
-  â†’ Anomaly Detection
-  â†’ Prediction Layer
-  â†’ AI Explanation
-  â†’ Storage / History
+   Web UI / API
+   Analysis Orchestrator
+   Source-specific Reader
+   Feature Engineering
+   Anomaly Detection
+   Prediction Layer
+   AI Explanation
+   Storage / History
 ```
 
 ### Operational structure
 
 ```text
 Logs (MongoDB / MSSQL / Elasticsearch)
-  â†’ OpenSearch
-  â†’ Reader layer
-  â†’ Feature engineering
-  â†’ ML anomaly detection
-  â†’ Trend / rate / forecast checks
-  â†’ AI explanation
-  â†’ Storage + API response
-  â†’ Web UI / dashboards
+   OpenSearch
+   Reader layer
+   Feature engineering
+   ML anomaly detection
+   Trend / rate / forecast checks
+   AI explanation
+   Storage + API response
+   Web UI / dashboards
 ```
 
 -
@@ -195,27 +187,26 @@ Logs (MongoDB / MSSQL / Elasticsearch)
 ## Repository Structure
 
 ```text
-.
-â”œâ”€â”€ config/# Configuration files
-â”œâ”€â”€ docs/  # Documentation and transfer notes
-â”œâ”€â”€ src/
-â”‚â”œâ”€â”€ agents/  # Query / LLM-related agent logic
-â”‚â”œâ”€â”€ anomaly/ # Readers, features, detectors, forecasting
-â”‚â”œâ”€â”€ connectors/ # LLM and database connectors
-â”‚â”œâ”€â”€ monitoring/ # Monitoring helpers
-â”‚â”œâ”€â”€ performance/# Performance analysis tools
-â”‚â””â”€â”€ storage/ # Storage manager, history, fallback logic
-â”œâ”€â”€ tests/ # Test suite
-â”œâ”€â”€ web_ui/
-â”‚â”œâ”€â”€ api.py# FastAPI backend
-â”‚â””â”€â”€ static/  # Frontend assets
-â”œâ”€â”€ Dockerfile
-â”œâ”€â”€ docker-compose.yml
-â”œâ”€â”€ main.py
-â””â”€â”€ requirements.txt
+
+ config/# Configuration files
+ docs/  # Documentation and transfer notes
+ src/
+   agents/  # Query / LLM-related agent logic
+   anomaly/ # Readers, features, detectors, forecasting
+   connectors/ # LLM and database connectors
+   monitoring/ # Monitoring helpers
+   performance/# Performance analysis tools
+storage/ # Storage manager, history, fallback logic
+tests/ # Test suite
+web_ui/
+   api.py# FastAPI backend
+   static/  # Frontend assets
+Dockerfile
+docker-compose.yml
+main.py
+requirements.txt
 ```
 
--
 
 ## Technical Breakdown
 
@@ -228,8 +219,6 @@ The platform reads logs from OpenSearch using source-specific readers.
 | MongoDB | `log_reader.py`| Reads MongoDB logs, supports structured and text-like ingestion patterns |
 | MSSQL| `mssql_log_reader.py`| Reads MSSQL-related logs through source-aware parsing  |
 | Elasticsearch | `elasticsearch_log_reader.py` | Reads Elasticsearch operational logs and source-specific patterns  |
-
--
 
 ## Feature Engineering
 
@@ -273,8 +262,6 @@ A raw log line is not directly usable by a machine learning model. The system th
 
 This allows the model to see not just message text, but behavioral patterns.
 
--
-
 ## Anomaly Detection Engine
 
 The core anomaly detection model is based on **scikit-learn IsolationForest**.
@@ -306,7 +293,6 @@ The core anomaly detection model is based on **scikit-learn IsolationForest**.
 
 The goal is not only detection, but prioritization.
 
--
 
 ## Historical Buffer and Adaptive Modeling
 
@@ -322,7 +308,6 @@ The system supports a more flexible structure than one static model retrained fo
 
 This matters in operational environments where log distributions drift over time.
 
--
 
 ## Critical Rule Layer
 
@@ -342,7 +327,6 @@ Examples of operationally important behavior may include:
 
 This layer complements the model instead of replacing it.
 
--
 
 ## Prediction Layer
 
@@ -384,8 +368,6 @@ Forecasting helps answer:
 - is the short-term risk rising?
 - which metric is moving toward a more dangerous state?
 
--
-
 ### AI / LLM Layer
 
 The platform supports AI-assisted explanation on top of anomaly and prediction outputs.
@@ -411,7 +393,6 @@ The project supports both:
 - OpenAI-compatible LLM usage
 - custom LLM endpoint integration
 
--
 
 ### Storage and History
 
@@ -427,8 +408,6 @@ The storage layer preserves analysis outputs and makes them reusable.
 
 This makes the platform useful not just for one-time analysis, but for ongoing operational workflows.
 
--
-
 ## Scheduler and Orchestration
 
 The platform can run as a repeatable operational process rather than only as a manually triggered script.
@@ -442,8 +421,6 @@ The platform can run as a repeatable operational process rather than only as a m
 - host-level tracking
 
 This helps make the platform usable in production-like recurring analysis scenarios.
-
--
 
 ## Technology Stack
 
@@ -482,8 +459,6 @@ This helps make the platform usable in production-like recurring analysis scenar
 - Docker
 - docker-compose
 
--
-
 ## Main Functional Areas
 
 ### Anomaly Detection
@@ -509,8 +484,6 @@ Generates readable summaries of technical findings.
 ### ML Visualization
 
 Supports metrics and model-related visibility through the web UI.
-
--
 
 ## Getting Started
 
@@ -587,8 +560,6 @@ or
 uvicorn web_ui.api:app reload
 ```
 
--
-
 ## Configuration
 
 The project is configuration-driven and avoids hardcoded credentials in the public release.
@@ -611,8 +582,6 @@ Relevant files include:
 - `config/cluster_mapping.json`
 - `config/monitoring_servers.json`
 
--
-
 ## Development Notes
 
 This repository is designed to support modular development and extension.
@@ -625,8 +594,6 @@ This repository is designed to support modular development and extension.
 - keep UI logic driven by backend responses
 - favor isolated, testable changes
 - preserve parity across supported sources where applicable
-
--
 
 ## Current Status
 
@@ -643,9 +610,6 @@ Implemented and available in the platform:
 - storage and history
 - web interface
 - scheduler support
-
-
--
 
 ## Public Release Notes
 
