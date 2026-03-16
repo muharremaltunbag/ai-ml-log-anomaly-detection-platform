@@ -32,8 +32,8 @@ storage/temp/analysis_cache.json
 # Context transfer docs (may contain internal info)
 docs/CONTEXT_TRANSFER_*.md
 
-# Prod test reports
-tests/Prod Tests/reports/*.json
+# Prod test directory (internal-only tests)
+tests/Prod Tests/
 
 # Storage cache
 storage/

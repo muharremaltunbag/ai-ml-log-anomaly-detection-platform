@@ -947,13 +947,12 @@ class AnomalyDetectionTools:
         hostname_lower = hostname.lower()
 
         # FQDN eklenmesi gereken pattern'ler (whitelist)
+        # NOTE: Customize these patterns to match YOUR server naming convention
         fqdn_required_patterns = [
-            r'^lcwmongodb\d+n\d+$',           # e.g. mongo01n2
+            r'^mongodb\d+n\d+$',               # e.g. mongodb01n2
             r'^testmongodb\d+$',               # e.g. testmongo01
             r'^devmongodb\d+$',                # e.g. devmongo02
-            r'^pplmongodbn\d+$',               # e.g. pplmongo1
-            r'^kznmongodbn\d+$',               # e.g. kznmongo1
-            r'^ntfcmongodb\d+$',               # e.g. ntfcmongo01
+            r'^mongodbn\d+$',                  # e.g. mongodbn1
         ]
 
         # Pattern kontrolü - küçük harfle kontrol et
@@ -975,7 +974,7 @@ class AnomalyDetectionTools:
         Supported MongoDB hostname patterns:
         - mongo-node01.log -> mongo-node01
         - DBSERVER019.log -> dbserver019
-        - PPLMNGDBN2.log -> pplmngdbn2
+        - MONGODBN2.log -> mongodbn2
         - mongod_server01n2.log -> server01n2
         - mongod.log.DBSERVER005 -> dbserver005
 
@@ -995,44 +994,23 @@ class AnomalyDetectionTools:
         # MongoDB server hostname patterns
         # NOTE: Customize these patterns to match YOUR server naming convention
         patterns = [
-            # MongoDB cluster nodes (e.g. mongocluster01n1, mongocluster01n2)
-            r'(lcwmongodb\d+n\d+)',
+            # MongoDB cluster nodes (e.g. mongodb01n1, mongodb01n2)
+            r'(mongodb\d+n\d+)',
 
-            # Database management nodes
-            r'(ecaztrdbmng\d+)',
+            # Database management nodes (e.g. dbmng01, dbmng02)
+            r'(dbmng\d+)',
 
-            # Global database management nodes
-            r'(ecazgldbmng\d+)',
+            # MongoDB nodes with prefix (e.g. mongodbn1, mongodbn2)
+            r'(mongodbn\d+)',
 
-            # PPL MongoDB nodes
-            r'(pplmngdbn\d+)',
-            r'(drpplmngdbn\d+)',  # DR node
+            # DR (disaster recovery) nodes (e.g. drmongodbn1)
+            r'(drmongodbn\d+)',
 
-            # KZN MongoDB nodes
-            r'(kznmngdbn\d+)',
-            r'(drkznmngdbn\d+)',  # DR node
+            # Generic mongo nodes (e.g. mongo01, mongo02)
+            r'(mongo\d+)',
 
-            # NTFC MongoDB nodes
-            r'(ntfcmongodb\d+)',
-
-            # ECOMFIX MongoDB nodes
-            r'(ecomfixmongodb\d+)',
-
-            # Analytics MongoDB nodes
-            r'(pplazmongodbn\d+)',
-
-            # Regional MongoDB nodes
-            r'(rumongo\d+)',
-
-            # HQ security MongoDB nodes
-            r'(hqsectwrapmdbn\d+)',
-            r'(drhqsectmdbn\d+)',  # DR node
-
-            # WPOS MongoDB nodes
-            r'(wposmng\d+)',
-
-            # Logistic MongoDB nodes
-            r'(lgstmngdb\d+)',
+            # Database server nodes (e.g. dbserver001, dbserver015)
+            r'(dbserver\d+)',
 
             # Test/Dev environments
             r'(testmongodb\d+)',

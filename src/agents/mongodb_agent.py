@@ -725,18 +725,16 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
         import re
         
         # Sunucu isim kalıpları
+        # NOTE: Customize these patterns to match YOUR server naming convention
         server_patterns = [
-            r'(lcwmongodb\d+n\d+)',  # lcwmongodb01n2 formatı
-            r'(ECOMLOGMNG\d+)',       # ECOMLOGMNG01 formatı
-            r'(testmongodb\d+)',      # testmongodb01 formatı
-            r'(NTFCMONGODB\d+)',      # NTFCMONGODB01 formatı
-            r'([A-Z]+MONGODB\d+)',    # Genel MongoDB sunucu formatı
-            r'(pplazmongodbn\d+)',    # pplazmongodbn2 formatı (FQDN'siz)
-            r'(pplmongodbn\d+)',      # pplmongodbn1 formatı (FQDN'li)
-            r'(ecfavmngdbn\d+)',      # ecfavmngdbn3 formatı
-            r'(hqsectwrapmdbn\d+)',   # hqsectwrapmdbn1 formatı
-            r'(kznmongodbn\d+)',      # kznmongodbn1 formatı
-            r'([a-z]+mongo\d+)',      # kzmongo02, rumongo02 formatı
+            r'(mongodb\d+n\d+)',      # mongodb01n2 format (cluster nodes)
+            r'(testmongodb\d+)',      # testmongodb01 format
+            r'(devmongodb\d+)',       # devmongodb01 format
+            r'([A-Z]+MONGODB\d+)',    # Generic MongoDB server format
+            r'(mongodbn\d+)',         # mongodbn1 format
+            r'(dbmng\d+)',            # dbmng01 format
+            r'(dbserver\d+)',         # dbserver001 format
+            r'([a-z]+mongo\d+)',      # prefixmongo02 format
         ]
         
         query_lower = query.lower()
@@ -758,13 +756,12 @@ Kullanıcıyla Türkçe iletişim kur. Teknik terimleri açıkla."""
                 fqdn_suffix = os.getenv('MONGODB_FQDN_SUFFIX', '.local')
                 if not server_name.endswith(fqdn_suffix):
                     # FQDN eklenmesi gereken pattern'ler (whitelist)
+                    # NOTE: Customize these patterns to match YOUR server naming convention
                     fqdn_required_patterns = [
-                        r'^lcwmongodb\d+n\d+$',           # e.g. mongo01n2
+                        r'^mongodb\d+n\d+$',               # e.g. mongodb01n2
                         r'^testmongodb\d+$',               # e.g. testmongo01
                         r'^devmongodb\d+$',                # e.g. devmongo02
-                        r'^pplmongodbn\d+$',               # e.g. pplmongo1
-                        r'^kznmongodbn\d+$',               # e.g. kznmongo1
-                        r'^ntfcmongodb\d+$',               # e.g. ntfcmongo01
+                        r'^mongodbn\d+$',                  # e.g. mongodbn1
                     ]
 
                     # Pattern kontrolü
