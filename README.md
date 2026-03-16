@@ -26,7 +26,7 @@ This is not a single-source script or a narrow anomaly detector. It is a modular
 
 all within one shared analysis pipeline.
 
----
+-
 
 ## Why This Project Exists
 
@@ -57,7 +57,7 @@ The design therefore goes beyond anomaly detection alone. The platform combines:
 - storage/history,
 - and scheduler-driven orchestration.
 
----
+-
 
 ## What the Platform Does
 
@@ -78,7 +78,7 @@ In day-to-day use, its value is simpler:
 - it makes temporal escalation easier to see,
 - and it helps turn noisy logs into understandable operational context.
 
----
+-
 
 ## Supported Sources
 
@@ -97,7 +97,7 @@ The architecture is intentionally modular, so additional sources can be added by
 - shared storage/history,
 - shared API/UI integration.
 
----
+-
 
 ## Core Features
 
@@ -145,7 +145,7 @@ A FastAPI backend and Vanilla JavaScript frontend provide one interface for:
 - alert drill-down,
 - and operational context panels.
 
----
+-
 
 ## High-Level Architecture
 
@@ -190,32 +190,32 @@ Logs (MongoDB / MSSQL / Elasticsearch)
   â†’ Web UI / dashboards
 ```
 
----
+-
 
 ## Repository Structure
 
 ```text
 .
-â”œâ”€â”€ config/                     # Configuration files
-â”œâ”€â”€ docs/                       # Documentation and transfer notes
+â”œâ”€â”€ config/# Configuration files
+â”œâ”€â”€ docs/  # Documentation and transfer notes
 â”œâ”€â”€ src/
-â”‚   â”œâ”€â”€ agents/                 # Query / LLM-related agent logic
-â”‚   â”œâ”€â”€ anomaly/                # Readers, features, detectors, forecasting
-â”‚   â”œâ”€â”€ connectors/             # LLM and database connectors
-â”‚   â”œâ”€â”€ monitoring/             # Monitoring helpers
-â”‚   â”œâ”€â”€ performance/            # Performance analysis tools
-â”‚   â””â”€â”€ storage/                # Storage manager, history, fallback logic
-â”œâ”€â”€ tests/                      # Test suite
+â”‚â”œâ”€â”€ agents/  # Query / LLM-related agent logic
+â”‚â”œâ”€â”€ anomaly/ # Readers, features, detectors, forecasting
+â”‚â”œâ”€â”€ connectors/ # LLM and database connectors
+â”‚â”œâ”€â”€ monitoring/ # Monitoring helpers
+â”‚â”œâ”€â”€ performance/# Performance analysis tools
+â”‚â””â”€â”€ storage/ # Storage manager, history, fallback logic
+â”œâ”€â”€ tests/ # Test suite
 â”œâ”€â”€ web_ui/
-â”‚   â”œâ”€â”€ api.py                  # FastAPI backend
-â”‚   â””â”€â”€ static/                 # Frontend assets
+â”‚â”œâ”€â”€ api.py# FastAPI backend
+â”‚â””â”€â”€ static/  # Frontend assets
 â”œâ”€â”€ Dockerfile
 â”œâ”€â”€ docker-compose.yml
 â”œâ”€â”€ main.py
 â””â”€â”€ requirements.txt
 ```
 
----
+-
 
 ## Technical Breakdown
 
@@ -223,13 +223,13 @@ Logs (MongoDB / MSSQL / Elasticsearch)
 
 The platform reads logs from OpenSearch using source-specific readers.
 
-| Source        | Reader Layer                  | Purpose                                                                  |
-| ------------- | ----------------------------- | ------------------------------------------------------------------------ |
-| MongoDB       | `log_reader.py`               | Reads MongoDB logs, supports structured and text-like ingestion patterns |
-| MSSQL         | `mssql_log_reader.py`         | Reads MSSQL-related logs through source-aware parsing                    |
-| Elasticsearch | `elasticsearch_log_reader.py` | Reads Elasticsearch operational logs and source-specific patterns        |
+| Source  | Reader Layer| Purpose|
+| - | - |  |
+| MongoDB | `log_reader.py`| Reads MongoDB logs, supports structured and text-like ingestion patterns |
+| MSSQL| `mssql_log_reader.py`| Reads MSSQL-related logs through source-aware parsing  |
+| Elasticsearch | `elasticsearch_log_reader.py` | Reads Elasticsearch operational logs and source-specific patterns  |
 
----
+-
 
 ## Feature Engineering
 
@@ -273,7 +273,7 @@ A raw log line is not directly usable by a machine learning model. The system th
 
 This allows the model to see not just message text, but behavioral patterns.
 
----
+-
 
 ## Anomaly Detection Engine
 
@@ -306,7 +306,7 @@ The core anomaly detection model is based on **scikit-learn IsolationForest**.
 
 The goal is not only detection, but prioritization.
 
----
+-
 
 ## Historical Buffer and Adaptive Modeling
 
@@ -322,7 +322,7 @@ The system supports a more flexible structure than one static model retrained fo
 
 This matters in operational environments where log distributions drift over time.
 
----
+-
 
 ## Critical Rule Layer
 
@@ -342,7 +342,7 @@ Examples of operationally important behavior may include:
 
 This layer complements the model instead of replacing it.
 
----
+-
 
 ## Prediction Layer
 
@@ -358,12 +358,12 @@ The prediction layer combines:
 
 The forecasting engine uses a tiered approach depending on available history.
 
-| Data availability | Strategy                       |
-| ----------------- | ------------------------------ |
-| Under 5 points    | Direction only                 |
-| 5â€“9 points        | Weighted moving average        |
-| 10â€“19 points      | Linear regression              |
-| 20+ points        | EWMA-based trend decomposition |
+| Data availability | Strategy  |
+| - |  |
+| Under 5 points | Direction only  |
+| 5â€“9 points  | Weighted moving average  |
+| 10â€“19 points| Linear regression  |
+| 20+ points  | EWMA-based trend decomposition |
 
 ### Forecast outputs may include:
 
@@ -384,7 +384,7 @@ Forecasting helps answer:
 - is the short-term risk rising?
 - which metric is moving toward a more dangerous state?
 
----
+-
 
 ### AI / LLM Layer
 
@@ -411,7 +411,7 @@ The project supports both:
 - OpenAI-compatible LLM usage
 - custom LLM endpoint integration
 
----
+-
 
 ### Storage and History
 
@@ -427,7 +427,7 @@ The storage layer preserves analysis outputs and makes them reusable.
 
 This makes the platform useful not just for one-time analysis, but for ongoing operational workflows.
 
----
+-
 
 ## Scheduler and Orchestration
 
@@ -443,7 +443,7 @@ The platform can run as a repeatable operational process rather than only as a m
 
 This helps make the platform usable in production-like recurring analysis scenarios.
 
----
+-
 
 ## Technology Stack
 
@@ -482,7 +482,7 @@ This helps make the platform usable in production-like recurring analysis scenar
 - Docker
 - docker-compose
 
----
+-
 
 ## Main Functional Areas
 
@@ -510,7 +510,7 @@ Generates readable summaries of technical findings.
 
 Supports metrics and model-related visibility through the web UI.
 
----
+-
 
 ## Getting Started
 
@@ -584,10 +584,10 @@ python main.py
 or
 
 ```bash
-uvicorn web_ui.api:app --reload
+uvicorn web_ui.api:app reload
 ```
 
----
+-
 
 ## Configuration
 
@@ -611,7 +611,7 @@ Relevant files include:
 - `config/cluster_mapping.json`
 - `config/monitoring_servers.json`
 
----
+-
 
 ## Development Notes
 
@@ -626,7 +626,7 @@ This repository is designed to support modular development and extension.
 - favor isolated, testable changes
 - preserve parity across supported sources where applicable
 
----
+-
 
 ## Current Status
 
@@ -645,7 +645,7 @@ Implemented and available in the platform:
 - scheduler support
 
 
----
+-
 
 ## Public Release Notes
 
@@ -662,7 +662,7 @@ Sensitive environment-specific details such as:
 have been removed or replaced with configurable placeholders.
 
 
----
+-
 
 ## License
 
