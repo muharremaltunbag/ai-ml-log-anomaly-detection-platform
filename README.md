@@ -182,8 +182,6 @@ Logs (MongoDB / MSSQL / Elasticsearch)
    Web UI / dashboards
 ```
 
--
-
 ## Repository Structure
 
 ```text
@@ -293,7 +291,6 @@ The core anomaly detection model is based on **scikit-learn IsolationForest**.
 
 The goal is not only detection, but prioritization.
 
-
 ## Historical Buffer and Adaptive Modeling
 
 The platform does not start every cycle from zero.
@@ -307,7 +304,6 @@ Past features, anomaly scores, and prior results are preserved and aligned befor
 The system supports a more flexible structure than one static model retrained forever. New behavior can be absorbed through incremental or mini-model style updates.
 
 This matters in operational environments where log distributions drift over time.
-
 
 ## Critical Rule Layer
 
@@ -326,7 +322,6 @@ Examples of operationally important behavior may include:
 - repeated error bursts
 
 This layer complements the model instead of replacing it.
-
 
 ## Prediction Layer
 
@@ -392,7 +387,6 @@ The project supports both:
 
 - OpenAI-compatible LLM usage
 - custom LLM endpoint integration
-
 
 ### Storage and History
 
@@ -624,9 +618,6 @@ Sensitive environment-specific details such as:
 - and internal operational references
 
 have been removed or replaced with configurable placeholders.
-
-
--
 
 ## License
 
